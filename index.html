@@ -2649,34 +2649,34 @@ async function uploadFile(row, subCode, paramId, level, file) {
   if (!file) return;
   if (file.size > 10 * 1024 * 1024) throw new Error('File terlalu besar! Maks 10MB');
 
-  // GANTI KE FORMDATA - INI SOLUSI NETLIFY
-  const formData = new FormData();
-  formData.append('action', 'uploadFile');
-  formData.append('opdId', row.id);
-  formData.append('opdName', row.opd);
-  formData.append('subunsur', subCode);
-  formData.append('paramId', paramId);
-  const paramObj = SUBUNSUR_DATA[subCode].params.find(p => p.id === paramId);
-  formData.append('paramLabel', subCode + ' - ' + (paramObj ? paramObj.desc : paramId));
-  formData.append('level', level);
-  formData.append('year', currentYear);
-  formData.append('fileName', file.name);
-  formData.append('file', file);
+  // GANTI KE JSON (BUKAN FORMDATA!)
+  const reader = new FileReader();
+  return new Promise((resolve, reject) => {
+    reader.onload = async () => {
+      const base64 = reader.result.split(',')[1]; // Ambil base64 saja
+      const paramObj = SUBUNSUR_DATA[subCode].params.find(p => p.id === paramId);
+      const paramLabel = subCode + ' - ' + (paramObj ? paramObj.desc : paramId);
 
-  const response = await fetch('/.netlify/functions/proxy', {
-    method: 'POST',
-    body: formData
+      try {
+        // Kirim JSON murni
+        const result = await callServer('uploadFile', {
+          opdId: row.id,
+          opdName: row.opd,
+          subunsur: subCode,
+          paramId,
+          paramLabel,
+          level,
+          year: currentYear,
+          fileName: file.name,
+          fileData: base64
+        });
+        resolve(result);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.readAsDataURL(file);
   });
-  
-  const text = await response.text();
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch (e) {
-    throw new Error('Server error: ' + text.substring(0, 200));
-  }
-  if (data && data.status === 'error') throw new Error(data.message);
-  return data;
 }
 
 function renderFileList(row, subCode, paramId, level) {
