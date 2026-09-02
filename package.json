@@ -1,0 +1,10 @@
+{
+  "name": "kawal-spip",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "googleapis": "^144.0.0",
+    "dotenv": "^16.4.5"
+  }
+}
