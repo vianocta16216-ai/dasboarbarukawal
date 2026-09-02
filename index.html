@@ -2692,7 +2692,7 @@ function renderFileList(row, subCode, paramId, level) {
     const fileUrl = typeof fileObj === 'string' ? fileObj : fileObj.url;
     const fileName = typeof fileObj === 'string' ? `File ${index + 1}` : (fileObj.name || `File ${index + 1}`);
     
-    // Pastikan URL PDF bisa dibuka langsung (tidak di-download)
+    // TAMBAHAN: Pastikan URL PDF bisa dibuka langsung
     const displayUrl = fileUrl.includes('?') ? fileUrl + '&fl_attachment=false' : fileUrl + '?fl_attachment=false';
     
     const div = document.createElement('div');
