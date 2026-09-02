@@ -134,6 +134,7 @@ exports.handler = async (event) => {
   let params = {};
   try {
     let bodyStr = event.body || '';
+    // Jika Netlify mengirim body sebagai base64 (kadang terjadi), decode dulu
     if (event.isBase64Encoded) {
       bodyStr = Buffer.from(bodyStr, 'base64').toString('utf8');
     }
