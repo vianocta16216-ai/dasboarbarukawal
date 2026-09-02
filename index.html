@@ -1851,7 +1851,7 @@ let originalRows = [];
 
 // ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
 function callServer(action, params = {}) {
-  const functionUrl = '/.netlify/functions/proxy';
+  const functionUrl = '/.netlify/functions/api';
   const body = { ...params, action };
   return fetch(functionUrl, {
     method: 'POST',
