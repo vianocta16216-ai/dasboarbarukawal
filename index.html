@@ -2682,10 +2682,10 @@ async function uploadFile(row, subCode, paramId, level, file) {
 function getPreviewUrl(fileUrl, fileName) {
   const ext = fileName.split('.').pop().toLowerCase();
   
-  // PDF: Buka lewat Adobe Acrobat Reader Online
+  // PDF: Buka lewat Google Docs Viewer (Gratis, stabil, langsung tampil di browser)
   if (ext === 'pdf') {
     const encodedUrl = encodeURIComponent(fileUrl);
-    return `https://acrobat.adobe.com/link/review?uri=${encodedUrl}`;
+    return `https://docs.google.com/viewer?url=${encodedUrl}`;
   }
   
   // Word, Excel, PowerPoint: Buka lewat Microsoft Office Viewer
@@ -2699,7 +2699,7 @@ function getPreviewUrl(fileUrl, fileName) {
     return fileUrl;
   }
   
-  // Lainnya: Buka langsung
+  // Lainnya: Buka langsung (atau download jika browser tidak bisa)
   return fileUrl;
 }
 
