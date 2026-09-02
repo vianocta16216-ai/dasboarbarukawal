@@ -2681,25 +2681,19 @@ async function uploadFile(row, subCode, paramId, level, file) {
 // Fungsi untuk membuat URL preview berdasarkan jenis file
 function getPreviewUrl(fileUrl, fileName) {
   const ext = fileName.split('.').pop().toLowerCase();
-  
-  // PDF: Buka lewat Google Docs Viewer (Gratis, stabil, langsung tampil di browser)
+
+  // PDF: Langsung buka di tab browser (browser punya viewer PDF sendiri)
   if (ext === 'pdf') {
-    const encodedUrl = encodeURIComponent(fileUrl);
-    return `https://docs.google.com/viewer?url=${encodedUrl}`;
+    return fileUrl; 
   }
-  
-  // Word, Excel, PowerPoint: Buka lewat Microsoft Office Viewer
+
+  // Word, Excel, PowerPoint: Tetap kirim ke Microsoft Office Viewer
   if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
     const encodedUrl = encodeURIComponent(fileUrl);
     return `https://view.officeapps.live.com/op/view.aspx?src=${encodedUrl}`;
   }
-  
-  // Gambar: Buka langsung
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
-    return fileUrl;
-  }
-  
-  // Lainnya: Buka langsung (atau download jika browser tidak bisa)
+
+  // Gambar dan lainnya: Langsung buka
   return fileUrl;
 }
 
