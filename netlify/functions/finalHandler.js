@@ -1,4 +1,3 @@
-// netlify/functions/finalHandler.js
 const { createClient } = require('@supabase/supabase-js');
 const { google } = require('googleapis');
 const { SUBUNSUR_DATA } = require('./subunsur');
@@ -28,7 +27,8 @@ async function getOrCreateFolder(parentId, name) {
   return folder.data.id;
 }
 
-async function uploadFileToDrive({ fileData, fileName, year, opdName, subunsur, paramId, paramLabel, level }) {
+async function uploadFileToDrive(params) {
+  const { fileData, fileName, year, opdName, subunsur, paramId, paramLabel, level } = params;
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 20) throw new Error('File >20MB');
   const yearFolder = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`);
@@ -53,28 +53,12 @@ exports.handler = async (event) => {
   const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers };
 
-  // ===== PENTING: Menerima Body dari POST DAN Query dari GET =====
+  // ===== PENTING: HANYA BACA DARI QUERY STRING, TIDAK MENYENTUH event.body =====
   let params = {};
   try {
-    if (event.body) {
-      let bodyStr = event.body || '';
-      if (event.isBase64Encoded) bodyStr = Buffer.from(bodyStr, 'base64').toString('utf8');
-      try {
-        params = JSON.parse(bodyStr);
-      } catch (e) {
-        const urlParams = new URLSearchParams(bodyStr);
-        params = Object.fromEntries(urlParams);
-      }
-    }
-
-    if (event.queryStringParameters) {
-      params = { ...params, ...event.queryStringParameters };
-    }
-
-    console.log("Diterima di FinalHandler:", JSON.stringify(params));
-
+    params = event.queryStringParameters || {};
   } catch (e) {
-    return { statusCode: 200, headers, body: JSON.stringify({ status: 'error', message: 'Format body harus JSON atau FormData. Error: ' + e.message }) };
+    return res({ status: 'error', message: 'Format query tidak valid' });
   }
 
   const action = params.action || '';
@@ -83,10 +67,9 @@ exports.handler = async (event) => {
   try {
     switch (action) {
       case 'getSubunsurData': return res(SUBUNSUR_DATA);
-
       case 'verifyAccess': return res({ status: params.password === ACCESS_PASSWORD ? 'success' : 'error', message: params.password === ACCESS_PASSWORD ? 'Akses diterima' : 'Password salah' });
       case 'verifyDelete': return res({ status: params.password === DELETE_PASSWORD ? 'success' : 'error', message: params.password === DELETE_PASSWORD ? 'Password hapus benar' : 'Password hapus salah' });
-      case 'getData': { const { data, error } = await supabase.from('opd_data').select('*').eq('year', year); if (error) throw error; return res((data || [])); }
+      case 'getData': { const { data, error } = await supabase.from('opd_data').select('*').eq('year', year); if (error) throw error; const mapped = data.map(r => ({ ...r, qaApip: r.qa_apip || 'Belum' })); return res(mapped); }
       case 'saveData': { const rows = JSON.parse(params.rows); for (const row of rows) { const payload = { id: row.id, opd: row.opd || '', sa: parseFloat(row.sa) || 0, evidence: row.evidence || 'Belum', qa_apip: row.qaApip || 'Belum', mri: parseFloat(row.mri) || 0, iepk: parseFloat(row.iepk) || 0, rtp: row.rtp || 'Belum', status: row.status || 'Belum', subunsurs: row.subunsurs || {}, year }; await supabase.from('opd_data').upsert(payload, { onConflict: 'id' }); } return res({ status: 'success', message: 'Data tersimpan' }); }
       case 'saveField': { const { opdId, field, value } = params; const updateObj = {}; updateObj[field] = value; await supabase.from('opd_data').update(updateObj).eq('id', opdId); return res({ status: 'success', message: 'Field tersimpan' }); }
       case 'deleteOpd': { if (params.opdId === 'all') await supabase.from('opd_data').delete().eq('year', year); else await supabase.from('opd_data').delete().eq('id', params.opdId); return res({ status: 'success' }); }
