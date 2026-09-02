@@ -11,18 +11,16 @@ const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD;
 const DELETE_PASSWORD = process.env.DELETE_PASSWORD;
 const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
-// Validasi environment variables
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  throw new Error('SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY wajib diisi di environment variables');
-}
-if (!GOOGLE_DRIVE_ROOT_FOLDER_ID) {
-  throw new Error('GOOGLE_DRIVE_ROOT_FOLDER_ID wajib diisi di environment variables');
-}
-if (!ACCESS_PASSWORD || !DELETE_PASSWORD) {
-  throw new Error('ACCESS_PASSWORD dan DELETE_PASSWORD wajib diisi di environment variables');
-}
-if (!GOOGLE_SERVICE_ACCOUNT_JSON) {
-  throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON wajib diisi di environment variables');
+// Validasi Environment Variables
+const missingEnv = [];
+if (!SUPABASE_URL) missingEnv.push('SUPABASE_URL');
+if (!SUPABASE_KEY) missingEnv.push('SUPABASE_SERVICE_ROLE_KEY');
+if (!GOOGLE_DRIVE_ROOT_FOLDER_ID) missingEnv.push('GOOGLE_DRIVE_ROOT_FOLDER_ID');
+if (!ACCESS_PASSWORD) missingEnv.push('ACCESS_PASSWORD');
+if (!DELETE_PASSWORD) missingEnv.push('DELETE_PASSWORD');
+if (!GOOGLE_SERVICE_ACCOUNT_JSON) missingEnv.push('GOOGLE_SERVICE_ACCOUNT_JSON');
+if (missingEnv.length > 0) {
+  throw new Error('Environment variables belum diisi: ' + missingEnv.join(', '));
 }
 
 // Inisialisasi Supabase
@@ -30,14 +28,17 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ====== GOOGLE DRIVE ======
 let drive = null;
-
 function getDrive() {
   if (drive) return drive;
-  const auth = new google.auth.GoogleAuth({
-    credentials: JSON.parse(GOOGLE_SERVICE_ACCOUNT_JSON),
-    scopes: ['https://www.googleapis.com/auth/drive'],
-  });
-  drive = google.drive({ version: 'v3', auth });
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: JSON.parse(GOOGLE_SERVICE_ACCOUNT_JSON),
+      scopes: ['https://www.googleapis.com/auth/drive'],
+    });
+    drive = google.drive({ version: 'v3', auth });
+  } catch (e) {
+    throw new Error('Google auth gagal: ' + e.message);
+  }
   return drive;
 }
 
@@ -61,13 +62,8 @@ async function uploadFileToDrive({ fileData, fileName, year, opdName, subunsur, 
   const fileSizeMB = bytes.length / (1024 * 1024);
   if (fileSizeMB > 20) throw new Error('Ukuran file melebihi 20 MB');
 
-  // Root folder tahun
   const yearFolder = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`);
-
-  // Folder OPD
   const opdFolder = await getOrCreateFolder(yearFolder, opdName);
-
-  // Folder unsur (level 1)
   const unsurMap = {
     '1': '1. LINGKUNGAN PENGENDALIAN',
     '2': '2. PENILAIAN RISIKO',
@@ -76,33 +72,23 @@ async function uploadFileToDrive({ fileData, fileName, year, opdName, subunsur, 
     '5': '5. EVALUASI DAN PEMANTAUAN'
   };
   const unsurCode = subunsur.split('.')[0];
-  const unsurName = unsurMap[unsurCode] || `Unsur ${unsurCode}`;
-  const unsurFolder = await getOrCreateFolder(opdFolder, unsurName);
-
-  // Folder subunsur (level 2)
+  const unsurFolder = await getOrCreateFolder(opdFolder, unsurMap[unsurCode] || `Unsur ${unsurCode}`);
   const subUnsurFolder = await getOrCreateFolder(unsurFolder, subunsur);
 
-  // Folder parameter
   let paramName = paramLabel;
   if (paramName.includes(' - ')) paramName = paramName.split(' - ')[1];
   else if (paramName.includes('-')) paramName = paramName.split('-')[1];
   if (!paramName || paramName.trim() === '') paramName = paramId;
   paramName = paramName.trim();
   const paramFolder = await getOrCreateFolder(subUnsurFolder, paramName);
-
-  // Folder level
   const levelFolder = await getOrCreateFolder(paramFolder, `Level ${level}`);
 
-  // Upload file
   const uniqueName = Date.now() + '_' + fileName;
-  const fileMetadata = { name: uniqueName, parents: [levelFolder] };
-  const media = { mimeType: 'application/octet-stream', body: bytes };
   const file = await getDrive().files.create({
-    resource: fileMetadata,
-    media: media,
+    resource: { name: uniqueName, parents: [levelFolder] },
+    media: { mimeType: 'application/octet-stream', body: bytes },
     fields: 'id, webViewLink',
   });
-
   return `https://drive.google.com/file/d/${file.data.id}/view`;
 }
 
@@ -111,7 +97,27 @@ async function deleteFileFromDrive(fileUrl) {
   await getDrive().files.delete({ fileId });
 }
 
-// Daftar field yang diizinkan untuk di-update di saveField
+// ====== HELPER MAPPING NAMA FIELD ======
+// Fungsi ini mengubah format data dari database agar sesuai dengan format frontend
+function mapDatabaseRowToFrontend(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    qaApip: row.qa_apip || row.qaApip || 'Belum', // Ambil dari qa_apip (DB) atau qaApip (jika sudah ada)
+    qa_apip: row.qa_apip || row.qaApip || 'Belum', // Biarkan juga tersedia
+  };
+}
+
+// Fungsi ini mengubah format data dari frontend agar sesuai dengan format database
+function mapFrontendRowToDatabase(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    qa_apip: row.qaApip || row.qa_apip || 'Belum', // Simpan ke qa_apip
+  };
+}
+
+// Daftar field yang diizinkan untuk di-update
 const ALLOWED_FIELDS = ['sa', 'evidence', 'qa_apip', 'qaApip', 'mri', 'iepk', 'rtp', 'status', 'opd', 'subunsurs'];
 
 // ====== HANDLER UTAMA ======
@@ -122,16 +128,22 @@ exports.handler = async (event) => {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   };
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers };
-  }
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers };
 
+  // PARSING BODY YANG TAHAN BANTING (MENGATASI part.body.pipe)
   let params = {};
   try {
-    if (event.body) params = JSON.parse(event.body);
-    else if (event.queryStringParameters) params = event.queryStringParameters;
+    let bodyStr = event.body || '';
+    if (event.isBase64Encoded) {
+      bodyStr = Buffer.from(bodyStr, 'base64').toString('utf8');
+    }
+    if (bodyStr) {
+      params = JSON.parse(bodyStr);
+    } else if (event.queryStringParameters) {
+      params = event.queryStringParameters;
+    }
   } catch (e) {
-    return jsonRes({ status: 'error', message: 'Body tidak valid' }, headers);
+    return jsonRes({ status: 'error', message: 'Format body tidak valid' }, headers);
   }
 
   const action = params.action || '';
@@ -148,28 +160,29 @@ exports.handler = async (event) => {
       case 'getData': {
         const { data, error } = await supabase.from('opd_data').select('*').eq('year', year);
         if (error) throw error;
-        return jsonRes(data || [], headers);
+        // MAPPING: qa_apip -> qaApip agar frontend membaca dengan benar
+        const mappedData = (data || []).map(mapDatabaseRowToFrontend);
+        return jsonRes(mappedData, headers);
       }
 
       case 'saveData': {
         const rows = JSON.parse(params.rows);
         if (!Array.isArray(rows)) throw new Error('Format rows tidak valid');
-
-        // Menggunakan UPSERT untuk insert/update
         for (const row of rows) {
-          const payload = {
+          // MAPPING: qaApip -> qa_apip agar database menyimpan dengan benar
+          const payload = mapFrontendRowToDatabase({
             id: row.id,
             opd: row.opd || '',
             sa: parseFloat(row.sa) || 0,
             evidence: row.evidence || 'Belum',
-            qa_apip: row.qaApip || 'Belum',
+            qa_apip: row.qaApip || row.qa_apip || 'Belum',
             mri: parseFloat(row.mri) || 0,
             iepk: parseFloat(row.iepk) || 0,
             rtp: row.rtp || 'Belum',
             status: row.status || 'Belum',
             subunsurs: row.subunsurs || {},
             year: year
-          };
+          });
           const { error } = await supabase.from('opd_data').upsert(payload, { onConflict: 'id' });
           if (error) throw error;
         }
@@ -179,14 +192,18 @@ exports.handler = async (event) => {
       case 'saveField': {
         const { opdId, field, value } = params;
         if (!opdId || !field) return jsonRes({ status: 'error', message: 'Parameter opdId dan field wajib diisi' }, headers);
-        
-        // Validasi field yang diizinkan untuk mencegah manipulasi
-        if (!ALLOWED_FIELDS.includes(field)) {
-          return jsonRes({ status: 'error', message: `Field '${field}' tidak diizinkan untuk diubah` }, headers);
-        }
+        if (!ALLOWED_FIELDS.includes(field)) return jsonRes({ status: 'error', message: `Field '${field}' tidak diizinkan` }, headers);
+
+        // MAPPING: qaApip -> qa_apip (dan sebaliknya)
+        const fieldMap = {
+          'qaApip': 'qa_apip',
+          'qa_apip': 'qa_apip'
+        };
+        const dbField = fieldMap[field] || field;
 
         const updateObj = {};
-        updateObj[field] = value;
+        updateObj[dbField] = value;
+
         const { error } = await supabase.from('opd_data').update(updateObj).eq('id', opdId);
         if (error) throw error;
         return jsonRes({ status: 'success', message: 'Field berhasil disimpan' }, headers);
@@ -195,11 +212,8 @@ exports.handler = async (event) => {
       case 'deleteOpd': {
         const { opdId } = params;
         if (!opdId) return jsonRes({ status: 'error', message: 'Parameter opdId wajib diisi' }, headers);
-        if (opdId === 'all') {
-          await supabase.from('opd_data').delete().eq('year', year);
-        } else {
-          await supabase.from('opd_data').delete().eq('id', opdId);
-        }
+        if (opdId === 'all') await supabase.from('opd_data').delete().eq('year', year);
+        else await supabase.from('opd_data').delete().eq('id', opdId);
         return jsonRes({ status: 'success', message: 'OPD berhasil dihapus' }, headers);
       }
 
@@ -299,15 +313,12 @@ exports.handler = async (event) => {
           q: `'${backupFolder}' in parents and name='${fileName}' and trashed=false`,
           fields: 'files(id)',
         });
-        if (res.data.files.length > 0) {
-          await getDrive().files.delete({ fileId: res.data.files[0].id });
-        }
+        if (res.data.files.length > 0) await getDrive().files.delete({ fileId: res.data.files[0].id });
         return jsonRes({ status: 'success', message: 'Backup dihapus' }, headers);
       }
 
-      case 'getSubunsurData': {
+      case 'getSubunsurData':
         return jsonRes(SUBUNSUR_DATA, headers);
-      }
 
       default:
         return jsonRes({ status: 'error', message: `Aksi '${action}' tidak dikenal` }, headers);
@@ -319,9 +330,5 @@ exports.handler = async (event) => {
 };
 
 function jsonRes(obj, headers) {
-  return {
-    statusCode: 200,
-    headers: headers,
-    body: JSON.stringify(obj),
-  };
+  return { statusCode: 200, headers, body: JSON.stringify(obj) };
 }
