@@ -2652,7 +2652,7 @@ async function uploadFile(row, subCode, paramId, level, file) {
   const reader = new FileReader();
   return new Promise((resolve, reject) => {
     reader.onload = async () => {
-      const base64 = reader.result.split(',')[1]; // Ambil base64 saja
+      const base64 = reader.result.split(',')[1];
       const paramObj = SUBUNSUR_DATA[subCode].params.find(p => p.id === paramId);
       const paramLabel = subCode + ' - ' + (paramObj ? paramObj.desc : paramId);
 
@@ -2676,7 +2676,6 @@ async function uploadFile(row, subCode, paramId, level, file) {
     reader.readAsDataURL(file);
   });
 }
-
 function renderFileList(row, subCode, paramId, level) {
   const rowEl = document.querySelector(`.evid-row[data-sub="${subCode}"][data-param="${paramId}"][data-level="${level}"]`);
   if (!rowEl) return;
