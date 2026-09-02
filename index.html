@@ -1852,16 +1852,18 @@ let originalRows = [];
 // ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
 function callServer(action, params = {}) {
   const functionUrl = '/.netlify/functions/finalHandler';
-  // Gabungkan semua params ke query string - PASTIKAN TIDAK ADA BODY
-  const query = new URLSearchParams({ action, ...params }).toString();
-  return fetch(`${functionUrl}?${query}`, { method: 'GET' })
-    .then(response => response.text())
-    .then(text => {
-      let data;
-      try { data = JSON.parse(text); } catch (e) { throw new Error('Server error: ' + text.substring(0, 200)); }
-      if (data && data.status === 'error') throw new Error(data.message);
-      return data;
-    });
+  return fetch(functionUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...params })
+  })
+  .then(response => response.text())
+  .then(text => {
+    let data;
+    try { data = JSON.parse(text); } catch (e) { throw new Error('Server error: ' + text.substring(0, 200)); }
+    if (data && data.status === 'error') throw new Error(data.message);
+    return data;
+  });
 }
 // ====== VERIFIKASI PASSWORD ======
 async function verifyAccess(password) {
@@ -2638,8 +2640,7 @@ async function openEditModal(id) {
 // ====== UPLOAD FILE ======
 async function uploadFile(row, subCode, paramId, level, file) {
   if (!file) return;
-  // Batasi 5MB agar query string tidak terlalu panjang (jika file lebih besar, gunakan Supabase Storage)
-  if (file.size > 5 * 1024 * 1024) throw new Error('File terlalu besar! Maks 5MB untuk stabilitas.');
+  if (file.size > 10 * 1024 * 1024) throw new Error('File terlalu besar! Maks 10MB');
   const reader = new FileReader();
   return new Promise((resolve, reject) => {
     reader.onload = async () => {
@@ -2659,9 +2660,7 @@ async function uploadFile(row, subCode, paramId, level, file) {
           fileData: base64
         });
         resolve(result);
-      } catch (err) {
-        reject(err);
-      }
+      } catch (err) { reject(err); }
     };
     reader.readAsDataURL(file);
   });
