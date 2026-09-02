@@ -1857,14 +1857,20 @@ function callServer(action, params = {}) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  }).then(async response => {
-    const text = await response.text();
-    let data;
-    try { data = JSON.parse(text); }
-    catch (e) { throw new Error('Server error (non-JSON): ' + text.substring(0, 200)); }
-    if (data && data.status === 'error') throw new Error(data.message || 'Server error');
-    return data;
-  }).catch(error => { throw error; });
+  })
+    .then(async (response) => {
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        // Jika bukan JSON, berarti Netlify error
+        throw new Error('Server error: ' + text.substring(0, 200));
+      }
+      if (data && data.status === 'error') throw new Error(data.message || 'Server error');
+      return data;
+    })
+    .catch(error => { throw error; });
 }
 // ====== VERIFIKASI PASSWORD ======
 async function verifyAccess(password) {
@@ -2641,7 +2647,7 @@ async function openEditModal(id) {
 // ====== UPLOAD FILE ======
 async function uploadFile(row, subCode, paramId, level, file) {
   if (!file) return;
-  if (file.size > 10 * 1024 * 1024) throw new Error('File terlalu besar!');
+  if (file.size > 10 * 1024 * 1024) throw new Error('File terlalu besar! Maks 10MB');
   const reader = new FileReader();
   return new Promise((resolve, reject) => {
     reader.onload = async () => {
@@ -2649,9 +2655,21 @@ async function uploadFile(row, subCode, paramId, level, file) {
       const paramObj = SUBUNSUR_DATA[subCode].params.find(p => p.id === paramId);
       const paramLabel = subCode + ' - ' + (paramObj ? paramObj.desc : paramId);
       try {
-        const result = await callServer('uploadFile', { opdId: row.id, opdName: row.opd, subunsur: subCode, paramId, paramLabel, level, year: currentYear, fileName: file.name, fileData: base64 });
+        const result = await callServer('uploadFile', {
+          opdId: row.id,
+          opdName: row.opd,
+          subunsur: subCode,
+          paramId,
+          paramLabel,
+          level,
+          year: currentYear,
+          fileName: file.name,
+          fileData: base64
+        });
         resolve(result);
-      } catch (err) { reject(err); }
+      } catch (err) {
+        reject(err);
+      }
     };
     reader.readAsDataURL(file);
   });
