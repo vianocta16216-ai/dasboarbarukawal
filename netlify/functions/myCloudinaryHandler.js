@@ -1,4 +1,4 @@
-// VERSION 8 - CLOUDINARY (RAW PDF, FIX ERROR 401)
+// VERSION 9 - FINAL FIX (RAW PDF, HILANGKAN .pdf.pdf)
 const { createClient } = require('@supabase/supabase-js');
 const cloudinary = require('cloudinary').v2;
 const { SUBUNSUR_DATA } = require('./subunsur');
@@ -29,20 +29,19 @@ async function uploadFileToCloudinary(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // Folder tetap sesuai permintaan
+  // Folder tetap sesuai permintaan Anda (tidak berubah)
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s]/g, '').substring(0, 50) || 'OPD';
   const folder = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}`;
 
-  // Nama unik pendek (tanpa ekstensi ganda)
+  // ====== PERBAIKAN PENTING: HAPUS EKSTENSI (Cegah .pdf.pdf) ======
   const publicId = Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
 
-  // ====== PERBAIKAN UTAMA: UBAH KE 'raw' ======
   const result = await new Promise((resolve, reject) => {
     cloudinary.uploader.upload_stream(
       { 
-        resource_type: 'raw', // <-- RAW membuat URL menjadi /raw/upload/ (hilang 401)
+        resource_type: 'auto', // auto membuat URL valid untuk semua jenis dokumen
         folder: folder, 
         public_id: publicId 
       },
@@ -53,8 +52,7 @@ async function uploadFileToCloudinary(params) {
     ).end(bytes);
   });
 
-  // ====== HAPUS ?fl_attachment=false ======
-  // Karena file RAW sudah otomatis dibuka langsung oleh browser (bukan di-download).
+  // Kembalikan URL asli tanpa tambahan apa pun agar viewer eksternal bisa membacanya
   return result.secure_url;
 }
 
@@ -130,12 +128,10 @@ exports.handler = async (event) => {
       case 'deleteFile': {
         const cleanUrl = params.fileUrl.split('?')[0];
         const parts = cleanUrl.split('/');
-        const rawIndex = parts.indexOf('raw');
         const uploadIndex = parts.indexOf('upload');
-        const idx = rawIndex !== -1 ? rawIndex : uploadIndex;
-        if (idx !== -1 && parts.length > idx + 1) {
-          const publicId = parts.slice(idx + 1).join('/');
-          await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
+        if (uploadIndex !== -1 && parts.length > uploadIndex + 1) {
+          const publicId = parts.slice(uploadIndex + 1).join('/');
+          await cloudinary.uploader.destroy(publicId);
         }
         return res({ status: 'success' });
       }
