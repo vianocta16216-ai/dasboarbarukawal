@@ -1,4 +1,4 @@
-// VERSION 2 CLOUDINARY - myCloudinaryHandler.js
+// VERSION 3 - CLOUDINARY (FIX PUBLIC_ID, PDF & AUTO-SAVE)
 const { createClient } = require('@supabase/supabase-js');
 const cloudinary = require('cloudinary').v2;
 const { SUBUNSUR_DATA } = require('./subunsur');
@@ -16,7 +16,6 @@ cloudinary.config({
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Mapping Unsur (1-5) sesuai urutan Anda
 const UNSUR_MAP = {
   '1': '1. LINGKUNGAN PENGENDALIAN',
   '2': '2. PENILAIAN RISIKO',
@@ -30,43 +29,38 @@ async function uploadFileToCloudinary(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // ====== MEMBUAT NAMA JUDUL YANG LENGKAP ======
-  // 1. Ambil angka Unsur dari subunsur (misal '1.1' -> '1')
+  // ====== PERBAIKAN 1: PERSINGKAT NAMA FOLDER ======
   const unsurKey = subunsur.split('.')[0];
-  const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
+  const unsurName = UNSUR_MAP[unsurKey] || `U${unsurKey}`;
+  const safeOpd = opdName.replace(/[^a-zA-Z0-9\s]/g, '').substring(0, 30) || 'OPD';
+  const safeSubUnsur = subunsur; // menggunakan 1.1 (mencegah error panjang)
+  
+  // Gabungkan semua menjadi nama folder yang jauh lebih pendek
+  // Format: kawal_spip/2026/OPD/1/1.1/1.1.1/Level_3
+  const folder = `kawal_spip/${year}/${safeOpd}/${unsurKey}/${safeSubUnsur}/${paramId}/Level_${level}`;
 
-  // 2. Ambil nama Sub-unsur dari data (misal '1.1' -> '1.1 Penegakan Integritas dan Nilai Etika')
-  const subUnsurData = SUBUNSUR_DATA[subunsur];
-  const subUnsurName = subUnsurData ? subUnsurData.label : subunsur;
-
-  // 3. Ambil nama Parameter dari data (misal '1.1.1' -> 'K/L/D menegakkan integritas...')
-  let paramDesc = paramId;
-  if (subUnsurData && subUnsurData.params) {
-    const paramObj = subUnsurData.params.find(p => p.id === paramId);
-    if (paramObj) paramDesc = paramObj.desc;
-  }
-
-  // ====== MEMBERSIHKAN NAMA (hapus karakter aneh / : ? dll) ======
-  const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 50);
-  const safeSubUnsur = subUnsurName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80);
-  const safeParam = paramDesc.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 100);
-
-  // ====== SUSUNAN FOLDER SESUAI PERMINTAAN ======
-  // kawal_spip/Tahun/OPD/UNSUR/SUB-UNSUR/PARAMETER/Level_X
-  const folder = `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level_${level}`;
-  const publicId = Date.now() + '_' + fileName;
+  // ====== PERBAIKAN 2: PERSINGKAT NAMA FILE (HINDARI "TOO LONG") ======
+  // Ambil ekstensi file .pdf / .jpg (maks 10 karakter)
+  const ext = fileName.split('.').pop().substring(0, 10);
+  // Gunakan timestamp pendek sebagai nama unik (bukan nama file panjang)
+  const publicId = Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8) + '.' + ext;
 
   const result = await new Promise((resolve, reject) => {
     cloudinary.uploader.upload_stream(
       { resource_type: 'auto', folder: folder, public_id: publicId },
       (error, uploadResult) => {
-        if (error) reject(error);
+        if (error) reject(new Error(error.message));
         else resolve(uploadResult);
       }
     ).end(bytes);
   });
 
-  return result.secure_url;
+  // ====== PERBAIKAN 3: TAMBAHKAN fl_attachment=false AGAR PDF BISA DIBUKA ======
+  // Jika URL sudah mengandung tanda ?, tambahkan &, jika belum, tambahkan ?
+  const separator = result.secure_url.includes('?') ? '&' : '?';
+  const url = result.secure_url + separator + 'fl_attachment=false';
+
+  return url;
 }
 
 exports.handler = async (event) => {
@@ -139,7 +133,11 @@ exports.handler = async (event) => {
         return res(fileUrl);
       }
       case 'deleteFile': {
-        const publicId = params.fileUrl.split('/').slice(-2).join('/').replace(/\.[^.]+$/, '');
+        // Dapatkan URL asli (hapus parameter tambahan) lalu ekstrak public_id
+        const cleanUrl = params.fileUrl.split('?')[0];
+        // Public ID adalah 2 segmen terakhir dari URL tanpa ekstensi
+        const parts = cleanUrl.split('/');
+        const publicId = parts.slice(-2).join('/').replace(/\.[^.]+$/, '');
         await cloudinary.uploader.destroy(publicId);
         return res({ status: 'success' });
       }
