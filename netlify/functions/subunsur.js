@@ -583,3 +583,4 @@ const SUBUNSUR_DATA = {
     ]
   }
 };
+module.exports = { SUBUNSUR_DATA };
