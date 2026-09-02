@@ -1864,7 +1864,6 @@ function callServer(action, params = {}) {
       try {
         data = JSON.parse(text);
       } catch (e) {
-        // Jika bukan JSON, tampilkan teks mentah untuk debugging
         throw new Error('Server mengembalikan respons non-JSON: ' + text.substring(0, 200));
       }
       if (data && data.status === 'error') {
