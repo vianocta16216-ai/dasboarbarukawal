@@ -11,6 +11,20 @@ const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD;
 const DELETE_PASSWORD = process.env.DELETE_PASSWORD;
 const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
+// Validasi environment variables
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  throw new Error('SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY wajib diisi di environment variables');
+}
+if (!GOOGLE_DRIVE_ROOT_FOLDER_ID) {
+  throw new Error('GOOGLE_DRIVE_ROOT_FOLDER_ID wajib diisi di environment variables');
+}
+if (!ACCESS_PASSWORD || !DELETE_PASSWORD) {
+  throw new Error('ACCESS_PASSWORD dan DELETE_PASSWORD wajib diisi di environment variables');
+}
+if (!GOOGLE_SERVICE_ACCOUNT_JSON) {
+  throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON wajib diisi di environment variables');
+}
+
 // Inisialisasi Supabase
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -97,6 +111,9 @@ async function deleteFileFromDrive(fileUrl) {
   await getDrive().files.delete({ fileId });
 }
 
+// Daftar field yang diizinkan untuk di-update di saveField
+const ALLOWED_FIELDS = ['sa', 'evidence', 'qa_apip', 'qaApip', 'mri', 'iepk', 'rtp', 'status', 'opd', 'subunsurs'];
+
 // ====== HANDLER UTAMA ======
 exports.handler = async (event) => {
   const headers = {
@@ -114,7 +131,7 @@ exports.handler = async (event) => {
     if (event.body) params = JSON.parse(event.body);
     else if (event.queryStringParameters) params = event.queryStringParameters;
   } catch (e) {
-    params = {};
+    return jsonRes({ status: 'error', message: 'Body tidak valid' }, headers);
   }
 
   const action = params.action || '';
@@ -136,7 +153,9 @@ exports.handler = async (event) => {
 
       case 'saveData': {
         const rows = JSON.parse(params.rows);
-        // UPSERT per row
+        if (!Array.isArray(rows)) throw new Error('Format rows tidak valid');
+
+        // Menggunakan UPSERT untuk insert/update
         for (const row of rows) {
           const payload = {
             id: row.id,
@@ -159,7 +178,13 @@ exports.handler = async (event) => {
 
       case 'saveField': {
         const { opdId, field, value } = params;
-        if (!opdId || !field) return jsonRes({ status: 'error', message: 'Parameter tidak lengkap' }, headers);
+        if (!opdId || !field) return jsonRes({ status: 'error', message: 'Parameter opdId dan field wajib diisi' }, headers);
+        
+        // Validasi field yang diizinkan untuk mencegah manipulasi
+        if (!ALLOWED_FIELDS.includes(field)) {
+          return jsonRes({ status: 'error', message: `Field '${field}' tidak diizinkan untuk diubah` }, headers);
+        }
+
         const updateObj = {};
         updateObj[field] = value;
         const { error } = await supabase.from('opd_data').update(updateObj).eq('id', opdId);
@@ -169,6 +194,7 @@ exports.handler = async (event) => {
 
       case 'deleteOpd': {
         const { opdId } = params;
+        if (!opdId) return jsonRes({ status: 'error', message: 'Parameter opdId wajib diisi' }, headers);
         if (opdId === 'all') {
           await supabase.from('opd_data').delete().eq('year', year);
         } else {
@@ -207,6 +233,7 @@ exports.handler = async (event) => {
       }
 
       case 'deleteFile': {
+        if (!params.fileUrl) return jsonRes({ status: 'error', message: 'Parameter fileUrl wajib diisi' }, headers);
         await deleteFileFromDrive(params.fileUrl);
         return jsonRes({ status: 'success', message: 'File dihapus' }, headers);
       }
@@ -244,6 +271,7 @@ exports.handler = async (event) => {
 
       case 'restoreBackup': {
         const { fileName } = params;
+        if (!fileName) return jsonRes({ status: 'error', message: 'Parameter fileName wajib diisi' }, headers);
         const folderId = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`);
         const backupFolder = await getOrCreateFolder(folderId, 'backup');
         const res = await getDrive().files.list({
@@ -264,6 +292,7 @@ exports.handler = async (event) => {
 
       case 'deleteBackup': {
         const { fileName } = params;
+        if (!fileName) return jsonRes({ status: 'error', message: 'Parameter fileName wajib diisi' }, headers);
         const folderId = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`);
         const backupFolder = await getOrCreateFolder(folderId, 'backup');
         const res = await getDrive().files.list({
@@ -281,11 +310,11 @@ exports.handler = async (event) => {
       }
 
       default:
-        return jsonRes({ status: 'error', message: 'Aksi tidak dikenal' }, headers);
+        return jsonRes({ status: 'error', message: `Aksi '${action}' tidak dikenal` }, headers);
     }
   } catch (err) {
-    console.error(err);
-    return jsonRes({ status: 'error', message: err.message }, headers);
+    console.error('Error di Netlify Function:', err);
+    return jsonRes({ status: 'error', message: 'Terjadi kesalahan: ' + err.message }, headers);
   }
 };
 
