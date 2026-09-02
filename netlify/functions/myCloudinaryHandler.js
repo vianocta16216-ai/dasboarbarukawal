@@ -35,18 +35,26 @@ async function uploadFileToCloudinary(params) {
   const folder = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}`;
 
   // Nama pendek tanpa ekstensi .pdf lagi agar tidak jadi .pdf.pdf
+   // Di dalam fungsi uploadFileToCloudinary
   const publicId = Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
 
-  // Ganti raw ke auto, agar Cloudinary menangani tipe file dengan benar
   const result = await new Promise((resolve, reject) => {
     cloudinary.uploader.upload_stream(
-      { resource_type: 'auto', folder: folder, public_id: publicId },
+      { 
+        resource_type: 'auto', // Ganti raw ke auto (agar tipe file benar)
+        folder: folder, 
+        public_id: publicId // TANPA ekstensi .pdf
+      },
       (error, uploadResult) => {
         if (error) reject(error);
         else resolve(uploadResult);
       }
     ).end(bytes);
   });
+
+  // Tambahkan ini agar browser membuka PDF, bukan mendownloadnya
+  const separator = result.secure_url.includes('?') ? '&' : '?';
+  return result.secure_url + separator + 'fl_attachment=false';
 
   // PENTING: Tambahkan ?fl_attachment=false agar file tidak di-download, tapi dibuka di browser
   const separator = result.secure_url.includes('?') ? '&' : '?';
