@@ -2680,19 +2680,18 @@ async function uploadFile(row, subCode, paramId, level, file) {
 // Fungsi untuk membuat URL preview berdasarkan jenis file
 function getPreviewUrl(fileUrl, fileName) {
   const ext = fileName.split('.').pop().toLowerCase();
-  
-  // PDF: Langsung buka di browser (RAW sudah bisa dibuka tanpa error 401)
+
+  // PDF: Gunakan Mozilla PDF.js Viewer (Anti Gagal, Anti Download, Tanpa Google)
   if (ext === 'pdf') {
-    return fileUrl;
+    return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(fileUrl)}`;
   }
-  
-  // Word, Excel, PowerPoint: Buka via Google Docs Viewer
+
+  // Word, Excel, PowerPoint: Gunakan Microsoft Office Viewer (Tanpa Google)
   if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
-    const encodedUrl = encodeURIComponent(fileUrl);
-    return `https://docs.google.com/viewer?url=${encodedUrl}`;
+    return `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(fileUrl)}`;
   }
-  
-  // Gambar dan lainnya: Langsung buka
+
+  // Gambar dan lainnya: Langsung buka di browser
   return fileUrl;
 }
 
