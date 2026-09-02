@@ -2677,30 +2677,60 @@ async function uploadFile(row, subCode, paramId, level, file) {
   });
 }
 
+// Fungsi untuk membuat URL preview berdasarkan jenis file
+function getPreviewUrl(fileUrl, fileName) {
+  const ext = fileName.split('.').pop().toLowerCase();
+  
+  // PDF: Buka langsung di browser
+  if (ext === 'pdf') {
+    return fileUrl + (fileUrl.includes('?') ? '&' : '?') + 'fl_attachment=false';
+  }
+  
+  // Word & Excel & PPT: Gunakan Microsoft Office Viewer (Gratis, preview langsung)
+  if (ext === 'docx' || ext === 'doc' || ext === 'xlsx' || ext === 'xls' || ext === 'pptx' || ext === 'ppt') {
+    const encodedUrl = encodeURIComponent(fileUrl);
+    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodedUrl}`;
+  }
+  
+  // Gambar: Buka langsung
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+    return fileUrl;
+  }
+  
+  // Lainnya: Buka langsung (atau download jika browser tidak bisa)
+  return fileUrl;
+}
+
 function renderFileList(row, subCode, paramId, level) {
   const rowEl = document.querySelector(`.evid-row[data-sub="${subCode}"][data-param="${paramId}"][data-level="${level}"]`);
   if (!rowEl) return;
+  
   const fileListEl = rowEl.querySelector('.file-list');
   if (!fileListEl) return;
+  
   const files = (row.subunsurs[subCode] && row.subunsurs[subCode][paramId] && row.subunsurs[subCode][paramId]['files' + level]) || [];
   fileListEl.innerHTML = '';
+  
   if (files.length === 0) {
     fileListEl.innerHTML = '<span style="font-size:12px;color:#64748b;">Belum ada file.</span>';
     return;
   }
+  
   files.forEach((fileObj, index) => {
     const fileUrl = typeof fileObj === 'string' ? fileObj : fileObj.url;
     const fileName = typeof fileObj === 'string' ? `File ${index + 1}` : (fileObj.name || `File ${index + 1}`);
     
-    // TAMBAHAN: Pastikan URL PDF bisa dibuka langsung
-    const displayUrl = fileUrl.includes('?') ? fileUrl + '&fl_attachment=false' : fileUrl + '?fl_attachment=false';
+    // Dapatkan URL preview
+    const previewUrl = getPreviewUrl(fileUrl, fileName);
     
     const div = document.createElement('div');
     div.style.cssText = 'display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px; border-radius:6px; margin-top:6px;';
+    
     div.innerHTML = `
-      <a href="${displayUrl}" target="_blank" class="file-link" style="flex-grow:1; margin:0;">📎 ${fileName}</a>
+      <a href="${previewUrl}" target="_blank" class="file-link" style="flex-grow:1; margin:0;">📎 ${fileName}</a>
       <button type="button" onclick="removeUploadedFile('${row.id}', '${subCode}', '${paramId}', ${level}, '${fileUrl}')" style="background:#fee2e2; color:#dc2626; border:none; border-radius:6px; padding:4px 8px; cursor:pointer; font-size:12px;">🗑️ Hapus</button>
     `;
+    
     fileListEl.appendChild(div);
   });
 }
