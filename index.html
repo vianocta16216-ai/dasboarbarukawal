@@ -2681,17 +2681,17 @@ async function uploadFile(row, subCode, paramId, level, file) {
 function getPreviewUrl(fileUrl, fileName) {
   const ext = fileName.split('.').pop().toLowerCase();
 
-  // PDF: Gunakan Mozilla PDF.js Viewer (Anti Gagal, Anti Download, Tanpa Google)
+  // PDF, Word, Excel, PowerPoint: Buka langsung di browser (untuk PDF) atau Office Viewer (untuk Office)
   if (ext === 'pdf') {
-    return `https://mozilla.github.io/pdf.js/web/viewer.html?file=${encodeURIComponent(fileUrl)}`;
+    return fileUrl; // Browser punya viewer PDF bawaan yang paling stabil, tidak akan error jika sudah /raw/
   }
 
-  // Word, Excel, PowerPoint: Gunakan Microsoft Office Viewer (Tanpa Google)
   if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
-    return `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(fileUrl)}`;
+    const encodedUrl = encodeURIComponent(fileUrl);
+    return `https://view.officeapps.live.com/op/view.aspx?src=${encodedUrl}`;
   }
 
-  // Gambar dan lainnya: Langsung buka di browser
+  // Gambar dan lainnya
   return fileUrl;
 }
 
