@@ -1,4 +1,4 @@
-// VERSION 5 - CLOUDINARY (RAW UNTUK DOKUMEN)
+// VERSION 5 - CLOUDINARY (RAW) - PASTIKAN INI YANG DI DEPLOY
 const { createClient } = require('@supabase/supabase-js');
 const cloudinary = require('cloudinary').v2;
 const { SUBUNSUR_DATA } = require('./subunsur');
@@ -29,20 +29,19 @@ async function uploadFileToCloudinary(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // Struktur folder SESUAI PERMINTAAN (1. LINGKUNGAN, 1.1, dll) - TIDAK DIUBAH
+  // Folder tetap sesuai permintaan
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s]/g, '').substring(0, 50) || 'OPD';
   const folder = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}`;
 
-  // Nama file pendek agar tidak error "too long"
+  // ====== PENTING: TANPA EKSTENSI DI PUBLIC_ID (Cegah .pdf.pdf) ======
   const publicId = Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
 
-  // ====== PERBAIKAN UTAMA: GANTI RESOURCE_TYPE KE 'raw' ======
   const result = await new Promise((resolve, reject) => {
     cloudinary.uploader.upload_stream(
       { 
-        resource_type: 'raw', // <-- PENTING: RAW agar dokumen (PDF, Word) bisa dibuka langsung di browser
+        resource_type: 'raw', // RAW agar bisa dibuka browser
         folder: folder, 
         public_id: publicId 
       },
@@ -53,8 +52,6 @@ async function uploadFileToCloudinary(params) {
     ).end(bytes);
   });
 
-  // ====== HAPUS penambahan fl_attachment=false ======
-  // Karena file RAW sudah otomatis bisa dibuka di browser
   return result.secure_url;
 }
 
@@ -128,10 +125,9 @@ exports.handler = async (event) => {
         return res(fileUrl);
       }
       case 'deleteFile': {
-        // Untuk RAW: public_id adalah bagian URL setelah 'upload' tanpa ekstensi
+        // Ekstraksi public_id dari URL dengan format /raw/upload/...
         const cleanUrl = params.fileUrl.split('?')[0];
         const parts = cleanUrl.split('/');
-        // Cari posisi 'raw' atau 'upload'
         const rawIndex = parts.indexOf('raw');
         const uploadIndex = parts.indexOf('upload');
         const idx = rawIndex !== -1 ? rawIndex : uploadIndex;
