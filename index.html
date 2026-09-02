@@ -7,11 +7,13 @@
 <link rel="icon" type="image/png" href="/favicon.png">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-/* ... (Seluruh CSS yang sama seperti sebelumnya, biarkan apa adanya) ... */
+/* ====== SEMUA CSS SAMA SEPERTI SEBELUMNYA ====== */
+/* (Tidak perlu diubah, salin dari file sebelumnya) */
 </style>
 </head>
 <body>
-<!-- ... (Seluruh HTML yang sama seperti sebelumnya, biarkan apa adanya) ... -->
+<!-- ====== SEMUA HTML SAMA SEPERTI SEBELUMNYA ====== -->
+<!-- (Tidak perlu diubah, salin dari file sebelumnya) -->
 
 <script>
 // ====== STATUS GLOBAL ======
@@ -31,6 +33,12 @@ let pendingSave = false;
 let chartInstance = null;
 let originalRows = [];
 
+// ====== HELPER AMAN UNTUK ADD EVENT LISTENER ======
+function addEvent(id, event, fn) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener(event, fn);
+}
+
 // ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
 function callServer(action, params = {}) {
   const functionUrl = '/.netlify/functions/proxy';
@@ -43,20 +51,12 @@ function callServer(action, params = {}) {
     .then(async (response) => {
       const text = await response.text();
       let data;
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
-        throw new Error('Server mengembalikan respons non-JSON: ' + text.substring(0, 200));
-      }
-      if (data && data.status === 'error') {
-        throw new Error(data.message || 'Terjadi kesalahan pada server');
-      }
+      try { data = JSON.parse(text); }
+      catch (e) { throw new Error('Server error (non-JSON): ' + text.substring(0, 200)); }
+      if (data && data.status === 'error') throw new Error(data.message || 'Server error');
       return data;
     })
-    .catch((error) => {
-      console.error('Server error:', error);
-      throw error;
-    });
+    .catch(error => { console.error('Server error:', error); throw error; });
 }
 
 // ====== VERIFIKASI PASSWORD ======
@@ -64,20 +64,14 @@ async function verifyAccess(password) {
   try {
     const result = await callServer('verifyAccess', { password });
     return result.status === 'success';
-  } catch (e) {
-    console.error(e);
-    return false;
-  }
+  } catch (e) { console.error(e); return false; }
 }
 
 async function verifyDelete(password) {
   try {
     const result = await callServer('verifyDelete', { password });
     return result.status === 'success';
-  } catch (e) {
-    console.error(e);
-    return false;
-  }
+  } catch (e) { console.error(e); return false; }
 }
 
 // ====== LOAD TAHUN ======
@@ -100,9 +94,7 @@ async function loadYears() {
     } else {
       select.value = currentYear;
     }
-  } catch (e) {
-    console.error('Gagal memuat tahun:', e);
-  }
+  } catch (e) { console.error('Gagal memuat tahun:', e); }
 }
 
 // ====== LOAD DATA ======
@@ -112,7 +104,7 @@ async function loadData() {
   const year = document.getElementById('yearSelect').value;
   currentYear = year;
   document.getElementById('currentYearLabel').textContent = year;
-  
+
   try {
     const data = await callServer('getData', { year });
     rows = [];
@@ -126,18 +118,14 @@ async function loadData() {
         mri: r.mri || 0,
         iepk: r.iepk || 0
       }));
-    } else {
-      console.warn('Data bukan array, rows diset kosong', data);
     }
     originalRows = JSON.parse(JSON.stringify(rows));
-    
     status.textContent = '✅ Data dimuat';
     setTimeout(() => { status.textContent = ''; }, 1500);
     render();
     updateKpisLocal();
   } catch (e) {
     status.textContent = '⚠️ ' + e.message;
-    console.error(e);
     rows = [];
     render();
     updateKpisLocal();
@@ -170,7 +158,6 @@ function updateKpisLocal() {
   const avgMRI = mriValues.length ? (mriValues.reduce((a,b) => a+b, 0) / mriValues.length) : 0;
   const avgIEPK = iepkValues.length ? (iepkValues.reduce((a,b) => a+b, 0) / iepkValues.length) : 0;
   const round2 = (num) => Math.round(num * 100) / 100;
-
   const kpi = {
     rataRata: total ? round2(totalAvg / total) : 0,
     opdLevel3: pct(selesaiLevel, total),
@@ -228,36 +215,19 @@ function applyKpis(kpi) {
 }
 
 // ====== SAVE DATA ======
-function debounceSave() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveData, 800);
-}
-
-function syncData() {
-  debounceSave();
-}
+function debounceSave() { clearTimeout(saveTimer); saveTimer = setTimeout(saveData, 800); }
+function syncData() { debounceSave(); }
 
 async function saveData() {
-  if (isSaving) {
-    pendingSave = true;
-    return;
-  }
+  if (isSaving) { pendingSave = true; return; }
   isSaving = true;
   const status = document.getElementById('saveStatus');
   status.textContent = '⏳ Menyimpan...';
   const year = currentYear;
-
   try {
-    if (!Array.isArray(rows)) {
-      console.error('rows bukan array, diset kosong', rows);
-      rows = [];
-    }
-
+    if (!Array.isArray(rows)) rows = [];
     const result = await callServer('saveData', { rows: JSON.stringify(rows), year });
-    if (result.status === 'error') {
-      status.textContent = '⚠️ ' + result.message;
-      throw new Error(result.message);
-    }
+    if (result.status === 'error') throw new Error(result.message);
     status.textContent = '✅ Data tersimpan';
     originalRows = JSON.parse(JSON.stringify(rows));
     updateKpisLocal();
@@ -266,10 +236,7 @@ async function saveData() {
     status.textContent = '⚠️ ' + err.message;
   } finally {
     isSaving = false;
-    if (pendingSave) {
-      pendingSave = false;
-      saveData();
-    }
+    if (pendingSave) { pendingSave = false; saveData(); }
   }
 }
 
@@ -277,10 +244,7 @@ async function saveData() {
 function render() {
   const tbody = document.getElementById('tableBody');
   const empty = document.getElementById('emptyState');
-  if (!Array.isArray(rows)) {
-    console.error('rows bukan array di render, diset kosong');
-    rows = [];
-  }
+  if (!Array.isArray(rows)) rows = [];
   if (rows.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; }
   else {
     empty.style.display = 'none';
@@ -293,9 +257,7 @@ function render() {
           const subData = r.subunsurs && r.subunsurs[param.subCode] && r.subunsurs[param.subCode][param.paramId];
           if (subData) {
             let hasFile = false;
-            for (let lv = 1; lv <= 5; lv++) {
-              if (subData['files' + lv] && subData['files' + lv].length > 0) { hasFile = true; break; }
-            }
+            for (let lv = 1; lv <= 5; lv++) if (subData['files' + lv] && subData['files' + lv].length > 0) hasFile = true;
             if (hasFile) countLengkap++;
           }
         });
@@ -305,17 +267,10 @@ function render() {
         if (countLengkap === totalParams) { kelengkapanClass = 'badge-lengkap'; kelengkapanLabel = `Lengkap (${countLengkap}/${totalParams})`; }
         else if (countLengkap === 0) { kelengkapanClass = 'badge-kosong'; kelengkapanLabel = `Belum (0/${totalParams})`; }
         else { kelengkapanClass = 'badge-sebagian'; kelengkapanLabel = `Sebagian (${countLengkap}/${totalParams})`; }
-      } else {
-        kelengkapanClass = 'badge-kosong'; kelengkapanLabel = 'Belum';
-      }
+      } else { kelengkapanClass = 'badge-kosong'; kelengkapanLabel = 'Belum'; }
       return `<tr>
         <td style="text-align:center;">${index + 1}</td>
-        <td>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-weight:500;">${r.opd || 'Tanpa Nama'}</span>
-            <button class="btn-edit-name" data-id="${r.id}" title="Ubah Nama" style="background:none; border:none; cursor:pointer; font-size:18px; padding:0;">✏️</button>
-          </div>
-        </td>
+        <td><div style="display:flex; align-items:center; gap:8px;"><span style="font-weight:500;">${r.opd || 'Tanpa Nama'}</span><button class="btn-edit-name" data-id="${r.id}" title="Ubah Nama" style="background:none; border:none; cursor:pointer; font-size:18px; padding:0;">✏️</button></div></td>
         <td><input type="number" step="0.1" min="0" max="5" value="${avg.toFixed(1)}" data-id="${r.id}" data-field="sa" readonly style="background:#e2e8f0;color:#64748b;"></td>
         <td>${selectHtml(r.id,'evidence',r.evidence,['Lengkap','Sebagian','Belum'])}</td>
         <td>${selectHtml(r.id,'qaApip',r.qaApip,['Selesai','Proses','Belum'])}</td>
@@ -340,74 +295,39 @@ function selectHtml(id, field, value, options) {
 function attachHandlers() {
   function showIndicator(target, text, className) {
     let ind = target.parentNode.querySelector('.save-indicator');
-    if (!ind) {
-      ind = document.createElement('span');
-      ind.className = 'save-indicator';
-      target.parentNode.appendChild(ind);
-    }
+    if (!ind) { ind = document.createElement('span'); ind.className = 'save-indicator'; target.parentNode.appendChild(ind); }
     ind.textContent = text;
     ind.className = 'save-indicator ' + className;
-    if (className === 'success' || className === 'error') {
-      setTimeout(() => {
-        ind.remove();
-      }, 2000);
-    }
+    if (className === 'success' || className === 'error') setTimeout(() => ind.remove(), 2000);
   }
 
   document.querySelectorAll('input[data-id]').forEach(el => {
     if (el.dataset.field === 'sa') return;
     el.onchange = (e) => {
-      const id = e.target.dataset.id;
-      const field = e.target.dataset.field;
+      const id = e.target.dataset.id, field = e.target.dataset.field;
       const row = rows.find(r => r.id === id);
       if (!row) return;
       let val = e.target.value;
       if (field === 'mri' || field === 'iepk') val = parseFloat(val) || 0;
-      else val = e.target.value;
       row[field] = val;
-
       showIndicator(e.target, '⏳ Menyimpan...', 'saving');
-
-      callServer('saveField', { opdId: id, field: field, value: val, year: currentYear })
-        .then(res => {
-          if (res.status === 'error') {
-            showIndicator(e.target, '✗ Gagal', 'error');
-            console.error('Gagal simpan field:', res.message);
-          } else {
-            showIndicator(e.target, '✓', 'success');
-          }
-        })
-        .catch(err => {
-          showIndicator(e.target, '✗ Gagal', 'error');
-          console.error('Error saveField:', err);
-        });
+      callServer('saveField', { opdId: id, field, value: val, year: currentYear })
+        .then(res => { showIndicator(e.target, res.status === 'error' ? '✗ Gagal' : '✓', res.status === 'error' ? 'error' : 'success'); })
+        .catch(err => { showIndicator(e.target, '✗ Gagal', 'error'); console.error('Error saveField:', err); });
     };
     el.onblur = syncData;
   });
 
   document.querySelectorAll('select[data-id]').forEach(el => {
     el.onchange = (e) => {
-      const id = e.target.dataset.id;
-      const field = e.target.dataset.field;
+      const id = e.target.dataset.id, field = e.target.dataset.field;
       const row = rows.find(r => r.id === id);
       if (!row) return;
       row[field] = e.target.value;
-
       showIndicator(e.target, '⏳ Menyimpan...', 'saving');
-
-      callServer('saveField', { opdId: id, field: field, value: e.target.value, year: currentYear })
-        .then(res => {
-          if (res.status === 'error') {
-            showIndicator(e.target, '✗ Gagal', 'error');
-            console.error('Gagal simpan field:', res.message);
-          } else {
-            showIndicator(e.target, '✓', 'success');
-          }
-        })
-        .catch(err => {
-          showIndicator(e.target, '✗ Gagal', 'error');
-          console.error('Error saveField:', err);
-        });
+      callServer('saveField', { opdId: id, field, value: e.target.value, year: currentYear })
+        .then(res => { showIndicator(e.target, res.status === 'error' ? '✗ Gagal' : '✓', res.status === 'error' ? 'error' : 'success'); })
+        .catch(err => { showIndicator(e.target, '✗ Gagal', 'error'); console.error('Error saveField:', err); });
     };
     el.onblur = syncData;
   });
@@ -426,101 +346,31 @@ function showChart(type) {
     rtpSelesai: 'Persentase RTP Selesai',
     rataIEPK: 'Rata-rata IEPK per OPD'
   };
-  
-  let labels = [];
-  let data = [];
-  let backgroundColor = [];
-  let typeChart = 'bar';
-
-  if (type === 'rataRata') {
-    labels = rows.map(r => r.opd);
-    data = rows.map(r => parseFloat(r.sa) || 0);
-    typeChart = 'bar';
-  } else if (type === 'opdLevel3') {
-    labels = ['Level >= 3', 'Level < 3'];
-    data = [document.getElementById('kpiSelesai').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiSelesai').textContent.replace('%', ''))];
-    typeChart = 'pie';
-    backgroundColor = ['#10b981', '#e2e8f0'];
-  } else if (type === 'qaApip') {
-    labels = ['Selesai', 'Proses/Belum'];
-    data = [document.getElementById('kpiQaApip').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiQaApip').textContent.replace('%', ''))];
-    typeChart = 'pie';
-    backgroundColor = ['#f59e0b', '#e2e8f0'];
-  } else if (type === 'level2') {
-    labels = ['Level <= 2', 'Level > 2'];
-    data = [document.getElementById('kpiRendah').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiRendah').textContent.replace('%', ''))];
-    typeChart = 'pie';
-    backgroundColor = ['#ef4444', '#e2e8f0'];
-  } else if (type === 'statusSelesai') {
-    labels = ['Selesai', 'Proses/Belum'];
-    data = [document.getElementById('kpiStatusSelesai').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiStatusSelesai').textContent.replace('%', ''))];
-    typeChart = 'pie';
-    backgroundColor = ['#6366f1', '#e2e8f0'];
-  } else if (type === 'evidenceLengkap') {
-    labels = ['Lengkap', 'Sebagian/Belum'];
-    data = [document.getElementById('kpiEvidenceLengkap').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiEvidenceLengkap').textContent.replace('%', ''))];
-    typeChart = 'pie';
-    backgroundColor = ['#ec4899', '#e2e8f0'];
-  } else if (type === 'rataMRI') {
-    labels = rows.map(r => r.opd);
-    data = rows.map(r => parseFloat(r.mri) || 0);
-    typeChart = 'line';
-  } else if (type === 'rtpSelesai') {
-    labels = ['Selesai', 'Belum'];
-    data = [document.getElementById('kpiRtpSelesai').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiRtpSelesai').textContent.replace('%', ''))];
-    typeChart = 'pie';
-    backgroundColor = ['#f97316', '#e2e8f0'];
-  } else if (type === 'rataIEPK') {
-    labels = rows.map(r => r.opd);
-    data = rows.map(r => parseFloat(r.iepk) || 0);
-    typeChart = 'line';
-  }
+  let labels = [], data = [], backgroundColor = [], typeChart = 'bar';
+  if (type === 'rataRata') { labels = rows.map(r => r.opd); data = rows.map(r => parseFloat(r.sa) || 0); typeChart = 'bar'; }
+  else if (type === 'opdLevel3') { labels = ['Level >= 3', 'Level < 3']; data = [document.getElementById('kpiSelesai').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiSelesai').textContent.replace('%', ''))]; typeChart = 'pie'; backgroundColor = ['#10b981', '#e2e8f0']; }
+  else if (type === 'qaApip') { labels = ['Selesai', 'Proses/Belum']; data = [document.getElementById('kpiQaApip').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiQaApip').textContent.replace('%', ''))]; typeChart = 'pie'; backgroundColor = ['#f59e0b', '#e2e8f0']; }
+  else if (type === 'level2') { labels = ['Level <= 2', 'Level > 2']; data = [document.getElementById('kpiRendah').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiRendah').textContent.replace('%', ''))]; typeChart = 'pie'; backgroundColor = ['#ef4444', '#e2e8f0']; }
+  else if (type === 'statusSelesai') { labels = ['Selesai', 'Proses/Belum']; data = [document.getElementById('kpiStatusSelesai').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiStatusSelesai').textContent.replace('%', ''))]; typeChart = 'pie'; backgroundColor = ['#6366f1', '#e2e8f0']; }
+  else if (type === 'evidenceLengkap') { labels = ['Lengkap', 'Sebagian/Belum']; data = [document.getElementById('kpiEvidenceLengkap').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiEvidenceLengkap').textContent.replace('%', ''))]; typeChart = 'pie'; backgroundColor = ['#ec4899', '#e2e8f0']; }
+  else if (type === 'rataMRI') { labels = rows.map(r => r.opd); data = rows.map(r => parseFloat(r.mri) || 0); typeChart = 'line'; }
+  else if (type === 'rtpSelesai') { labels = ['Selesai', 'Belum']; data = [document.getElementById('kpiRtpSelesai').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiRtpSelesai').textContent.replace('%', ''))]; typeChart = 'pie'; backgroundColor = ['#f97316', '#e2e8f0']; }
+  else if (type === 'rataIEPK') { labels = rows.map(r => r.opd); data = rows.map(r => parseFloat(r.iepk) || 0); typeChart = 'line'; }
 
   document.getElementById('kpiChartTitle').textContent = titles[type] || 'Grafik';
   document.getElementById('kpiChartModal').classList.add('active');
-
-  if (chartInstance) {
-    chartInstance.destroy();
-  }
-
+  if (chartInstance) chartInstance.destroy();
   const ctx = document.getElementById('kpiChartCanvas').getContext('2d');
   chartInstance = new Chart(ctx, {
     type: typeChart,
-    data: {
-      labels: labels,
-      datasets: [{
-        label: titles[type],
-        data: data,
-        backgroundColor: backgroundColor.length > 0 ? backgroundColor : 'rgba(59, 130, 246, 0.6)',
-        borderColor: 'rgba(59, 130, 246, 1)',
-        borderWidth: 1,
-        fill: typeChart === 'line' ? true : false,
-        tension: 0.3
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: typeChart === 'pie' }
-      },
-      scales: {
-        y: { beginAtZero: true }
-      },
-      animation: {
-        duration: 800,
-        easing: 'easeOutQuart'
-      }
-    }
+    data: { labels, datasets: [{ label: titles[type], data, backgroundColor: backgroundColor.length > 0 ? backgroundColor : 'rgba(59, 130, 246, 0.6)', borderColor: 'rgba(59, 130, 246, 1)', borderWidth: 1, fill: typeChart === 'line' ? true : false, tension: 0.3 }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: typeChart === 'pie' } }, scales: { y: { beginAtZero: true } }, animation: { duration: 800, easing: 'easeOutQuart' } }
   });
 }
 
-document.getElementById('kpiChartClose').addEventListener('click', function() {
+addEvent('kpiChartClose', 'click', function() {
   document.getElementById('kpiChartModal').classList.remove('active');
-  if (chartInstance) {
-    chartInstance.destroy();
-    chartInstance = null;
-  }
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
 });
 
 // ====== PASSWORD ======
@@ -541,12 +391,7 @@ document.addEventListener('DOMContentLoaded', function() {
       progress = Math.min(100, progress + Math.random() * 10 + 5);
       loadingFill.style.width = progress + '%';
       loadingPercent.textContent = Math.round(progress) + '%';
-      if (progress >= 100) {
-        clearInterval(interval);
-        setTimeout(() => {
-          loadingOverlay.classList.remove('active');
-        }, 500);
-      }
+      if (progress >= 100) { clearInterval(interval); setTimeout(() => loadingOverlay.classList.remove('active'), 500); }
     }, 200);
   }
 
@@ -566,7 +411,7 @@ document.addEventListener('DOMContentLoaded', function() {
             PARAM_LIST = [];
             Object.keys(SUBUNSUR_DATA).forEach(subCode => {
               SUBUNSUR_DATA[subCode].params.forEach(param => {
-                PARAM_LIST.push({ subCode: subCode, paramId: param.id, desc: param.desc, levels: param.levels });
+                PARAM_LIST.push({ subCode, paramId: param.id, desc: param.desc, levels: param.levels });
               });
             });
             await loadYears();
@@ -591,19 +436,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  btnAccess.addEventListener('click', checkAccess);
-  accessPasswordInput.addEventListener('keyup', function(event) {
-    if (event.key === 'Enter') checkAccess();
-  });
-
-  toggleAccessPassword.addEventListener('click', function() {
-    if (accessPasswordInput.type === 'password') {
-      accessPasswordInput.type = 'text';
-      toggleAccessPassword.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-    } else {
-      accessPasswordInput.type = 'password';
-      toggleAccessPassword.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-    }
+  if (btnAccess) btnAccess.addEventListener('click', checkAccess);
+  if (accessPasswordInput) accessPasswordInput.addEventListener('keyup', function(event) { if (event.key === 'Enter') checkAccess(); });
+  if (toggleAccessPassword) toggleAccessPassword.addEventListener('click', function() {
+    if (accessPasswordInput.type === 'password') { accessPasswordInput.type = 'text'; toggleAccessPassword.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'; }
+    else { accessPasswordInput.type = 'password'; toggleAccessPassword.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'; }
   });
 });
 
@@ -622,9 +459,8 @@ let deleteTargetId = null;
 function openConfirmModal(id) {
   deleteTargetId = id;
   let message = '';
-  if (id === 'all') {
-    message = 'Yakin ingin menghapus SEMUA data OPD?';
-  } else {
+  if (id === 'all') message = 'Yakin ingin menghapus SEMUA data OPD?';
+  else {
     const row = rows.find(r => r.id === id);
     const opdName = row ? row.opd : 'OPD ini';
     message = `Yakin ingin menghapus OPD "${opdName}"?`;
@@ -639,24 +475,17 @@ function closeConfirmModal() {
   document.getElementById('confirmPassword').value = '';
   document.getElementById('confirmError').style.display = 'none';
 }
-document.getElementById('togglePassword').addEventListener('click', function() {
+addEvent('togglePassword', 'click', function() {
   const input = document.getElementById('confirmPassword');
-  if (input.type === 'password') {
-    input.type = 'text';
-    this.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-  } else {
-    input.type = 'password';
-    this.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-  }
+  if (input.type === 'password') { input.type = 'text'; this.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'; }
+  else { input.type = 'password'; this.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'; }
 });
-document.getElementById('confirmOk').addEventListener('click', async function() {
+addEvent('confirmOk', 'click', async function() {
   const password = document.getElementById('confirmPassword').value.trim();
   const errorDiv = document.getElementById('confirmError');
   const btnOk = this;
-
   btnOk.disabled = true;
   btnOk.textContent = '⏳ Menghapus...';
-
   try {
     const valid = await verifyDelete(password);
     if (!valid) {
@@ -666,20 +495,12 @@ document.getElementById('confirmOk').addEventListener('click', async function() 
       errorDiv.style.color = '#dc2626';
       return;
     }
-
     const result = await callServer('deleteOpd', { opdId: deleteTargetId, year: currentYear });
-    if (result.status === 'error') {
-      errorDiv.textContent = '❌ ' + result.message;
-      errorDiv.style.display = 'block';
-      errorDiv.style.background = '#fee2e2';
-      errorDiv.style.color = '#dc2626';
-      return;
-    }
-
+    if (result.status === 'error') throw new Error(result.message);
     await loadData();
     closeConfirmModal();
   } catch (err) {
-    errorDiv.textContent = '❌ Terjadi kesalahan: ' + err.message;
+    errorDiv.textContent = '❌ ' + err.message;
     errorDiv.style.display = 'block';
     errorDiv.style.background = '#fee2e2';
     errorDiv.style.color = '#dc2626';
@@ -706,17 +527,13 @@ async function openEditModal(id) {
   document.getElementById('modalOpdName').textContent = row.opd || 'Tanpa Nama';
   const container = document.getElementById('subunsurContainer');
   container.innerHTML = '';
-
   const sortedSubs = Object.keys(SUBUNSUR_DATA).sort((a,b) => parseFloat(a) - parseFloat(b));
-
   sortedSubs.forEach(subCode => {
     const subInfo = SUBUNSUR_DATA[subCode];
     const subDiv = document.createElement('div');
     subDiv.className = 'sub-item';
     subDiv.innerHTML = `<label>${subInfo.label}</label>`;
-    
     const sortedParams = [...subInfo.params].sort((a,b) => parseFloat(a.id) - parseFloat(b.id));
-    
     sortedParams.forEach(param => {
       const data = (row.subunsurs[subCode] && row.subunsurs[subCode][param.id]) || { level: 0 };
       const paramDiv = document.createElement('div');
@@ -733,9 +550,7 @@ async function openEditModal(id) {
   <label>Level ${lv} (${levelInfo.grade})</label>
   <div class="guide-box"><strong>📖 Kriteria:</strong><p>${levelInfo.desc}</p><strong>📎 Evidence yang Disarankan:</strong><p>${levelInfo.evidence}</p><strong>📝 Tahapan Grade:</strong><p>${levelInfo.note}</p></div>
   <textarea data-sub="${subCode}" data-param="${param.id}" data-field="evid${lv}" placeholder="Uraian evidence...">${evid}</textarea>
-  <div style="display:flex; gap:8px; align-items:center;">
-    <input type="file" multiple data-sub="${subCode}" data-param="${param.id}" data-level="${lv}" accept=".pdf,.doc,.docx,.jpg,.png,.mp4,.webm,.mov,.avi,.mkv,.xlsx,.pptx">
-  </div>
+  <div style="display:flex; gap:8px; align-items:center;"><input type="file" multiple data-sub="${subCode}" data-param="${param.id}" data-level="${lv}" accept=".pdf,.doc,.docx,.jpg,.png,.mp4,.webm,.mov,.avi,.mkv,.xlsx,.pptx"></div>
   <div class="evid-upload-progress" data-sub="${subCode}" data-param="${param.id}" data-level="${lv}"></div>
   <div class="file-list" style="margin-top:8px; display:flex; flex-direction:column; gap:6px;"></div>
 </div>`;
@@ -746,14 +561,12 @@ async function openEditModal(id) {
     });
     container.appendChild(subDiv);
   });
-
   document.getElementById('editModal').classList.add('active');
   sortedSubs.forEach(subCode => {
     SUBUNSUR_DATA[subCode].params.forEach(param => {
       for (let lv = 1; lv <= 5; lv++) renderFileList(row, subCode, param.id, lv);
     });
   });
-
   container.querySelectorAll('input[type="file"]').forEach(input => {
     input.onchange = async (e) => {
       const fileInput = e.target;
@@ -764,45 +577,27 @@ async function openEditModal(id) {
       if (!targetRow) return;
       const fileList = Array.from(fileInput.files);
       if (fileList.length === 0) return;
-
       const totalSize = fileList.reduce((sum, f) => sum + f.size, 0);
-      if (totalSize > 10 * 1024 * 1024) {
-        showWarning('Total ukuran file melebihi 10 MB! Silakan pilih lebih sedikit.');
-        fileInput.value = '';
-        return;
-      }
-
+      if (totalSize > 10 * 1024 * 1024) { showWarning('Total ukuran file melebihi 10 MB!'); fileInput.value = ''; return; }
       const progressContainer = document.querySelector(`.evid-upload-progress[data-sub="${subCode}"][data-param="${paramId}"][data-level="${level}"]`);
       progressContainer.classList.add('active');
       progressContainer.innerHTML = '';
-
       let completed = 0;
       for (const file of fileList) {
-        if (file.size > 20 * 1024 * 1024) {
-          showWarning(`File ${file.name} melebihi 20 MB! File dilewati.`);
-          continue;
-        }
+        if (file.size > 20 * 1024 * 1024) { showWarning(`File ${file.name} melebihi 20 MB!`); continue; }
         const progressItem = document.createElement('div');
         progressItem.className = 'progress-item';
-        progressItem.innerHTML = `
-          <div class="progress-label">${file.name}</div>
-          <div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div>
-          <div class="progress-text">0%</div>
-        `;
+        progressItem.innerHTML = `<div class="progress-label">${file.name}</div><div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div><div class="progress-text">0%</div>`;
         progressContainer.appendChild(progressItem);
         const fill = progressItem.querySelector('.progress-bar-fill');
         const text = progressItem.querySelector('.progress-text');
-
         let progress = 0;
         const interval = setInterval(() => {
           progress = Math.min(100, progress + Math.random() * 15 + 5);
           fill.style.width = progress + '%';
           text.textContent = Math.round(progress) + '%';
-          if (progress >= 100) {
-            clearInterval(interval);
-          }
+          if (progress >= 100) clearInterval(interval);
         }, 100);
-
         try {
           const result = await uploadFile(targetRow, subCode, paramId, level, file);
           clearInterval(interval);
@@ -812,10 +607,7 @@ async function openEditModal(id) {
           targetRow.subunsurs[subCode][paramId]['files' + level].push({ url: result, name: file.name });
           renderFileList(targetRow, subCode, paramId, level);
           completed++;
-          setTimeout(() => {
-            progressItem.remove();
-            if (progressContainer.children.length === 0) progressContainer.classList.remove('active');
-          }, 1000);
+          setTimeout(() => { progressItem.remove(); if (progressContainer.children.length === 0) progressContainer.classList.remove('active'); }, 1000);
         } catch (err) {
           clearInterval(interval);
           text.textContent = 'Gagal: ' + err.message;
@@ -828,12 +620,10 @@ async function openEditModal(id) {
   });
 }
 
-// ====== UPLOAD FILE (JSON BASE64, BUKAN FORMDATA) ======
+// ====== UPLOAD FILE (JSON BASE64) ======
 async function uploadFile(row, subCode, paramId, level, file) {
   if (!file) return;
-  if (file.size > 10 * 1024 * 1024) {
-    throw new Error(`File ${file.name} terlalu besar! Maksimal 10 MB per file.`);
-  }
+  if (file.size > 10 * 1024 * 1024) throw new Error(`File ${file.name} terlalu besar! Maksimal 10 MB per file.`);
   const reader = new FileReader();
   return new Promise((resolve, reject) => {
     reader.onload = async () => {
@@ -842,21 +632,9 @@ async function uploadFile(row, subCode, paramId, level, file) {
       const paramLabel = subCode + ' - ' + (paramObj ? paramObj.desc : paramId);
       const opdName = row.opd;
       try {
-        const result = await callServer('uploadFile', {
-          opdId: row.id,
-          opdName,
-          subunsur: subCode,
-          paramId,
-          paramLabel,
-          level,
-          year: currentYear,
-          fileName: file.name,
-          fileData: base64
-        });
+        const result = await callServer('uploadFile', { opdId: row.id, opdName, subunsur: subCode, paramId, paramLabel, level, year: currentYear, fileName: file.name, fileData: base64 });
         resolve(result);
-      } catch (err) {
-        reject(err);
-      }
+      } catch (err) { reject(err); }
     };
     reader.readAsDataURL(file);
   });
@@ -869,19 +647,13 @@ function renderFileList(row, subCode, paramId, level) {
   if (!fileListEl) return;
   const files = (row.subunsurs[subCode] && row.subunsurs[subCode][paramId] && row.subunsurs[subCode][paramId]['files' + level]) || [];
   fileListEl.innerHTML = '';
-  if (files.length === 0) {
-    fileListEl.innerHTML = '<span style="font-size:12px;color:#64748b;">Belum ada file.</span>';
-    return;
-  }
+  if (files.length === 0) { fileListEl.innerHTML = '<span style="font-size:12px;color:#64748b;">Belum ada file.</span>'; return; }
   files.forEach((fileObj, index) => {
     const fileUrl = typeof fileObj === 'string' ? fileObj : fileObj.url;
     const fileName = typeof fileObj === 'string' ? `File ${index + 1}` : (fileObj.name || `File ${index + 1}`);
     const div = document.createElement('div');
     div.style.cssText = 'display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px; border-radius:6px; margin-top:6px;';
-    div.innerHTML = `
-      <a href="${fileUrl}" target="_blank" class="file-link" style="flex-grow:1; margin:0;">📎 ${fileName}</a>
-      <button type="button" onclick="removeUploadedFile('${row.id}', '${subCode}', '${paramId}', ${level}, '${fileUrl}')" style="background:#fee2e2; color:#dc2626; border:none; border-radius:6px; padding:4px 8px; cursor:pointer; font-size:12px;">🗑️ Hapus</button>
-    `;
+    div.innerHTML = `<a href="${fileUrl}" target="_blank" class="file-link" style="flex-grow:1; margin:0;">📎 ${fileName}</a><button type="button" onclick="removeUploadedFile('${row.id}', '${subCode}', '${paramId}', ${level}, '${fileUrl}')" style="background:#fee2e2; color:#dc2626; border:none; border-radius:6px; padding:4px 8px; cursor:pointer; font-size:12px;">🗑️ Hapus</button>`;
     fileListEl.appendChild(div);
   });
 }
@@ -898,31 +670,22 @@ function removeUploadedFile(opdId, subCode, paramId, level, fileUrl) {
   document.getElementById('fileDeleteModal').classList.add('active');
 }
 
-document.getElementById('fileDeleteOk').addEventListener('click', async function() {
-  if (isDeletingFile) return;
-  if (!fileToDelete) return;
-  
+addEvent('fileDeleteOk', 'click', async function() {
+  if (isDeletingFile || !fileToDelete) return;
   isDeletingFile = true;
   const btnOk = this;
   btnOk.disabled = true;
   btnOk.textContent = '⏳ Menghapus...';
-  
   const { opdId, subCode, paramId, level, fileUrl } = fileToDelete;
   const row = rows.find(r => r.id === opdId);
   if (row) {
     try {
       const result = await callServer('deleteFile', { fileUrl });
-      if (result.status === 'error') { showWarning('❌ ' + result.message); return; }
+      if (result.status === 'error') throw new Error(result.message);
       const files = row.subunsurs[subCode][paramId]['files' + level] || [];
       const index = files.findIndex(f => (typeof f === 'string' ? f : f.url) === fileUrl);
-      if (index > -1) {
-        files.splice(index, 1);
-        renderFileList(row, subCode, paramId, level);
-        await saveData();
-      }
-    } catch (err) {
-      showWarning('❌ ' + err.message);
-    }
+      if (index > -1) { files.splice(index, 1); renderFileList(row, subCode, paramId, level); await saveData(); }
+    } catch (err) { showWarning('❌ ' + err.message); }
   }
   document.getElementById('fileDeleteModal').classList.remove('active');
   fileToDelete = null;
@@ -932,24 +695,18 @@ document.getElementById('fileDeleteOk').addEventListener('click', async function
 });
 
 // ====== MODAL SAVE EDIT SUBUNSUR ======
-document.getElementById('modalSave').addEventListener('click', async function() {
+addEvent('modalSave', 'click', async function() {
   if (!editingRowId) return;
   const row = rows.find(r => r.id === editingRowId);
   if (!row) return;
   const selects = document.querySelectorAll('#subunsurContainer select[data-sub]');
   const textareas = document.querySelectorAll('#subunsurContainer textarea[data-sub]');
-  selects.forEach(el => {
-    const subCode = el.dataset.sub, paramId = el.dataset.param;
-    row.subunsurs[subCode][paramId].level = parseInt(el.value) || 0;
-  });
-  textareas.forEach(el => {
-    const subCode = el.dataset.sub, paramId = el.dataset.param, field = el.dataset.field;
-    row.subunsurs[subCode][paramId][field] = el.value;
-  });
+  selects.forEach(el => { const subCode = el.dataset.sub, paramId = el.dataset.param; row.subunsurs[subCode][paramId].level = parseInt(el.value) || 0; });
+  textareas.forEach(el => { const subCode = el.dataset.sub, paramId = el.dataset.param, field = el.dataset.field; row.subunsurs[subCode][paramId][field] = el.value; });
   const modalStatus = document.getElementById('modalSaveStatus');
   modalStatus.style.display = 'block';
   modalStatus.style.color = '#1e40af';
-  modalStatus.textContent = '⏳ Menyimpan data ke Google Drive...';
+  modalStatus.textContent = '⏳ Menyimpan data...';
   try {
     await saveData();
     modalStatus.style.color = '#16a34a';
@@ -962,13 +719,9 @@ document.getElementById('modalSave').addEventListener('click', async function() 
 });
 
 // ====== TAMBAH OPD ======
-document.getElementById('btnAdd').addEventListener('click', () => {
-  document.getElementById('addOpdModal').classList.add('active');
-});
-document.getElementById('addOpdCancel').addEventListener('click', function() {
-  document.getElementById('addOpdModal').classList.remove('active');
-});
-document.getElementById('addOpdOk').addEventListener('click', async function() {
+addEvent('btnAdd', 'click', () => { document.getElementById('addOpdModal').classList.add('active'); });
+addEvent('addOpdCancel', 'click', function() { document.getElementById('addOpdModal').classList.remove('active'); });
+addEvent('addOpdOk', 'click', async function() {
   if (isAddingOpd) return;
   isAddingOpd = true;
   const btnOk = document.getElementById('addOpdOk');
@@ -992,14 +745,14 @@ document.getElementById('addOpdOk').addEventListener('click', async function() {
 });
 
 // ====== KOSONGKAN ======
-document.getElementById('btnClear').addEventListener('click', function() {
+addEvent('btnClear', 'click', function() {
   deleteTargetId = 'all';
   document.getElementById('confirmMessage').textContent = 'Yakin ingin menghapus semua data OPD?';
   document.getElementById('confirmModal').classList.add('active');
 });
 
 // ====== TAMBAH TAHUN ======
-document.getElementById('btnAddYear').addEventListener('click', function() {
+addEvent('btnAddYear', 'click', function() {
   const select = document.getElementById('yearSelect');
   const options = Array.from(select.options).map(o => o.value);
   let maxYear = options.length ? Math.max(...options.map(Number)).toString() : currentYear;
@@ -1008,10 +761,8 @@ document.getElementById('btnAddYear').addEventListener('click', function() {
   document.getElementById('newYearBadge').textContent = newYear;
   document.getElementById('addYearModal').classList.add('active');
 });
-document.getElementById('addYearCancel').addEventListener('click', function() {
-  document.getElementById('addYearModal').classList.remove('active');
-});
-document.getElementById('addYearOk').addEventListener('click', async function() {
+addEvent('addYearCancel', 'click', function() { document.getElementById('addYearModal').classList.remove('active'); });
+addEvent('addYearOk', 'click', async function() {
   if (isAddingYear) return;
   isAddingYear = true;
   const btnOk = document.getElementById('addYearOk');
@@ -1027,15 +778,10 @@ document.getElementById('addYearOk').addEventListener('click', async function() 
       currentYear = newYear;
       document.getElementById('yearSelect').value = newYear;
       await loadData();
-    } else {
-      showWarning('❌ ' + result.message);
-    }
+    } else showWarning('❌ ' + result.message);
     status.textContent = '✅ ' + result.message;
     setTimeout(() => { status.textContent = ''; }, 2000);
-  } catch (err) {
-    status.textContent = '⚠️ ' + err.message;
-    showWarning('❌ Gagal menambahkan tahun: ' + err.message);
-  }
+  } catch (err) { status.textContent = '⚠️ ' + err.message; showWarning('❌ Gagal menambahkan tahun: ' + err.message); }
   document.getElementById('addYearModal').classList.remove('active');
   isAddingYear = false;
   btnOk.disabled = false;
@@ -1043,32 +789,22 @@ document.getElementById('addYearOk').addEventListener('click', async function() 
 });
 
 // ====== HAPUS TAHUN ======
-document.getElementById('btnDeleteYear').addEventListener('click', function() {
+addEvent('btnDeleteYear', 'click', function() {
   const year = document.getElementById('yearSelect').value;
   if (!year) return;
-  if (year === '2026') {
-    showWarning('Tahun default 2026 tidak dapat dihapus.');
-    return;
-  }
+  if (year === '2026') { showWarning('Tahun default 2026 tidak dapat dihapus.'); return; }
   document.getElementById('deleteYearMessage').textContent = `Yakin ingin menghapus tahun ${year}? Semua data OPD untuk tahun ini akan hilang.`;
   document.getElementById('deleteYearPassword').value = '';
   document.getElementById('deleteYearError').style.display = 'none';
   document.getElementById('deleteYearModal').classList.add('active');
 });
-document.getElementById('deleteYearCancel').addEventListener('click', function() {
-  document.getElementById('deleteYearModal').classList.remove('active');
-});
-document.getElementById('toggleDeleteYearPassword').addEventListener('click', function() {
+addEvent('deleteYearCancel', 'click', function() { document.getElementById('deleteYearModal').classList.remove('active'); });
+addEvent('toggleDeleteYearPassword', 'click', function() {
   const input = document.getElementById('deleteYearPassword');
-  if (input.type === 'password') {
-    input.type = 'text';
-    this.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-  } else {
-    input.type = 'password';
-    this.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-  }
+  if (input.type === 'password') { input.type = 'text'; this.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'; }
+  else { input.type = 'password'; this.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>'; }
 });
-document.getElementById('deleteYearOk').addEventListener('click', async function() {
+addEvent('deleteYearOk', 'click', async function() {
   if (isDeletingYear) return;
   isDeletingYear = true;
   const btnOk = this;
@@ -1079,41 +815,21 @@ document.getElementById('deleteYearOk').addEventListener('click', async function
   const errorDiv = document.getElementById('deleteYearError');
   try {
     const valid = await verifyDelete(password);
-    if (!valid) {
-      errorDiv.textContent = '❌ Password hapus salah!';
-      errorDiv.style.display = 'block';
-      errorDiv.style.background = '#fee2e2';
-      errorDiv.style.color = '#dc2626';
-      return;
-    }
+    if (!valid) { errorDiv.textContent = '❌ Password hapus salah!'; errorDiv.style.display = 'block'; errorDiv.style.background = '#fee2e2'; errorDiv.style.color = '#dc2626'; return; }
     const result = await callServer('deleteYear', { year });
-    if (result.status === 'error') {
-      errorDiv.textContent = '❌ ' + result.message;
-      errorDiv.style.display = 'block';
-      errorDiv.style.background = '#fee2e2';
-      errorDiv.style.color = '#dc2626';
-      return;
-    }
+    if (result.status === 'error') throw new Error(result.message);
     await loadYears();
     currentYear = '2026';
     document.getElementById('yearSelect').value = currentYear;
     await loadData();
     document.getElementById('deleteYearModal').classList.remove('active');
     showWarning('✅ Tahun berhasil dihapus.');
-  } catch (err) {
-    errorDiv.textContent = '❌ ' + err.message;
-    errorDiv.style.display = 'block';
-    errorDiv.style.background = '#fee2e2';
-    errorDiv.style.color = '#dc2626';
-  } finally {
-    isDeletingYear = false;
-    btnOk.disabled = false;
-    btnOk.textContent = 'Ya, Hapus Tahun';
-  }
+  } catch (err) { errorDiv.textContent = '❌ ' + err.message; errorDiv.style.display = 'block'; errorDiv.style.background = '#fee2e2'; errorDiv.style.color = '#dc2626'; }
+  finally { isDeletingYear = false; btnOk.disabled = false; btnOk.textContent = 'Ya, Hapus Tahun'; }
 });
 
 // ====== GANTI TAHUN ======
-document.getElementById('yearSelect').addEventListener('change', function() {
+addEvent('yearSelect', 'change', function() {
   currentYear = this.value;
   document.getElementById('currentYearLabel').textContent = currentYear;
   loadData();
@@ -1122,32 +838,21 @@ document.getElementById('yearSelect').addEventListener('change', function() {
 // ====== BACKUP ======
 let backupToRestore = null;
 let backupToDelete = null;
-
-document.getElementById('btnBackup').addEventListener('click', function() {
+addEvent('btnBackup', 'click', function() {
   document.getElementById('backupYearLabel').textContent = currentYear;
   document.getElementById('backupModal').classList.add('active');
   loadBackupList();
 });
-document.getElementById('backupCancel').addEventListener('click', function() {
-  document.getElementById('backupModal').classList.remove('active');
-});
-
-document.getElementById('backupNew').addEventListener('click', function() {
-  document.getElementById('confirmBackupModal').classList.add('active');
-});
-
-document.getElementById('confirmBackupCancel').addEventListener('click', function() {
-  document.getElementById('confirmBackupModal').classList.remove('active');
-});
-
-document.getElementById('confirmBackupOk').addEventListener('click', async function() {
+addEvent('backupCancel', 'click', function() { document.getElementById('backupModal').classList.remove('active'); });
+addEvent('backupNew', 'click', function() { document.getElementById('confirmBackupModal').classList.add('active'); });
+addEvent('confirmBackupCancel', 'click', function() { document.getElementById('confirmBackupModal').classList.remove('active'); });
+addEvent('confirmBackupOk', 'click', async function() {
   document.getElementById('confirmBackupModal').classList.remove('active');
   if (isCreatingBackup) return;
   isCreatingBackup = true;
   const btnOk = this;
   btnOk.disabled = true;
   btnOk.textContent = '⏳ Membuat...';
-  
   const year = currentYear;
   const status = document.getElementById('saveStatus');
   status.textContent = '⏳ Membuat backup...';
@@ -1156,13 +861,8 @@ document.getElementById('confirmBackupOk').addEventListener('click', async funct
     status.textContent = '✅ ' + result.message;
     setTimeout(() => { status.textContent = ''; }, 2000);
     loadBackupList();
-  } catch (err) {
-    status.textContent = '⚠️ ' + err.message;
-  } finally {
-    isCreatingBackup = false;
-    btnOk.disabled = false;
-    btnOk.textContent = 'Ya, Buat';
-  }
+  } catch (err) { status.textContent = '⚠️ ' + err.message; }
+  finally { isCreatingBackup = false; btnOk.disabled = false; btnOk.textContent = 'Ya, Buat'; }
 });
 
 async function loadBackupList() {
@@ -1171,26 +871,13 @@ async function loadBackupList() {
   const year = currentYear;
   try {
     const backups = await callServer('listBackups', { year });
-    if (!backups || backups.length === 0) {
-      container.innerHTML = '';
-      empty.style.display = 'block';
-      return;
-    }
+    if (!backups || backups.length === 0) { container.innerHTML = ''; empty.style.display = 'block'; return; }
     empty.style.display = 'none';
     container.innerHTML = '';
     backups.forEach(backup => {
       const div = document.createElement('div');
       div.className = 'backup-item';
-      div.innerHTML = `
-        <span class="backup-info">
-          <strong>${backup.timestamp}</strong><br>
-          <small>${backup.size} KB · ${backup.count} OPD</small>
-        </span>
-        <div class="backup-actions">
-          <button class="restore-btn" onclick="restoreBackup('${backup.fileName}', '${year}')">🔄 Pulihkan</button>
-          <button class="delete-btn" onclick="openConfirmDeleteBackup('${backup.fileName}', '${year}')">🗑️</button>
-        </div>
-      `;
+      div.innerHTML = `<span class="backup-info"><strong>${backup.timestamp}</strong><br><small>${backup.size} KB · ${backup.count} OPD</small></span><div class="backup-actions"><button class="restore-btn" onclick="restoreBackup('${backup.fileName}', '${year}')">🔄 Pulihkan</button><button class="delete-btn" onclick="openConfirmDeleteBackup('${backup.fileName}', '${year}')">🗑️</button></div>`;
       container.appendChild(div);
     });
   } catch (e) {
@@ -1205,15 +892,9 @@ function restoreBackup(fileName, year) {
   document.getElementById('confirmRestoreMessage').textContent = `Yakin ingin memulihkan data dari backup "${fileName}"?`;
   document.getElementById('confirmRestoreModal').classList.add('active');
 }
-
-document.getElementById('confirmRestoreCancel').addEventListener('click', function() {
-  document.getElementById('confirmRestoreModal').classList.remove('active');
-  backupToRestore = null;
-});
-
-document.getElementById('confirmRestoreOk').addEventListener('click', async function() {
-  if (!backupToRestore) return;
-  if (isRestoringBackup) return;
+addEvent('confirmRestoreCancel', 'click', function() { document.getElementById('confirmRestoreModal').classList.remove('active'); backupToRestore = null; });
+addEvent('confirmRestoreOk', 'click', async function() {
+  if (!backupToRestore || isRestoringBackup) return;
   isRestoringBackup = true;
   const btnOk = this;
   btnOk.disabled = true;
@@ -1224,56 +905,36 @@ document.getElementById('confirmRestoreOk').addEventListener('click', async func
   status.textContent = '⏳ Memulihkan backup...';
   try {
     const result = await callServer('restoreBackup', { fileName, year });
-    if (result.status === 'success') {
-      await loadData();
-      status.textContent = '✅ Data berhasil dipulihkan!';
-    } else {
-      status.textContent = '⚠️ ' + result.message;
-    }
+    if (result.status === 'success') { await loadData(); status.textContent = '✅ Data berhasil dipulihkan!'; }
+    else status.textContent = '⚠️ ' + result.message;
     setTimeout(() => { status.textContent = ''; }, 2000);
     loadBackupList();
-  } catch (err) {
-    status.textContent = '⚠️ ' + err.message;
-  } finally {
-    isRestoringBackup = false;
-    btnOk.disabled = false;
-    btnOk.textContent = 'Ya, Pulihkan';
-    backupToRestore = null;
-  }
+  } catch (err) { status.textContent = '⚠️ ' + err.message; }
+  finally { isRestoringBackup = false; btnOk.disabled = false; btnOk.textContent = 'Ya, Pulihkan'; backupToRestore = null; }
 });
 
 function openConfirmDeleteBackup(fileName, year) {
   backupToDelete = { fileName, year };
   document.getElementById('confirmDeleteBackupModal').classList.add('active');
 }
-
-document.getElementById('confirmDeleteBackupCancel').addEventListener('click', function() {
+addEvent('confirmDeleteBackupCancel', 'click', function() { document.getElementById('confirmDeleteBackupModal').classList.remove('active'); backupToDelete = null; });
+addEvent('confirmDeleteBackupOk', 'click', async function() {
+  if (!backupToDelete) return;
+  const { fileName, year } = backupToDelete;
+  const btnOk = this;
+  btnOk.disabled = true;
+  btnOk.textContent = '⏳ Menghapus...';
   document.getElementById('confirmDeleteBackupModal').classList.remove('active');
+  const status = document.getElementById('saveStatus');
+  status.textContent = '⏳ Menghapus backup...';
+  try {
+    const result = await callServer('deleteBackup', { fileName, year });
+    status.textContent = '✅ ' + result.message;
+    setTimeout(() => { status.textContent = ''; }, 2000);
+    loadBackupList();
+  } catch (err) { status.textContent = '⚠️ ' + err.message; }
+  finally { btnOk.disabled = false; btnOk.textContent = 'Ya, Hapus'; }
   backupToDelete = null;
-});
-
-document.getElementById('confirmDeleteBackupOk').addEventListener('click', async function() {
-  if (backupToDelete) {
-    const { fileName, year } = backupToDelete;
-    const btnOk = this;
-    btnOk.disabled = true;
-    btnOk.textContent = '⏳ Menghapus...';
-    document.getElementById('confirmDeleteBackupModal').classList.remove('active');
-    const status = document.getElementById('saveStatus');
-    status.textContent = '⏳ Menghapus backup...';
-    try {
-      const result = await callServer('deleteBackup', { fileName, year });
-      status.textContent = '✅ ' + result.message;
-      setTimeout(() => { status.textContent = ''; }, 2000);
-      loadBackupList();
-    } catch (err) {
-      status.textContent = '⚠️ ' + err.message;
-    } finally {
-      btnOk.disabled = false;
-      btnOk.textContent = 'Ya, Hapus';
-    }
-    backupToDelete = null;
-  }
 });
 
 // ====== UBAH NAMA OPD ======
@@ -1285,32 +946,21 @@ function openEditNameModal(id) {
   document.getElementById('editNameInput').value = row.opd || '';
   document.getElementById('editNameModal').classList.add('active');
 }
-document.getElementById('editNameCancel').addEventListener('click', function() {
-  document.getElementById('editNameModal').classList.remove('active');
-});
-document.getElementById('editNameOk').addEventListener('click', function() {
+addEvent('editNameCancel', 'click', function() { document.getElementById('editNameModal').classList.remove('active'); });
+addEvent('editNameOk', 'click', function() {
   const row = rows.find(r => r.id === editingNameRowId);
   if (!row) return;
   const newName = document.getElementById('editNameInput').value.trim();
-  if (newName === '' || newName === row.opd) {
-    document.getElementById('editNameModal').classList.remove('active');
-    return;
-  }
+  if (newName === '' || newName === row.opd) { document.getElementById('editNameModal').classList.remove('active'); return; }
   document.getElementById('confirmNameMessage').textContent = `Apakah Anda yakin ingin mengubah nama dari "${row.opd}" menjadi "${newName}"?`;
   document.getElementById('confirmNameModal').classList.add('active');
-  window._pendingName = { id: row.id, newName: newName };
+  window._pendingName = { id: row.id, newName };
 });
-document.getElementById('confirmNameCancel').addEventListener('click', function() {
-  document.getElementById('confirmNameModal').classList.remove('active');
-});
-document.getElementById('confirmNameOk').addEventListener('click', async function() {
+addEvent('confirmNameCancel', 'click', function() { document.getElementById('confirmNameModal').classList.remove('active'); });
+addEvent('confirmNameOk', 'click', async function() {
   if (window._pendingName) {
     const row = rows.find(r => r.id === window._pendingName.id);
-    if (row) {
-      row.opd = window._pendingName.newName;
-      render();
-      await saveData();
-    }
+    if (row) { row.opd = window._pendingName.newName; render(); await saveData(); }
     window._pendingName = null;
   }
   document.getElementById('confirmNameModal').classList.remove('active');
@@ -1318,22 +968,13 @@ document.getElementById('confirmNameOk').addEventListener('click', async functio
 });
 
 // ====== MODAL WARNING ======
-document.getElementById('warningOk').addEventListener('click', function() {
-  document.getElementById('warningModal').classList.remove('active');
-});
-
-function showWarning(message) {
-  document.getElementById('warningMessage').textContent = message;
-  document.getElementById('warningModal').classList.add('active');
-}
+addEvent('warningOk', 'click', function() { document.getElementById('warningModal').classList.remove('active'); });
+function showWarning(message) { document.getElementById('warningMessage').textContent = message; document.getElementById('warningModal').classList.add('active'); }
 
 // ====== MODAL CLOSE EDIT ======
-document.getElementById('modalClose').addEventListener('click', closeEditModal);
-document.getElementById('modalCancel').addEventListener('click', closeEditModal);
-function closeEditModal() {
-  document.getElementById('editModal').classList.remove('active');
-  editingRowId = null;
-}
+addEvent('modalClose', 'click', closeEditModal);
+addEvent('modalCancel', 'click', closeEditModal);
+function closeEditModal() { document.getElementById('editModal').classList.remove('active'); editingRowId = null; }
 
 // ====== AKSES LANGSUNG VIA PORTAL ======
 const urlParams = new URLSearchParams(window.location.search);
@@ -1344,7 +985,7 @@ if (urlParams.get('access') === 'portal') {
       PARAM_LIST = [];
       Object.keys(SUBUNSUR_DATA).forEach(subCode => {
         SUBUNSUR_DATA[subCode].params.forEach(param => {
-          PARAM_LIST.push({ subCode: subCode, paramId: param.id, desc: param.desc, levels: param.levels });
+          PARAM_LIST.push({ subCode, paramId: param.id, desc: param.desc, levels: param.levels });
         });
       });
       await loadYears();
@@ -1359,9 +1000,7 @@ if (urlParams.get('access') === 'portal') {
 setInterval(async function() {
   if (!isSaving && !pendingSave) {
     const activeElement = document.activeElement;
-    if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'SELECT')) {
-      return;
-    }
+    if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'SELECT')) return;
     await loadData();
   }
 }, 20000);
