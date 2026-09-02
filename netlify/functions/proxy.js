@@ -86,7 +86,7 @@ function mapFrontToDB(row) {
 }
 const ALLOWED = ['sa', 'evidence', 'qa_apip', 'qaApip', 'mri', 'iepk', 'rtp', 'status', 'opd', 'subunsurs'];
 
-// ====== PARSE FORMDATA (MULTIPART) ======
+// ====== PARSE FORMDATA ======
 function parseFormData(event) {
   return new Promise((resolve, reject) => {
     const bb = busboy({ headers: event.headers });
@@ -119,9 +119,17 @@ exports.handler = async (event) => {
 
   const contentType = event.headers['content-type'] || '';
 
-  // PARSING PARAMS
   let params = {};
-  if (contentType.includes('application/json')) {
+  let fileBuffer = null;
+  let fileName = '';
+
+  // 1. Jika multipart/form-data: proses dengan busboy dulu untuk ambil action
+  if (contentType.includes('multipart/form-data')) {
+    const { fields, fileBuffer: buffer, filename } = await parseFormData(event);
+    params = fields;
+    fileBuffer = buffer;
+    fileName = filename;
+  } else if (contentType.includes('application/json')) {
     try {
       let bodyStr = event.body || '';
       if (event.isBase64Encoded) bodyStr = Buffer.from(bodyStr, 'base64').toString('utf8');
@@ -193,25 +201,22 @@ exports.handler = async (event) => {
         return jsonRes({ status: 'success', message: 'Tahun berhasil dihapus' }, headers);
       }
 
-      // ====== UPLOAD FILE (MENDUKUNG FORMDATA) ======
+      // ====== UPLOAD FILE ======
       case 'uploadFile': {
-        // Jika Content-Type multipart/form-data
-        if (contentType.includes('multipart/form-data')) {
-          const { fields, fileBuffer, filename } = await parseFormData(event);
+        if (fileBuffer && fileBuffer.length > 0) {
           const paramsForDrive = {
             fileData: fileBuffer.toString('base64'),
-            fileName: filename,
-            opdName: fields.opdName,
-            subunsur: fields.subunsur,
-            paramId: fields.paramId,
-            paramLabel: fields.paramLabel,
-            level: fields.level,
-            year: fields.year || year
+            fileName: fileName,
+            opdName: params.opdName,
+            subunsur: params.subunsur,
+            paramId: params.paramId,
+            paramLabel: params.paramLabel,
+            level: params.level,
+            year: params.year || year
           };
           const fileUrl = await uploadFileToDrive(paramsForDrive);
           return jsonRes(fileUrl, headers);
         }
-        // Fallback (jika masih ada JSON base64)
         const fileUrl = await uploadFileToDrive(params);
         return jsonRes(fileUrl, headers);
       }
