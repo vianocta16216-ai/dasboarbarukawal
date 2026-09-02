@@ -1,4 +1,4 @@
-// VERSION 6 - CLOUDINARY (FIX DOWNLOAD)
+// VERSION 7 - CLOUDINARY FINAL (PDF & DOKUMEN)
 const { createClient } = require('@supabase/supabase-js');
 const cloudinary = require('cloudinary').v2;
 const { SUBUNSUR_DATA } = require('./subunsur');
@@ -29,21 +29,22 @@ async function uploadFileToCloudinary(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
+  // Struktur folder TIDAK BERUBAH (sesuai permintaan)
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s]/g, '').substring(0, 50) || 'OPD';
   const folder = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}`;
 
-  // Nama pendek tanpa ekstensi .pdf lagi agar tidak jadi .pdf.pdf
-   // Di dalam fungsi uploadFileToCloudinary
+  // Nama unik PENDEK (tanpa ekstensi ganda .pdf.pdf)
   const publicId = Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
 
+  // resource_type AUTO agar Cloudinary mendeteksi tipe file dengan benar
   const result = await new Promise((resolve, reject) => {
     cloudinary.uploader.upload_stream(
       { 
-        resource_type: 'auto', // Ganti raw ke auto (agar tipe file benar)
+        resource_type: 'auto', 
         folder: folder, 
-        public_id: publicId // TANPA ekstensi .pdf
+        public_id: publicId 
       },
       (error, uploadResult) => {
         if (error) reject(error);
@@ -52,15 +53,9 @@ async function uploadFileToCloudinary(params) {
     ).end(bytes);
   });
 
-  // Tambahkan ini agar browser membuka PDF, bukan mendownloadnya
+  // fl_attachment=false agar browser membuka PDF langsung, bukan mendownload
   const separator = result.secure_url.includes('?') ? '&' : '?';
   return result.secure_url + separator + 'fl_attachment=false';
-
-  // PENTING: Tambahkan ?fl_attachment=false agar file tidak di-download, tapi dibuka di browser
-  const separator = result.secure_url.includes('?') ? '&' : '?';
-  const url = result.secure_url + separator + 'fl_attachment=false';
-
-  return url;
 }
 
 exports.handler = async (event) => {
