@@ -2677,6 +2677,7 @@ async function uploadFile(row, subCode, paramId, level, file) {
   });
 }
 
+// Fungsi untuk membuat URL preview berdasarkan jenis file
 function getPreviewUrl(fileUrl, fileName) {
   const ext = fileName.split('.').pop().toLowerCase();
   
@@ -2696,6 +2697,7 @@ function getPreviewUrl(fileUrl, fileName) {
     return fileUrl;
   }
   
+  // Lainnya: Buka langsung
   return fileUrl;
 }
 
