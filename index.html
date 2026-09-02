@@ -1850,11 +1850,10 @@ let chartInstance = null;
 let originalRows = [];
 
 // ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
-// ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
 function callServer(action, params = {}) {
-  const functionUrl = '/.netlify/functions/finalHandler';
+  const functionUrl = '/.netlify/functions/finalHandler'; // Pastikan sesuai nama file backend
   
-  // UBAH KE POST: Kirim data sebagai JSON di body, bukan di URL
+  // Gunakan POST untuk mengirim data agar URL tidak panjang (Error 414)
   return fetch(functionUrl, {
     method: 'POST',
     headers: {
