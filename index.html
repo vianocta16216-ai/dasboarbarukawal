@@ -1851,7 +1851,7 @@ let originalRows = [];
 
 // ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
 function callServer(action, params = {}) {
-  const functionUrl = '/.netlify/functions/proxy'; // URL Netlify Function
+  const functionUrl = '/.netlify/functions/proxy';
   const body = { ...params, action };
   return fetch(functionUrl, {
     method: 'POST',
@@ -1864,9 +1864,9 @@ function callServer(action, params = {}) {
       try {
         data = JSON.parse(text);
       } catch (e) {
-        throw new Error('Server mengembalikan respons non-JSON: ' + text.substring(0, 100));
+        // Jika bukan JSON, tampilkan teks mentah untuk debugging
+        throw new Error('Server mengembalikan respons non-JSON: ' + text.substring(0, 200));
       }
-      // Jika server mengembalikan object error, langsung lempar error
       if (data && data.status === 'error') {
         throw new Error(data.message || 'Terjadi kesalahan pada server');
       }
