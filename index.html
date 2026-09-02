@@ -1851,12 +1851,12 @@ let originalRows = [];
 
 // ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
 function callServer(action, params = {}) {
+  // ====== PERBAIKAN PENTING: Nama fungsi HARUS myCloudinaryHandler ======
   const functionUrl = '/.netlify/functions/myCloudinaryHandler';
-  // Deteksi payload besar (file base64, data rows)
+  
   const hasLargePayload = params.fileData || params.rows;
 
   if (hasLargePayload) {
-    // Gunakan POST untuk payload besar agar tidak melebihi batas URL (Error 414)
     return fetch(functionUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1870,7 +1870,6 @@ function callServer(action, params = {}) {
       return data;
     });
   } else {
-    // Metode GET tetap untuk request kecil (getData, verifyAccess, dll)
     const query = new URLSearchParams({ action, ...params }).toString();
     return fetch(`${functionUrl}?${query}`, { method: 'GET' })
     .then(response => response.text())
