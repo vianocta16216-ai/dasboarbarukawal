@@ -1,67 +1,40 @@
 const { createClient } = require('@supabase/supabase-js');
-const { google } = require('googleapis');
+const cloudinary = require('cloudinary').v2;
 const { SUBUNSUR_DATA } = require('./subunsur');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const GOOGLE_DRIVE_ROOT_FOLDER_ID = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
 const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD;
 const DELETE_PASSWORD = process.env.DELETE_PASSWORD;
 
-// ====== VARIABEL BARU UNTUK OAUTH 2.0 ======
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
-const GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-let drive;
 
-// ====== PERBAIKAN UTAMA: Menggunakan OAuth 2.0, BUKAN Service Account ======
-function getDrive() {
-  if (drive) return drive;
-  try {
-    const auth = new google.auth.OAuth2(
-      GOOGLE_CLIENT_ID,
-      GOOGLE_CLIENT_SECRET,
-      GOOGLE_REDIRECT_URI
-    );
-    
-    // Set refresh token agar otomatis login tanpa perlu login manual lagi
-    auth.setCredentials({ refresh_token: GOOGLE_REFRESH_TOKEN });
-    
-    drive = google.drive({ version: 'v3', auth });
-  } catch (e) { throw new Error('Google auth: ' + e.message); }
-  return drive;
-}
-
-async function getOrCreateFolder(parentId, name) {
-  const res = await getDrive().files.list({ q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${name.replace(/'/g, "\\'")}'`, fields: 'files(id, name)', spaces: 'drive' });
-  if (res.data.files.length) return res.data.files[0].id;
-  const folder = await getDrive().files.create({ resource: { name, mimeType: 'application/vnd.google-apps.folder' }, fields: 'id' });
-  return folder.data.id;
-}
-
-async function uploadFileToDrive(params) {
-  const { fileData, fileName, year, opdName, subunsur, paramId, paramLabel, level } = params;
+async function uploadFileToCloudinary(params) {
+  const { fileData, fileName, year, opdName, subunsur, paramId, level } = params;
   const bytes = Buffer.from(fileData, 'base64');
-  if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar untuk query string!');
-  const yearFolder = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`);
-  const opdFolder = await getOrCreateFolder(yearFolder, opdName);
-  const unsurMap = { '1': '1. LINGKUNGAN PENGENDALIAN', '2': '2. PENILAIAN RISIKO', '3': '3. KEGIATAN PENGENDALIAN', '4': '4. INFORMASI DAN KOMUNIKASI', '5': '5. EVALUASI DAN PEMANTAUAN' };
-  const unsurCode = subunsur.split('.')[0];
-  const unsurFolder = await getOrCreateFolder(opdFolder, unsurMap[unsurCode] || `Unsur ${unsurCode}`);
-  const subUnsurFolder = await getOrCreateFolder(unsurFolder, subunsur);
-  let paramName = paramLabel;
-  if (paramName.includes(' - ')) paramName = paramName.split(' - ')[1];
-  else if (paramName.includes('-')) paramName = paramName.split('-')[1];
-  if (!paramName || paramName.trim() === '') paramName = paramId;
-  paramName = paramName.trim();
-  const paramFolder = await getOrCreateFolder(subUnsurFolder, paramName);
-  const levelFolder = await getOrCreateFolder(paramFolder, `Level ${level}`);
-  const uniqueName = Date.now() + '_' + fileName;
-  const file = await getDrive().files.create({ resource: { name: uniqueName, parents: [levelFolder] }, media: { mimeType: 'application/octet-stream', body: bytes }, fields: 'id, webViewLink' });
-  return `https://drive.google.com/file/d/${file.data.id}/view`;
+
+  if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
+
+  const folder = `kawal_spip/${year}/${opdName}/${subunsur}/${paramId}/Level_${level}`;
+  const publicId = Date.now() + '_' + fileName;
+
+  const result = await new Promise((resolve, reject) => {
+    cloudinary.uploader.upload_stream(
+      { resource_type: 'auto', folder: folder, public_id: publicId },
+      (error, uploadResult) => {
+        if (error) reject(error);
+        else resolve(uploadResult);
+      }
+    ).end(bytes);
+  });
+
+  return result.secure_url;
 }
 
 exports.handler = async (event) => {
@@ -74,11 +47,8 @@ exports.handler = async (event) => {
 
   let params = {};
   try {
-    if (event.httpMethod === 'POST') {
-      params = JSON.parse(event.body || '{}');
-    } else {
-      params = event.queryStringParameters || {};
-    }
+    if (event.httpMethod === 'POST') params = JSON.parse(event.body || '{}');
+    else params = event.queryStringParameters || {};
   } catch (e) {
     return res({ status: 'error', message: 'Invalid JSON body: ' + e.message });
   }
@@ -133,12 +103,12 @@ exports.handler = async (event) => {
         return res({ status: 'success' });
       }
       case 'uploadFile': {
-        const fileUrl = await uploadFileToDrive(params);
+        const fileUrl = await uploadFileToCloudinary(params);
         return res(fileUrl);
       }
       case 'deleteFile': {
-        const fileId = params.fileUrl.match(/[-\w]{25,}/)[0];
-        await getDrive().files.delete({ fileId });
+        const publicId = params.fileUrl.split('/').slice(-2).join('/').replace(/\.[^.]+$/, '');
+        await cloudinary.uploader.destroy(publicId);
         return res({ status: 'success' });
       }
       default: return res({ status: 'error', message: 'Aksi tidak dikenal: ' + action });
