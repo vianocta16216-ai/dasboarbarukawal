@@ -27,9 +27,10 @@ async function getOrCreateFolder(parentId, name) {
   return folder.data.id;
 }
 
-async function uploadFileToDrive({ fileData, fileName, year, opdName, subunsur, paramId, paramLabel, level }) {
+async function uploadFileToDrive(params) {
+  const { fileData, fileName, year, opdName, subunsur, paramId, paramLabel, level } = params;
   const bytes = Buffer.from(fileData, 'base64');
-  if (bytes.length / 1024 / 1024 > 20) throw new Error('File >20MB');
+  if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar untuk query string!');
   const yearFolder = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`);
   const opdFolder = await getOrCreateFolder(yearFolder, opdName);
   const unsurMap = { '1': '1. LINGKUNGAN PENGENDALIAN', '2': '2. PENILAIAN RISIKO', '3': '3. KEGIATAN PENGENDALIAN', '4': '4. INFORMASI DAN KOMUNIKASI', '5': '5. EVALUASI DAN PEMANTAUAN' };
@@ -52,21 +53,8 @@ exports.handler = async (event) => {
   const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers };
 
-  // PARSING BODY: HANYA MENERIMA JSON (TIDAK ADA MULTIPART)
-  let params = {};
-  try {
-    if (event.body) {
-      let bodyStr = event.body;
-      if (event.isBase64Encoded) bodyStr = Buffer.from(bodyStr, 'base64').toString('utf8');
-      params = JSON.parse(bodyStr);
-    }
-    // Gabungkan dengan query string (jika ada)
-    if (event.queryStringParameters) {
-      params = { ...params, ...event.queryStringParameters };
-    }
-  } catch (e) {
-    return res({ status: 'error', message: 'Format body harus JSON' });
-  }
+  // ===== HANYA BACA QUERY STRING (TIDAK PERNAH MENYENTUH event.body) =====
+  const params = event.queryStringParameters || {};
 
   const action = params.action || '';
   const year = params.year || '2026';
@@ -108,41 +96,22 @@ exports.handler = async (event) => {
         if (!years.includes('2026')) years.push('2026');
         return res([...new Set(years)].sort());
       }
-      case 'addYear': { await supabase.from('years').insert({ year: params.year }); return res({ status: 'success' }); }
-      case 'deleteYear': { await supabase.from('opd_data').delete().eq('year', params.year); await supabase.from('years').delete().eq('year', params.year); return res({ status: 'success' }); }
-      case 'uploadFile': { const fileUrl = await uploadFileToDrive(params); return res(fileUrl); }
-      case 'deleteFile': { const fileId = params.fileUrl.match(/[-\w]{25,}/)[0]; await getDrive().files.delete({ fileId }); return res({ status: 'success' }); }
-      case 'createBackup': {
-        const { data: rows } = await supabase.from('opd_data').select('*').eq('year', year);
-        const folderId = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`);
-        const backupFolder = await getOrCreateFolder(folderId, 'backup');
-        const timestamp = new Date().toISOString().replace(/[-:T]/g, '_').slice(0, 19);
-        const fileName = `backup_${timestamp}.json`;
-        await getDrive().files.create({ resource: { name: fileName, parents: [backupFolder] }, media: { mimeType: 'application/json', body: JSON.stringify(rows) }, fields: 'id' });
-        return res({ status: 'success', message: 'Backup berhasil', fileName });
-      }
-      case 'listBackups': {
-        const folderId = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`);
-        const backupFolder = await getOrCreateFolder(folderId, 'backup');
-        const files = await getDrive().files.list({ q: `'${backupFolder}' in parents and trashed=false`, fields: 'files(id, name, size, createdTime)', orderBy: 'createdTime desc' });
-        return res(files.data.map(f => ({ fileName: f.name, timestamp: f.createdTime, size: Math.round(f.size / 1024) })));
-      }
-      case 'restoreBackup': {
-        const folderId = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`);
-        const backupFolder = await getOrCreateFolder(folderId, 'backup');
-        const files = await getDrive().files.list({ q: `'${backupFolder}' in parents and name='${params.fileName}' and trashed=false`, fields: 'files(id)' });
-        const fileId = files.data[0].id;
-        const content = await getDrive().files.get({ fileId, alt: 'media' });
-        const rows = JSON.parse(content.data);
-        await supabase.from('opd_data').delete().eq('year', year);
-        for (const row of rows) await supabase.from('opd_data').insert(row);
+      case 'addYear': {
+        await supabase.from('years').insert({ year: params.year });
         return res({ status: 'success' });
       }
-      case 'deleteBackup': {
-        const folderId = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`);
-        const backupFolder = await getOrCreateFolder(folderId, 'backup');
-        const files = await getDrive().files.list({ q: `'${backupFolder}' in parents and name='${params.fileName}' and trashed=false`, fields: 'files(id)' });
-        if (files.data.length) await getDrive().files.delete({ fileId: files.data[0].id });
+      case 'deleteYear': {
+        await supabase.from('opd_data').delete().eq('year', params.year);
+        await supabase.from('years').delete().eq('year', params.year);
+        return res({ status: 'success' });
+      }
+      case 'uploadFile': {
+        const fileUrl = await uploadFileToDrive(params);
+        return res(fileUrl);
+      }
+      case 'deleteFile': {
+        const fileId = params.fileUrl.match(/[-\w]{25,}/)[0];
+        await getDrive().files.delete({ fileId });
         return res({ status: 'success' });
       }
       default: return res({ status: 'error', message: 'Aksi tidak dikenal: ' + action });
