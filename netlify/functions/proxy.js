@@ -3,7 +3,6 @@ const { createClient } = require('@supabase/supabase-js');
 const { google } = require('googleapis');
 const { SUBUNSUR_DATA } = require('./subunsur');
 
-// ====== KONFIGURASI ======
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const GOOGLE_DRIVE_ROOT_FOLDER_ID = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
@@ -93,7 +92,6 @@ async function deleteFileFromDrive(fileUrl) {
   await getDrive().files.delete({ fileId });
 }
 
-// Mapping nama kolom
 function mapDatabaseRowToFrontend(row) {
   if (!row) return row;
   return {
@@ -113,7 +111,6 @@ function mapFrontendRowToDatabase(row) {
 
 const ALLOWED_FIELDS = ['sa', 'evidence', 'qa_apip', 'qaApip', 'mri', 'iepk', 'rtp', 'status', 'opd', 'subunsurs'];
 
-// ====== HANDLER UTAMA ======
 exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -123,7 +120,7 @@ exports.handler = async (event) => {
 
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers };
 
-  // PARSING BODY TAHAN BANTING (MENGATASI part.body.pipe)
+  // PARSING BODY TAHAN BANTING
   let params = {};
   try {
     let bodyStr = event.body || '';
@@ -146,16 +143,13 @@ exports.handler = async (event) => {
     switch (action) {
       case 'verifyAccess':
         return jsonRes({ status: params.password === ACCESS_PASSWORD ? 'success' : 'error', message: params.password === ACCESS_PASSWORD ? 'Akses diterima' : 'Password salah' }, headers);
-
       case 'verifyDelete':
         return jsonRes({ status: params.password === DELETE_PASSWORD ? 'success' : 'error', message: params.password === DELETE_PASSWORD ? 'Password hapus benar' : 'Password hapus salah' }, headers);
-
       case 'getData': {
         const { data, error } = await supabase.from('opd_data').select('*').eq('year', year);
         if (error) throw error;
         return jsonRes((data || []).map(mapDatabaseRowToFrontend), headers);
       }
-
       case 'saveData': {
         const rows = JSON.parse(params.rows);
         if (!Array.isArray(rows)) throw new Error('Format rows tidak valid');
@@ -178,22 +172,18 @@ exports.handler = async (event) => {
         }
         return jsonRes({ status: 'success', message: 'Data berhasil disimpan' }, headers);
       }
-
       case 'saveField': {
         const { opdId, field, value } = params;
         if (!opdId || !field) return jsonRes({ status: 'error', message: 'Parameter opdId dan field wajib diisi' }, headers);
         if (!ALLOWED_FIELDS.includes(field)) return jsonRes({ status: 'error', message: `Field '${field}' tidak diizinkan` }, headers);
-
         const fieldMap = { 'qaApip': 'qa_apip', 'qa_apip': 'qa_apip' };
         const dbField = fieldMap[field] || field;
         const updateObj = {};
         updateObj[dbField] = value;
-
         const { error } = await supabase.from('opd_data').update(updateObj).eq('id', opdId);
         if (error) throw error;
         return jsonRes({ status: 'success', message: 'Field berhasil disimpan' }, headers);
       }
-
       case 'deleteOpd': {
         const { opdId } = params;
         if (!opdId) return jsonRes({ status: 'error', message: 'Parameter opdId wajib diisi' }, headers);
@@ -201,7 +191,6 @@ exports.handler = async (event) => {
         else await supabase.from('opd_data').delete().eq('id', opdId);
         return jsonRes({ status: 'success', message: 'OPD berhasil dihapus' }, headers);
       }
-
       case 'getYears': {
         const { data } = await supabase.from('years').select('year');
         const years = data.map(item => item.year);
@@ -209,7 +198,6 @@ exports.handler = async (event) => {
         const uniqueYears = [...new Set(years)].sort((a,b) => b.localeCompare(a));
         return jsonRes(uniqueYears, headers);
       }
-
       case 'addYear': {
         const newYear = params.year;
         if (!/^\d{4}$/.test(newYear)) return jsonRes({ status: 'error', message: 'Tahun tidak valid' }, headers);
@@ -217,7 +205,6 @@ exports.handler = async (event) => {
         if (error) throw error;
         return jsonRes({ status: 'success', message: 'Tahun berhasil ditambahkan' }, headers);
       }
-
       case 'deleteYear': {
         const delYear = params.year;
         if (delYear === '2026') return jsonRes({ status: 'error', message: 'Tahun default tidak boleh dihapus' }, headers);
@@ -225,18 +212,15 @@ exports.handler = async (event) => {
         await supabase.from('years').delete().eq('year', delYear);
         return jsonRes({ status: 'success', message: 'Tahun berhasil dihapus' }, headers);
       }
-
       case 'uploadFile': {
         const fileUrl = await uploadFileToDrive(params);
         return jsonRes(fileUrl, headers);
       }
-
       case 'deleteFile': {
         if (!params.fileUrl) return jsonRes({ status: 'error', message: 'Parameter fileUrl wajib diisi' }, headers);
         await deleteFileFromDrive(params.fileUrl);
         return jsonRes({ status: 'success', message: 'File dihapus' }, headers);
       }
-
       case 'createBackup': {
         const { data: rows } = await supabase.from('opd_data').select('*').eq('year', year);
         const folderId = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`);
@@ -250,7 +234,6 @@ exports.handler = async (event) => {
         });
         return jsonRes({ status: 'success', message: 'Backup berhasil dibuat', fileName }, headers);
       }
-
       case 'listBackups': {
         const folderId = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`);
         const backupFolder = await getOrCreateFolder(folderId, 'backup');
@@ -267,7 +250,6 @@ exports.handler = async (event) => {
         }));
         return jsonRes(backups, headers);
       }
-
       case 'restoreBackup': {
         const { fileName } = params;
         if (!fileName) return jsonRes({ status: 'error', message: 'Parameter fileName wajib diisi' }, headers);
@@ -288,7 +270,6 @@ exports.handler = async (event) => {
         }
         return jsonRes({ status: 'success', message: 'Backup berhasil dipulihkan' }, headers);
       }
-
       case 'deleteBackup': {
         const { fileName } = params;
         if (!fileName) return jsonRes({ status: 'error', message: 'Parameter fileName wajib diisi' }, headers);
@@ -301,10 +282,8 @@ exports.handler = async (event) => {
         if (res.data.files.length > 0) await getDrive().files.delete({ fileId: res.data.files[0].id });
         return jsonRes({ status: 'success', message: 'Backup dihapus' }, headers);
       }
-
       case 'getSubunsurData':
         return jsonRes(SUBUNSUR_DATA, headers);
-
       default:
         return jsonRes({ status: 'error', message: `Aksi '${action}' tidak dikenal` }, headers);
     }
