@@ -11,7 +11,6 @@ const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD;
 const DELETE_PASSWORD = process.env.DELETE_PASSWORD;
 const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
-// Validasi Environment Variables
 const missingEnv = [];
 if (!SUPABASE_URL) missingEnv.push('SUPABASE_URL');
 if (!SUPABASE_KEY) missingEnv.push('SUPABASE_SERVICE_ROLE_KEY');
@@ -23,10 +22,8 @@ if (missingEnv.length > 0) {
   throw new Error('Environment variables belum diisi: ' + missingEnv.join(', '));
 }
 
-// Inisialisasi Supabase
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ====== GOOGLE DRIVE ======
 let drive = null;
 function getDrive() {
   if (drive) return drive;
@@ -42,7 +39,6 @@ function getDrive() {
   return drive;
 }
 
-// ====== HELPER GOOGLE DRIVE ======
 async function getOrCreateFolder(parentId, folderName) {
   const res = await getDrive().files.list({
     q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${folderName.replace(/'/g, "\\'")}'`,
@@ -97,27 +93,24 @@ async function deleteFileFromDrive(fileUrl) {
   await getDrive().files.delete({ fileId });
 }
 
-// ====== HELPER MAPPING NAMA FIELD ======
-// Fungsi ini mengubah format data dari database agar sesuai dengan format frontend
+// Mapping nama kolom
 function mapDatabaseRowToFrontend(row) {
   if (!row) return row;
   return {
     ...row,
-    qaApip: row.qa_apip || row.qaApip || 'Belum', // Ambil dari qa_apip (DB) atau qaApip (jika sudah ada)
-    qa_apip: row.qa_apip || row.qaApip || 'Belum', // Biarkan juga tersedia
+    qaApip: row.qa_apip || row.qaApip || 'Belum',
+    qa_apip: row.qa_apip || row.qaApip || 'Belum',
   };
 }
 
-// Fungsi ini mengubah format data dari frontend agar sesuai dengan format database
 function mapFrontendRowToDatabase(row) {
   if (!row) return row;
   return {
     ...row,
-    qa_apip: row.qaApip || row.qa_apip || 'Belum', // Simpan ke qa_apip
+    qa_apip: row.qaApip || row.qa_apip || 'Belum',
   };
 }
 
-// Daftar field yang diizinkan untuk di-update
 const ALLOWED_FIELDS = ['sa', 'evidence', 'qa_apip', 'qaApip', 'mri', 'iepk', 'rtp', 'status', 'opd', 'subunsurs'];
 
 // ====== HANDLER UTAMA ======
@@ -130,11 +123,10 @@ exports.handler = async (event) => {
 
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers };
 
-  // PARSING BODY YANG TAHAN BANTING (MENGATASI part.body.pipe)
+  // PARSING BODY TAHAN BANTING (MENGATASI part.body.pipe)
   let params = {};
   try {
     let bodyStr = event.body || '';
-    // Jika Netlify mengirim body sebagai base64 (kadang terjadi), decode dulu
     if (event.isBase64Encoded) {
       bodyStr = Buffer.from(bodyStr, 'base64').toString('utf8');
     }
@@ -161,22 +153,19 @@ exports.handler = async (event) => {
       case 'getData': {
         const { data, error } = await supabase.from('opd_data').select('*').eq('year', year);
         if (error) throw error;
-        // MAPPING: qa_apip -> qaApip agar frontend membaca dengan benar
-        const mappedData = (data || []).map(mapDatabaseRowToFrontend);
-        return jsonRes(mappedData, headers);
+        return jsonRes((data || []).map(mapDatabaseRowToFrontend), headers);
       }
 
       case 'saveData': {
         const rows = JSON.parse(params.rows);
         if (!Array.isArray(rows)) throw new Error('Format rows tidak valid');
         for (const row of rows) {
-          // MAPPING: qaApip -> qa_apip agar database menyimpan dengan benar
           const payload = mapFrontendRowToDatabase({
             id: row.id,
             opd: row.opd || '',
             sa: parseFloat(row.sa) || 0,
             evidence: row.evidence || 'Belum',
-            qa_apip: row.qaApip || row.qa_apip || 'Belum',
+            qa_apip: row.qaApip || 'Belum',
             mri: parseFloat(row.mri) || 0,
             iepk: parseFloat(row.iepk) || 0,
             rtp: row.rtp || 'Belum',
@@ -195,13 +184,8 @@ exports.handler = async (event) => {
         if (!opdId || !field) return jsonRes({ status: 'error', message: 'Parameter opdId dan field wajib diisi' }, headers);
         if (!ALLOWED_FIELDS.includes(field)) return jsonRes({ status: 'error', message: `Field '${field}' tidak diizinkan` }, headers);
 
-        // MAPPING: qaApip -> qa_apip (dan sebaliknya)
-        const fieldMap = {
-          'qaApip': 'qa_apip',
-          'qa_apip': 'qa_apip'
-        };
+        const fieldMap = { 'qaApip': 'qa_apip', 'qa_apip': 'qa_apip' };
         const dbField = fieldMap[field] || field;
-
         const updateObj = {};
         updateObj[dbField] = value;
 
