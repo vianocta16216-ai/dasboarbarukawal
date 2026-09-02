@@ -10,36 +10,44 @@ const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD;
 const DELETE_PASSWORD = process.env.DELETE_PASSWORD;
 const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
-const missingEnv = [];
-if (!SUPABASE_URL) missingEnv.push('SUPABASE_URL');
-if (!SUPABASE_KEY) missingEnv.push('SUPABASE_SERVICE_ROLE_KEY');
-if (!GOOGLE_DRIVE_ROOT_FOLDER_ID) missingEnv.push('GOOGLE_DRIVE_ROOT_FOLDER_ID');
-if (!ACCESS_PASSWORD) missingEnv.push('ACCESS_PASSWORD');
-if (!DELETE_PASSWORD) missingEnv.push('DELETE_PASSWORD');
-if (!GOOGLE_SERVICE_ACCOUNT_JSON) missingEnv.push('GOOGLE_SERVICE_ACCOUNT_JSON');
-if (missingEnv.length > 0) throw new Error('Env belum diisi: ' + missingEnv.join(', '));
+const missing = [];
+if (!SUPABASE_URL) missing.push('SUPABASE_URL');
+if (!SUPABASE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+if (!GOOGLE_DRIVE_ROOT_FOLDER_ID) missing.push('GOOGLE_DRIVE_ROOT_FOLDER_ID');
+if (!ACCESS_PASSWORD) missing.push('ACCESS_PASSWORD');
+if (!DELETE_PASSWORD) missing.push('DELETE_PASSWORD');
+if (!GOOGLE_SERVICE_ACCOUNT_JSON) missing.push('GOOGLE_SERVICE_ACCOUNT_JSON');
+if (missing.length) throw new Error('Env: ' + missing.join(', '));
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-let drive = null;
+let drive;
 function getDrive() {
   if (drive) return drive;
   try {
-    const auth = new google.auth.GoogleAuth({ credentials: JSON.parse(GOOGLE_SERVICE_ACCOUNT_JSON), scopes: ['https://www.googleapis.com/auth/drive'] });
+    const auth = new google.auth.GoogleAuth({
+      credentials: JSON.parse(GOOGLE_SERVICE_ACCOUNT_JSON),
+      scopes: ['https://www.googleapis.com/auth/drive']
+    });
     drive = google.drive({ version: 'v3', auth });
-  } catch (e) { throw new Error('Google auth gagal: ' + e.message); }
+  } catch (e) { throw new Error('Google auth: ' + e.message); }
   return drive;
 }
 
-async function getOrCreateFolder(parentId, folderName) {
-  const res = await getDrive().files.list({ q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${folderName.replace(/'/g, "\\'")}'`, fields: 'files(id, name)', spaces: 'drive' });
-  if (res.data.files.length > 0) return res.data.files[0].id;
-  const folder = await getDrive().files.create({ resource: { name: folderName, mimeType: 'application/vnd.google-apps.folder' }, fields: 'id' });
+async function getOrCreateFolder(parentId, name) {
+  const res = await getDrive().files.list({
+    q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and name='${name.replace(/'/g, "\\'")}'`,
+    fields: 'files(id, name)', spaces: 'drive'
+  });
+  if (res.data.files.length) return res.data.files[0].id;
+  const folder = await getDrive().files.create({
+    resource: { name, mimeType: 'application/vnd.google-apps.folder' }, fields: 'id'
+  });
   return folder.data.id;
 }
 
 async function uploadFileToDrive({ fileData, fileName, year, opdName, subunsur, paramId, paramLabel, level }) {
   const bytes = Buffer.from(fileData, 'base64');
-  if (bytes.length / (1024 * 1024) > 20) throw new Error('File >20MB');
+  if (bytes.length / 1024 / 1024 > 20) throw new Error('File >20MB');
   const yearFolder = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`);
   const opdFolder = await getOrCreateFolder(yearFolder, opdName);
   const unsurMap = { '1': '1. LINGKUNGAN PENGENDALIAN', '2': '2. PENILAIAN RISIKO', '3': '3. KEGIATAN PENGENDALIAN', '4': '4. INFORMASI DAN KOMUNIKASI', '5': '5. EVALUASI DAN PEMANTAUAN' };
@@ -54,7 +62,11 @@ async function uploadFileToDrive({ fileData, fileName, year, opdName, subunsur, 
   const paramFolder = await getOrCreateFolder(subUnsurFolder, paramName);
   const levelFolder = await getOrCreateFolder(paramFolder, `Level ${level}`);
   const uniqueName = Date.now() + '_' + fileName;
-  const file = await getDrive().files.create({ resource: { name: uniqueName, parents: [levelFolder] }, media: { mimeType: 'application/octet-stream', body: bytes }, fields: 'id, webViewLink' });
+  const file = await getDrive().files.create({
+    resource: { name: uniqueName, parents: [levelFolder] },
+    media: { mimeType: 'application/octet-stream', body: bytes },
+    fields: 'id, webViewLink'
+  });
   return `https://drive.google.com/file/d/${file.data.id}/view`;
 }
 
@@ -63,15 +75,15 @@ async function deleteFileFromDrive(fileUrl) {
   await getDrive().files.delete({ fileId });
 }
 
-function mapDatabaseRowToFrontend(row) {
+function mapDBToFront(row) {
   if (!row) return row;
   return { ...row, qaApip: row.qa_apip || row.qaApip || 'Belum', qa_apip: row.qa_apip || row.qaApip || 'Belum' };
 }
-function mapFrontendRowToDatabase(row) {
+function mapFrontToDB(row) {
   if (!row) return row;
   return { ...row, qa_apip: row.qaApip || row.qa_apip || 'Belum' };
 }
-const ALLOWED_FIELDS = ['sa', 'evidence', 'qa_apip', 'qaApip', 'mri', 'iepk', 'rtp', 'status', 'opd', 'subunsurs'];
+const ALLOWED = ['sa', 'evidence', 'qa_apip', 'qaApip', 'mri', 'iepk', 'rtp', 'status', 'opd', 'subunsurs'];
 
 exports.handler = async (event) => {
   const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
@@ -82,7 +94,9 @@ exports.handler = async (event) => {
     if (event.isBase64Encoded) bodyStr = Buffer.from(bodyStr, 'base64').toString('utf8');
     if (bodyStr) params = JSON.parse(bodyStr);
     else if (event.queryStringParameters) params = event.queryStringParameters;
-  } catch (e) { return jsonRes({ status: 'error', message: 'Format body tidak valid' }, headers); }
+  } catch (e) {
+    return jsonRes({ status: 'error', message: 'Format body tidak valid' }, headers);
+  }
   const action = params.action || '';
   const year = params.year || '2026';
   try {
@@ -92,13 +106,13 @@ exports.handler = async (event) => {
       case 'getData': {
         const { data, error } = await supabase.from('opd_data').select('*').eq('year', year);
         if (error) throw error;
-        return jsonRes((data || []).map(mapDatabaseRowToFrontend), headers);
+        return jsonRes((data || []).map(mapDBToFront), headers);
       }
       case 'saveData': {
         const rows = JSON.parse(params.rows);
         if (!Array.isArray(rows)) throw new Error('Format rows tidak valid');
         for (const row of rows) {
-          const payload = mapFrontendRowToDatabase({ id: row.id, opd: row.opd || '', sa: parseFloat(row.sa) || 0, evidence: row.evidence || 'Belum', qa_apip: row.qaApip || 'Belum', mri: parseFloat(row.mri) || 0, iepk: parseFloat(row.iepk) || 0, rtp: row.rtp || 'Belum', status: row.status || 'Belum', subunsurs: row.subunsurs || {}, year });
+          const payload = mapFrontToDB({ id: row.id, opd: row.opd || '', sa: parseFloat(row.sa) || 0, evidence: row.evidence || 'Belum', qa_apip: row.qaApip || 'Belum', mri: parseFloat(row.mri) || 0, iepk: parseFloat(row.iepk) || 0, rtp: row.rtp || 'Belum', status: row.status || 'Belum', subunsurs: row.subunsurs || {}, year });
           const { error } = await supabase.from('opd_data').upsert(payload, { onConflict: 'id' });
           if (error) throw error;
         }
@@ -107,12 +121,10 @@ exports.handler = async (event) => {
       case 'saveField': {
         const { opdId, field, value } = params;
         if (!opdId || !field) return jsonRes({ status: 'error', message: 'Parameter opdId dan field wajib diisi' }, headers);
-        if (!ALLOWED_FIELDS.includes(field)) return jsonRes({ status: 'error', message: `Field '${field}' tidak diizinkan` }, headers);
+        if (!ALLOWED.includes(field)) return jsonRes({ status: 'error', message: `Field '${field}' tidak diizinkan` }, headers);
         const fieldMap = { 'qaApip': 'qa_apip', 'qa_apip': 'qa_apip' };
         const dbField = fieldMap[field] || field;
-        const updateObj = {};
-        updateObj[dbField] = value;
-        const { error } = await supabase.from('opd_data').update(updateObj).eq('id', opdId);
+        const { error } = await supabase.from('opd_data').update({ [dbField]: value }).eq('id', opdId);
         if (error) throw error;
         return jsonRes({ status: 'success', message: 'Field berhasil disimpan' }, headers);
       }
