@@ -1852,8 +1852,16 @@ let originalRows = [];
 // ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
 function callServer(action, params = {}) {
   const functionUrl = '/.netlify/functions/finalHandler';
-  const query = new URLSearchParams({ action, ...params }).toString();
-  return fetch(`${functionUrl}?${query}`, { method: 'GET' })
+  // Deteksi payload besar (file base64, data rows)
+  const hasLargePayload = params.fileData || params.rows;
+
+  if (hasLargePayload) {
+    // Gunakan POST untuk payload besar agar tidak melebihi batas URL (Error 414)
+    return fetch(functionUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...params })
+    })
     .then(response => response.text())
     .then(text => {
       let data;
@@ -1861,7 +1869,20 @@ function callServer(action, params = {}) {
       if (data && data.status === 'error') throw new Error(data.message);
       return data;
     });
+  } else {
+    // Metode GET tetap untuk request kecil (getData, verifyAccess, dll)
+    const query = new URLSearchParams({ action, ...params }).toString();
+    return fetch(`${functionUrl}?${query}`, { method: 'GET' })
+    .then(response => response.text())
+    .then(text => {
+      let data;
+      try { data = JSON.parse(text); } catch (e) { throw new Error('Server error: ' + text.substring(0, 200)); }
+      if (data && data.status === 'error') throw new Error(data.message);
+      return data;
+    });
+  }
 }
+
 // ====== VERIFIKASI PASSWORD ======
 async function verifyAccess(password) {
   try {
@@ -1918,7 +1939,6 @@ async function loadData() {
   
   try {
     const data = await callServer('getData', { year });
-    // SELALU reset rows ke array kosong dulu
     rows = [];
     if (Array.isArray(data)) {
       rows = data.map(r => ({
@@ -1942,7 +1962,6 @@ async function loadData() {
   } catch (e) {
     status.textContent = '⚠️ ' + e.message;
     console.error(e);
-    // Pastikan rows tetap array kosong jika error
     rows = [];
     render();
     updateKpisLocal();
@@ -2053,7 +2072,6 @@ async function saveData() {
   const year = currentYear;
 
   try {
-    // PENTING: pastikan rows adalah array sebelum diproses
     if (!Array.isArray(rows)) {
       console.error('rows bukan array, diset kosong', rows);
       rows = [];
@@ -2637,7 +2655,7 @@ async function openEditModal(id) {
 // ====== UPLOAD FILE ======
 async function uploadFile(row, subCode, paramId, level, file) {
   if (!file) return;
-  if (file.size > 5 * 1024 * 1024) throw new Error('File terlalu besar! Maks 5MB untuk stabilitas.');
+  if (file.size > 4 * 1024 * 1024) throw new Error('File terlalu besar! Maks 4MB untuk stabilitas.');
   const reader = new FileReader();
   return new Promise((resolve, reject) => {
     reader.onload = async () => {
