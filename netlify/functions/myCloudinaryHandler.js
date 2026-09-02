@@ -1,4 +1,4 @@
-// VERSION 2 CLOUDINARY
+// VERSION 2 CLOUDINARY - myCloudinaryHandler.js
 const { createClient } = require('@supabase/supabase-js');
 const cloudinary = require('cloudinary').v2;
 const { SUBUNSUR_DATA } = require('./subunsur');
@@ -16,12 +16,44 @@ cloudinary.config({
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Mapping Unsur (1-5) sesuai urutan Anda
+const UNSUR_MAP = {
+  '1': '1. LINGKUNGAN PENGENDALIAN',
+  '2': '2. PENILAIAN RISIKO',
+  '3': '3. KEGIATAN PENGENDALIAN',
+  '4': '4. INFORMASI DAN KOMUNIKASI',
+  '5': '5. EVALUASI DAN PEMANTAUAN'
+};
+
 async function uploadFileToCloudinary(params) {
   const { fileData, fileName, year, opdName, subunsur, paramId, level } = params;
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  const folder = `kawal_spip/${year}/${opdName}/${subunsur}/${paramId}/Level_${level}`;
+  // ====== MEMBUAT NAMA JUDUL YANG LENGKAP ======
+  // 1. Ambil angka Unsur dari subunsur (misal '1.1' -> '1')
+  const unsurKey = subunsur.split('.')[0];
+  const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
+
+  // 2. Ambil nama Sub-unsur dari data (misal '1.1' -> '1.1 Penegakan Integritas dan Nilai Etika')
+  const subUnsurData = SUBUNSUR_DATA[subunsur];
+  const subUnsurName = subUnsurData ? subUnsurData.label : subunsur;
+
+  // 3. Ambil nama Parameter dari data (misal '1.1.1' -> 'K/L/D menegakkan integritas...')
+  let paramDesc = paramId;
+  if (subUnsurData && subUnsurData.params) {
+    const paramObj = subUnsurData.params.find(p => p.id === paramId);
+    if (paramObj) paramDesc = paramObj.desc;
+  }
+
+  // ====== MEMBERSIHKAN NAMA (hapus karakter aneh / : ? dll) ======
+  const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 50);
+  const safeSubUnsur = subUnsurName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80);
+  const safeParam = paramDesc.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 100);
+
+  // ====== SUSUNAN FOLDER SESUAI PERMINTAAN ======
+  // kawal_spip/Tahun/OPD/UNSUR/SUB-UNSUR/PARAMETER/Level_X
+  const folder = `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level_${level}`;
   const publicId = Date.now() + '_' + fileName;
 
   const result = await new Promise((resolve, reject) => {
