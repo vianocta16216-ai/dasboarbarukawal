@@ -1850,18 +1850,31 @@ let chartInstance = null;
 let originalRows = [];
 
 // ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
+// ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
 function callServer(action, params = {}) {
   const functionUrl = '/.netlify/functions/kawal_spip_handler';
-  // Gabungkan semua params ke query string
-  const query = new URLSearchParams({ action, ...params }).toString();
-  return fetch(`${functionUrl}?${query}`, { method: 'GET' })
-    .then(response => response.text())
-    .then(text => {
-      let data;
-      try { data = JSON.parse(text); } catch (e) { throw new Error('Server error: ' + text); }
-      if (data && data.status === 'error') throw new Error(data.message);
-      return data;
-    });
+  
+  // UBAH KE POST: Kirim data sebagai JSON di body, bukan di URL
+  return fetch(functionUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ action, ...params })
+  })
+  .then(response => response.text())
+  .then(text => {
+    let data;
+    try { 
+      data = JSON.parse(text); 
+    } catch (e) { 
+      throw new Error('Server error: ' + text); 
+    }
+    if (data && data.status === 'error') {
+      throw new Error(data.message);
+    }
+    return data;
+  });
 }
 // ====== VERIFIKASI PASSWORD ======
 async function verifyAccess(password) {
