@@ -7,14 +7,29 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const GOOGLE_DRIVE_ROOT_FOLDER_ID = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
 const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD;
 const DELETE_PASSWORD = process.env.DELETE_PASSWORD;
-const GOOGLE_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+
+// ====== VARIABEL BARU UNTUK OAUTH 2.0 ======
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
+const GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 let drive;
+
+// ====== PERBAIKAN UTAMA: Menggunakan OAuth 2.0, BUKAN Service Account ======
 function getDrive() {
   if (drive) return drive;
   try {
-    const auth = new google.auth.GoogleAuth({ credentials: JSON.parse(GOOGLE_SERVICE_ACCOUNT_JSON), scopes: ['https://www.googleapis.com/auth/drive'] });
+    const auth = new google.auth.OAuth2(
+      GOOGLE_CLIENT_ID,
+      GOOGLE_CLIENT_SECRET,
+      GOOGLE_REDIRECT_URI
+    );
+    
+    // Set refresh token agar otomatis login tanpa perlu login manual lagi
+    auth.setCredentials({ refresh_token: GOOGLE_REFRESH_TOKEN });
+    
     drive = google.drive({ version: 'v3', auth });
   } catch (e) { throw new Error('Google auth: ' + e.message); }
   return drive;
@@ -60,10 +75,8 @@ exports.handler = async (event) => {
   let params = {};
   try {
     if (event.httpMethod === 'POST') {
-      // Baca JSON dari Body untuk upload file atau simpan data (mencegah Error 414)
       params = JSON.parse(event.body || '{}');
     } else {
-      // Baca Query String untuk request kecil
       params = event.queryStringParameters || {};
     }
   } catch (e) {
@@ -120,7 +133,6 @@ exports.handler = async (event) => {
         return res({ status: 'success' });
       }
       case 'uploadFile': {
-        // params.fileData sekarang berasal dari Body POST
         const fileUrl = await uploadFileToDrive(params);
         return res(fileUrl);
       }
