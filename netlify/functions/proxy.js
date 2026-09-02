@@ -1,4 +1,3 @@
-// netlify/functions/proxy.js
 const { createClient } = require('@supabase/supabase-js');
 const { google } = require('googleapis');
 const { SUBUNSUR_DATA } = require('./subunsur');
@@ -99,13 +98,7 @@ exports.handler = async (event) => {
       case 'getYears': { const { data } = await supabase.from('years').select('year'); const years = data.map(item => item.year); if (!years.includes('2026')) years.push('2026'); return jsonRes([...new Set(years)].sort((a,b) => b.localeCompare(a)), headers); }
       case 'addYear': { const newYear = params.year; if (!/^\d{4}$/.test(newYear)) return jsonRes({ status: 'error', message: 'Tahun tidak valid' }, headers); const { error } = await supabase.from('years').insert({ year: newYear }); if (error) throw error; return jsonRes({ status: 'success', message: 'Tahun berhasil ditambahkan' }, headers); }
       case 'deleteYear': { const delYear = params.year; if (delYear === '2026') return jsonRes({ status: 'error', message: 'Tahun default tidak boleh dihapus' }, headers); await supabase.from('opd_data').delete().eq('year', delYear); await supabase.from('years').delete().eq('year', delYear); return jsonRes({ status: 'success', message: 'Tahun berhasil dihapus' }, headers); }
-      
-      // ✅ UPLOAD FILE (JSON BASE64)
-      case 'uploadFile': {
-        const fileUrl = await uploadFileToDrive(params);
-        return jsonRes(fileUrl, headers);
-      }
-
+      case 'uploadFile': { const fileUrl = await uploadFileToDrive(params); return jsonRes(fileUrl, headers); }
       case 'deleteFile': { if (!params.fileUrl) return jsonRes({ status: 'error', message: 'Parameter fileUrl wajib diisi' }, headers); await deleteFileFromDrive(params.fileUrl); return jsonRes({ status: 'success', message: 'File dihapus' }, headers); }
       case 'createBackup': { const { data: rows } = await supabase.from('opd_data').select('*').eq('year', year); const folderId = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`); const backupFolder = await getOrCreateFolder(folderId, 'backup'); const timestamp = new Date().toISOString().replace(/[-:T]/g, '_').slice(0, 19); const fileName = `backup_${timestamp}.json`; await getDrive().files.create({ resource: { name: fileName, parents: [backupFolder] }, media: { mimeType: 'application/json', body: JSON.stringify(rows) }, fields: 'id' }); return jsonRes({ status: 'success', message: 'Backup berhasil dibuat', fileName }, headers); }
       case 'listBackups': { const folderId = await getOrCreateFolder(GOOGLE_DRIVE_ROOT_FOLDER_ID, `year_${year}`); const backupFolder = await getOrCreateFolder(folderId, 'backup'); const res = await getDrive().files.list({ q: `'${backupFolder}' in parents and trashed=false`, fields: 'files(id, name, size, createdTime)', orderBy: 'createdTime desc' }); return jsonRes(res.data.files.map(file => ({ fileName: file.name, timestamp: file.createdTime, size: Math.round(file.size / 1024), count: 0 })), headers); }
