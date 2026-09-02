@@ -1853,18 +1853,26 @@ let originalRows = [];
 function callServer(action, params = {}) {
   const functionUrl = '/.netlify/functions/proxy';
   const body = { ...params, action };
+  
+  // KIRIM SEBAGAI BLOB/STREAM JUGA BISA, TAPI KITA PAKAI JSON
+  // TAPI KITA PASTIKAN HEADERNYA SANGAT JELAS
   return fetch(functionUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    headers: { 
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(body), // JANGAN GUNAKAN FormData
   })
     .then(async (response) => {
+      // Baca sebagai teks dulu, karena Netlify bisa mengembalikan error HTML
       const text = await response.text();
       let data;
       try {
         data = JSON.parse(text);
       } catch (e) {
-        throw new Error('Server mengembalikan respons non-JSON: ' + text.substring(0, 200));
+        // Jika bukan JSON, ini error dari Netlify
+        throw new Error('Server error (bukan JSON): ' + text.substring(0, 200));
       }
       if (data && data.status === 'error') {
         throw new Error(data.message || 'Terjadi kesalahan pada server');
@@ -2654,14 +2662,16 @@ async function uploadFile(row, subCode, paramId, level, file) {
   if (file.size > 10 * 1024 * 1024) {
     throw new Error(`File ${file.name} terlalu besar! Maksimal 10 MB per file.`);
   }
+  
   const reader = new FileReader();
   return new Promise((resolve, reject) => {
     reader.onload = async () => {
-      const base64 = reader.result.split(',')[1];
+      const base64 = reader.result.split(',')[1]; // Ambil base64 saja
       const paramObj = SUBUNSUR_DATA[subCode].params.find(p => p.id === paramId);
       const paramLabel = subCode + ' - ' + (paramObj ? paramObj.desc : paramId);
       const opdName = row.opd;
       try {
+        // Kirim JSON murni ke fungsi
         const result = await callServer('uploadFile', {
           opdId: row.id,
           opdName,
