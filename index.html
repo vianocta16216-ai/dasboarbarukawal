@@ -1851,7 +1851,7 @@ let originalRows = [];
 
 // ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
 function callServer(action, params = {}) {
-  const functionUrl = '/.netlify/functions/finalHandler';
+  const functionUrl = '/.netlify/functions/myCloudinaryHandler';
   // Deteksi payload besar (file base64, data rows)
   const hasLargePayload = params.fileData || params.rows;
 
