@@ -1,4 +1,4 @@
-// VERSION 5 - CLOUDINARY (RAW) - PASTIKAN INI YANG DI DEPLOY
+// VERSION 6 - CLOUDINARY (FIX DOWNLOAD)
 const { createClient } = require('@supabase/supabase-js');
 const cloudinary = require('cloudinary').v2;
 const { SUBUNSUR_DATA } = require('./subunsur');
@@ -29,22 +29,18 @@ async function uploadFileToCloudinary(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // Folder tetap sesuai permintaan
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s]/g, '').substring(0, 50) || 'OPD';
   const folder = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}`;
 
-  // ====== PENTING: TANPA EKSTENSI DI PUBLIC_ID (Cegah .pdf.pdf) ======
+  // Nama pendek tanpa ekstensi .pdf lagi agar tidak jadi .pdf.pdf
   const publicId = Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
 
+  // Ganti raw ke auto, agar Cloudinary menangani tipe file dengan benar
   const result = await new Promise((resolve, reject) => {
     cloudinary.uploader.upload_stream(
-      { 
-        resource_type: 'raw', // RAW agar bisa dibuka browser
-        folder: folder, 
-        public_id: publicId 
-      },
+      { resource_type: 'auto', folder: folder, public_id: publicId },
       (error, uploadResult) => {
         if (error) reject(error);
         else resolve(uploadResult);
@@ -52,7 +48,11 @@ async function uploadFileToCloudinary(params) {
     ).end(bytes);
   });
 
-  return result.secure_url;
+  // PENTING: Tambahkan ?fl_attachment=false agar file tidak di-download, tapi dibuka di browser
+  const separator = result.secure_url.includes('?') ? '&' : '?';
+  const url = result.secure_url + separator + 'fl_attachment=false';
+
+  return url;
 }
 
 exports.handler = async (event) => {
@@ -125,16 +125,12 @@ exports.handler = async (event) => {
         return res(fileUrl);
       }
       case 'deleteFile': {
-        // Ekstraksi public_id dari URL dengan format /raw/upload/...
         const cleanUrl = params.fileUrl.split('?')[0];
         const parts = cleanUrl.split('/');
-        const rawIndex = parts.indexOf('raw');
         const uploadIndex = parts.indexOf('upload');
-        const idx = rawIndex !== -1 ? rawIndex : uploadIndex;
-        
-        if (idx !== -1 && parts.length > idx + 1) {
-          const publicId = parts.slice(idx + 1).join('/');
-          await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
+        if (uploadIndex !== -1 && parts.length > uploadIndex + 1) {
+          const publicId = parts.slice(uploadIndex + 1).join('/').replace(/\.[^.]+$/, '');
+          await cloudinary.uploader.destroy(publicId);
         }
         return res({ status: 'success' });
       }
