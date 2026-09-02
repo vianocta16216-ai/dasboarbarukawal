@@ -50,11 +50,25 @@ async function uploadFileToDrive(params) {
 }
 
 exports.handler = async (event) => {
-  const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+  };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers };
 
-  // ===== HANYA BACA QUERY STRING (TIDAK PERNAH MENYENTUH event.body) =====
-  const params = event.queryStringParameters || {};
+  let params = {};
+  try {
+    if (event.httpMethod === 'POST') {
+      // Baca JSON dari Body untuk upload file atau simpan data (mencegah Error 414)
+      params = JSON.parse(event.body || '{}');
+    } else {
+      // Baca Query String untuk request kecil
+      params = event.queryStringParameters || {};
+    }
+  } catch (e) {
+    return res({ status: 'error', message: 'Invalid JSON body: ' + e.message });
+  }
 
   const action = params.action || '';
   const year = params.year || '2026';
@@ -106,6 +120,7 @@ exports.handler = async (event) => {
         return res({ status: 'success' });
       }
       case 'uploadFile': {
+        // params.fileData sekarang berasal dari Body POST
         const fileUrl = await uploadFileToDrive(params);
         return res(fileUrl);
       }
