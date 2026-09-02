@@ -2681,15 +2681,12 @@ async function uploadFile(row, subCode, paramId, level, file) {
 function getPreviewUrl(fileUrl, fileName) {
   const ext = fileName.split('.').pop().toLowerCase();
   
-  // PDF: Buka langsung di browser
-  if (ext === 'pdf') {
-    return fileUrl + (fileUrl.includes('?') ? '&' : '?') + 'fl_attachment=false';
-  }
-  
-  // Word & Excel & PPT: Gunakan Microsoft Office Viewer (Gratis, preview langsung)
-  if (ext === 'docx' || ext === 'doc' || ext === 'xlsx' || ext === 'xls' || ext === 'pptx' || ext === 'ppt') {
+  // Semua dokumen (PDF, Word, Excel, PPT): Buka lewat Microsoft Office Viewer
+  // Ini memastikan semuanya bisa dibuka tanpa harus download.
+  if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
     const encodedUrl = encodeURIComponent(fileUrl);
-    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodedUrl}`;
+    // Gunakan /view/ agar bisa dilihat langsung di tab baru
+    return `https://view.officeapps.live.com/op/view.aspx?src=${encodedUrl}`;
   }
   
   // Gambar: Buka langsung
@@ -2720,7 +2717,7 @@ function renderFileList(row, subCode, paramId, level) {
     const fileUrl = typeof fileObj === 'string' ? fileObj : fileObj.url;
     const fileName = typeof fileObj === 'string' ? `File ${index + 1}` : (fileObj.name || `File ${index + 1}`);
     
-    // Dapatkan URL preview
+    // Dapatkan URL preview menggunakan fungsi baru
     const previewUrl = getPreviewUrl(fileUrl, fileName);
     
     const div = document.createElement('div');
@@ -2734,7 +2731,6 @@ function renderFileList(row, subCode, paramId, level) {
     fileListEl.appendChild(div);
   });
 }
-
 function removeUploadedFile(opdId, subCode, paramId, level, fileUrl) {
   const row = rows.find(r => r.id === opdId);
   if (!row) return;
