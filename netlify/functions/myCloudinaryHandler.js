@@ -1,4 +1,4 @@
-// VERSION 4 - CLOUDINARY (FIX PANJANG, PDF, AUTO-SAVE)
+// VERSION 5 - CLOUDINARY (FIX PREVIEW DOKUMEN, FOLDER TETAP)
 const { createClient } = require('@supabase/supabase-js');
 const cloudinary = require('cloudinary').v2;
 const { SUBUNSUR_DATA } = require('./subunsur');
@@ -16,7 +16,6 @@ cloudinary.config({
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Mapping Unsur
 const UNSUR_MAP = {
   '1': '1. LINGKUNGAN PENGENDALIAN',
   '2': '2. PENILAIAN RISIKO',
@@ -25,7 +24,7 @@ const UNSUR_MAP = {
   '5': '5. EVALUASI DAN PEMANTAUAN'
 };
 
-// Helper untuk memotong string agar tidak melebihi batas Cloudinary
+// Helper untuk memotong string agar tidak panjang
 const shorten = (str, max) => {
   if (!str) return '';
   return str.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, max);
@@ -36,18 +35,17 @@ async function uploadFileToCloudinary(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // ====== PERBAIKAN 1: POTONG SEMUA NAMA FOLDER MAKSIMAL 30 KARAKTER ======
+  // STRUKTUR FOLDER TETAP: kawal_spip/2026/OPD/1/1.1/1.1.1/Level_1
   const unsurKey = subunsur.split('.')[0];
   const unsurName = shorten(UNSUR_MAP[unsurKey] || `U${unsurKey}`, 30);
   const safeOpd = shorten(opdName, 30) || 'OPD';
-  const safeSubUnsur = shorten(subunsur, 10); // gunakan "1.1" saja untuk menghindari panjang
-  const safeParam = shorten(paramId, 10); // gunakan "1.1.1" saja
+  const safeSubUnsur = shorten(subunsur, 10);
+  const safeParam = shorten(paramId, 10);
 
-  // Susun folder pendek: kawal_spip/2026/OPD/1/1.1/1.1.1/Level_3
   const folder = `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level_${level}`;
 
-  // ====== PERBAIKAN 2: NAMA FILE PENDEK (HINDARI TOO LONG) ======
-  const ext = fileName.split('.').pop().substring(0, 5); // misal .pdf
+  // Nama file pendek (hindari too long)
+  const ext = fileName.split('.').pop().substring(0, 5);
   const publicId = Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8) + '.' + ext;
 
   const result = await new Promise((resolve, reject) => {
@@ -60,11 +58,8 @@ async function uploadFileToCloudinary(params) {
     ).end(bytes);
   });
 
-  // ====== PERBAIKAN 3: TAMBAHKAN fl_attachment=false AGAR PDF BISA DIBUKA ======
-  const separator = result.secure_url.includes('?') ? '&' : '?';
-  const url = result.secure_url + separator + 'fl_attachment=false';
-
-  return url;
+  // Kembalikan URL asli (tanpa parameter tambahan), diproses di frontend
+  return result.secure_url;
 }
 
 exports.handler = async (event) => {
