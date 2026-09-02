@@ -1851,26 +1851,17 @@ let originalRows = [];
 
 // ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
 function callServer(action, params = {}) {
-  const functionUrl = '/.netlify/functions/finalHandler';
-  const body = { ...params, action };
-  return fetch(functionUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-    .then(async (response) => {
-      const text = await response.text();
+  const functionUrl = '/.netlify/functions/kawal_spip_handler';
+  // Gabungkan semua params ke query string
+  const query = new URLSearchParams({ action, ...params }).toString();
+  return fetch(`${functionUrl}?${query}`, { method: 'GET' })
+    .then(response => response.text())
+    .then(text => {
       let data;
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
-        // Jika bukan JSON, berarti Netlify error
-        throw new Error('Server error: ' + text.substring(0, 200));
-      }
-      if (data && data.status === 'error') throw new Error(data.message || 'Server error');
+      try { data = JSON.parse(text); } catch (e) { throw new Error('Server error: ' + text); }
+      if (data && data.status === 'error') throw new Error(data.message);
       return data;
-    })
-    .catch(error => { throw error; });
+    });
 }
 // ====== VERIFIKASI PASSWORD ======
 async function verifyAccess(password) {
@@ -2647,15 +2638,13 @@ async function openEditModal(id) {
 // ====== UPLOAD FILE ======
 async function uploadFile(row, subCode, paramId, level, file) {
   if (!file) return;
-  if (file.size > 10 * 1024 * 1024) throw new Error('File terlalu besar! Maks 10MB');
-
+  if (file.size > 5 * 1024 * 1024) throw new Error('File terlalu besar! Maks 5MB untuk stabilitas.'); // Batasi agar query string tidak meledak
   const reader = new FileReader();
   return new Promise((resolve, reject) => {
     reader.onload = async () => {
       const base64 = reader.result.split(',')[1];
       const paramObj = SUBUNSUR_DATA[subCode].params.find(p => p.id === paramId);
       const paramLabel = subCode + ' - ' + (paramObj ? paramObj.desc : paramId);
-
       try {
         const result = await callServer('uploadFile', {
           opdId: row.id,
@@ -2669,9 +2658,7 @@ async function uploadFile(row, subCode, paramId, level, file) {
           fileData: base64
         });
         resolve(result);
-      } catch (err) {
-        reject(err);
-      }
+      } catch (err) { reject(err); }
     };
     reader.readAsDataURL(file);
   });
