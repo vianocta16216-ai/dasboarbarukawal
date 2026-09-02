@@ -1852,7 +1852,7 @@ let originalRows = [];
 // ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
 // ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
 function callServer(action, params = {}) {
-  const functionUrl = '/.netlify/functions/kawal_spip_handler';
+  const functionUrl = '/.netlify/functions/finalHandler';
   
   // UBAH KE POST: Kirim data sebagai JSON di body, bukan di URL
   return fetch(functionUrl, {
