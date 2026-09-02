@@ -2681,23 +2681,18 @@ async function uploadFile(row, subCode, paramId, level, file) {
 function getPreviewUrl(fileUrl, fileName) {
   const ext = fileName.split('.').pop().toLowerCase();
   
-  // PDF: Biarkan browser membukanya langsung (Browser Native PDF Viewer)
+  // PDF: Langsung buka di browser (RAW sudah bisa dibuka tanpa error 401)
   if (ext === 'pdf') {
     return fileUrl;
   }
   
-  // Word, Excel, PowerPoint: Buka melalui Google Docs Viewer (Alternatif Pengganti Office Apps)
+  // Word, Excel, PowerPoint: Buka via Google Docs Viewer
   if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
     const encodedUrl = encodeURIComponent(fileUrl);
     return `https://docs.google.com/viewer?url=${encodedUrl}`;
   }
   
-  // Gambar: Buka langsung
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
-    return fileUrl;
-  }
-  
-  // Lainnya: Buka langsung
+  // Gambar dan lainnya: Langsung buka
   return fileUrl;
 }
 
