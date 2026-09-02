@@ -1,3 +1,4 @@
+// VERSION 2 CLOUDINARY
 const { createClient } = require('@supabase/supabase-js');
 const cloudinary = require('cloudinary').v2;
 const { SUBUNSUR_DATA } = require('./subunsur');
@@ -18,7 +19,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 async function uploadFileToCloudinary(params) {
   const { fileData, fileName, year, opdName, subunsur, paramId, level } = params;
   const bytes = Buffer.from(fileData, 'base64');
-
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
   const folder = `kawal_spip/${year}/${opdName}/${subunsur}/${paramId}/Level_${level}`;
