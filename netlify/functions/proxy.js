@@ -4,7 +4,6 @@ const { google } = require('googleapis');
 const busboy = require('busboy');
 const { SUBUNSUR_DATA } = require('./subunsur');
 
-// ====== KONFIGURASI ======
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const GOOGLE_DRIVE_ROOT_FOLDER_ID = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
@@ -87,7 +86,7 @@ function mapFrontToDB(row) {
 }
 const ALLOWED = ['sa', 'evidence', 'qa_apip', 'qaApip', 'mri', 'iepk', 'rtp', 'status', 'opd', 'subunsurs'];
 
-// ====== HELPER UNTUK MEMPROSES FORMDATA ======
+// ====== PARSE FORMDATA (MULTIPART) ======
 function parseFormData(event) {
   return new Promise((resolve, reject) => {
     const bb = busboy({ headers: event.headers });
@@ -99,7 +98,6 @@ function parseFormData(event) {
     bb.on('file', (name, stream, info) => {
       filename = info.filename;
       stream.on('data', (data) => { fileBuffer = Buffer.concat([fileBuffer, data]); });
-      stream.on('end', () => {});
     });
     bb.on('finish', () => { resolve({ fields, fileBuffer, filename }); });
     bb.on('error', reject);
@@ -114,18 +112,26 @@ function parseFormData(event) {
   });
 }
 
-// ====== HANDLER UTAMA ======
+// ====== HANDLER ======
 exports.handler = async (event) => {
   const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers };
 
+  const contentType = event.headers['content-type'] || '';
+
+  // PARSING PARAMS
   let params = {};
-  try {
-    let bodyStr = event.body || '';
-    if (event.isBase64Encoded) bodyStr = Buffer.from(bodyStr, 'base64').toString('utf8');
-    if (bodyStr) params = JSON.parse(bodyStr);
-    else if (event.queryStringParameters) params = event.queryStringParameters;
-  } catch (e) { return jsonRes({ status: 'error', message: 'Format body tidak valid' }, headers); }
+  if (contentType.includes('application/json')) {
+    try {
+      let bodyStr = event.body || '';
+      if (event.isBase64Encoded) bodyStr = Buffer.from(bodyStr, 'base64').toString('utf8');
+      params = JSON.parse(bodyStr);
+    } catch (e) {
+      return jsonRes({ status: 'error', message: 'Format body tidak valid' }, headers);
+    }
+  } else if (event.queryStringParameters) {
+    params = event.queryStringParameters;
+  }
 
   const action = params.action || '';
   const year = params.year || '2026';
@@ -186,33 +192,26 @@ exports.handler = async (event) => {
         await supabase.from('years').delete().eq('year', delYear);
         return jsonRes({ status: 'success', message: 'Tahun berhasil dihapus' }, headers);
       }
-      
-      // ====== PERBAIKAN UPLOAD: MENERIMA FORMDATA ======
+
+      // ====== UPLOAD FILE (MENDUKUNG FORMDATA) ======
       case 'uploadFile': {
-        // Jika Content-Type adalah multipart/form-data
-        if (event.headers['content-type'] && event.headers['content-type'].includes('multipart/form-data')) {
-          try {
-            const { fields, fileBuffer, filename } = await parseFormData(event);
-            
-            const paramsForDrive = {
-              fileData: fileBuffer.toString('base64'), // Convert Buffer ke Base64 untuk diproses
-              fileName: filename,
-              opdName: fields.opdName,
-              subunsur: fields.subunsur,
-              paramId: fields.paramId,
-              paramLabel: fields.paramLabel,
-              level: fields.level,
-              year: fields.year || year
-            };
-            
-            const fileUrl = await uploadFileToDrive(paramsForDrive);
-            return jsonRes(fileUrl, headers);
-          } catch (err) {
-            return jsonRes({ status: 'error', message: 'Upload error: ' + err.message }, headers);
-          }
+        // Jika Content-Type multipart/form-data
+        if (contentType.includes('multipart/form-data')) {
+          const { fields, fileBuffer, filename } = await parseFormData(event);
+          const paramsForDrive = {
+            fileData: fileBuffer.toString('base64'),
+            fileName: filename,
+            opdName: fields.opdName,
+            subunsur: fields.subunsur,
+            paramId: fields.paramId,
+            paramLabel: fields.paramLabel,
+            level: fields.level,
+            year: fields.year || year
+          };
+          const fileUrl = await uploadFileToDrive(paramsForDrive);
+          return jsonRes(fileUrl, headers);
         }
-        
-        // Fallback: Jika masih ada yang kirim JSON base64
+        // Fallback (jika masih ada JSON base64)
         const fileUrl = await uploadFileToDrive(params);
         return jsonRes(fileUrl, headers);
       }
@@ -268,4 +267,5 @@ exports.handler = async (event) => {
     return jsonRes({ status: 'error', message: 'Terjadi kesalahan: ' + err.message }, headers);
   }
 };
+
 function jsonRes(obj, headers) { return { statusCode: 200, headers, body: JSON.stringify(obj) }; }
