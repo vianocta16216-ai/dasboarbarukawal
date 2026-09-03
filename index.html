@@ -2670,7 +2670,7 @@ async function uploadFile(row, subCode, paramId, level, file) {
           fileName: file.name,
           fileData: base64
         });
-        // Backend R2 mengembalikan { url, fileName }
+        // Backend Supabase mengembalikan { url, fileName }
         resolve({ url: result.url, fileName: result.fileName });
       } catch (err) { reject(err); }
     };
@@ -2709,13 +2709,13 @@ function renderFileList(row, subCode, paramId, level) {
     return;
   }
   files.forEach((fileObj, index) => {
-    // Ambil data dari objek
+    // Ambil dari objek { url, fileName }
     const fileUrl = fileObj.url;
     const fileName = fileObj.fileName || `File ${index + 1}`;
     
     const ext = fileName.split('.').pop().toLowerCase();
     
-    // PDF langsung buka, Excel/Word buka di Google Docs
+    // PDF langsung buka, Excel/Word buka di Google Docs Viewer
     let displayUrl = fileUrl;
     if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
       displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
