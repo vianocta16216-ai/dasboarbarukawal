@@ -21,16 +21,13 @@ async function uploadFileToSupabase(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // Struktur folder sesuai permintaan
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80) || 'OPD';
 
-  // Ambil label Sub-Unsur yang benar
   const subUnsurLabel = SUBUNSUR_DATA[subunsur] ? SUBUNSUR_DATA[subunsur].label : subunsur;
   const safeSubUnsur = subUnsurLabel.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80);
 
-  // Ambil deskripsi Parameter yang benar
   let paramDesc = paramId;
   if (SUBUNSUR_DATA[subunsur] && SUBUNSUR_DATA[subunsur].params) {
     const paramObj = SUBUNSUR_DATA[subunsur].params.find(p => p.id === paramId);
@@ -40,11 +37,11 @@ async function uploadFileToSupabase(params) {
 
   const filePath = `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level_${level}/${fileName}`;
 
-  // Upload ke bucket KAWALSPIP
+  // Upload dengan MIME type agar file tidak dianggap attachment
   const { error } = await supabase.storage
     .from('KAWALSPIP')
     .upload(filePath, bytes, {
-      contentType: fileType || 'application/octet-stream', // MIME type dari file
+      contentType: fileType || 'application/octet-stream',
       upsert: true
     });
 
@@ -52,7 +49,6 @@ async function uploadFileToSupabase(params) {
 
   const { data } = supabase.storage.from('KAWALSPIP').getPublicUrl(filePath);
 
-  // Kembalikan objek { url, fileName }
   return { url: data.publicUrl, fileName };
 }
 
