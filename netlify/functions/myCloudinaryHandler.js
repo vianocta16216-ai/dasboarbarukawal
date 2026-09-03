@@ -21,16 +21,16 @@ async function uploadFileToSupabase(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // ====== PERBAIKAN NAMA FOLDER ======
+  // Struktur folder sesuai permintaan
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80) || 'OPD';
 
-  // Ambil label Sub-Unsur (contoh: "1.1 Penegakan Integritas...")
+  // Ambil label Sub-Unsur dari data
   const subUnsurLabel = SUBUNSUR_DATA[subunsur] ? SUBUNSUR_DATA[subunsur].label : subunsur;
   const safeSubUnsur = subUnsurLabel.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80);
 
-  // Ambil deskripsi Parameter (contoh: "K/L/D menegakkan...")
+  // Ambil deskripsi Parameter dari data
   let paramDesc = paramId;
   if (SUBUNSUR_DATA[subunsur] && SUBUNSUR_DATA[subunsur].params) {
     const paramObj = SUBUNSUR_DATA[subunsur].params.find(p => p.id === paramId);
@@ -38,6 +38,7 @@ async function uploadFileToSupabase(params) {
   }
   const safeParam = paramDesc.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 100);
 
+  // Path lengkap di Supabase
   const filePath = `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level_${level}/${fileName}`;
 
   // Upload ke bucket KAWALSPIP
@@ -47,14 +48,14 @@ async function uploadFileToSupabase(params) {
 
   if (error) throw new Error(error.message);
 
+  // Dapatkan URL publik
   const { data } = supabase.storage.from('KAWALSPIP').getPublicUrl(filePath);
 
-  // Kembalikan objek berisi URL dan Nama File ASLI
+  // Kembalikan objek berisi url dan nama file asli
   return { url: data.publicUrl, fileName };
 }
 
 exports.handler = async (event) => {
-  // (Bagian switch-case lain TIDAK BERUBAH, gunakan yang sudah benar)
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
@@ -124,11 +125,12 @@ exports.handler = async (event) => {
         return res(result);
       }
       case 'deleteFile': {
+        // Parsing path dari URL: https://.../storage/v1/object/public/KAWALSPIP/kawal_spip/.../file.pdf
         const cleanUrl = params.fileUrl.split('?')[0];
-        const parts = cleanUrl.split('/');
-        const bucketIndex = parts.indexOf('KAWALSPIP');
-        if (bucketIndex !== -1 && parts.length > bucketIndex + 1) {
-          const filePath = parts.slice(bucketIndex + 1).join('/');
+        const marker = '/object/public/KAWALSPIP/';
+        const idx = cleanUrl.indexOf(marker);
+        if (idx !== -1) {
+          const filePath = decodeURIComponent(cleanUrl.substring(idx + marker.length));
           await supabase.storage.from('KAWALSPIP').remove([filePath]);
         }
         return res({ status: 'success' });
