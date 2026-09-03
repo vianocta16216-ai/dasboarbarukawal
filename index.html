@@ -2684,18 +2684,17 @@ async function uploadFile(row, subCode, paramId, level, file) {
 function getPreviewUrl(fileUrl, fileName) {
   const ext = fileName.split('.').pop().toLowerCase();
 
-  // PDF: URL sudah punya ?fl_attachment=false, jadi browser langsung buka
-  if (ext === 'pdf') {
-    return fileUrl;
-  }
-
-  // Word, Excel, PowerPoint: Gunakan Google Docs Viewer (PALING STABIL)
-  if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
+  // SEMUA DOKUMEN (PDF, Word, Excel, PPT) DIPAKSA BUKA DI GOOGLE DOCS VIEWER
+  if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
     const encodedUrl = encodeURIComponent(fileUrl);
     return `https://docs.google.com/viewer?embedded=true&url=${encodedUrl}`;
   }
 
-  // Gambar: Langsung buka
+  // Gambar: Buka langsung
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+    return fileUrl;
+  }
+
   return fileUrl;
 }
 
@@ -2704,17 +2703,16 @@ function renderFileList(row, subCode, paramId, level) {
   if (!rowEl) return;
   const fileListEl = rowEl.querySelector('.file-list');
   if (!fileListEl) return;
-  
+
   const files = (row.subunsurs[subCode] && row.subunsurs[subCode][paramId] && row.subunsurs[subCode][paramId]['files' + level]) || [];
   fileListEl.innerHTML = '';
   if (files.length === 0) {
     fileListEl.innerHTML = '<span style="font-size:12px;color:#64748b;">Belum ada file.</span>';
     return;
   }
-  
+
   files.forEach((fileObj, index) => {
     let fileUrl, fileName;
-    // Mendukung data lama (string) dan data baru (objek)
     if (typeof fileObj === 'string') {
       fileUrl = fileObj;
       const urlParts = fileUrl.split('?')[0].split('/');
@@ -2724,13 +2722,8 @@ function renderFileList(row, subCode, paramId, level) {
       fileName = fileObj.fileName || fileObj.name || `File ${index + 1}`;
     }
 
-    const ext = fileName.split('.').pop().toLowerCase();
-
-    // LIVE VIEW: PDF dibuka langsung, Office via Google Docs
-    let displayUrl = fileUrl;
-    if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
-      displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
-    }
+    // ====== PERBAIKAN UTAMA: PAKAI getPreviewUrl AGAR TIDAK DOWNLOAD ======
+    const displayUrl = getPreviewUrl(fileUrl, fileName);
 
     const div = document.createElement('div');
     div.style.cssText = 'display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px; border-radius:6px; margin-top:6px;';
