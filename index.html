@@ -2671,7 +2671,8 @@ async function uploadFile(row, subCode, paramId, level, file) {
           level,
           year: currentYear,
           fileName: file.name,
-          fileData: base64
+          fileData: base64,
+          fileType: file.type || 'application/octet-stream'
         });
         resolve({ url: result.url, fileName: result.fileName });
       } catch (err) { reject(err); }
@@ -2728,14 +2729,22 @@ function renderFileList(row, subCode, paramId, level) {
       fileName = fileObj.fileName || fileObj.name || `File ${index + 1}`;
     }
 
-    const displayUrl = getPreviewUrl(fileUrl, fileName);
-    // Menambahkan target="_blank" agar gambar terbuka di tab baru, bukan di-download
-    const linkTarget = (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileName.split('.').pop().toLowerCase())) ? 'target="_blank"' : 'target="_blank"';
+    const ext = fileName.split('.').pop().toLowerCase();
+    let displayUrl = fileUrl;
+
+    // GAMBAR: Langsung buka di tab baru (tidak download)
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+       displayUrl = fileUrl;
+    }
+    // PDF & OFFICE: Buka di Google Docs Viewer (Live View, tidak download)
+    else if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
+       displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
+    }
 
     const div = document.createElement('div');
     div.style.cssText = 'display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px; border-radius:6px; margin-top:6px;';
     div.innerHTML = `
-      <a href="${displayUrl}" ${linkTarget} rel="noopener noreferrer" class="file-link" style="flex-grow:1; margin:0;">📎 ${fileName}</a>
+      <a href="${displayUrl}" target="_blank" rel="noopener" class="file-link" style="flex-grow:1; margin:0;">📎 ${fileName}</a>
       <button type="button" onclick="removeUploadedFile('${row.id}', '${subCode}', '${paramId}', ${level}, '${fileUrl}')" style="background:#fee2e2; color:#dc2626; border:none; border-radius:6px; padding:4px 8px; cursor:pointer; font-size:12px;">🗑️ Hapus</button>
     `;
     fileListEl.appendChild(div);
