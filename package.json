@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
-    "cloudinary": "^2.5.1"
+    "aws4fetch": "^1.0.18"
   }
 }
