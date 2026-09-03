@@ -1,5 +1,3 @@
-const https = require('https');
-const aws4 = require('aws4');
 const { createClient } = require('@supabase/supabase-js');
 const { SUBUNSUR_DATA } = require('./subunsur');
 
@@ -7,12 +5,6 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD;
 const DELETE_PASSWORD = process.env.DELETE_PASSWORD;
-
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
-const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
-const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -24,68 +16,30 @@ const UNSUR_MAP = {
   '5': '5. EVALUASI DAN PEMANTAUAN'
 };
 
-const service = 's3';
-const region = 'auto';
-
-// Fungsi untuk upload dan delete file ke R2 menggunakan HTTPS Native + AWS4
-function r2Request(r2Options, body) {
-  return new Promise((resolve, reject) => {
-    const requestOptions = {
-      host: `${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-      path: r2Options.path,
-      method: r2Options.method,
-      service,
-      region
-    };
-
-    // Tanda tangan header AWS Signature V4
-    aws4.sign(requestOptions, {
-      accessKeyId: R2_ACCESS_KEY_ID,
-      secretAccessKey: R2_SECRET_ACCESS_KEY
-    });
-
-    const req = https.request({
-      hostname: requestOptions.host,
-      path: requestOptions.path,
-      method: requestOptions.method,
-      headers: requestOptions.headers
-    }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve(data);
-        } else {
-          reject(new Error(`R2 Error ${res.statusCode}: ${data}`));
-        }
-      });
-    });
-
-    req.on('error', reject);
-
-    if (body) {
-      req.write(body);
-    }
-    req.end();
-  });
-}
-
-async function uploadFileToR2(params) {
+async function uploadFileToSupabase(params) {
   const { fileData, fileName, year, opdName, subunsur, paramId, level } = params;
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
+  // Struktur folder TIDAK DIUBAH & TANPA PEMOTONGAN
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 50) || 'OPD';
   
-  const key = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}/${fileName}`;
-  const path = `/${R2_BUCKET_NAME}/${key.split('/').map(encodeURIComponent).join('/')}`;
+  // Kunci path lengkap (Nama file tetap asli)
+  const filePath = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}/${fileName}`;
 
-  await r2Request({ path, method: 'PUT' }, bytes);
+  // Upload ke Supabase Storage dengan nama bucket KAWALSPIP
+  const { error } = await supabase.storage
+    .from('KAWALSPIP')
+    .upload(filePath, bytes, { contentType: 'application/octet-stream', upsert: true });
+  
+  if (error) throw new Error(error.message);
 
-  const url = `${R2_PUBLIC_URL}/${key}`;
-  return { url, fileName };
+  // Ambil URL Publik
+  const { data } = supabase.storage.from('KAWALSPIP').getPublicUrl(filePath);
+  
+  return { url: data.publicUrl, fileName };
 }
 
 exports.handler = async (event) => {
@@ -154,17 +108,16 @@ exports.handler = async (event) => {
         return res({ status: 'success' });
       }
       case 'uploadFile': {
-        const result = await uploadFileToR2(params);
+        const result = await uploadFileToSupabase(params);
         return res(result);
       }
       case 'deleteFile': {
         const cleanUrl = params.fileUrl.split('?')[0];
         const parts = cleanUrl.split('/');
-        const idx = parts.indexOf(R2_BUCKET_NAME);
-        if (idx !== -1 && parts.length > idx + 1) {
-          const key = parts.slice(idx + 1).join('/');
-          const path = `/${R2_BUCKET_NAME}/${key.split('/').map(encodeURIComponent).join('/')}`;
-          await r2Request({ path, method: 'DELETE' });
+        const bucketIndex = parts.indexOf('KAWALSPIP');
+        if (bucketIndex !== -1 && parts.length > bucketIndex + 1) {
+          const filePath = parts.slice(bucketIndex + 1).join('/');
+          await supabase.storage.from('KAWALSPIP').remove([filePath]);
         }
         return res({ status: 'success' });
       }
