@@ -1,7 +1,6 @@
 const https = require('https');
+const aws4 = require('aws4');
 const { createClient } = require('@supabase/supabase-js');
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
-const { NodeHttpHandler } = require("@smithy/node-http-handler");
 const { SUBUNSUR_DATA } = require('./subunsur');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -15,24 +14,6 @@ const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL;
 
-// ====== KUNCI UTAMA UNTUK MENGATASI "FETCH FAILED" & "SSL PROTO" DI NETLIFY ======
-const requestHandler = new NodeHttpHandler({
-  httpsAgent: new https.Agent({
-    rejectUnauthorized: false // Melewati verifikasi SSL yang diblokir proxy Netlify
-  })
-});
-
-const s3 = new S3Client({
-  region: "auto",
-  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  forcePathStyle: true,
-  requestHandler: requestHandler, // <-- Terapkan bypass proxy
-  credentials: {
-    accessKeyId: R2_ACCESS_KEY_ID,
-    secretAccessKey: R2_SECRET_ACCESS_KEY
-  }
-});
-
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const UNSUR_MAP = {
@@ -43,28 +24,68 @@ const UNSUR_MAP = {
   '5': '5. EVALUASI DAN PEMANTAUAN'
 };
 
+const service = 's3';
+const region = 'auto';
+
+// Fungsi untuk upload dan delete file ke R2 menggunakan HTTPS Native + AWS4
+function r2Request(r2Options, body) {
+  return new Promise((resolve, reject) => {
+    const requestOptions = {
+      host: `${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      path: r2Options.path,
+      method: r2Options.method,
+      service,
+      region
+    };
+
+    // Tanda tangan header AWS Signature V4
+    aws4.sign(requestOptions, {
+      accessKeyId: R2_ACCESS_KEY_ID,
+      secretAccessKey: R2_SECRET_ACCESS_KEY
+    });
+
+    const req = https.request({
+      hostname: requestOptions.host,
+      path: requestOptions.path,
+      method: requestOptions.method,
+      headers: requestOptions.headers
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(data);
+        } else {
+          reject(new Error(`R2 Error ${res.statusCode}: ${data}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+
+    if (body) {
+      req.write(body);
+    }
+    req.end();
+  });
+}
+
 async function uploadFileToR2(params) {
   const { fileData, fileName, year, opdName, subunsur, paramId, level } = params;
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // Folder tanpa batasan panjang nama (namanya tidak dipotong)
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 50) || 'OPD';
   
   const key = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}/${fileName}`;
+  const path = `/${R2_BUCKET_NAME}/${key.split('/').map(encodeURIComponent).join('/')}`;
 
-  // Upload ke R2
-  await s3.send(new PutObjectCommand({
-    Bucket: R2_BUCKET_NAME,
-    Key: key,
-    Body: bytes,
-    ContentType: 'application/octet-stream'
-  }));
+  await r2Request({ path, method: 'PUT' }, bytes);
 
   const url = `${R2_PUBLIC_URL}/${key}`;
-  return { url: url, fileName: fileName };
+  return { url, fileName };
 }
 
 exports.handler = async (event) => {
@@ -142,7 +163,8 @@ exports.handler = async (event) => {
         const idx = parts.indexOf(R2_BUCKET_NAME);
         if (idx !== -1 && parts.length > idx + 1) {
           const key = parts.slice(idx + 1).join('/');
-          await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: decodeURIComponent(key) }));
+          const path = `/${R2_BUCKET_NAME}/${key.split('/').map(encodeURIComponent).join('/')}`;
+          await r2Request({ path, method: 'DELETE' });
         }
         return res({ status: 'success' });
       }
