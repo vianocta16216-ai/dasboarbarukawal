@@ -2667,11 +2667,11 @@ async function uploadFile(row, subCode, paramId, level, file) {
           paramId,
           level,
           year: currentYear,
-          fileName: file.name, // Kirim nama asli
+          fileName: file.name,
           fileData: base64
         });
-        // Hasil backend sekarang adalah objek { url, fileName }
-        resolve(result);
+        // Backend R2 mengembalikan { url, fileName }
+        resolve({ url: result.url, fileName: result.fileName });
       } catch (err) { reject(err); }
     };
     reader.readAsDataURL(file);
@@ -2709,28 +2709,18 @@ function renderFileList(row, subCode, paramId, level) {
     return;
   }
   files.forEach((fileObj, index) => {
-    // Sekarang fileObj berbentuk { url, fileName }
+    // Ambil data dari objek
     const fileUrl = fileObj.url;
     const fileName = fileObj.fileName || `File ${index + 1}`;
     
     const ext = fileName.split('.').pop().toLowerCase();
     
-    // ====== PERBAIKAN PREVIEW ======
-    // PDF: Buka langsung (browser punya viewer PDF)
-    if (ext === 'pdf') {
-      // Link langsung ke URL (sudah ada fl_attachment=false)
-      displayUrl = fileUrl;
-    } 
-    // Excel, Word, PPT: Karena viewer online sering diblokir, kita buat tombol Download
-    // agar user bisa langsung membukanya di aplikasi mereka.
-    else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
-      displayUrl = fileUrl;
+    // PDF langsung buka, Excel/Word buka di Google Docs
+    let displayUrl = fileUrl;
+    if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
+      displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
     }
-    // Gambar: Langsung buka
-    else {
-      displayUrl = fileUrl;
-    }
-
+    
     const div = document.createElement('div');
     div.style.cssText = 'display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px; border-radius:6px; margin-top:6px;';
     div.innerHTML = `
