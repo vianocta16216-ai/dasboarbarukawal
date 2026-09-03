@@ -2670,7 +2670,7 @@ async function uploadFile(row, subCode, paramId, level, file) {
           fileName: file.name,
           fileData: base64
         });
-        // Backend Supabase mengembalikan { url, fileName }
+        // Simpan sebagai objek agar nama file asli tersimpan
         resolve({ url: result.url, fileName: result.fileName });
       } catch (err) { reject(err); }
     };
@@ -2702,20 +2702,24 @@ function renderFileList(row, subCode, paramId, level) {
   if (!rowEl) return;
   const fileListEl = rowEl.querySelector('.file-list');
   if (!fileListEl) return;
+  
+  // Ambil file yang tersimpan (bisa berupa string lama atau objek baru)
   const files = (row.subunsurs[subCode] && row.subunsurs[subCode][paramId] && row.subunsurs[subCode][paramId]['files' + level]) || [];
   fileListEl.innerHTML = '';
+  
   if (files.length === 0) {
     fileListEl.innerHTML = '<span style="font-size:12px;color:#64748b;">Belum ada file.</span>';
     return;
   }
+  
   files.forEach((fileObj, index) => {
-    // Ambil URL dan Nama File asli
-    const fileUrl = typeof fileObj === 'string' ? fileObj : fileObj.url;
+    // Perbaikan: Baca URL dan Nama File dengan Aman (hindari [object Object])
+    const fileUrl = typeof fileObj === 'string' ? fileObj : (fileObj.url || '');
     const fileName = typeof fileObj === 'string' ? `File ${index + 1}` : (fileObj.fileName || fileObj.name || `File ${index + 1}`);
-    
+
     const ext = fileName.split('.').pop().toLowerCase();
-    
-    // Live View: PDF langsung, Office pakai Google Docs Viewer
+
+    // LIVE VIEW: PDF dibuka langsung di browser, Word/Excel dibuka di Google Docs
     let displayUrl = fileUrl;
     if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
       displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
