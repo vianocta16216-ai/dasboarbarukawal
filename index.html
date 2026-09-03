@@ -2670,7 +2670,6 @@ async function uploadFile(row, subCode, paramId, level, file) {
           fileName: file.name,
           fileData: base64
         });
-        // Backend mengembalikan { url, fileName }
         resolve({ url: result.url, fileName: result.fileName });
       } catch (err) { reject(err); }
     };
@@ -2709,13 +2708,10 @@ function renderFileList(row, subCode, paramId, level) {
     return;
   }
   files.forEach((fileObj, index) => {
-    // Baca URL dan nama file dari objek
     const fileUrl = fileObj.url;
     const fileName = fileObj.fileName || `File ${index + 1}`;
-    
     const ext = fileName.split('.').pop().toLowerCase();
-    
-    // Live View: PDF langsung buka, Office via Google Docs
+
     let displayUrl = fileUrl;
     if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
       displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
@@ -2733,10 +2729,9 @@ function renderFileList(row, subCode, paramId, level) {
 function removeUploadedFile(opdId, subCode, paramId, level, fileUrl) {
   const row = rows.find(r => r.id === opdId);
   if (!row) return;
-  let fileName = 'File';
   const files = row.subunsurs[subCode][paramId]['files' + level] || [];
-  const fileObj = files.find(f => (typeof f === 'string' ? f : f.url) === fileUrl);
-  if (fileObj) fileName = typeof fileObj === 'string' ? `File ${fileObj}` : fileObj.name;
+  const fileObj = files.find(f => f.url === fileUrl);
+  const fileName = fileObj ? fileObj.fileName : 'File';
   fileToDelete = { opdId, subCode, paramId, level, fileUrl, fileName };
   document.getElementById('fileDeleteMessage').textContent = `Yakin ingin menghapus file "${fileName}"?`;
   document.getElementById('fileDeleteModal').classList.add('active');
@@ -2745,7 +2740,6 @@ function removeUploadedFile(opdId, subCode, paramId, level, fileUrl) {
 document.getElementById('fileDeleteOk').addEventListener('click', async function() {
   if (isDeletingFile) return;
   if (!fileToDelete) return;
-  
   isDeletingFile = true;
   const btnOk = this;
   btnOk.disabled = true;
@@ -2757,14 +2751,12 @@ document.getElementById('fileDeleteOk').addEventListener('click', async function
     try {
       const result = await callServer('deleteFile', { fileUrl });
       if (result.status === 'error') { showWarning('❌ ' + result.message); return; }
-      
-      // Hapus dari array di database
       const files = row.subunsurs[subCode][paramId]['files' + level] || [];
       const index = files.findIndex(f => f.url === fileUrl);
       if (index > -1) {
         files.splice(index, 1);
         renderFileList(row, subCode, paramId, level);
-        await saveData(); // Simpan perubahan ke Supabase database
+        await saveData();
       }
     } catch (err) {
       showWarning('❌ ' + err.message);
