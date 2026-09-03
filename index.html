@@ -2632,7 +2632,10 @@ async function openEditModal(id) {
           fill.style.width = '100%';
           text.textContent = '100%';
           if (!targetRow.subunsurs[subCode][paramId]['files' + level]) targetRow.subunsurs[subCode][paramId]['files' + level] = [];
-          targetRow.subunsurs[subCode][paramId]['files' + level].push({ url: result, name: file.name });
+          targetRow.subunsurs[subCode][paramId]['files' + level].push({
+  url: result.url,
+  fileName: result.fileName || file.name
+});
           renderFileList(targetRow, subCode, paramId, level);
           completed++;
           setTimeout(() => {
@@ -2701,17 +2704,29 @@ function renderFileList(row, subCode, paramId, level) {
   if (!rowEl) return;
   const fileListEl = rowEl.querySelector('.file-list');
   if (!fileListEl) return;
+  
   const files = (row.subunsurs[subCode] && row.subunsurs[subCode][paramId] && row.subunsurs[subCode][paramId]['files' + level]) || [];
   fileListEl.innerHTML = '';
   if (files.length === 0) {
     fileListEl.innerHTML = '<span style="font-size:12px;color:#64748b;">Belum ada file.</span>';
     return;
   }
+  
   files.forEach((fileObj, index) => {
-    const fileUrl = fileObj.url;
-    const fileName = fileObj.fileName || `File ${index + 1}`;
+    let fileUrl, fileName;
+    // Mendukung data lama (string) dan data baru (objek)
+    if (typeof fileObj === 'string') {
+      fileUrl = fileObj;
+      const urlParts = fileUrl.split('?')[0].split('/');
+      fileName = decodeURIComponent(urlParts[urlParts.length - 1]) || `File ${index + 1}`;
+    } else {
+      fileUrl = fileObj.url || '';
+      fileName = fileObj.fileName || fileObj.name || `File ${index + 1}`;
+    }
+
     const ext = fileName.split('.').pop().toLowerCase();
 
+    // LIVE VIEW: PDF dibuka langsung, Office via Google Docs
     let displayUrl = fileUrl;
     if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
       displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
