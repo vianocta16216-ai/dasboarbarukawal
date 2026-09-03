@@ -21,21 +21,24 @@ async function uploadFileToSupabase(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // Susun folder persis seperti Google Drive: Tahun/OPD/Unsur/Sub-unsur/Parameter/Level
+  // ====== PERBAIKAN NAMA FOLDER ======
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80) || 'OPD';
 
-  // Ambil nama parameter dari SUBUNSUR_DATA agar folder parameter sesuai nama asli
-  let paramName = paramId;
+  // Ambil label Sub-Unsur (contoh: "1.1 Penegakan Integritas...")
+  const subUnsurLabel = SUBUNSUR_DATA[subunsur] ? SUBUNSUR_DATA[subunsur].label : subunsur;
+  const safeSubUnsur = subUnsurLabel.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80);
+
+  // Ambil deskripsi Parameter (contoh: "K/L/D menegakkan...")
+  let paramDesc = paramId;
   if (SUBUNSUR_DATA[subunsur] && SUBUNSUR_DATA[subunsur].params) {
     const paramObj = SUBUNSUR_DATA[subunsur].params.find(p => p.id === paramId);
-    if (paramObj) paramName = paramObj.desc; // Gunakan deskripsi lengkap sebagai nama folder
+    if (paramObj) paramDesc = paramObj.desc;
   }
-  // Bersihkan karakter ilegal pada nama folder
-  const safeParam = paramName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 100);
+  const safeParam = paramDesc.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 100);
 
-  const filePath = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${safeParam}/Level_${level}/${fileName}`;
+  const filePath = `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level_${level}/${fileName}`;
 
   // Upload ke bucket KAWALSPIP
   const { error } = await supabase.storage
@@ -46,11 +49,12 @@ async function uploadFileToSupabase(params) {
 
   const { data } = supabase.storage.from('KAWALSPIP').getPublicUrl(filePath);
 
-  // Kembalikan URL dan nama file asli untuk disimpan di database
+  // Kembalikan objek berisi URL dan Nama File ASLI
   return { url: data.publicUrl, fileName };
 }
 
 exports.handler = async (event) => {
+  // (Bagian switch-case lain TIDAK BERUBAH, gunakan yang sudah benar)
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
