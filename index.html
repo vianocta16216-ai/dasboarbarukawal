@@ -2667,9 +2667,10 @@ async function uploadFile(row, subCode, paramId, level, file) {
           paramId,
           level,
           year: currentYear,
-          fileName: file.name,
+          fileName: file.name, // Kirim nama asli
           fileData: base64
         });
+        // Hasil backend sekarang adalah objek { url, fileName }
         resolve(result);
       } catch (err) { reject(err); }
     };
@@ -2699,33 +2700,43 @@ function getPreviewUrl(fileUrl, fileName) {
 function renderFileList(row, subCode, paramId, level) {
   const rowEl = document.querySelector(`.evid-row[data-sub="${subCode}"][data-param="${paramId}"][data-level="${level}"]`);
   if (!rowEl) return;
-  
   const fileListEl = rowEl.querySelector('.file-list');
   if (!fileListEl) return;
-  
   const files = (row.subunsurs[subCode] && row.subunsurs[subCode][paramId] && row.subunsurs[subCode][paramId]['files' + level]) || [];
   fileListEl.innerHTML = '';
-  
   if (files.length === 0) {
     fileListEl.innerHTML = '<span style="font-size:12px;color:#64748b;">Belum ada file.</span>';
     return;
   }
-  
   files.forEach((fileObj, index) => {
-    const fileUrl = typeof fileObj === 'string' ? fileObj : fileObj.url;
-    const fileName = typeof fileObj === 'string' ? `File ${index + 1}` : (fileObj.name || `File ${index + 1}`);
+    // Sekarang fileObj berbentuk { url, fileName }
+    const fileUrl = fileObj.url;
+    const fileName = fileObj.fileName || `File ${index + 1}`;
     
-    // Dapatkan URL preview menggunakan fungsi baru
-    const previewUrl = getPreviewUrl(fileUrl, fileName);
+    const ext = fileName.split('.').pop().toLowerCase();
     
+    // ====== PERBAIKAN PREVIEW ======
+    // PDF: Buka langsung (browser punya viewer PDF)
+    if (ext === 'pdf') {
+      // Link langsung ke URL (sudah ada fl_attachment=false)
+      displayUrl = fileUrl;
+    } 
+    // Excel, Word, PPT: Karena viewer online sering diblokir, kita buat tombol Download
+    // agar user bisa langsung membukanya di aplikasi mereka.
+    else if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
+      displayUrl = fileUrl;
+    }
+    // Gambar: Langsung buka
+    else {
+      displayUrl = fileUrl;
+    }
+
     const div = document.createElement('div');
     div.style.cssText = 'display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px; border-radius:6px; margin-top:6px;';
-    
     div.innerHTML = `
-      <a href="${previewUrl}" target="_blank" class="file-link" style="flex-grow:1; margin:0;">📎 ${fileName}</a>
+      <a href="${displayUrl}" target="_blank" class="file-link" style="flex-grow:1; margin:0;">📎 ${fileName}</a>
       <button type="button" onclick="removeUploadedFile('${row.id}', '${subCode}', '${paramId}', ${level}, '${fileUrl}')" style="background:#fee2e2; color:#dc2626; border:none; border-radius:6px; padding:4px 8px; cursor:pointer; font-size:12px;">🗑️ Hapus</button>
     `;
-    
     fileListEl.appendChild(div);
   });
 }
