@@ -21,24 +21,32 @@ async function uploadFileToSupabase(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // Struktur folder TIDAK DIUBAH & TANPA PEMOTONGAN
+  // Susun folder persis seperti Google Drive: Tahun/OPD/Unsur/Sub-unsur/Parameter/Level
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
-  const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 50) || 'OPD';
-  
-  // Kunci path lengkap (Nama file tetap asli)
-  const filePath = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}/${fileName}`;
+  const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80) || 'OPD';
 
-  // Upload ke Supabase Storage dengan nama bucket KAWALSPIP
+  // Ambil nama parameter dari SUBUNSUR_DATA agar folder parameter sesuai nama asli
+  let paramName = paramId;
+  if (SUBUNSUR_DATA[subunsur] && SUBUNSUR_DATA[subunsur].params) {
+    const paramObj = SUBUNSUR_DATA[subunsur].params.find(p => p.id === paramId);
+    if (paramObj) paramName = paramObj.desc; // Gunakan deskripsi lengkap sebagai nama folder
+  }
+  // Bersihkan karakter ilegal pada nama folder
+  const safeParam = paramName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 100);
+
+  const filePath = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${safeParam}/Level_${level}/${fileName}`;
+
+  // Upload ke bucket KAWALSPIP
   const { error } = await supabase.storage
     .from('KAWALSPIP')
     .upload(filePath, bytes, { contentType: 'application/octet-stream', upsert: true });
-  
+
   if (error) throw new Error(error.message);
 
-  // Ambil URL Publik
   const { data } = supabase.storage.from('KAWALSPIP').getPublicUrl(filePath);
-  
+
+  // Kembalikan URL dan nama file asli untuk disimpan di database
   return { url: data.publicUrl, fileName };
 }
 
