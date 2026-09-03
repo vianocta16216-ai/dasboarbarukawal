@@ -1,4 +1,4 @@
-// VERSION FINAL STABIL (AUTO + TANPA EKSTENSI GANDA)
+// VERSION FINAL - NAMA JUDUL LENGKAP & NAMA FILE ASLI
 const { createClient } = require('@supabase/supabase-js');
 const cloudinary = require('cloudinary').v2;
 const { SUBUNSUR_DATA } = require('./subunsur');
@@ -16,6 +16,7 @@ cloudinary.config({
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ====== MAPPING NAMA UNSUR SESUAI GAMBAR ======
 const UNSUR_MAP = {
   '1': '1. LINGKUNGAN PENGENDALIAN',
   '2': '2. PENILAIAN RISIKO',
@@ -29,18 +30,43 @@ async function uploadFileToCloudinary(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // Struktur folder TIDAK BERUBAH
-  const unsurKey = subunsur.split('.')[0];
+  // ====== 1. AMBIL NAMA UNSUR (Menggunakan Mapping di atas) ======
+  const unsurKey = subunsur.split('.')[0]; // Ambil '1' dari '1.1'
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
+
+  // ====== 2. AMBIL NAMA SUB-UNSUR LENGKAP DARI DATA (Misal: 1.1 Penegakan Integritas... ) ======
+  const subUnsurData = SUBUNSUR_DATA[subunsur];
+  const subUnsurName = subUnsurData ? subUnsurData.label : subunsur;
+
+  // ====== 3. AMBIL NAMA PARAMETER LENGKAP DARI DATA (Misal: K/L/D menegakkan...) ======
+  let paramDesc = paramId;
+  if (subUnsurData && subUnsurData.params) {
+    const paramObj = subUnsurData.params.find(p => p.id === paramId);
+    if (paramObj) paramDesc = paramObj.desc;
+  }
+
+  // ====== 4. BERSIHKAN NAMA (Hapus karakter aneh agar aman di folder) ======
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s]/g, '').substring(0, 50) || 'OPD';
-  const folder = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}`;
+  const safeSubUnsur = subUnsurName.replace(/[^a-zA-Z0-9\s]/g, '').substring(0, 80);
+  const safeParam = paramDesc.replace(/[^a-zA-Z0-9\s]/g, '').substring(0, 100);
 
-  // Nama unik PENDEK (TANPA ekstensi agar tidak jadi .pdf.pdf)
-  const publicId = Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
+  // ====== 5. SUSUN FOLDER DENGAN NAMA JUDUL LENGKAP (Sesuai Screenshot) ======
+  // kawal_spip/2026/OPD/1. LINGKUNGAN PENGENDALIAN/1.1 Penegakan Integritas.../K/L/D menegakkan.../Level 1/
+  const folder = `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level ${level}`;
 
+  // ====== 6. NAMA FILE SESUAI ASLI (Jangan diacak/diubah) ======
+  // Batasi hanya 100 karakter agar aman, tapi HAPUS jika ada karakter illegal
+  const safeFileName = fileName.replace(/[^a-zA-Z0-9._\s-]/g, '').substring(0, 100);
+
+  // ====== 7. UPLOAD KE CLOUDINARY (auto + PUBLIC agar bisa dibuka) ======
   const result = await new Promise((resolve, reject) => {
     cloudinary.uploader.upload_stream(
-      { resource_type: 'auto', folder: folder, public_id: publicId },
+      {
+        resource_type: 'auto',
+        folder: folder,
+        public_id: safeFileName,
+        access_mode: 'public'
+      },
       (error, uploadResult) => {
         if (error) reject(error);
         else resolve(uploadResult);
@@ -48,7 +74,7 @@ async function uploadFileToCloudinary(params) {
     ).end(bytes);
   });
 
-  // Tambahkan ?fl_attachment=false agar tidak di-download paksa
+  // ====== 8. TAMBAHKAN PARAMETER SUPAYA BISA DIBUKA DI BROWSER (Tidak di-download) ======
   const separator = result.secure_url.includes('?') ? '&' : '?';
   return result.secure_url + separator + 'fl_attachment=false';
 }
@@ -127,7 +153,7 @@ exports.handler = async (event) => {
         const parts = cleanUrl.split('/');
         const uploadIndex = parts.indexOf('upload');
         if (uploadIndex !== -1 && parts.length > uploadIndex + 1) {
-          const publicId = parts.slice(uploadIndex + 1).join('/').replace(/\.[^.]+$/, '');
+          const publicId = parts.slice(uploadIndex + 1).join('/');
           await cloudinary.uploader.destroy(publicId);
         }
         return res({ status: 'success' });
