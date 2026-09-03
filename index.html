@@ -2684,13 +2684,19 @@ async function uploadFile(row, subCode, paramId, level, file) {
 function getPreviewUrl(fileUrl, fileName) {
   const ext = fileName.split('.').pop().toLowerCase();
 
-  // SEMUA DOKUMEN (PDF, Word, Excel, PPT) DIPAKSA BUKA DI GOOGLE DOCS VIEWER
-  if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
+  // PDF, Word, PowerPoint: Buka di Google Docs Viewer (stabil)
+  if (['pdf', 'doc', 'docx', 'ppt', 'pptx'].includes(ext)) {
     const encodedUrl = encodeURIComponent(fileUrl);
     return `https://docs.google.com/viewer?embedded=true&url=${encodedUrl}`;
   }
 
-  // Gambar: Buka langsung
+  // Excel (.xls, .xlsx): Buka di Microsoft Office Viewer (LEBIH CEPAT untuk Excel)
+  if (['xls', 'xlsx'].includes(ext)) {
+    const encodedUrl = encodeURIComponent(fileUrl);
+    return `https://view.officeapps.live.com/op/view.aspx?src=${encodedUrl}`;
+  }
+
+  // Gambar (JPG, PNG, GIF, WEBP): Buka langsung (dipaksa lewat tab baru di renderFileList)
   if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
     return fileUrl;
   }
@@ -2722,13 +2728,14 @@ function renderFileList(row, subCode, paramId, level) {
       fileName = fileObj.fileName || fileObj.name || `File ${index + 1}`;
     }
 
-    // ====== PERBAIKAN UTAMA: PAKAI getPreviewUrl AGAR TIDAK DOWNLOAD ======
     const displayUrl = getPreviewUrl(fileUrl, fileName);
+    // Menambahkan target="_blank" agar gambar terbuka di tab baru, bukan di-download
+    const linkTarget = (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileName.split('.').pop().toLowerCase())) ? 'target="_blank"' : 'target="_blank"';
 
     const div = document.createElement('div');
     div.style.cssText = 'display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px; border-radius:6px; margin-top:6px;';
     div.innerHTML = `
-      <a href="${displayUrl}" target="_blank" class="file-link" style="flex-grow:1; margin:0;">📎 ${fileName}</a>
+      <a href="${displayUrl}" ${linkTarget} rel="noopener noreferrer" class="file-link" style="flex-grow:1; margin:0;">📎 ${fileName}</a>
       <button type="button" onclick="removeUploadedFile('${row.id}', '${subCode}', '${paramId}', ${level}, '${fileUrl}')" style="background:#fee2e2; color:#dc2626; border:none; border-radius:6px; padding:4px 8px; cursor:pointer; font-size:12px;">🗑️ Hapus</button>
     `;
     fileListEl.appendChild(div);
