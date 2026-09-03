@@ -17,11 +17,11 @@ const UNSUR_MAP = {
 };
 
 async function uploadFileToSupabase(params) {
-  const { fileData, fileName, year, opdName, subunsur, paramId, level } = params;
+  const { fileData, fileName, year, opdName, subunsur, paramId, level, fileType } = params;
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // Struktur folder sesuai permintaan Anda
+  // Struktur folder sesuai permintaan
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80) || 'OPD';
@@ -43,7 +43,10 @@ async function uploadFileToSupabase(params) {
   // Upload ke bucket KAWALSPIP
   const { error } = await supabase.storage
     .from('KAWALSPIP')
-    .upload(filePath, bytes, { contentType: 'application/octet-stream', upsert: true });
+    .upload(filePath, bytes, {
+      contentType: fileType || 'application/octet-stream', // MIME type dari file
+      upsert: true
+    });
 
   if (error) throw new Error(error.message);
 
