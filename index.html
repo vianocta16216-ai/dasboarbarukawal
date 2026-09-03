@@ -2670,7 +2670,7 @@ async function uploadFile(row, subCode, paramId, level, file) {
           fileName: file.name,
           fileData: base64
         });
-        // Simpan sebagai objek agar nama file asli tersimpan
+        // Backend mengembalikan { url, fileName }
         resolve({ url: result.url, fileName: result.fileName });
       } catch (err) { reject(err); }
     };
@@ -2702,24 +2702,20 @@ function renderFileList(row, subCode, paramId, level) {
   if (!rowEl) return;
   const fileListEl = rowEl.querySelector('.file-list');
   if (!fileListEl) return;
-  
-  // Ambil file yang tersimpan (bisa berupa string lama atau objek baru)
   const files = (row.subunsurs[subCode] && row.subunsurs[subCode][paramId] && row.subunsurs[subCode][paramId]['files' + level]) || [];
   fileListEl.innerHTML = '';
-  
   if (files.length === 0) {
     fileListEl.innerHTML = '<span style="font-size:12px;color:#64748b;">Belum ada file.</span>';
     return;
   }
-  
   files.forEach((fileObj, index) => {
-    // Perbaikan: Baca URL dan Nama File dengan Aman (hindari [object Object])
-    const fileUrl = typeof fileObj === 'string' ? fileObj : (fileObj.url || '');
-    const fileName = typeof fileObj === 'string' ? `File ${index + 1}` : (fileObj.fileName || fileObj.name || `File ${index + 1}`);
-
+    // Baca URL dan nama file dari objek
+    const fileUrl = fileObj.url;
+    const fileName = fileObj.fileName || `File ${index + 1}`;
+    
     const ext = fileName.split('.').pop().toLowerCase();
-
-    // LIVE VIEW: PDF dibuka langsung di browser, Word/Excel dibuka di Google Docs
+    
+    // Live View: PDF langsung buka, Office via Google Docs
     let displayUrl = fileUrl;
     if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
       displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
@@ -2761,12 +2757,14 @@ document.getElementById('fileDeleteOk').addEventListener('click', async function
     try {
       const result = await callServer('deleteFile', { fileUrl });
       if (result.status === 'error') { showWarning('❌ ' + result.message); return; }
+      
+      // Hapus dari array di database
       const files = row.subunsurs[subCode][paramId]['files' + level] || [];
-      const index = files.findIndex(f => (typeof f === 'string' ? f : f.url) === fileUrl);
+      const index = files.findIndex(f => f.url === fileUrl);
       if (index > -1) {
         files.splice(index, 1);
         renderFileList(row, subCode, paramId, level);
-        await saveData();
+        await saveData(); // Simpan perubahan ke Supabase database
       }
     } catch (err) {
       showWarning('❌ ' + err.message);
