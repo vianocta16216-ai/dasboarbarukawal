@@ -2709,18 +2709,18 @@ function renderFileList(row, subCode, paramId, level) {
     return;
   }
   files.forEach((fileObj, index) => {
-    // Ambil dari objek { url, fileName }
-    const fileUrl = fileObj.url;
-    const fileName = fileObj.fileName || `File ${index + 1}`;
+    // Ambil URL dan Nama File asli
+    const fileUrl = typeof fileObj === 'string' ? fileObj : fileObj.url;
+    const fileName = typeof fileObj === 'string' ? `File ${index + 1}` : (fileObj.fileName || fileObj.name || `File ${index + 1}`);
     
     const ext = fileName.split('.').pop().toLowerCase();
     
-    // PDF langsung buka, Excel/Word buka di Google Docs Viewer
+    // Live View: PDF langsung, Office pakai Google Docs Viewer
     let displayUrl = fileUrl;
     if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
       displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
     }
-    
+
     const div = document.createElement('div');
     div.style.cssText = 'display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px; border-radius:6px; margin-top:6px;';
     div.innerHTML = `
