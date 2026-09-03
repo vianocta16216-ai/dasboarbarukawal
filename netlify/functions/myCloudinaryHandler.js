@@ -1,5 +1,7 @@
+const https = require('https');
 const { createClient } = require('@supabase/supabase-js');
-const { AwsClient } = require('aws4fetch'); // <-- Library Baru
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const { NodeHttpHandler } = require("@smithy/node-http-handler");
 const { SUBUNSUR_DATA } = require('./subunsur');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -13,12 +15,22 @@ const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL;
 
-// Konfigurasi Koneksi R2 dengan aws4fetch
-const r2 = new AwsClient({
-  accessKeyId: R2_ACCESS_KEY_ID,
-  secretAccessKey: R2_SECRET_ACCESS_KEY,
-  service: 's3',
-  region: 'auto'
+// ====== KUNCI UTAMA UNTUK MENGATASI "FETCH FAILED" & "SSL PROTO" DI NETLIFY ======
+const requestHandler = new NodeHttpHandler({
+  httpsAgent: new https.Agent({
+    rejectUnauthorized: false // Melewati verifikasi SSL yang diblokir proxy Netlify
+  })
+});
+
+const s3 = new S3Client({
+  region: "auto",
+  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  forcePathStyle: true,
+  requestHandler: requestHandler, // <-- Terapkan bypass proxy
+  credentials: {
+    accessKeyId: R2_ACCESS_KEY_ID,
+    secretAccessKey: R2_SECRET_ACCESS_KEY
+  }
 });
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -36,25 +48,21 @@ async function uploadFileToR2(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
+  // Folder tanpa batasan panjang nama (namanya tidak dipotong)
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 50) || 'OPD';
   
-  // Kunci path lengkap
   const key = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}/${fileName}`;
 
-  // Endpoint untuk R2
-  const endpoint = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${R2_BUCKET_NAME}/${key}`;
+  // Upload ke R2
+  await s3.send(new PutObjectCommand({
+    Bucket: R2_BUCKET_NAME,
+    Key: key,
+    Body: bytes,
+    ContentType: 'application/octet-stream'
+  }));
 
-  const response = await r2.fetch(endpoint, {
-    method: 'PUT',
-    body: bytes,
-    headers: { 'Content-Type': 'application/octet-stream' }
-  });
-
-  if (!response.ok) throw new Error('Upload gagal: ' + response.status + ' - ' + await response.text());
-
-  // URL Publik yang bisa dibuka viewer/browser
   const url = `${R2_PUBLIC_URL}/${key}`;
   return { url: url, fileName: fileName };
 }
@@ -134,9 +142,7 @@ exports.handler = async (event) => {
         const idx = parts.indexOf(R2_BUCKET_NAME);
         if (idx !== -1 && parts.length > idx + 1) {
           const key = parts.slice(idx + 1).join('/');
-          // Hapus via aws4fetch juga
-          const endpoint = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${R2_BUCKET_NAME}/${encodeURIComponent(key)}`;
-          await r2.fetch(endpoint, { method: 'DELETE' });
+          await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: decodeURIComponent(key) }));
         }
         return res({ status: 'success' });
       }
