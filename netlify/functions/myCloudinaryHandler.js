@@ -1,5 +1,6 @@
+// ====== myCloudinaryHandler.js (Versi R2 - FINAL) ======
 const { createClient } = require('@supabase/supabase-js');
-const cloudinary = require('cloudinary').v2;
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const { SUBUNSUR_DATA } = require('./subunsur');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -7,10 +8,20 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD;
 const DELETE_PASSWORD = process.env.DELETE_PASSWORD;
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+// ====== KONFIGURASI CLOUDFLARE R2 ======
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
+const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
+const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL;
+
+const s3 = new S3Client({
+  region: "auto",
+  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: R2_ACCESS_KEY_ID,
+    secretAccessKey: R2_SECRET_ACCESS_KEY
+  }
 });
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -23,41 +34,30 @@ const UNSUR_MAP = {
   '5': '5. EVALUASI DAN PEMANTAUAN'
 };
 
-async function uploadFileToCloudinary(params) {
+async function uploadFileToR2(params) {
   const { fileData, fileName, year, opdName, subunsur, paramId, level } = params;
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // STRUKTUR FOLDER TIDAK DIUBAH
+  // ====== STRUKTUR FOLDER TETAP SESUAI PERMINTAAN ======
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
-  const safeOpd = opdName.replace(/[^a-zA-Z0-9\s]/g, '').substring(0, 50) || 'OPD';
-  const folder = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}`;
+  const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 50) || 'OPD';
+  const key = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}/${fileName}`;
 
-  // ====== PERBAIKAN PENTING: public_id PENDEK (Anti "too long") ======
-  // Kita pakai ID unik pendek, tapi nama asli disimpan di DB dan ditampilkan di frontend.
-  const publicId = Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
+  // ====== UPLOAD KE R2 ======
+  const uploadParams = {
+    Bucket: R2_BUCKET_NAME,
+    Key: key,
+    Body: bytes,
+    ContentType: 'application/octet-stream'
+  };
+  await s3.send(new PutObjectCommand(uploadParams));
 
-  const result = await new Promise((resolve, reject) => {
-    cloudinary.uploader.upload_stream(
-      {
-        resource_type: 'raw', // Raw agar PDF bisa terbuka, dan Excel jadi murni file
-        folder: folder,
-        public_id: publicId,
-        access_mode: 'public' // Kunci agar tidak Error 401
-      },
-      (error, uploadResult) => {
-        if (error) reject(error);
-        else resolve(uploadResult);
-      }
-    ).end(bytes);
-  });
+  // ====== BUAT URL PUBLIK ======
+  const url = `${R2_PUBLIC_URL}/${key}`;
 
-  // fl_attachment=false memastikan file TIDAK di-download paksa (terbuka di browser)
-  const separator = result.secure_url.includes('?') ? '&' : '?';
-  const url = result.secure_url + separator + 'fl_attachment=false';
-
-  // Kembalikan URL plus nama file asli untuk ditampilkan di frontend
+  // ====== KEMBALIKAN OBJEK { url, fileName } ======
   return { url: url, fileName: fileName };
 }
 
@@ -127,18 +127,16 @@ exports.handler = async (event) => {
         return res({ status: 'success' });
       }
       case 'uploadFile': {
-        const result = await uploadFileToCloudinary(params);
-        return res(result); // Kirim objek { url, fileName }
+        const result = await uploadFileToR2(params);
+        return res(result); // Mengembalikan { url, fileName }
       }
       case 'deleteFile': {
         const cleanUrl = params.fileUrl.split('?')[0];
         const parts = cleanUrl.split('/');
-        const rawIndex = parts.indexOf('raw');
-        const uploadIndex = parts.indexOf('upload');
-        const idx = rawIndex !== -1 ? rawIndex : uploadIndex;
+        const idx = parts.indexOf(R2_BUCKET_NAME);
         if (idx !== -1 && parts.length > idx + 1) {
-          const publicId = parts.slice(idx + 1).join('/');
-          await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
+          const key = parts.slice(idx + 1).join('/');
+          await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: decodeURIComponent(key) }));
         }
         return res({ status: 'success' });
       }
