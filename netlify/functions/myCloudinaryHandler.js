@@ -1,6 +1,5 @@
-// ====== myCloudinaryHandler.js (Versi R2 - FINAL) ======
 const { createClient } = require('@supabase/supabase-js');
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const { AwsClient } = require('aws4fetch'); // <-- Library Baru
 const { SUBUNSUR_DATA } = require('./subunsur');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -8,20 +7,18 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD;
 const DELETE_PASSWORD = process.env.DELETE_PASSWORD;
 
-// ====== KONFIGURASI CLOUDFLARE R2 ======
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME;
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL;
 
-const s3 = new S3Client({
-  region: "auto",
-  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  credentials: {
-    accessKeyId: R2_ACCESS_KEY_ID,
-    secretAccessKey: R2_SECRET_ACCESS_KEY
-  }
+// Konfigurasi Koneksi R2 dengan aws4fetch
+const r2 = new AwsClient({
+  accessKeyId: R2_ACCESS_KEY_ID,
+  secretAccessKey: R2_SECRET_ACCESS_KEY,
+  service: 's3',
+  region: 'auto'
 });
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -39,25 +36,26 @@ async function uploadFileToR2(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // ====== STRUKTUR FOLDER TETAP SESUAI PERMINTAAN ======
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 50) || 'OPD';
+  
+  // Kunci path lengkap
   const key = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}/${fileName}`;
 
-  // ====== UPLOAD KE R2 ======
-  const uploadParams = {
-    Bucket: R2_BUCKET_NAME,
-    Key: key,
-    Body: bytes,
-    ContentType: 'application/octet-stream'
-  };
-  await s3.send(new PutObjectCommand(uploadParams));
+  // Endpoint untuk R2
+  const endpoint = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${R2_BUCKET_NAME}/${key}`;
 
-  // ====== BUAT URL PUBLIK ======
+  const response = await r2.fetch(endpoint, {
+    method: 'PUT',
+    body: bytes,
+    headers: { 'Content-Type': 'application/octet-stream' }
+  });
+
+  if (!response.ok) throw new Error('Upload gagal: ' + response.status + ' - ' + await response.text());
+
+  // URL Publik yang bisa dibuka viewer/browser
   const url = `${R2_PUBLIC_URL}/${key}`;
-
-  // ====== KEMBALIKAN OBJEK { url, fileName } ======
   return { url: url, fileName: fileName };
 }
 
@@ -128,7 +126,7 @@ exports.handler = async (event) => {
       }
       case 'uploadFile': {
         const result = await uploadFileToR2(params);
-        return res(result); // Mengembalikan { url, fileName }
+        return res(result);
       }
       case 'deleteFile': {
         const cleanUrl = params.fileUrl.split('?')[0];
@@ -136,7 +134,9 @@ exports.handler = async (event) => {
         const idx = parts.indexOf(R2_BUCKET_NAME);
         if (idx !== -1 && parts.length > idx + 1) {
           const key = parts.slice(idx + 1).join('/');
-          await s3.send(new DeleteObjectCommand({ Bucket: R2_BUCKET_NAME, Key: decodeURIComponent(key) }));
+          // Hapus via aws4fetch juga
+          const endpoint = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${R2_BUCKET_NAME}/${encodeURIComponent(key)}`;
+          await r2.fetch(endpoint, { method: 'DELETE' });
         }
         return res({ status: 'success' });
       }
