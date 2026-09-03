@@ -21,16 +21,16 @@ async function uploadFileToSupabase(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // Struktur folder sesuai permintaan
+  // Struktur folder sesuai permintaan Anda
   const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80) || 'OPD';
 
-  // Ambil label Sub-Unsur dari data
+  // Ambil label Sub-Unsur yang benar
   const subUnsurLabel = SUBUNSUR_DATA[subunsur] ? SUBUNSUR_DATA[subunsur].label : subunsur;
   const safeSubUnsur = subUnsurLabel.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80);
 
-  // Ambil deskripsi Parameter dari data
+  // Ambil deskripsi Parameter yang benar
   let paramDesc = paramId;
   if (SUBUNSUR_DATA[subunsur] && SUBUNSUR_DATA[subunsur].params) {
     const paramObj = SUBUNSUR_DATA[subunsur].params.find(p => p.id === paramId);
@@ -38,7 +38,6 @@ async function uploadFileToSupabase(params) {
   }
   const safeParam = paramDesc.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 100);
 
-  // Path lengkap di Supabase
   const filePath = `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level_${level}/${fileName}`;
 
   // Upload ke bucket KAWALSPIP
@@ -48,10 +47,9 @@ async function uploadFileToSupabase(params) {
 
   if (error) throw new Error(error.message);
 
-  // Dapatkan URL publik
   const { data } = supabase.storage.from('KAWALSPIP').getPublicUrl(filePath);
 
-  // Kembalikan objek berisi url dan nama file asli
+  // Kembalikan objek { url, fileName }
   return { url: data.publicUrl, fileName };
 }
 
@@ -125,7 +123,6 @@ exports.handler = async (event) => {
         return res(result);
       }
       case 'deleteFile': {
-        // Parsing path dari URL: https://.../storage/v1/object/public/KAWALSPIP/kawal_spip/.../file.pdf
         const cleanUrl = params.fileUrl.split('?')[0];
         const marker = '/object/public/KAWALSPIP/';
         const idx = cleanUrl.indexOf(marker);
