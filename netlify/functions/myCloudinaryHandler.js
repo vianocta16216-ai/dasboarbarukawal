@@ -1,4 +1,3 @@
-// VERSION FINAL - NAMA JUDUL LENGKAP & NAMA FILE ASLI
 const { createClient } = require('@supabase/supabase-js');
 const cloudinary = require('cloudinary').v2;
 const { SUBUNSUR_DATA } = require('./subunsur');
@@ -16,7 +15,6 @@ cloudinary.config({
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ====== MAPPING NAMA UNSUR SESUAI GAMBAR ======
 const UNSUR_MAP = {
   '1': '1. LINGKUNGAN PENGENDALIAN',
   '2': '2. PENILAIAN RISIKO',
@@ -30,42 +28,23 @@ async function uploadFileToCloudinary(params) {
   const bytes = Buffer.from(fileData, 'base64');
   if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
-  // ====== 1. AMBIL NAMA UNSUR (Menggunakan Mapping di atas) ======
-  const unsurKey = subunsur.split('.')[0]; // Ambil '1' dari '1.1'
+  // STRUKTUR FOLDER TIDAK DIUBAH
+  const unsurKey = subunsur.split('.')[0];
   const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
-
-  // ====== 2. AMBIL NAMA SUB-UNSUR LENGKAP DARI DATA (Misal: 1.1 Penegakan Integritas... ) ======
-  const subUnsurData = SUBUNSUR_DATA[subunsur];
-  const subUnsurName = subUnsurData ? subUnsurData.label : subunsur;
-
-  // ====== 3. AMBIL NAMA PARAMETER LENGKAP DARI DATA (Misal: K/L/D menegakkan...) ======
-  let paramDesc = paramId;
-  if (subUnsurData && subUnsurData.params) {
-    const paramObj = subUnsurData.params.find(p => p.id === paramId);
-    if (paramObj) paramDesc = paramObj.desc;
-  }
-
-  // ====== 4. BERSIHKAN NAMA (Hapus karakter aneh agar aman di folder) ======
   const safeOpd = opdName.replace(/[^a-zA-Z0-9\s]/g, '').substring(0, 50) || 'OPD';
-  const safeSubUnsur = subUnsurName.replace(/[^a-zA-Z0-9\s]/g, '').substring(0, 80);
-  const safeParam = paramDesc.replace(/[^a-zA-Z0-9\s]/g, '').substring(0, 100);
+  const folder = `kawal_spip/${year}/${safeOpd}/${unsurName}/${subunsur}/${paramId}/Level_${level}`;
 
-  // ====== 5. SUSUN FOLDER DENGAN NAMA JUDUL LENGKAP (Sesuai Screenshot) ======
-  // kawal_spip/2026/OPD/1. LINGKUNGAN PENGENDALIAN/1.1 Penegakan Integritas.../K/L/D menegakkan.../Level 1/
-  const folder = `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level ${level}`;
+  // ====== PERBAIKAN PENTING: public_id PENDEK (Anti "too long") ======
+  // Kita pakai ID unik pendek, tapi nama asli disimpan di DB dan ditampilkan di frontend.
+  const publicId = Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 8);
 
-  // ====== 6. NAMA FILE SESUAI ASLI (Jangan diacak/diubah) ======
-  // Batasi hanya 100 karakter agar aman, tapi HAPUS jika ada karakter illegal
-  const safeFileName = fileName.replace(/[^a-zA-Z0-9._\s-]/g, '').substring(0, 100);
-
-  // ====== 7. UPLOAD KE CLOUDINARY (auto + PUBLIC agar bisa dibuka) ======
   const result = await new Promise((resolve, reject) => {
     cloudinary.uploader.upload_stream(
       {
-        resource_type: 'auto',
+        resource_type: 'raw', // Raw agar PDF bisa terbuka, dan Excel jadi murni file
         folder: folder,
-        public_id: safeFileName,
-        access_mode: 'public'
+        public_id: publicId,
+        access_mode: 'public' // Kunci agar tidak Error 401
       },
       (error, uploadResult) => {
         if (error) reject(error);
@@ -74,9 +53,12 @@ async function uploadFileToCloudinary(params) {
     ).end(bytes);
   });
 
-  // ====== 8. TAMBAHKAN PARAMETER SUPAYA BISA DIBUKA DI BROWSER (Tidak di-download) ======
+  // fl_attachment=false memastikan file TIDAK di-download paksa (terbuka di browser)
   const separator = result.secure_url.includes('?') ? '&' : '?';
-  return result.secure_url + separator + 'fl_attachment=false';
+  const url = result.secure_url + separator + 'fl_attachment=false';
+
+  // Kembalikan URL plus nama file asli untuk ditampilkan di frontend
+  return { url: url, fileName: fileName };
 }
 
 exports.handler = async (event) => {
@@ -145,16 +127,18 @@ exports.handler = async (event) => {
         return res({ status: 'success' });
       }
       case 'uploadFile': {
-        const fileUrl = await uploadFileToCloudinary(params);
-        return res(fileUrl);
+        const result = await uploadFileToCloudinary(params);
+        return res(result); // Kirim objek { url, fileName }
       }
       case 'deleteFile': {
         const cleanUrl = params.fileUrl.split('?')[0];
         const parts = cleanUrl.split('/');
+        const rawIndex = parts.indexOf('raw');
         const uploadIndex = parts.indexOf('upload');
-        if (uploadIndex !== -1 && parts.length > uploadIndex + 1) {
-          const publicId = parts.slice(uploadIndex + 1).join('/');
-          await cloudinary.uploader.destroy(publicId);
+        const idx = rawIndex !== -1 ? rawIndex : uploadIndex;
+        if (idx !== -1 && parts.length > idx + 1) {
+          const publicId = parts.slice(idx + 1).join('/');
+          await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
         }
         return res({ status: 'success' });
       }
