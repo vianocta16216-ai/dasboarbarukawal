@@ -2369,7 +2369,8 @@ function showChart(type) {
   let chartWidth = 800;
   let chartHeight = 400;
   if (isLineChart) {
-    chartWidth = Math.max(labels.length * 100, 800); // 100px per OPD agar label horizontal tidak tumpuk
+    // Lebar canvas = jumlah OPD * 50px (lebih lebar agar label vertikal muat)
+    chartWidth = Math.max(labels.length * 50, 800); 
     chartHeight = 400;
     canvas.style.width = chartWidth + 'px';
     canvas.style.height = chartHeight + 'px';
@@ -2400,12 +2401,12 @@ function showChart(type) {
         tension: isLineChart ? 0.4 : 0.3,
         pointBackgroundColor: isLineChart ? 'rgba(37, 99, 235, 1)' : undefined,
         pointBorderColor: isLineChart ? '#ffffff' : undefined,
-        pointRadius: isLineChart ? 5 : undefined,
-        pointHoverRadius: isLineChart ? 7 : undefined,
+        pointRadius: isLineChart ? 4 : undefined,
+        pointHoverRadius: isLineChart ? 6 : undefined,
       }]
     },
     options: {
-      responsive: false, // Kita atur manual agar bisa scroll
+      responsive: false,
       maintainAspectRatio: false,
       indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
       plugins: {
@@ -2421,10 +2422,10 @@ function showChart(type) {
           beginAtZero: true,
           grid: { color: isLineChart ? 'rgba(226, 232, 240, 0.3)' : 'rgba(226, 232, 240, 0.6)' },
           ticks: {
-            autoSkip: false,
-            maxRotation: 45, // Label miring 45 derajat, cukup terbaca
-            minRotation: 0,
-            font: { size: 12, family: "'Inter', sans-serif", weight: '500' }
+            autoSkip: false, // Tampilkan semua label (karena chart lebar)
+            maxRotation: 90, // Vertikal
+            minRotation: 90,
+            font: { size: 8, family: "'Inter', sans-serif", weight: '500' } // PERKECIL FONT MENJADI 8px
           }
         },
         y: {
