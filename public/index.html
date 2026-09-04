@@ -2314,7 +2314,6 @@ function showChart(type) {
       if (type === 'rataMRI') return parseFloat(r.mri) || 0;
       if (type === 'rataIEPK') return parseFloat(r.iepk) || 0;
     });
-
     typeChart = 'line';
   } 
   // ====== GRAFIK PIE ======
@@ -2360,29 +2359,31 @@ function showChart(type) {
   const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
   const canvas = document.getElementById('kpiChartCanvas');
   const ctx = canvas.getContext('2d');
-  
-  // ====== RESET DIMENSI CANVAS SETIAP KALI DIBUKA ======
+
+  // Reset canvas default
   canvas.style.width = '100%';
   canvas.style.height = '400px';
   canvas.parentElement.style.overflowX = 'hidden';
-  
+
   // Jika line chart, atur lebar & tinggi agar semua OPD terlihat dan bisa di-scroll
+  let chartWidth = 800;
+  let chartHeight = 400;
   if (isLineChart) {
-    const chartWidth = Math.max(labels.length * 60, 800); // 60px per OPD
-    const chartHeight = Math.max(labels.length * 30, 400); // 30px per OPD untuk label vertikal
+    chartWidth = Math.max(labels.length * 100, 800); // 100px per OPD agar label horizontal tidak tumpuk
+    chartHeight = 400;
     canvas.style.width = chartWidth + 'px';
     canvas.style.height = chartHeight + 'px';
     canvas.parentElement.style.overflowX = 'auto';
   }
-  
+
   // Buat gradient untuk area line chart
   let lineGradient = null;
   if (isLineChart) {
-    lineGradient = ctx.createLinearGradient(0, 0, 0, chartHeight || 400);
+    lineGradient = ctx.createLinearGradient(0, 0, 0, chartHeight);
     lineGradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
     lineGradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
   }
-  
+
   chartInstance = new Chart(ctx, {
     type: typeChart,
     data: {
@@ -2404,7 +2405,7 @@ function showChart(type) {
       }]
     },
     options: {
-      responsive: !isLineChart,
+      responsive: false, // Kita atur manual agar bisa scroll
       maintainAspectRatio: false,
       indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
       plugins: {
@@ -2421,9 +2422,9 @@ function showChart(type) {
           grid: { color: isLineChart ? 'rgba(226, 232, 240, 0.3)' : 'rgba(226, 232, 240, 0.6)' },
           ticks: {
             autoSkip: false,
-            maxRotation: isLineChart ? 90 : 45,  // Rotasi 90 derajat untuk line chart agar label vertikal
-            minRotation: isLineChart ? 90 : 0,
-            font: { size: 11, family: "'Inter', sans-serif", weight: '500' }
+            maxRotation: 45, // Label miring 45 derajat, cukup terbaca
+            minRotation: 0,
+            font: { size: 12, family: "'Inter', sans-serif", weight: '500' }
           }
         },
         y: {
@@ -2441,12 +2442,16 @@ function showChart(type) {
     }
   });
 
+  // Pastikan chart digambar ulang setelah modal aktif
+  setTimeout(() => {
+    chartInstance.resize();
+  }, 100);
+
   const chartContainer = document.querySelector('.chart-container.chart-scroll');
   if (chartContainer) {
     chartContainer.scrollTop = 0;
   }
 }
-
 document.getElementById('kpiChartClose').addEventListener('click', function() {
   document.getElementById('kpiChartModal').classList.remove('active');
   if (chartInstance) {
