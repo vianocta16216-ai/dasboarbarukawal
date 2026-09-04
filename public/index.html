@@ -2368,24 +2368,20 @@ function showChart(type) {
   // Jika line chart, atur lebar & tinggi agar semua OPD terlihat dan bisa di-scroll
   let chartWidth = 800;
   let chartHeight = 400;
+                            // Inisialisasi variabel di luar blok if agar bisa dipakai di options
+              let maxLabelLength = 0;
               if (isLineChart) {
-    // Hitung panjang karakter label terpanjang
-    let maxLabelLength = 0;
-    labels.forEach(label => {
-        if (label && label.length > maxLabelLength) maxLabelLength = label.length;
-    });
+                  labels.forEach(label => {
+                      if (label && label.length > maxLabelLength) maxLabelLength = label.length;
+                  });
 
-    // Lebar canvas = jumlah OPD * 70px
-    chartWidth = Math.max(labels.length * 70, 900); 
-    
-    // Tinggi canvas dihitung berdasarkan panjang label TERPANJANG (20px per karakter) + ruang ekstra agar turun ke bawah
-    // Nilai 20 dan 300 bisa disesuaikan, tapi ini memastikan label benar-benar DI BAWAH grid
-    chartHeight = Math.max(maxLabelLength * 20 + 300, 800); 
+                  chartWidth = Math.max(labels.length * 70, 900); 
+                  chartHeight = Math.max(maxLabelLength * 20 + 300, 800); 
 
-    canvas.style.width = chartWidth + 'px';
-    canvas.style.height = chartHeight + 'px';
-    canvas.parentElement.style.overflowX = 'auto';
-  }
+                  canvas.style.width = chartWidth + 'px';
+                  canvas.style.height = chartHeight + 'px';
+                  canvas.parentElement.style.overflowX = 'auto';
+              }
   // Buat gradient untuk area line chart
   let lineGradient = null;
   if (isLineChart) {
@@ -2418,7 +2414,7 @@ function showChart(type) {
       responsive: false,
       maintainAspectRatio: false,
       indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
-                  layout: { padding: { bottom: Math.max(maxLabelLength * 15, 250) } }, // Padding dihitung otomatis agar TULISAN DI LUAR GARIS GRID
+                                    layout: { padding: { bottom: maxLabelLength > 0 ? Math.max(maxLabelLength * 15, 250) : 250 } }, // Padding dihitung otomatis
       plugins: {
         legend: { display: typeChart === 'pie' },
         tooltip: {
@@ -2428,16 +2424,16 @@ function showChart(type) {
         }
       },
       scales: {
-                                                                                x: {
+                 x: {
           beginAtZero: true,
-          grid: { display: false }, // Matikan garis grid vertikal
+          grid: { display: false },
           ticks: {
             autoSkip: false, 
             maxRotation: -75,
             minRotation: -75,
             mirror: false, 
-            font: { size: 13, family: "'Inter', sans-serif", weight: 'bold' }, // UKURAN FONT DIPERBESAR & BOLD
-            padding: 20 // Jarak ekstra dari garis X
+            font: { size: 13, family: "'Inter', sans-serif", weight: 'bold' }, 
+            padding: 20
           }
         },
         y: {
