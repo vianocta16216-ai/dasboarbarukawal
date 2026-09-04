@@ -587,13 +587,7 @@ tbody input[readonly] {
   border: 1px solid rgba(255,255,255,0.5);
   box-shadow: 0 10px 30px rgba(0,0,0,0.1);
 }
-
-#kpiChartCanvas {
-  min-width: 100%;
-  height: 400px;
-  width: 100%;
-}
-
+   
 .chart-container {
   position: relative;
   height: 400px;
@@ -2286,7 +2280,7 @@ function attachHandlers() {
   });
 }
 
-// ====== GRAFIK KPI (PIE BULAT + TANPA GRID) ======
+// ====== GRAFIK KPI (FINAL - 400x400 ANTI GEPENG) ======
 function showChart(type) {
   const titles = {
     rataRata: 'Rata-rata Level per OPD',
@@ -2316,7 +2310,6 @@ function showChart(type) {
 
   const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
   
-  // ====== DATA LINE CHART (3 KPI TIDAK DIUBAH) ======
   if (isLineChart) {
     labels = rows.map(r => r.opd);
     data = rows.map(r => {
@@ -2326,7 +2319,6 @@ function showChart(type) {
     });
     typeChart = 'line';
   } 
-  // ====== DATA PIE CHART (6 KPI) ======
   else if (type === 'opdLevel3') {
     totalCount = rows.length;
     countTrue = rows.filter(r => (parseFloat(r.sa) || 0) >= 3).length;
@@ -2394,7 +2386,6 @@ function showChart(type) {
   const canvas = document.getElementById('kpiChartCanvas');
   const ctx = canvas.getContext('2d');
 
-  // ====== KHUSUS LINE CHART (TIDAK DIUBAH) ======
   if (isLineChart) {
       let chartWidth = canvas.parentElement.clientWidth; 
       if (!chartWidth || chartWidth < 800) chartWidth = 800;
@@ -2460,20 +2451,17 @@ function showChart(type) {
         }
       });
 
-  // ====== KHUSUS PIE CHART (6 KPI - BULAT & BERSIH) ======
   } else {
-      // Atur ukuran 450x450 PERSIS (Persegi sempurna)
-      canvas.style.width = '450px !important';
-      canvas.style.height = '450px !important';
-      canvas.width = 450;
-      canvas.height = 450;
+      // ====== PERBAIKAN UTAMA: UKURAN KOTAK PERSEGI 400x400 ======
+      canvas.width = 400;
+      canvas.height = 400;
+      canvas.style.width = '400px';
+      canvas.style.height = '400px';
+      // Hapus gaya CSS yang memaksa min-width (agar tidak gepeng)
+      canvas.style.minWidth = '0';
 
-      // Matikan scroll
       canvas.parentElement.style.overflowX = 'hidden';
       canvas.parentElement.style.overflowY = 'hidden';
-
-      // Ubah background container jadi putih bersih, hilangkan garis grid
-      canvas.parentElement.style.background = '#ffffff';
 
       chartInstance = new Chart(ctx, {
         type: 'pie',
@@ -2515,7 +2503,7 @@ function showChart(type) {
               }
             }
           },
-          // ====== KUNCI: MATIKAN SUMBU X & Y ======
+          // ====== KUNCI: MATIKAN GRID & SUMBU ======
           scales: {
             x: { display: false },
             y: { display: false }
