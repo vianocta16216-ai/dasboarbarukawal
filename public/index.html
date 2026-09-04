@@ -2286,7 +2286,7 @@ function attachHandlers() {
   });
 }
 
-// ====== GRAFIK KPI (FINAL - UI RAPI & BULAT SEMPURNA) ======
+// ====== GRAFIK KPI (FINAL - PIE CHART BULAT SEMPURNA) ======
 function showChart(type) {
   const titles = {
     rataRata: 'Rata-rata Level per OPD',
@@ -2330,7 +2330,7 @@ function showChart(type) {
     typeChart = 'line';
   } 
   // ==========================================================
-  // PERSIAPAN DATA PIE CHART (6 KPI)
+  // PERSIAPAN DATA PIE CHART (6 KPI) - LINGKARAN PENUH
   // ==========================================================
   else if (type === 'opdLevel3') {
     totalCount = rows.length;
@@ -2338,54 +2338,54 @@ function showChart(type) {
     countFalse = totalCount - countTrue;
     labels = ['Level >= 3', 'Level < 3'];
     data = [countTrue, countFalse];
-    backgroundColor = ['rgba(16, 185, 129, 0.85)', 'rgba(226, 232, 240, 0.85)'];
-    borderColor = ['#10b981', '#cbd5e1'];
-    typeChart = 'doughnut';
+    backgroundColor = ['#10b981', '#e2e8f0'];
+    borderColor = ['#ffffff', '#ffffff'];
+    typeChart = 'pie';
   } else if (type === 'qaApip') {
     totalCount = rows.length;
     countTrue = rows.filter(r => r.qaApip === 'Selesai').length;
     countFalse = totalCount - countTrue;
     labels = ['Selesai', 'Proses/Belum'];
     data = [countTrue, countFalse];
-    backgroundColor = ['rgba(245, 158, 11, 0.85)', 'rgba(226, 232, 240, 0.85)'];
-    borderColor = ['#f59e0b', '#cbd5e1'];
-    typeChart = 'doughnut';
+    backgroundColor = ['#f59e0b', '#e2e8f0'];
+    borderColor = ['#ffffff', '#ffffff'];
+    typeChart = 'pie';
   } else if (type === 'level2') {
     totalCount = rows.length;
     countTrue = rows.filter(r => (parseFloat(r.sa) || 0) <= 2).length;
     countFalse = totalCount - countTrue;
     labels = ['Level <= 2', 'Level > 2'];
     data = [countTrue, countFalse];
-    backgroundColor = ['rgba(239, 68, 68, 0.85)', 'rgba(226, 232, 240, 0.85)'];
-    borderColor = ['#ef4444', '#cbd5e1'];
-    typeChart = 'doughnut';
+    backgroundColor = ['#ef4444', '#e2e8f0'];
+    borderColor = ['#ffffff', '#ffffff'];
+    typeChart = 'pie';
   } else if (type === 'statusSelesai') {
     totalCount = rows.length;
     countTrue = rows.filter(r => r.status === 'Selesai').length;
     countFalse = totalCount - countTrue;
     labels = ['Selesai', 'Proses/Belum'];
     data = [countTrue, countFalse];
-    backgroundColor = ['rgba(99, 102, 241, 0.85)', 'rgba(226, 232, 240, 0.85)'];
-    borderColor = ['#6366f1', '#cbd5e1'];
-    typeChart = 'doughnut';
+    backgroundColor = ['#6366f1', '#e2e8f0'];
+    borderColor = ['#ffffff', '#ffffff'];
+    typeChart = 'pie';
   } else if (type === 'evidenceLengkap') {
     totalCount = rows.length;
     countTrue = rows.filter(r => r.evidence === 'Lengkap').length;
     countFalse = totalCount - countTrue;
     labels = ['Lengkap', 'Sebagian/Belum'];
     data = [countTrue, countFalse];
-    backgroundColor = ['rgba(236, 72, 153, 0.85)', 'rgba(226, 232, 240, 0.85)'];
-    borderColor = ['#ec4899', '#cbd5e1'];
-    typeChart = 'doughnut';
+    backgroundColor = ['#ec4899', '#e2e8f0'];
+    borderColor = ['#ffffff', '#ffffff'];
+    typeChart = 'pie';
   } else if (type === 'rtpSelesai') {
     totalCount = rows.length;
     countTrue = rows.filter(r => r.rtp === 'Selesai').length;
     countFalse = totalCount - countTrue;
     labels = ['Selesai', 'Belum'];
     data = [countTrue, countFalse];
-    backgroundColor = ['rgba(249, 115, 22, 0.85)', 'rgba(226, 232, 240, 0.85)'];
-    borderColor = ['#f97316', '#cbd5e1'];
-    typeChart = 'doughnut';
+    backgroundColor = ['#f97316', '#e2e8f0'];
+    borderColor = ['#ffffff', '#ffffff'];
+    typeChart = 'pie';
   }
 
   document.getElementById('kpiChartTitle').textContent = titles[type] || 'Grafik';
@@ -2468,16 +2468,15 @@ function showChart(type) {
       });
 
   // ==========================================================
-  // KHUSUS DOUGHNUT CHART (6 KPI): BULAT & RAPI
+  // KHUSUS PIE CHART (6 KPI) - BULAT SEMPURNA ANTI GEPENG
   // ==========================================================
   } else {
-      // KUNCI PERBAIKAN: Lebar Maksimal 400px & TINGGI SAMA DENGAN LEBAR
-      // Ini membuat chart berbentuk KOTAK PERSEGI sehingga lingkaran tidak gepeng
+      // KUNCI ANTI GEPENG: Lebar & Tinggi dibuat SAMA PERSIS (Persegi)
       let containerWidth = canvas.parentElement.clientWidth;
+      // Batasi ukuran maksimal 400px agar muat pas di layar
       let size = Math.min(containerWidth - 40, 400); 
-      if (!size || size < 300) size = 300;
+      if (!size || size < 250) size = 250;
 
-      // Atur Lebar dan Tinggi SAMA (Persegi sempurna)
       canvas.width = size;
       canvas.height = size;
       canvas.style.width = size + 'px';
@@ -2488,7 +2487,7 @@ function showChart(type) {
       canvas.parentElement.style.overflowY = 'hidden';
 
       chartInstance = new Chart(ctx, {
-        type: 'doughnut',
+        type: 'pie', // LINGKARAN PENUH, TANPA BOLONG
         data: {
           labels: labels,
           datasets: [{
@@ -2502,29 +2501,24 @@ function showChart(type) {
         options: {
           responsive: false, 
           maintainAspectRatio: false,
-          cutout: '55%', // Hole di tengah agar terlihat modern
-          layout: { padding: 10 },
+          layout: { padding: 5 },
           plugins: {
             legend: { 
               display: true, 
               position: 'bottom',
               labels: {
-                color: '#334155',
+                color: '#1e293b',
                 usePointStyle: true,
                 pointStyle: 'circle',
-                padding: 15,
-                font: { size: 13, weight: 'bold' }
+                padding: 12,
+                font: { size: 12, weight: 'bold' }
               }
             },
             tooltip: { 
               backgroundColor: '#0f172a',
-              titleFont: { size: 13, weight: 'bold' },
-              bodyFont: { size: 12 },
-              padding: 10,
               position: 'nearest',
               callbacks: {
                 label: function(context) {
-                  let label = context.label || '';
                   let val = context.parsed;
                   let percent = totalCount > 0 ? Math.round((val / totalCount) * 100) : 0;
                   return ` ${val} OPD (${percent}%)`;
