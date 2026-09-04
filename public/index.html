@@ -2366,15 +2366,15 @@ function showChart(type) {
   canvas.parentElement.style.overflowX = 'hidden';
 
   // Jika line chart, atur lebar & tinggi agar semua OPD terlihat dan bisa di-scroll
-   let chartWidth = 800;
+  let chartWidth = 800;
   let chartHeight = 400;
   
   if (isLineChart) {
-      // Hitung lebar canvas agar tidak menumpuk
-      chartWidth = Math.max(labels.length * 70, 900); 
-      // TINGGI TETAP 800px (cukup untuk semua OPD)
-      chartHeight = 800; 
-
+      // Lebar mengikuti jumlah OPD agar tidak menumpuk
+      chartWidth = Math.max(labels.length * 60, 800); 
+      // Tinggi pas (600px) agar tidak ada ruang kosong raksasa
+      chartHeight = 600; 
+      
       canvas.style.width = chartWidth + 'px';
       canvas.style.height = chartHeight + 'px';
       canvas.parentElement.style.overflowX = 'auto';
@@ -2407,13 +2407,13 @@ function showChart(type) {
         pointHoverRadius: isLineChart ? 6 : undefined,
       }]
     },
-                        options: {
+      options: {
       responsive: false,
       maintainAspectRatio: false,
       indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
       
-      // PENTING: Padding 250px HANYA untuk Line Chart, 0 untuk Pie Chart agar tidak rusak
-      layout: { padding: { bottom: isLineChart ? 250 : 0 } },
+      // Padding 150px HANYA untuk Line Chart, 0 untuk Pie Chart agar KPI lain tidak rusak
+      layout: { padding: { bottom: isLineChart ? 150 : 0 } },
       
       plugins: {
         legend: { display: typeChart === 'pie' },
@@ -2426,6 +2426,7 @@ function showChart(type) {
       scales: {
         x: {
           beginAtZero: true,
+          // Matikan garis grid vertikal agar tulisan tidak menabrak garis
           grid: { display: false },
           ticks: {
             autoSkip: false, 
@@ -2433,7 +2434,7 @@ function showChart(type) {
             minRotation: -75,
             mirror: false, 
             font: { size: 13, family: "'Inter', sans-serif", weight: 'bold' }, 
-            padding: 20
+            padding: 10 // Jarak teks dari sumbu X
           }
         },
         y: {
