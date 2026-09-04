@@ -526,13 +526,55 @@ tbody input[readonly] {
     box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);
 }
 #kpiChartModal .modal {
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #ffffff 100%);
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  max-width: 750px;
+  background: #ffffff;
+  border: none;
+  max-width: 1800px;
+  width: 95vw;
+  height: 90vh;
   text-align: center;
   animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.3);
-  padding: 24px 30px 30px;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.3);
+  padding: 30px 40px;
+  border-radius: 24px;
+}
+
+#kpiChartModal .modal-header {
+  border-bottom: none;
+  padding-bottom: 8px;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#kpiChartModal .modal-header h3 {
+  font-size: 28px;
+  font-weight: 800;
+  background: linear-gradient(45deg, #1e3a8a, #2563eb, #7c3aed);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0;
+}
+
+#kpiChartModal .modal-close {
+  background: #f1f5f9;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 24px;
+  color: #475569;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+#kpiChartModal .modal-close:hover {
+  background: #fee2e2;
+  color: #dc2626;
+  transform: rotate(90deg);
 }
 
 @keyframes popIn {
@@ -2272,6 +2314,7 @@ function attachHandlers() {
 }
 
 // ====== GRAFIK KPI ======
+// ====== GRAFIK KPI ======
 function showChart(type) {
   const titles = {
     rataRata: 'Rata-rata Level per OPD',
@@ -2291,7 +2334,7 @@ function showChart(type) {
   let borderColor = [];
   let typeChart = 'bar';
 
-  // ====== GRAFIK BAR VERTIKAL (SEMUA OPD TANPA BATASAN) ======
+  // ====== GRAFIK HORIZONTAL BAR UNTUK 3 KPI UTAMA (TANPA BATASAN) ======
   if (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK') {
     labels = rows.map(r => r.opd);
     data = rows.map(r => {
@@ -2300,9 +2343,15 @@ function showChart(type) {
       if (type === 'rataIEPK') return parseFloat(r.iepk) || 0;
     });
 
-    // Gradient Modern: Biru jika ada nilai, abu-abu jika 0
-    backgroundColor = data.map(val => val > 0 ? 'rgba(59, 130, 246, 0.8)' : 'rgba(203, 213, 225, 0.5)');
-    borderColor = data.map(val => val > 0 ? 'rgba(37, 99, 235, 1)' : 'rgba(148, 163, 184, 1)');
+    // GRADASI WARNA MODERN
+    backgroundColor = data.map((val, i) => {
+      if (val > 0) return `hsla(${(210 + (i * 12)) % 360}, 80%, 60%, 0.85)`;
+      return 'rgba(203, 213, 225, 0.5)';
+    });
+    borderColor = data.map((val, i) => {
+      if (val > 0) return `hsla(${(210 + (i * 12)) % 360}, 80%, 40%, 1)`;
+      return 'rgba(148, 163, 184, 1)';
+    });
     typeChart = 'bar';
   } 
   // ====== GRAFIK PIE ======
@@ -2356,6 +2405,8 @@ function showChart(type) {
         backgroundColor: backgroundColor.length > 0 ? backgroundColor : 'rgba(59, 130, 246, 0.8)',
         borderColor: borderColor.length > 0 ? borderColor : 'rgba(37, 99, 235, 1)',
         borderWidth: 1,
+        borderRadius: 8,
+        maxBarThickness: 35,
         fill: typeChart === 'line' ? true : false,
         tension: 0.3
       }]
@@ -2363,6 +2414,7 @@ function showChart(type) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      indexAxis: typeChart === 'bar' ? 'y' : 'x', // KUNCI: HORIZONTAL
       plugins: {
         legend: { display: typeChart === 'pie' },
         tooltip: {
@@ -2373,24 +2425,22 @@ function showChart(type) {
       },
       scales: {
         x: {
-          ticks: {
-            autoSkip: false, // PAKSA SEMUA LABEL MUNCUL
-            maxRotation: 90,
-            minRotation: 90,
-            font: {
-              size: 11,
-              family: "'Inter', sans-serif"
-            },
-            padding: 5
-          },
-          grid: {
-            display: false
-          }
-        },
-        y: {
           beginAtZero: true,
           grid: {
             color: 'rgba(226, 232, 240, 0.6)'
+          }
+        },
+        y: {
+          ticks: {
+            autoSkip: false, // TIDAK MEMOTONG NAMA OPD
+            font: {
+              size: 13,
+              family: "'Inter', sans-serif",
+              weight: '600'
+            }
+          },
+          grid: {
+            display: false
           }
         }
       },
