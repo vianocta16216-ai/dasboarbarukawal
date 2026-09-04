@@ -60,16 +60,24 @@ export const onRequest = async ({ request, env }) => {
     switch (action) {
       case 'getSubunsurData':
         return new Response(JSON.stringify(SUBUNSUR_DATA), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      
       case 'verifyAccess':
+        // ====== TAMBAHAN DEBUG (Hapus baris ini setelah berhasil) ======
+        console.log("DEBUG - Env ACCESS_PASSWORD:", JSON.stringify(ACCESS_PASSWORD));
+        console.log("DEBUG - Input password:", JSON.stringify(params.password));
+        // ===============================================================
         return new Response(JSON.stringify({ status: params.password === ACCESS_PASSWORD ? 'success' : 'error', message: params.password === ACCESS_PASSWORD ? 'Akses diterima' : 'Password salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      
       case 'verifyDelete':
         return new Response(JSON.stringify({ status: params.password === DELETE_PASSWORD ? 'success' : 'error', message: params.password === DELETE_PASSWORD ? 'Password hapus benar' : 'Password hapus salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      
       case 'getData': {
         const { data, error } = await supabase.from('opd_data').select('*').eq('year', year);
         if (error) throw error;
         const mapped = data.map(r => ({ ...r, qaApip: r.qa_apip || r.qaApip || 'Belum' }));
         return new Response(JSON.stringify(mapped), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+      
       case 'saveData': {
         const rows = JSON.parse(params.rows);
         for (const row of rows) {
@@ -78,6 +86,7 @@ export const onRequest = async ({ request, env }) => {
         }
         return new Response(JSON.stringify({ status: 'success', message: 'Data tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+      
       case 'saveField': {
         const { opdId, field, value } = params;
         const updateObj = {};
@@ -85,26 +94,31 @@ export const onRequest = async ({ request, env }) => {
         await supabase.from('opd_data').update(updateObj).eq('id', opdId);
         return new Response(JSON.stringify({ status: 'success', message: 'Field tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+      
       case 'deleteOpd': {
         if (params.opdId === 'all') await supabase.from('opd_data').delete().eq('year', year);
         else await supabase.from('opd_data').delete().eq('id', params.opdId);
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+      
       case 'getYears': {
         const { data } = await supabase.from('years').select('year');
         const years = data.map(x => x.year);
         if (!years.includes('2026')) years.push('2026');
         return new Response(JSON.stringify([...new Set(years)].sort()), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+      
       case 'addYear': {
         await supabase.from('years').insert({ year: params.year });
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+      
       case 'deleteYear': {
         await supabase.from('opd_data').delete().eq('year', params.year);
         await supabase.from('years').delete().eq('year', params.year);
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+      
       case 'uploadFile': {
         const { filePath, bytes, fileType, fileName } = getFolderStructure(params);
         const { error } = await supabase.storage
@@ -114,6 +128,7 @@ export const onRequest = async ({ request, env }) => {
         const { data } = supabase.storage.from('KAWALSPIP').getPublicUrl(filePath);
         return new Response(JSON.stringify({ url: data.publicUrl, fileName }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+      
       case 'deleteFile': {
         const cleanUrl = params.fileUrl.split('?')[0];
         const marker = '/object/public/KAWALSPIP/';
@@ -124,6 +139,7 @@ export const onRequest = async ({ request, env }) => {
         }
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+      
       default:
         return new Response(JSON.stringify({ status: 'error', message: 'Aksi tidak dikenal: ' + action }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
