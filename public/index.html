@@ -579,7 +579,8 @@ tbody input[readonly] {
 
 .chart-container.chart-scroll {
   max-height: 75vh;
-  overflow: auto; /* SCROLL HORIZONTAL & VERTIKAL */
+  overflow-x: auto;
+  overflow-y: auto;
   padding: 20px;
   background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
   border-radius: 16px;
@@ -589,7 +590,8 @@ tbody input[readonly] {
 
 #kpiChartCanvas {
   min-width: 100%;
-  height: 400px; /* Tinggi default, akan diatur ulang oleh JavaScript untuk chart garis */
+  height: 400px;
+  width: 100%;
 }
 
 .chart-container {
@@ -2302,7 +2304,7 @@ function showChart(type) {
   let data = [];
   let backgroundColor = [];
   let borderColor = [];
-  let typeChart = 'bar'; // HORIZONTAL BAR
+  let typeChart = 'bar';
 
   // ====== GRAFIK GARIS UNTUK 3 KPI UTAMA ======
   if (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK') {
@@ -2355,22 +2357,28 @@ function showChart(type) {
     chartInstance.destroy();
   }
 
-   const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
-  const ctx = document.getElementById('kpiChartCanvas').getContext('2d');
+  const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
+  const canvas = document.getElementById('kpiChartCanvas');
+  const ctx = canvas.getContext('2d');
   
-  // Jika line chart, atur lebar canvas agar cukup untuk semua nama OPD
+  // ====== RESET DIMENSI CANVAS SETIAP KALI DIBUKA ======
+  canvas.style.width = '100%';
+  canvas.style.height = '400px';
+  canvas.parentElement.style.overflowX = 'hidden';
+  
+  // Jika line chart, atur lebar & tinggi agar semua OPD terlihat dan bisa di-scroll
   if (isLineChart) {
-    const canvas = document.getElementById('kpiChartCanvas');
-    const chartWidth = Math.max(labels.length * 120, 800); // 120px per OPD
+    const chartWidth = Math.max(labels.length * 60, 800); // 60px per OPD
+    const chartHeight = Math.max(labels.length * 30, 400); // 30px per OPD untuk label vertikal
     canvas.style.width = chartWidth + 'px';
-    canvas.style.height = '400px';
-    canvas.parentElement.style.overflowX = 'auto'; // pastikan scroll horizontal aktif
+    canvas.style.height = chartHeight + 'px';
+    canvas.parentElement.style.overflowX = 'auto';
   }
   
   // Buat gradient untuk area line chart
   let lineGradient = null;
   if (isLineChart) {
-    lineGradient = ctx.createLinearGradient(0, 0, 0, 400);
+    lineGradient = ctx.createLinearGradient(0, 0, 0, chartHeight || 400);
     lineGradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
     lineGradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
   }
@@ -2396,7 +2404,7 @@ function showChart(type) {
       }]
     },
     options: {
-      responsive: !isLineChart, // line chart dibuat fixed agar bisa scroll horizontal
+      responsive: !isLineChart,
       maintainAspectRatio: false,
       indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
       plugins: {
@@ -2413,8 +2421,8 @@ function showChart(type) {
           grid: { color: isLineChart ? 'rgba(226, 232, 240, 0.3)' : 'rgba(226, 232, 240, 0.6)' },
           ticks: {
             autoSkip: false,
-            maxRotation: 45,
-            minRotation: 0,
+            maxRotation: isLineChart ? 90 : 45,  // Rotasi 90 derajat untuk line chart agar label vertikal
+            minRotation: isLineChart ? 90 : 0,
             font: { size: 11, family: "'Inter', sans-serif", weight: '500' }
           }
         },
