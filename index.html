@@ -1849,10 +1849,10 @@ let pendingSave = false;
 let chartInstance = null;
 let originalRows = [];
 
-// ====== PANGGIL SERVER (NETLIFY FUNCTION) ======
+// ====== PANGGIL SERVER (CLOUDFLARE PAGES FUNCTION) ======
 function callServer(action, params = {}) {
   // ====== PERBAIKAN PENTING: Nama fungsi HARUS myCloudinaryHandler ======
-  const functionUrl = '/.netlify/functions/myCloudinaryHandler';
+  const functionUrl = '/myCloudinaryHandler';
   
   const hasLargePayload = params.fileData || params.rows;
 
