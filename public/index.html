@@ -1966,7 +1966,22 @@ async function loadData() {
     updateKpisLocal();
   }
 }
-
+// ====== FUNGSI BARU: Hitung SA dari Subunsur ======
+function calculateSA(row) {
+    if (!row.subunsurs) return 0;
+    let totalLevel = 0;
+    let count = 0;
+    Object.keys(row.subunsurs).forEach(subCode => {
+        Object.keys(row.subunsurs[subCode]).forEach(paramId => {
+            const level = row.subunsurs[subCode][paramId].level;
+            if (level > 0) {
+                totalLevel += level;
+                count++;
+            }
+        });
+    });
+    return count > 0 ? Math.round((totalLevel / count) * 100) / 100 : 0;
+}
 // ====== HITUNG KPI LOKAL ======
 function updateKpisLocal() {
   const total = rows.length;
@@ -2075,7 +2090,10 @@ async function saveData() {
       console.error('rows bukan array, diset kosong', rows);
       rows = [];
     }
-
+    // ====== PERBAIKAN: Hitung ulang SA sebelum disimpan ======
+    rows.forEach(row => {
+        row.sa = calculateSA(row);
+    });
     const result = await callServer('saveData', { rows: JSON.stringify(rows), year });
     if (result.status === 'error') {
       status.textContent = '⚠️ ' + result.message;
@@ -2825,6 +2843,8 @@ document.getElementById('modalSave').addEventListener('click', async function() 
   selects.forEach(el => {
     const subCode = el.dataset.sub, paramId = el.dataset.param;
     row.subunsurs[subCode][paramId].level = parseInt(el.value) || 0;
+       // ====== PERBAIKAN: Hitung SA setelah pilih level ======
+  row.sa = calculateSA(row);
   });
   textareas.forEach(el => {
     const subCode = el.dataset.sub, paramId = el.dataset.param, field = el.dataset.field;
