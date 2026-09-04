@@ -579,8 +579,7 @@ tbody input[readonly] {
 
 .chart-container.chart-scroll {
   max-height: 75vh;
-  overflow-y: auto; /* SCROLL VERTIKAL agar semua OPD muat */
-  overflow-x: hidden;
+  overflow: auto; /* SCROLL HORIZONTAL & VERTIKAL */
   padding: 20px;
   background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
   border-radius: 16px;
@@ -589,8 +588,8 @@ tbody input[readonly] {
 }
 
 #kpiChartCanvas {
-  min-width: 100%; /* JANGAN pakai 2500px, gunakan lebar penuh */
-  height: 600px !important; /* Tinggi cukup agar banyak bar muat */
+  min-width: 100%;
+  height: 400px; /* Tinggi default, akan diatur ulang oleh JavaScript untuk chart garis */
 }
 
 .chart-container {
@@ -2305,7 +2304,7 @@ function showChart(type) {
   let borderColor = [];
   let typeChart = 'bar'; // HORIZONTAL BAR
 
-  // ====== GRAFIK HORIZONTAL UNTUK 3 KPI UTAMA ======
+  // ====== GRAFIK GARIS UNTUK 3 KPI UTAMA ======
   if (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK') {
     labels = rows.map(r => r.opd);
     data = rows.map(r => {
@@ -2314,10 +2313,7 @@ function showChart(type) {
       if (type === 'rataIEPK') return parseFloat(r.iepk) || 0;
     });
 
-    backgroundColor = data.map(val => val > 0 ? 'rgba(59, 130, 246, 0.7)' : 'rgba(203, 213, 225, 0.5)');
-    borderColor = data.map(val => val > 0 ? 'rgba(37, 99, 235, 1)' : 'rgba(148, 163, 184, 1)');
-
-    typeChart = 'bar';
+    typeChart = 'line';
   } 
   // ====== GRAFIK PIE ======
   else if (type === 'opdLevel3') {
@@ -2359,7 +2355,26 @@ function showChart(type) {
     chartInstance.destroy();
   }
 
+   const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
   const ctx = document.getElementById('kpiChartCanvas').getContext('2d');
+  
+  // Jika line chart, atur lebar canvas agar cukup untuk semua nama OPD
+  if (isLineChart) {
+    const canvas = document.getElementById('kpiChartCanvas');
+    const chartWidth = Math.max(labels.length * 120, 800); // 120px per OPD
+    canvas.style.width = chartWidth + 'px';
+    canvas.style.height = '400px';
+    canvas.parentElement.style.overflowX = 'auto'; // pastikan scroll horizontal aktif
+  }
+  
+  // Buat gradient untuk area line chart
+  let lineGradient = null;
+  if (isLineChart) {
+    lineGradient = ctx.createLinearGradient(0, 0, 0, 400);
+    lineGradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
+    lineGradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
+  }
+  
   chartInstance = new Chart(ctx, {
     type: typeChart,
     data: {
@@ -2367,19 +2382,23 @@ function showChart(type) {
       datasets: [{
         label: titles[type],
         data: data,
-        backgroundColor: backgroundColor.length > 0 ? backgroundColor : 'rgba(59, 130, 246, 0.7)',
-        borderColor: borderColor.length > 0 ? borderColor : 'rgba(37, 99, 235, 1)',
-        borderWidth: 1,
+        backgroundColor: isLineChart ? lineGradient : (backgroundColor.length > 0 ? backgroundColor : 'rgba(59, 130, 246, 0.7)'),
+        borderColor: isLineChart ? 'rgba(37, 99, 235, 1)' : (borderColor.length > 0 ? borderColor : 'rgba(37, 99, 235, 1)'),
+        borderWidth: isLineChart ? 3 : 1,
         borderRadius: 8,
         maxBarThickness: 30,
-        fill: typeChart === 'line' ? true : false,
-        tension: 0.3
+        fill: isLineChart ? true : (typeChart === 'line' ? true : false),
+        tension: isLineChart ? 0.4 : 0.3,
+        pointBackgroundColor: isLineChart ? 'rgba(37, 99, 235, 1)' : undefined,
+        pointBorderColor: isLineChart ? '#ffffff' : undefined,
+        pointRadius: isLineChart ? 5 : undefined,
+        pointHoverRadius: isLineChart ? 7 : undefined,
       }]
     },
     options: {
-      responsive: true,
+      responsive: !isLineChart, // line chart dibuat fixed agar bisa scroll horizontal
       maintainAspectRatio: false,
-      indexAxis: typeChart === 'bar' ? 'y' : 'x', // KUNCI: HORIZONTAL BAR
+      indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
       plugins: {
         legend: { display: typeChart === 'pie' },
         tooltip: {
@@ -2391,14 +2410,20 @@ function showChart(type) {
       scales: {
         x: {
           beginAtZero: true,
-          grid: { color: 'rgba(226, 232, 240, 0.6)' }
-        },
-        y: {
+          grid: { color: isLineChart ? 'rgba(226, 232, 240, 0.3)' : 'rgba(226, 232, 240, 0.6)' },
           ticks: {
             autoSkip: false,
+            maxRotation: 45,
+            minRotation: 0,
+            font: { size: 11, family: "'Inter', sans-serif", weight: '500' }
+          }
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: 'rgba(226, 232, 240, 0.6)' },
+          ticks: {
             font: { size: 12, family: "'Inter', sans-serif", weight: '600' }
-          },
-          grid: { display: false }
+          }
         }
       },
       animation: {
