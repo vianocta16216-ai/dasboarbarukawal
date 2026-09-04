@@ -2366,22 +2366,19 @@ function showChart(type) {
   canvas.parentElement.style.overflowX = 'hidden';
 
   // Jika line chart, atur lebar & tinggi agar semua OPD terlihat dan bisa di-scroll
-  let chartWidth = 800;
+   let chartWidth = 800;
   let chartHeight = 400;
-                            // Inisialisasi variabel di luar blok if agar bisa dipakai di options
-              let maxLabelLength = 0;
-              if (isLineChart) {
-                  labels.forEach(label => {
-                      if (label && label.length > maxLabelLength) maxLabelLength = label.length;
-                  });
+  
+  if (isLineChart) {
+      // Hitung lebar canvas agar tidak menumpuk
+      chartWidth = Math.max(labels.length * 70, 900); 
+      // TINGGI TETAP 800px (cukup untuk semua OPD)
+      chartHeight = 800; 
 
-                  chartWidth = Math.max(labels.length * 70, 900); 
-                  chartHeight = Math.max(maxLabelLength * 20 + 300, 800); 
-
-                  canvas.style.width = chartWidth + 'px';
-                  canvas.style.height = chartHeight + 'px';
-                  canvas.parentElement.style.overflowX = 'auto';
-              }
+      canvas.style.width = chartWidth + 'px';
+      canvas.style.height = chartHeight + 'px';
+      canvas.parentElement.style.overflowX = 'auto';
+  }
   // Buat gradient untuk area line chart
   let lineGradient = null;
   if (isLineChart) {
@@ -2410,11 +2407,14 @@ function showChart(type) {
         pointHoverRadius: isLineChart ? 6 : undefined,
       }]
     },
-            options: {
+                        options: {
       responsive: false,
       maintainAspectRatio: false,
       indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
-                                    layout: { padding: { bottom: maxLabelLength > 0 ? Math.max(maxLabelLength * 15, 250) : 250 } }, // Padding dihitung otomatis
+      
+      // PENTING: Padding 250px HANYA untuk Line Chart, 0 untuk Pie Chart agar tidak rusak
+      layout: { padding: { bottom: isLineChart ? 250 : 0 } },
+      
       plugins: {
         legend: { display: typeChart === 'pie' },
         tooltip: {
@@ -2424,7 +2424,7 @@ function showChart(type) {
         }
       },
       scales: {
-                 x: {
+        x: {
           beginAtZero: true,
           grid: { display: false },
           ticks: {
