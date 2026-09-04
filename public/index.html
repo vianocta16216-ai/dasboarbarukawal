@@ -2356,6 +2356,15 @@ function showChart(type) {
         legend: { display: typeChart === 'pie' }
       },
       scales: {
+        x: {
+          // PERBAIKAN TAMPILAN: Label miring otomatis & dibatasi agar rapi
+          ticks: {
+            autoSkip: true,
+            maxRotation: 90,
+            minRotation: 45,
+            maxTicksLimit: 15
+          }
+        },
         y: { beginAtZero: true }
       },
       animation: {
