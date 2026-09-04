@@ -2368,7 +2368,7 @@ function showChart(type) {
   // Jika line chart, atur lebar & tinggi agar semua OPD terlihat dan bisa di-scroll
   let chartWidth = 800;
   let chartHeight = 400;
-            if (isLineChart) {
+              if (isLineChart) {
     // Hitung panjang karakter label terpanjang
     let maxLabelLength = 0;
     labels.forEach(label => {
@@ -2378,9 +2378,9 @@ function showChart(type) {
     // Lebar canvas = jumlah OPD * 70px
     chartWidth = Math.max(labels.length * 70, 900); 
     
-    // Tinggi canvas = panjang karakter maksimal * 8px + ruang ekstra 200px
-    // Minimal 600px (Rumus ini memastikan teks terpanjang muat di bawah)
-    chartHeight = Math.max(maxLabelLength * 8 + 200, 600); 
+    // Tinggi canvas dihitung berdasarkan panjang label TERPANJANG (20px per karakter) + ruang ekstra agar turun ke bawah
+    // Nilai 20 dan 300 bisa disesuaikan, tapi ini memastikan label benar-benar DI BAWAH grid
+    chartHeight = Math.max(maxLabelLength * 20 + 300, 800); 
 
     canvas.style.width = chartWidth + 'px';
     canvas.style.height = chartHeight + 'px';
@@ -2418,7 +2418,7 @@ function showChart(type) {
       responsive: false,
       maintainAspectRatio: false,
       indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
-            layout: { padding: { bottom: 150 } }, // Padding ekstra 150px agar tulisan tidak terpotong
+                  layout: { padding: { bottom: Math.max(maxLabelLength * 15, 250) } }, // Padding dihitung otomatis agar TULISAN DI LUAR GARIS GRID
       plugins: {
         legend: { display: typeChart === 'pie' },
         tooltip: {
@@ -2428,16 +2428,16 @@ function showChart(type) {
         }
       },
       scales: {
-                                        x: {
+                                                                                x: {
           beginAtZero: true,
-          grid: { display: false }, // Matikan garis grid vertikal agar tulisan bersih tanpa garis aneh
+          grid: { display: false }, // Matikan garis grid vertikal
           ticks: {
-            autoSkip: false, // Tampilkan semua label
-            maxRotation: -75, // Kemiringan -75 derajat
-            minRotation: -75, // Paksa -75 derajat
+            autoSkip: false, 
+            maxRotation: -75,
+            minRotation: -75,
             mirror: false, 
-            font: { size: 12, family: "'Inter', sans-serif", weight: '600' },
-            padding: 10 // Beri jarak lebih antara angka dan nama OPD
+            font: { size: 13, family: "'Inter', sans-serif", weight: 'bold' }, // UKURAN FONT DIPERBESAR & BOLD
+            padding: 20 // Jarak ekstra dari garis X
           }
         },
         y: {
