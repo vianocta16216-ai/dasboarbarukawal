@@ -2286,7 +2286,7 @@ function attachHandlers() {
   });
 }
 
-// ====== GRAFIK KPI (FINAL - LINE CHART LEBAR, PIE CHART TETAP) ======
+// ====== GRAFIK KPI (FINAL - KHUSUS 3 LINE CHART LABEL DI BAWAH, PIE TETAP) ======
 function showChart(type) {
   const titles = {
     rataRata: 'Rata-rata Level per OPD',
@@ -2367,13 +2367,14 @@ function showChart(type) {
   const ctx = canvas.getContext('2d');
   
   // ==========================================================
-  // KHUSUS LINE CHART (3 KPI): BUAT SANGAT LEBAR
+  // KHUSUS LINE CHART (3 KPI) - PERBAIKAN LABEL DI BAWAH GARIS X
   // ==========================================================
   if (isLineChart) {
-      // LEBAR SANGAT BESAR: 300px per OPD, minimal 3000px
-      // Ini memastikan 40 OPD punya ruang masing-masing yang sangat luas
-      let chartWidth = Math.max(labels.length * 300, 3000); 
-      let chartHeight = 700; // Tinggi tetap 700px
+      // Lebar sangat besar agar semua nama OPD muat horizontal tanpa menumpuk
+      // 150px per OPD, minimal 1000px
+      let chartWidth = Math.max(labels.length * 150, 1000); 
+      // Tinggi 700px, 120px di antaranya adalah ruang kosong untuk label di bawah
+      let chartHeight = 700; 
 
       // Atur atribut HTML canvas
       canvas.width = chartWidth;
@@ -2410,7 +2411,14 @@ function showChart(type) {
           responsive: false,
           maintainAspectRatio: false,
           indexAxis: 'x',
-          layout: { padding: 0 },
+          
+          // ====== KUNCI PERBAIKAN: BERI RUANG 120PX DI BAWAH GARIS ======
+          layout: {
+            padding: {
+              bottom: 120 
+            }
+          },
+
           plugins: {
             legend: { display: false },
             tooltip: { backgroundColor: '#0f172a' }
@@ -2421,10 +2429,11 @@ function showChart(type) {
               grid: { display: false },
               ticks: {
                 autoSkip: false, 
-                maxRotation: 0, // HORIZONTAL, tidak miring
+                maxRotation: 0, // HORIZONTAL 100%
                 minRotation: 0,
-                font: { size: 14, weight: 'bold' }, // Nama tidak dipotong
-                padding: 15
+                align: 'center', // Label tepat di tengah
+                font: { size: 12, weight: 'bold' },
+                padding: 10 // Jarak teks dari garis X
               }
             },
             y: {
@@ -2438,7 +2447,7 @@ function showChart(type) {
       });
 
   // ==========================================================
-  // KHUSUS PIE CHART (6 KPI LAIN): TETAP NORMAL & BULAT
+  // KHUSUS PIE CHART (6 KPI LAIN): SAMA SEKALI TIDAK DIUBAH
   // ==========================================================
   } else {
       // Kembalikan ke ukuran standar agar tidak gepeng
