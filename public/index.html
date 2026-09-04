@@ -2421,12 +2421,17 @@ function showChart(type) {
         x: {
           beginAtZero: true,
           grid: { color: isLineChart ? 'rgba(226, 232, 240, 0.3)' : 'rgba(226, 232, 240, 0.6)' },
-                    ticks: {
+                     ticks: {
             autoSkip: false, // Tampilkan semua label (karena chart lebar)
             maxRotation: 75, // Kemiringan 75 derajat
             minRotation: 75, // Paksa 75 derajat
             mirror: true, // MEMBALIK TEKS AGAR TERBACA DARI ATAS KE BAWAH
-            font: { size: 8, family: "'Inter', sans-serif", weight: '500' } // UKURAN FONT 8px
+            font: { size: 8, family: "'Inter', sans-serif", weight: '500' }, // UKURAN FONT 8px
+            callback: function(value, index) {
+              // Balik urutan karakter agar teks terbaca dari atas ke bawah
+              const original = this.getLabelForValue(value);
+              return original.split('').reverse().join(''); 
+            }
           }
         },
         y: {
