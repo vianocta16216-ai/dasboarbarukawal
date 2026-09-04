@@ -2357,36 +2357,36 @@ function showChart(type) {
   }
 
   const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
+    // ====== PERBAIKAN: RESET DAN ATUR UKURAN CANVAS ======
   const canvas = document.getElementById('kpiChartCanvas');
   const ctx = canvas.getContext('2d');
 
-  // Reset canvas default
+  // Reset default dulu
   canvas.style.width = '100%';
   canvas.style.height = '400px';
   canvas.parentElement.style.overflowX = 'hidden';
 
-  // Jika line chart, atur lebar & tinggi agar semua OPD terlihat dan bisa di-scroll
-        let chartWidth = 800;
-  let chartHeight = 1000; // TINGGI TETAP 1000px (Sangat besar agar tidak pernah terpotong)
-  
+  // Jika Line Chart (Rata-rata Level, MRI, IEPK)
   if (isLineChart) {
-      // Lebar mengikuti jumlah OPD agar tidak menumpuk
-      chartWidth = Math.max(labels.length * 80, 800); 
-      
-      // Tinggi TETAP 1000px
-      chartHeight = 1000; 
+      // PERBAIKAN 1: Lebar kanvas jauh lebih besar agar setiap OPD punya ruang
+      let chartWidth = Math.max(labels.length * 150, 800); // 150px per OPD
+      let chartHeight = 500; // Tinggi tetap 500px
+
+      // PERBAIKAN 2: Set ATRIBUT width & height, bukan hanya CSS
+      canvas.width = chartWidth;
+      canvas.height = chartHeight;
       
       canvas.style.width = chartWidth + 'px';
       canvas.style.height = chartHeight + 'px';
       canvas.parentElement.style.overflowX = 'auto';
+  } else {
+      // Untuk Pie Chart, gunakan ukuran normal
+      canvas.width = 800;
+      canvas.height = 400;
   }
-  // Buat gradient untuk area line chart
-  let lineGradient = null;
-  if (isLineChart) {
-    lineGradient = ctx.createLinearGradient(0, 0, 0, chartHeight);
-    lineGradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
-    lineGradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
-  }
+
+  // Hapus padding bottom yang berlebihan
+  // (tidak perlu layout.padding.bottom : 500)
 
   chartInstance = new Chart(ctx, {
     type: typeChart,
@@ -2408,14 +2408,13 @@ function showChart(type) {
         pointHoverRadius: isLineChart ? 6 : undefined,
       }]
     },
-      options: {
+    options: {
       responsive: false,
       maintainAspectRatio: false,
       indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
       
-                  // Padding OTOMATIS sesuai panjang label, HANYA untuk Line Chart, 0 untuk Pie Chart
-      // Sudah aman karena maxLabelLength sekarang dideklarasikan di luar if
-      layout: { padding: { bottom: isLineChart ? 500 : 0 } }, // Padding bawah TETAP 500px
+      // PERBAIKAN 3: Hapus layout.padding.bottom, set layout default
+      layout: { padding: { bottom: 0 } }, 
       
       plugins: {
         legend: { display: typeChart === 'pie' },
@@ -2428,15 +2427,15 @@ function showChart(type) {
       scales: {
         x: {
           beginAtZero: true,
-          // Matikan garis grid vertikal agar tulisan tidak menabrak garis
           grid: { display: false },
-                    ticks: {
+          ticks: {
             autoSkip: false, 
-            maxRotation: -75,
-            minRotation: -75,
+            // PERBAIKAN 4: Jangan rotasi label, biarkan horizontal
+            maxRotation: 0,
+            minRotation: 0,
             mirror: false, 
             font: { size: 13, family: "'Inter', sans-serif", weight: 'bold' }, 
-            padding: 15 // Jarak teks dari garis X agar tidak menempel
+            padding: 10
           }
         },
         y: {
