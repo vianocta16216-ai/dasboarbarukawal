@@ -13,6 +13,23 @@ const FIELD_MAP = {
   qaApip: 'qa_apip'
 };
 
+// Fungsi bantu untuk menghitung SA (Self Assessment) dari subunsur
+function calculateSAFromSubunsur(subunsurs) {
+    if (!subunsurs) return 0;
+    let totalLevel = 0;
+    let count = 0;
+    Object.keys(subunsurs).forEach(subCode => {
+        Object.keys(subunsurs[subCode]).forEach(paramId => {
+            const level = subunsurs[subCode][paramId].level;
+            if (level > 0) {
+                totalLevel += level;
+                count++;
+            }
+        });
+    });
+    return count > 0 ? Math.round((totalLevel / count) * 100) / 100 : 0;
+}
+
 export const onRequest = async ({ request, env }) => {
   const ACCESS_PASSWORD = env.ACCESS_PASSWORD;
   const DELETE_PASSWORD = env.DELETE_PASSWORD;
@@ -76,25 +93,33 @@ export const onRequest = async ({ request, env }) => {
       // ====== DATABASE CLOUDFLARE D1 ======
       case 'getData': {
         const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ?").bind(year).all();
-        const mapped = results.map(r => ({ ...r, subunsurs: r.subunsurs ? JSON.parse(r.subunsurs) : {}, qaApip: r.qa_apip || 'Belum' }));
+        const mapped = results.map(r => {
+            const subunsurs = r.subunsurs ? JSON.parse(r.subunsurs) : {};
+            const sa = calculateSAFromSubunsur(subunsurs);
+            return { ...r, subunsurs, qaApip: r.qa_apip || 'Belum', sa: sa };
+        });
         return new Response(JSON.stringify(mapped), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
       case 'addOpd': {
         const id = params.id || 'r' + Math.random().toString(36).slice(2,9);
         const opd = params.opd || 'OPD Baru';
-        const subunsurs = JSON.stringify(params.subunsurs || {});
+        const subunsurs = params.subunsurs || {};
+        const sa = calculateSAFromSubunsur(subunsurs);
+
         await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .bind(id, opd, parseFloat(params.sa)||0, params.evidence||'Belum', params.qaApip||'Belum', parseFloat(params.mri)||0, parseFloat(params.iepk)||0, params.rtp||'Belum', params.status||'Belum', subunsurs, year).run();
+          .bind(id, opd, sa, params.evidence||'Belum', params.qaApip||'Belum', parseFloat(params.mri)||0, parseFloat(params.iepk)||0, params.rtp||'Belum', params.status||'Belum', JSON.stringify(subunsurs), year).run();
         return new Response(JSON.stringify({ status: 'success', message: 'OPD berhasil ditambahkan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
       case 'saveData': {
         const rows = JSON.parse(params.rows);
         for (const row of rows) {
-          const subunsurs = JSON.stringify(row.subunsurs || {});
+          const subunsurs = row.subunsurs || {};
+          const sa = calculateSAFromSubunsur(subunsurs);
+
           await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(row.id, row.opd||'', parseFloat(row.sa)||0, row.evidence||'Belum', row.qaApip||'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', subunsurs, year).run();
+            .bind(row.id, row.opd||'', sa, row.evidence||'Belum', row.qaApip||'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year).run();
         }
         return new Response(JSON.stringify({ status: 'success', message: 'Data tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
