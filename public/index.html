@@ -2422,10 +2422,11 @@ function showChart(type) {
           beginAtZero: true,
           grid: { color: isLineChart ? 'rgba(226, 232, 240, 0.3)' : 'rgba(226, 232, 240, 0.6)' },
                     ticks: {
-            autoSkip: false,
-            maxRotation: 75,   // Kemiringan 75 derajat
-            minRotation: 75,   // Paksa miring 75 derajat
-            font: { size: 9, family: "'Inter', sans-serif", weight: '500' }
+            autoSkip: false, // Tampilkan semua label (karena chart lebar)
+            maxRotation: 75, // Kemiringan 75 derajat
+            minRotation: 75, // Paksa 75 derajat
+            mirror: true, // MEMBALIK TEKS AGAR TERBACA DARI ATAS KE BAWAH
+            font: { size: 8, family: "'Inter', sans-serif", weight: '500' } // UKURAN FONT 8px
           }
         },
         y: {
