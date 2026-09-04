@@ -2286,7 +2286,7 @@ function attachHandlers() {
   });
 }
 
-// ====== GRAFIK KPI (FINAL - PIE CHART JUMLAH OPD) ======
+// ====== GRAFIK KPI (FINAL - PIE CHART KEMBALI, TOOLTIP RAPI) ======
 function showChart(type) {
   const titles = {
     rataRata: 'Rata-rata Level per OPD',
@@ -2317,7 +2317,7 @@ function showChart(type) {
   const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
   
   // ==========================================================
-  // PERSIAPAN DATA LINE CHART (3 KPI)
+  // PERSIAPAN DATA LINE CHART (3 KPI - TIDAK DIUBAH)
   // ==========================================================
   if (isLineChart) {
     labels = rows.map(r => r.opd);
@@ -2338,7 +2338,7 @@ function showChart(type) {
     labels = [`Level >= 3 (${countTrue} OPD)`, `Level < 3 (${countFalse} OPD)`];
     data = [countTrue, countFalse];
     backgroundColor = ['#10b981', '#e2e8f0'];
-    typeChart = 'doughnut';
+    typeChart = 'pie';
   } else if (type === 'qaApip') {
     totalCount = rows.length;
     countTrue = rows.filter(r => r.qaApip === 'Selesai').length;
@@ -2346,7 +2346,7 @@ function showChart(type) {
     labels = [`Selesai (${countTrue} OPD)`, `Proses/Belum (${countFalse} OPD)`];
     data = [countTrue, countFalse];
     backgroundColor = ['#f59e0b', '#e2e8f0'];
-    typeChart = 'doughnut';
+    typeChart = 'pie';
   } else if (type === 'level2') {
     totalCount = rows.length;
     countTrue = rows.filter(r => (parseFloat(r.sa) || 0) <= 2).length;
@@ -2354,7 +2354,7 @@ function showChart(type) {
     labels = [`Level <= 2 (${countTrue} OPD)`, `Level > 2 (${countFalse} OPD)`];
     data = [countTrue, countFalse];
     backgroundColor = ['#ef4444', '#e2e8f0'];
-    typeChart = 'doughnut';
+    typeChart = 'pie';
   } else if (type === 'statusSelesai') {
     totalCount = rows.length;
     countTrue = rows.filter(r => r.status === 'Selesai').length;
@@ -2362,7 +2362,7 @@ function showChart(type) {
     labels = [`Selesai (${countTrue} OPD)`, `Proses/Belum (${countFalse} OPD)`];
     data = [countTrue, countFalse];
     backgroundColor = ['#6366f1', '#e2e8f0'];
-    typeChart = 'doughnut';
+    typeChart = 'pie';
   } else if (type === 'evidenceLengkap') {
     totalCount = rows.length;
     countTrue = rows.filter(r => r.evidence === 'Lengkap').length;
@@ -2370,7 +2370,7 @@ function showChart(type) {
     labels = [`Lengkap (${countTrue} OPD)`, `Sebagian/Belum (${countFalse} OPD)`];
     data = [countTrue, countFalse];
     backgroundColor = ['#ec4899', '#e2e8f0'];
-    typeChart = 'doughnut';
+    typeChart = 'pie';
   } else if (type === 'rtpSelesai') {
     totalCount = rows.length;
     countTrue = rows.filter(r => r.rtp === 'Selesai').length;
@@ -2378,7 +2378,7 @@ function showChart(type) {
     labels = [`Selesai (${countTrue} OPD)`, `Belum (${countFalse} OPD)`];
     data = [countTrue, countFalse];
     backgroundColor = ['#f97316', '#e2e8f0'];
-    typeChart = 'doughnut';
+    typeChart = 'pie';
   }
 
   document.getElementById('kpiChartTitle').textContent = titles[type] || 'Grafik';
@@ -2461,13 +2461,15 @@ function showChart(type) {
       });
 
   // ==========================================================
-  // KHUSUS PIE/DOUGHNUT CHART (6 KPI): FIT + TAMPILKAN JUMLAH OPD
+  // KHUSUS PIE CHART (6 KPI): BENTUK LINGKARAN PENUH & TOOLTIP RAPI
   // ==========================================================
   } else {
+      // PERKECIL UKURAN DIAGRAM BULAT: Lebar dibatasi 600px, Tinggi disamakan (persegi)
       let containerWidth = canvas.parentElement.clientWidth;
-      let canvasWidth = Math.min(containerWidth - 40, 750);
+      let canvasWidth = Math.min(containerWidth - 40, 600); 
       if (!canvasWidth || canvasWidth < 350) canvasWidth = 350;
-      let canvasHeight = 500;
+      // Tinggi dibuat sama dengan lebar (Persegi) agar lingkaran tidak gepeng
+      let canvasHeight = canvasWidth; 
 
       canvas.width = canvasWidth;
       canvas.height = canvasHeight;
@@ -2478,7 +2480,7 @@ function showChart(type) {
 
       // BUAT CHART
       chartInstance = new Chart(ctx, {
-        type: 'doughnut',
+        type: 'pie', // KEMBALI KE PIE CHART PENUH, TANPA BOLONG
         data: {
           labels: labels,
           datasets: [{
@@ -2492,12 +2494,15 @@ function showChart(type) {
         options: {
           responsive: false, 
           maintainAspectRatio: false,
-          cutout: '50%',
-          layout: { padding: { bottom: 10 } },
+          // Hapus layout padding agar lingkaran pas di tengah
+          layout: { padding: 0 }, 
           plugins: {
             legend: { display: true, position: 'bottom' },
             tooltip: { 
               backgroundColor: '#0f172a',
+              // PENTING: posisi 'nearest' membuat tooltip mengikuti kursor, 
+              // TIDAK tersembunyi di bawah atau terpotong
+              position: 'nearest', 
               callbacks: {
                 label: function(context) {
                   let label = context.label || '';
