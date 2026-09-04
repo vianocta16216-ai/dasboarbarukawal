@@ -2301,7 +2301,6 @@ function showChart(type) {
 
     // Warna biru jika ada nilai, abu-abu jika 0
     backgroundColor = data.map(val => val > 0 ? 'rgba(59, 130, 246, 0.7)' : 'rgba(203, 213, 225, 0.5)');
-
     typeChart = 'bar';
   } 
   // ====== GRAFIK PIE UNTUK PERSENTASE ======
@@ -2344,6 +2343,72 @@ function showChart(type) {
     chartInstance.destroy();
   }
 
+  const ctx = document.getElementById('kpiChartCanvas').getContext('2d');
+  chartInstance = new Chart(ctx, {
+    type: typeChart,
+    data: {
+      labels: labels,
+      datasets: [{
+        label: titles[type],
+        data: data,
+        backgroundColor: backgroundColor.length > 0 ? backgroundColor : 'rgba(59, 130, 246, 0.6)',
+        borderColor: 'rgba(59, 130, 246, 1)',
+        borderWidth: 1,
+        fill: typeChart === 'line' ? true : false,
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      // KUNCI PERBAIKAN: Mode Horizontal untuk bar, normal untuk pie
+      indexAxis: typeChart === 'bar' ? 'y' : 'x', 
+      plugins: {
+        legend: { display: typeChart === 'pie' }
+      },
+      scales: {
+        x: {
+          ticks: {
+            autoSkip: false, 
+            maxRotation: 0,
+            minRotation: 0
+          },
+          grid: {
+            display: typeChart !== 'bar'
+          }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            autoSkip: false, // TIDAK MEMOTONG NAMA OPD
+            font: { size: 12 }
+          },
+          grid: {
+            display: typeChart === 'bar'
+          }
+        }
+      },
+      animation: {
+        duration: 800,
+        easing: 'easeOutQuart'
+      }
+    }
+  });
+
+  // Scroll ke paling atas saat membuka chart baru
+  const chartContainer = document.querySelector('.chart-container.chart-scroll');
+  if (chartContainer) {
+    chartContainer.scrollTop = 0;
+  }
+}
+
+document.getElementById('kpiChartClose').addEventListener('click', function() {
+  document.getElementById('kpiChartModal').classList.remove('active');
+  if (chartInstance) {
+    chartInstance.destroy();
+    chartInstance = null;
+  }
+});
   const ctx = document.getElementById('kpiChartCanvas').getContext('2d');
   chartInstance = new Chart(ctx, {
     type: typeChart,
