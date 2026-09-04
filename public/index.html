@@ -1966,21 +1966,31 @@ async function loadData() {
     updateKpisLocal();
   }
 }
-// ====== FUNGSI BARU: Hitung SA dari Subunsur ======
+// ====== FUNGSI: Hitung SA berdasarkan 43 total parameter ======
 function calculateSA(row) {
     if (!row.subunsurs) return 0;
     let totalLevel = 0;
-    let count = 0;
+    let totalParams = 0;
+    
+    // Hitung TOTAL SEMUA PARAMETER (otomatis 43 karena looping data)
+    Object.keys(SUBUNSUR_DATA).forEach(subCode => {
+        if (SUBUNSUR_DATA[subCode].params) {
+            totalParams += SUBUNSUR_DATA[subCode].params.length;
+        }
+    });
+    
+    // Jumlahkan semua level yang diisi
     Object.keys(row.subunsurs).forEach(subCode => {
         Object.keys(row.subunsurs[subCode]).forEach(paramId => {
             const level = row.subunsurs[subCode][paramId].level;
             if (level > 0) {
                 totalLevel += level;
-                count++;
             }
         });
     });
-    return count > 0 ? Math.round((totalLevel / count) * 100) / 100 : 0;
+    
+    // Rumus: Total Level / 43 (Total Semua Parameter)
+    return totalParams > 0 ? Math.round((totalLevel / totalParams) * 100) / 100 : 0;
 }
 // ====== HITUNG KPI LOKAL ======
 function updateKpisLocal() {
