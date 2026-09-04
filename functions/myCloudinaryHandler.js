@@ -19,14 +19,17 @@ export const onRequest = async ({ request, env }) => {
 
   const url = new URL(request.url);
   let params = {};
-  const action = url.searchParams.get('action') || '';
-
-  // ==== LOG UNTUK DEBUG (Bisa dihapus nanti) ====
-  console.log("DEBUG: Aksi yang diterima server adalah:", action);
+  
+  // PERBAIKAN PENTING: Ubah const menjadi let
+  let action = url.searchParams.get('action') || '';
 
   if (request.method === 'POST') {
     try {
       params = await request.json();
+      // PERBAIKAN PENTING: Jika action kosong di URL, ambil dari Body JSON!
+      if (!action && params.action) {
+        action = params.action;
+      }
     } catch (e) {
       return new Response(JSON.stringify({ status: 'error', message: 'Invalid JSON body' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -125,7 +128,7 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
-      // ====== File (Upload/Delete) ======
+      // ====== File ======
       case 'uploadFile': {
         const { filePath, bytes, fileType, fileName } = getFolderStructure(params);
         const { error } = await supabase.storage
@@ -147,7 +150,7 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
-      // ====== FITUR BACKUP (PENTING AGAR TIDAK ERROR) ======
+      // ====== FITUR BACKUP ======
       case 'listBackups':
         return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } });
       case 'createBackup':
