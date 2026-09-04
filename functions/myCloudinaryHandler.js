@@ -1,4 +1,3 @@
-import { createClient } from '@supabase/supabase-js';
 import { SUBUNSUR_DATA } from './subunsur.js';
 
 const UNSUR_MAP = {
@@ -10,23 +9,19 @@ const UNSUR_MAP = {
 };
 
 export const onRequest = async ({ request, env }) => {
-  const SUPABASE_URL = env.SUPABASE_URL;
-  const SUPABASE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
+  // Hanya menggunakan env dari Cloudflare, bukan Supabase lagi!
   const ACCESS_PASSWORD = env.ACCESS_PASSWORD;
   const DELETE_PASSWORD = env.DELETE_PASSWORD;
-
-  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
   const url = new URL(request.url);
   let params = {};
   
-  // PERBAIKAN PENTING: Ubah const menjadi let
+  // Perbaikan bug: baca action dari URL, atau dari Body JSON jika kosong
   let action = url.searchParams.get('action') || '';
 
   if (request.method === 'POST') {
     try {
       params = await request.json();
-      // PERBAIKAN PENTING: Jika action kosong di URL, ambil dari Body JSON!
       if (!action && params.action) {
         action = params.action;
       }
@@ -57,7 +52,6 @@ export const onRequest = async ({ request, env }) => {
     const safeParam = paramDesc.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 100);
 
     const filePath = `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level_${level}/${fileName}`;
-
     return { filePath, bytes, fileType: fileType || 'application/octet-stream', fileName };
   }
 
@@ -71,86 +65,88 @@ export const onRequest = async ({ request, env }) => {
       case 'verifyDelete':
         return new Response(JSON.stringify({ status: params.password === DELETE_PASSWORD ? 'success' : 'error', message: params.password === DELETE_PASSWORD ? 'Password hapus benar' : 'Password hapus salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       
-      // ====== Data OPD ======
+      // ====== DATA OPD (Cloudflare D1) ======
       case 'getData': {
-        const { data, error } = await supabase.from('opd_data').select('*').eq('year', year);
-        if (error) throw error;
-        const mapped = data.map(r => ({ ...r, qaApip: r.qa_apip || r.qaApip || 'Belum' }));
+        const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ?").bind(year).all();
+        const mapped = results.map(r => ({ ...r, subunsurs: r.subunsurs ? JSON.parse(r.subunsurs) : {}, qaApip: r.qa_apip || 'Belum' }));
         return new Response(JSON.stringify(mapped), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
       case 'addOpd': {
-        const { id, opd, sa, evidence, qaApip, mri, iepk, rtp, status, subunsurs } = params;
-        const payload = { id: id || 'r' + Math.random().toString(36).slice(2,9), opd: opd || 'OPD Baru', sa: parseFloat(sa) || 0, evidence: evidence || 'Belum', qa_apip: qaApip || 'Belum', mri: parseFloat(mri) || 0, iepk: parseFloat(iepk) || 0, rtp: rtp || 'Belum', status: status || 'Belum', subunsurs: subunsurs || {}, year };
-        await supabase.from('opd_data').upsert(payload, { onConflict: 'id' });
+        const id = params.id || 'r' + Math.random().toString(36).slice(2,9);
+        const opd = params.opd || 'OPD Baru';
+        const subunsurs = JSON.stringify(params.subunsurs || {});
+        await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(id, opd, parseFloat(params.sa)||0, params.evidence||'Belum', params.qaApip||'Belum', parseFloat(params.mri)||0, parseFloat(params.iepk)||0, params.rtp||'Belum', params.status||'Belum', subunsurs, year).run();
         return new Response(JSON.stringify({ status: 'success', message: 'OPD berhasil ditambahkan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
       case 'saveData': {
         const rows = JSON.parse(params.rows);
         for (const row of rows) {
-          const payload = { id: row.id, opd: row.opd || '', sa: parseFloat(row.sa) || 0, evidence: row.evidence || 'Belum', qa_apip: row.qaApip || 'Belum', mri: parseFloat(row.mri) || 0, iepk: parseFloat(row.iepk) || 0, rtp: row.rtp || 'Belum', status: row.status || 'Belum', subunsurs: row.subunsurs || {}, year };
-          await supabase.from('opd_data').upsert(payload, { onConflict: 'id' });
+          const subunsurs = JSON.stringify(row.subunsurs || {});
+          await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(row.id, row.opd||'', parseFloat(row.sa)||0, row.evidence||'Belum', row.qaApip||'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', subunsurs, year).run();
         }
         return new Response(JSON.stringify({ status: 'success', message: 'Data tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
       case 'saveField': {
         const { opdId, field, value } = params;
-        const updateObj = {};
-        updateObj[field] = value;
-        await supabase.from('opd_data').update(updateObj).eq('id', opdId);
+        await env.DB.prepare(`UPDATE opd_data SET ${field} = ? WHERE id = ?`).bind(value, opdId).run();
         return new Response(JSON.stringify({ status: 'success', message: 'Field tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
       case 'deleteOpd': {
-        if (params.opdId === 'all') await supabase.from('opd_data').delete().eq('year', year);
-        else await supabase.from('opd_data').delete().eq('id', params.opdId);
+        if (params.opdId === 'all') await env.DB.prepare("DELETE FROM opd_data WHERE year = ?").bind(year).run();
+        else await env.DB.prepare("DELETE FROM opd_data WHERE id = ?").bind(params.opdId).run();
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
-      // ====== Tahun ======
+      // ====== TAHUN (Cloudflare D1) ======
       case 'getYears': {
-        const { data } = await supabase.from('years').select('year');
-        const years = data.map(x => x.year);
+        const { results } = await env.DB.prepare("SELECT year FROM years").all();
+        const years = results.map(x => x.year);
         if (!years.includes('2026')) years.push('2026');
         return new Response(JSON.stringify([...new Set(years)].sort()), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
       case 'addYear': {
-        await supabase.from('years').insert({ year: params.year });
+        await env.DB.prepare("INSERT OR IGNORE INTO years (year) VALUES (?)").bind(params.year).run();
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
       case 'deleteYear': {
-        await supabase.from('opd_data').delete().eq('year', params.year);
-        await supabase.from('years').delete().eq('year', params.year);
+        await env.DB.prepare("DELETE FROM opd_data WHERE year = ?").bind(params.year).run();
+        await env.DB.prepare("DELETE FROM years WHERE year = ?").bind(params.year).run();
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
-      // ====== File ======
+      // ====== FILE (Cloudflare R2 - BUKAN SUPABASE) ======
       case 'uploadFile': {
         const { filePath, bytes, fileType, fileName } = getFolderStructure(params);
-        const { error } = await supabase.storage
-          .from('KAWALSPIP')
-          .upload(filePath, bytes, { contentType: fileType, upsert: true });
-        if (error) throw new Error(error.message);
-        const { data } = supabase.storage.from('KAWALSPIP').getPublicUrl(filePath);
-        return new Response(JSON.stringify({ url: data.publicUrl, fileName }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        
+        // Simpan ke R2
+        await env.EVIDENCE_BUCKET.put(filePath, bytes, { httpMetadata: { contentType: fileType } });
+
+        // URL R2 yang Anda berikan:
+        const publicUrl = `https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
+        
+        return new Response(JSON.stringify({ url: publicUrl, fileName }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
       case 'deleteFile': {
         const cleanUrl = params.fileUrl.split('?')[0];
-        const marker = '/object/public/KAWALSPIP/';
+        const marker = 'r2.dev/';
         const idx = cleanUrl.indexOf(marker);
         if (idx !== -1) {
           const filePath = decodeURIComponent(cleanUrl.substring(idx + marker.length));
-          await supabase.storage.from('KAWALSPIP').remove([filePath]);
+          await env.EVIDENCE_BUCKET.delete(filePath);
         }
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
-      // ====== FITUR BACKUP ======
+      // ====== FITUR BACKUP (Placeholder agar tidak error) ======
       case 'listBackups':
         return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } });
       case 'createBackup':
