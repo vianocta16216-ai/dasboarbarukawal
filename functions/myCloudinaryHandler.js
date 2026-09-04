@@ -9,22 +9,17 @@ const UNSUR_MAP = {
 };
 
 export const onRequest = async ({ request, env }) => {
-  // Hanya menggunakan env dari Cloudflare, bukan Supabase lagi!
   const ACCESS_PASSWORD = env.ACCESS_PASSWORD;
   const DELETE_PASSWORD = env.DELETE_PASSWORD;
 
   const url = new URL(request.url);
   let params = {};
-  
-  // Perbaikan bug: baca action dari URL, atau dari Body JSON jika kosong
   let action = url.searchParams.get('action') || '';
 
   if (request.method === 'POST') {
     try {
       params = await request.json();
-      if (!action && params.action) {
-        action = params.action;
-      }
+      if (!action && params.action) action = params.action;
     } catch (e) {
       return new Response(JSON.stringify({ status: 'error', message: 'Invalid JSON body' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
@@ -34,9 +29,14 @@ export const onRequest = async ({ request, env }) => {
 
   const year = params.year || '2026';
 
+  // PERBAIKAN PENTING: Ganti Buffer dengan Uint8Array + atob
   function getFolderStructure(params) {
     const { fileData, fileName, opdName, subunsur, paramId, level, fileType } = params;
-    const bytes = Buffer.from(fileData, 'base64');
+    
+    // Decode base64 ke Uint8Array (menggantikan Buffer yang tidak ada di Cloudflare)
+    const binaryString = atob(fileData);
+    const bytes = Uint8Array.from(binaryString, char => char.charCodeAt(0));
+    
     if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
     const unsurKey = subunsur.split('.')[0];
@@ -57,7 +57,6 @@ export const onRequest = async ({ request, env }) => {
 
   try {
     switch (action) {
-      // ====== Aksi Dasar ======
       case 'getSubunsurData':
         return new Response(JSON.stringify(SUBUNSUR_DATA), { status: 200, headers: { 'Content-Type': 'application/json' } });
       case 'verifyAccess':
@@ -65,7 +64,7 @@ export const onRequest = async ({ request, env }) => {
       case 'verifyDelete':
         return new Response(JSON.stringify({ status: params.password === DELETE_PASSWORD ? 'success' : 'error', message: params.password === DELETE_PASSWORD ? 'Password hapus benar' : 'Password hapus salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       
-      // ====== DATA OPD (Cloudflare D1) ======
+      // ====== DATABASE CLOUDFLARE D1 ======
       case 'getData': {
         const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ?").bind(year).all();
         const mapped = results.map(r => ({ ...r, subunsurs: r.subunsurs ? JSON.parse(r.subunsurs) : {}, qaApip: r.qa_apip || 'Belum' }));
@@ -103,7 +102,7 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
-      // ====== TAHUN (Cloudflare D1) ======
+      // ====== TAHUN ======
       case 'getYears': {
         const { results } = await env.DB.prepare("SELECT year FROM years").all();
         const years = results.map(x => x.year);
@@ -122,7 +121,7 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
-      // ====== FILE (Cloudflare R2 - BUKAN SUPABASE) ======
+      // ====== FILE (CLOUDFLARE R2 - BUKAN SUPABASE) ======
       case 'uploadFile': {
         const { filePath, bytes, fileType, fileName } = getFolderStructure(params);
         
@@ -145,8 +144,8 @@ export const onRequest = async ({ request, env }) => {
         }
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
-      
-      // ====== FITUR BACKUP (Placeholder agar tidak error) ======
+
+      // ====== FITUR BACKUP ======
       case 'listBackups':
         return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } });
       case 'createBackup':
