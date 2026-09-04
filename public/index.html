@@ -2286,7 +2286,7 @@ function attachHandlers() {
   });
 }
 
-// ====== GRAFIK KPI ======
+// ====== GRAFIK KPI (FINAL ANTI BLANK) ======
 function showChart(type) {
   const titles = {
     rataRata: 'Rata-rata Level per OPD',
@@ -2305,6 +2305,12 @@ function showChart(type) {
   let backgroundColor = [];
   let borderColor = [];
   let typeChart = 'bar';
+
+  // ====== CEK PENTING: JIKA DATA KOSONG, JANGAN GAMBAR ======
+  if (!rows || rows.length === 0) {
+    alert('Data OPD belum tersedia untuk ditampilkan!');
+    return;
+  }
 
   // ====== GRAFIK GARIS UNTUK 3 KPI UTAMA ======
   if (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK') {
@@ -2352,117 +2358,116 @@ function showChart(type) {
   document.getElementById('kpiChartTitle').textContent = titles[type] || 'Grafik';
   document.getElementById('kpiChartModal').classList.add('active');
 
+  // Hancurkan chart lama jika ada
   if (chartInstance) {
     chartInstance.destroy();
+    chartInstance = null;
   }
 
   const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
-    // ====== PERBAIKAN: RESET DAN ATUR UKURAN CANVAS ======
   const canvas = document.getElementById('kpiChartCanvas');
   const ctx = canvas.getContext('2d');
 
-  // Reset default dulu
+  // Reset canvas
   canvas.style.width = '100%';
   canvas.style.height = '400px';
   canvas.parentElement.style.overflowX = 'hidden';
 
-  // Jika Line Chart (Rata-rata Level, MRI, IEPK)
+  // Atur ukuran khusus untuk Line Chart
   if (isLineChart) {
-      // PERBAIKAN 1: Lebar kanvas jauh lebih besar agar setiap OPD punya ruang
-      let chartWidth = Math.max(labels.length * 150, 800); // 150px per OPD
-      let chartHeight = 500; // Tinggi tetap 500px
+      let chartWidth = Math.max(labels.length * 120, 1000); // Lebar mengikuti OPD
+      let chartHeight = 600; // Tinggi tetap 600px
 
-      // PERBAIKAN 2: Set ATRIBUT width & height, bukan hanya CSS
+      // WAJIB: Set atribut HTML agar Chart.js tahu ukuran fisik kanvas
       canvas.width = chartWidth;
       canvas.height = chartHeight;
-      
+
       canvas.style.width = chartWidth + 'px';
       canvas.style.height = chartHeight + 'px';
       canvas.parentElement.style.overflowX = 'auto';
-  } else {
-      // Untuk Pie Chart, gunakan ukuran normal
-      canvas.width = 800;
-      canvas.height = 400;
   }
 
-  // Hapus padding bottom yang berlebihan
-  // (tidak perlu layout.padding.bottom : 500)
+  // Buat gradient
+  let lineGradient = null;
+  if (isLineChart) {
+    lineGradient = ctx.createLinearGradient(0, 0, 0, 600);
+    lineGradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
+    lineGradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
+  }
 
-  chartInstance = new Chart(ctx, {
-    type: typeChart,
-    data: {
-      labels: labels,
-      datasets: [{
-        label: titles[type],
-        data: data,
-        backgroundColor: isLineChart ? lineGradient : (backgroundColor.length > 0 ? backgroundColor : 'rgba(59, 130, 246, 0.7)'),
-        borderColor: isLineChart ? 'rgba(37, 99, 235, 1)' : (borderColor.length > 0 ? borderColor : 'rgba(37, 99, 235, 1)'),
-        borderWidth: isLineChart ? 3 : 1,
-        borderRadius: 8,
-        maxBarThickness: 30,
-        fill: isLineChart ? true : (typeChart === 'line' ? true : false),
-        tension: isLineChart ? 0.4 : 0.3,
-        pointBackgroundColor: isLineChart ? 'rgba(37, 99, 235, 1)' : undefined,
-        pointBorderColor: isLineChart ? '#ffffff' : undefined,
-        pointRadius: isLineChart ? 4 : undefined,
-        pointHoverRadius: isLineChart ? 6 : undefined,
-      }]
-    },
-    options: {
-      responsive: false,
-      maintainAspectRatio: false,
-      indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
-      
-      // PERBAIKAN 3: Hapus layout.padding.bottom, set layout default
-      layout: { padding: { bottom: 0 } }, 
-      
-      plugins: {
-        legend: { display: typeChart === 'pie' },
-        tooltip: {
-          backgroundColor: '#0f172a',
-          titleFont: { size: 14, weight: 'bold' },
-          bodyFont: { size: 13 }
-        }
+  // ====== PERBAIKAN UTAMA ANTI BLANK: TUNDA GAMBAR 100ms ======
+  // Ini memberikan waktu pada browser untuk menampilkan modal
+  // sehingga ukuran kanvas sudah terbaca dengan benar.
+  setTimeout(() => {
+    chartInstance = new Chart(ctx, {
+      type: typeChart,
+      data: {
+        labels: labels,
+        datasets: [{
+          label: titles[type],
+          data: data,
+          backgroundColor: isLineChart ? lineGradient : (backgroundColor.length > 0 ? backgroundColor : 'rgba(59, 130, 246, 0.7)'),
+          borderColor: isLineChart ? 'rgba(37, 99, 235, 1)' : (borderColor.length > 0 ? borderColor : 'rgba(37, 99, 235, 1)'),
+          borderWidth: isLineChart ? 3 : 1,
+          borderRadius: 8,
+          maxBarThickness: 30,
+          fill: isLineChart ? true : (typeChart === 'line' ? true : false),
+          tension: isLineChart ? 0.4 : 0.3,
+          pointBackgroundColor: isLineChart ? 'rgba(37, 99, 235, 1)' : undefined,
+          pointBorderColor: isLineChart ? '#ffffff' : undefined,
+          pointRadius: isLineChart ? 4 : undefined,
+          pointHoverRadius: isLineChart ? 6 : undefined,
+        }]
       },
-      scales: {
-        x: {
-          beginAtZero: true,
-          grid: { display: false },
-          ticks: {
-            autoSkip: false, 
-            // PERBAIKAN 4: Jangan rotasi label, biarkan horizontal
-            maxRotation: 0,
-            minRotation: 0,
-            mirror: false, 
-            font: { size: 13, family: "'Inter', sans-serif", weight: 'bold' }, 
-            padding: 10
+      options: {
+        responsive: false,
+        maintainAspectRatio: false,
+        indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
+        layout: { padding: 0 },
+        plugins: {
+          legend: { display: typeChart === 'pie' },
+          tooltip: {
+            backgroundColor: '#0f172a',
+            titleFont: { size: 14, weight: 'bold' },
+            bodyFont: { size: 13 }
           }
         },
-        y: {
-          beginAtZero: true,
-          grid: { color: 'rgba(226, 232, 240, 0.6)' },
-          ticks: {
-            font: { size: 12, family: "'Inter', sans-serif", weight: '600' }
+        scales: {
+          x: {
+            beginAtZero: true,
+            grid: { display: false },
+            ticks: {
+              autoSkip: false, 
+              maxRotation: 0,
+              minRotation: 0,
+              mirror: false, 
+              font: { size: 13, family: "'Inter', sans-serif", weight: 'bold' }, 
+              padding: 10
+            }
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: 'rgba(226, 232, 240, 0.6)' },
+            ticks: {
+              font: { size: 12, family: "'Inter', sans-serif", weight: '600' }
+            }
           }
+        },
+        animation: {
+          duration: 800,
+          easing: 'easeOutQuart'
         }
-      },
-      animation: {
-        duration: 800,
-        easing: 'easeOutQuart'
       }
-    }
-  });
-
-  // Pastikan chart digambar ulang setelah modal aktif
-  setTimeout(() => {
-    chartInstance.resize();
-  }, 100);
+    });
+  }, 100); // <-- Penundaan 100ms
 
   const chartContainer = document.querySelector('.chart-container.chart-scroll');
   if (chartContainer) {
     chartContainer.scrollTop = 0;
   }
 }
+
+// Listener tombol tutup modal grafik
 document.getElementById('kpiChartClose').addEventListener('click', function() {
   document.getElementById('kpiChartModal').classList.remove('active');
   if (chartInstance) {
