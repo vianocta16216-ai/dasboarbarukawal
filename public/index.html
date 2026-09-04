@@ -2286,7 +2286,7 @@ function attachHandlers() {
   });
 }
 
-// ====== GRAFIK KPI (FINAL - SALIN TEMPEL) ======
+// ====== GRAFIK KPI (FINAL - PIE CHART JUMLAH OPD) ======
 function showChart(type) {
   const titles = {
     rataRata: 'Rata-rata Level per OPD',
@@ -2304,6 +2304,9 @@ function showChart(type) {
   let data = [];
   let backgroundColor = [];
   let typeChart = 'bar';
+  let totalCount = 0;
+  let countTrue = 0;
+  let countFalse = 0;
 
   // CEK DATA
   if (!rows || rows.length === 0) {
@@ -2313,7 +2316,9 @@ function showChart(type) {
 
   const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
   
-  // ====== PERSIAPAN DATA ======
+  // ==========================================================
+  // PERSIAPAN DATA LINE CHART (3 KPI)
+  // ==========================================================
   if (isLineChart) {
     labels = rows.map(r => r.opd);
     data = rows.map(r => {
@@ -2323,36 +2328,57 @@ function showChart(type) {
     });
     typeChart = 'line';
   } 
+  // ==========================================================
+  // PERSIAPAN DATA PIE CHART (6 KPI) - HITUNG JUMLAH OPD
+  // ==========================================================
   else if (type === 'opdLevel3') {
-    labels = ['Level >= 3', 'Level < 3'];
-    data = [document.getElementById('kpiSelesai').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiSelesai').textContent.replace('%', ''))];
-    typeChart = 'pie';
+    totalCount = rows.length;
+    countTrue = rows.filter(r => (parseFloat(r.sa) || 0) >= 3).length;
+    countFalse = totalCount - countTrue;
+    labels = [`Level >= 3 (${countTrue} OPD)`, `Level < 3 (${countFalse} OPD)`];
+    data = [countTrue, countFalse];
     backgroundColor = ['#10b981', '#e2e8f0'];
+    typeChart = 'doughnut';
   } else if (type === 'qaApip') {
-    labels = ['Selesai', 'Proses/Belum'];
-    data = [document.getElementById('kpiQaApip').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiQaApip').textContent.replace('%', ''))];
-    typeChart = 'pie';
+    totalCount = rows.length;
+    countTrue = rows.filter(r => r.qaApip === 'Selesai').length;
+    countFalse = totalCount - countTrue;
+    labels = [`Selesai (${countTrue} OPD)`, `Proses/Belum (${countFalse} OPD)`];
+    data = [countTrue, countFalse];
     backgroundColor = ['#f59e0b', '#e2e8f0'];
+    typeChart = 'doughnut';
   } else if (type === 'level2') {
-    labels = ['Level <= 2', 'Level > 2'];
-    data = [document.getElementById('kpiRendah').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiRendah').textContent.replace('%', ''))];
-    typeChart = 'pie';
+    totalCount = rows.length;
+    countTrue = rows.filter(r => (parseFloat(r.sa) || 0) <= 2).length;
+    countFalse = totalCount - countTrue;
+    labels = [`Level <= 2 (${countTrue} OPD)`, `Level > 2 (${countFalse} OPD)`];
+    data = [countTrue, countFalse];
     backgroundColor = ['#ef4444', '#e2e8f0'];
+    typeChart = 'doughnut';
   } else if (type === 'statusSelesai') {
-    labels = ['Selesai', 'Proses/Belum'];
-    data = [document.getElementById('kpiStatusSelesai').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiStatusSelesai').textContent.replace('%', ''))];
-    typeChart = 'pie';
+    totalCount = rows.length;
+    countTrue = rows.filter(r => r.status === 'Selesai').length;
+    countFalse = totalCount - countTrue;
+    labels = [`Selesai (${countTrue} OPD)`, `Proses/Belum (${countFalse} OPD)`];
+    data = [countTrue, countFalse];
     backgroundColor = ['#6366f1', '#e2e8f0'];
+    typeChart = 'doughnut';
   } else if (type === 'evidenceLengkap') {
-    labels = ['Lengkap', 'Sebagian/Belum'];
-    data = [document.getElementById('kpiEvidenceLengkap').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiEvidenceLengkap').textContent.replace('%', ''))];
-    typeChart = 'pie';
+    totalCount = rows.length;
+    countTrue = rows.filter(r => r.evidence === 'Lengkap').length;
+    countFalse = totalCount - countTrue;
+    labels = [`Lengkap (${countTrue} OPD)`, `Sebagian/Belum (${countFalse} OPD)`];
+    data = [countTrue, countFalse];
     backgroundColor = ['#ec4899', '#e2e8f0'];
+    typeChart = 'doughnut';
   } else if (type === 'rtpSelesai') {
-    labels = ['Selesai', 'Belum'];
-    data = [document.getElementById('kpiRtpSelesai').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiRtpSelesai').textContent.replace('%', ''))];
-    typeChart = 'pie';
+    totalCount = rows.length;
+    countTrue = rows.filter(r => r.rtp === 'Selesai').length;
+    countFalse = totalCount - countTrue;
+    labels = [`Selesai (${countTrue} OPD)`, `Belum (${countFalse} OPD)`];
+    data = [countTrue, countFalse];
     backgroundColor = ['#f97316', '#e2e8f0'];
+    typeChart = 'doughnut';
   }
 
   document.getElementById('kpiChartTitle').textContent = titles[type] || 'Grafik';
@@ -2367,7 +2393,7 @@ function showChart(type) {
   const ctx = canvas.getContext('2d');
   
   // ==========================================================
-  // KHUSUS LINE CHART (3 KPI): TAMPIL SATU LAYAR
+  // KHUSUS LINE CHART (3 KPI): TAMPIL SATU LAYAR (TIDAK DIUBAH)
   // ==========================================================
   if (isLineChart) {
       let chartWidth = canvas.parentElement.clientWidth; 
@@ -2435,7 +2461,7 @@ function showChart(type) {
       });
 
   // ==========================================================
-  // KHUSUS PIE CHART (6 KPI LAIN): FIT TANPA SCROLL
+  // KHUSUS PIE/DOUGHNUT CHART (6 KPI): FIT + TAMPILKAN JUMLAH OPD
   // ==========================================================
   } else {
       let containerWidth = canvas.parentElement.clientWidth;
@@ -2450,8 +2476,9 @@ function showChart(type) {
       canvas.parentElement.style.overflowX = 'hidden';
       canvas.parentElement.style.overflowY = 'hidden';
 
+      // BUAT CHART
       chartInstance = new Chart(ctx, {
-        type: 'pie',
+        type: 'doughnut',
         data: {
           labels: labels,
           datasets: [{
@@ -2465,10 +2492,24 @@ function showChart(type) {
         options: {
           responsive: false, 
           maintainAspectRatio: false,
+          cutout: '50%',
           layout: { padding: { bottom: 10 } },
           plugins: {
             legend: { display: true, position: 'bottom' },
-            tooltip: { backgroundColor: '#0f172a' }
+            tooltip: { 
+              backgroundColor: '#0f172a',
+              callbacks: {
+                label: function(context) {
+                  let label = context.label || '';
+                  if (label) {
+                    label += ': ';
+                  }
+                  let val = context.parsed;
+                  let percent = totalCount > 0 ? Math.round((val / totalCount) * 100) : 0;
+                  return label + val + ' OPD (' + percent + '%)';
+                }
+              }
+            }
           },
           animation: { duration: 800, easing: 'easeOutQuart' }
         }
@@ -2489,7 +2530,6 @@ document.getElementById('kpiChartClose').addEventListener('click', function() {
     chartInstance = null;
   }
 });
-
 // ====== PASSWORD ======
 document.addEventListener('DOMContentLoaded', function() {
   const btnAccess = document.getElementById('btnAccess');
