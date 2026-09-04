@@ -2368,10 +2368,11 @@ function showChart(type) {
   // Jika line chart, atur lebar & tinggi agar semua OPD terlihat dan bisa di-scroll
   let chartWidth = 800;
   let chartHeight = 400;
-    if (isLineChart) {
-    // Lebar canvas = jumlah OPD * 60px (lebih lebar agar label tidak menumpuk)
-    chartWidth = Math.max(labels.length * 60, 800); 
-    chartHeight = 500; // Dinaikkan agar label tidak terpotong ke bawah
+      if (isLineChart) {
+    // Lebar canvas = jumlah OPD * 70px (lebih lebar)
+    chartWidth = Math.max(labels.length * 70, 900); 
+    // Tinggi canvas dihitung berdasarkan jumlah label (20px per label) minimal 600px
+    chartHeight = Math.max(labels.length * 20, 600); 
     canvas.style.width = chartWidth + 'px';
     canvas.style.height = chartHeight + 'px';
     canvas.parentElement.style.overflowX = 'auto';
@@ -2404,11 +2405,11 @@ function showChart(type) {
         pointHoverRadius: isLineChart ? 6 : undefined,
       }]
     },
-        options: {
+            options: {
       responsive: false,
       maintainAspectRatio: false,
       indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
-      layout: { padding: { bottom: 10 } }, // Tambahan ruang di bawah agar label tidak menempel
+      layout: { padding: { bottom: 50 } }, // Ruang ekstra 50px di bawah agar label tidak menempel
       plugins: {
         legend: { display: typeChart === 'pie' },
         tooltip: {
@@ -2418,15 +2419,15 @@ function showChart(type) {
         }
       },
       scales: {
-                        x: {
+                                x: {
           beginAtZero: true,
           grid: { color: isLineChart ? 'rgba(226, 232, 240, 0.3)' : 'rgba(226, 232, 240, 0.6)' },
           ticks: {
             autoSkip: false, // Tampilkan semua label
-            maxRotation: -75, // Kemiringan -75 derajat (dari atas ke bawah)
+            maxRotation: -75, // Kemiringan -75 derajat
             minRotation: -75, // Paksa -75 derajat
-            mirror: false, // Nonaktifkan mirror agar teks tidak terbalik
-            font: { size: 9, family: "'Inter', sans-serif", weight: '500' }
+            mirror: false, 
+            font: { size: 12, family: "'Inter', sans-serif", weight: '600' } // Font diperbesar dari 9 ke 12
           }
         },
         y: {
