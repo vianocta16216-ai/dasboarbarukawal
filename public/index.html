@@ -2421,19 +2421,7 @@ document.getElementById('kpiChartClose').addEventListener('click', function() {
     chartInstance = null;
   }
 });
-  const chartContainer = document.querySelector('.chart-container.chart-scroll');
-  if (chartContainer) {
-    chartContainer.scrollLeft = 0; // Reset scroll ke kiri
-  }
-}
 
-document.getElementById('kpiChartClose').addEventListener('click', function() {
-  document.getElementById('kpiChartModal').classList.remove('active');
-  if (chartInstance) {
-    chartInstance.destroy();
-    chartInstance = null;
-  }
-});
 // ====== PASSWORD ======
 document.addEventListener('DOMContentLoaded', function() {
   const btnAccess = document.getElementById('btnAccess');
