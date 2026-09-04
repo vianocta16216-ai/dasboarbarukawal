@@ -2368,15 +2368,14 @@ function showChart(type) {
   // Jika line chart, atur lebar & tinggi agar semua OPD terlihat dan bisa di-scroll
   let chartWidth = 800;
   let chartHeight = 400;
-  if (isLineChart) {
-    // Lebar canvas = jumlah OPD * 50px (lebih lebar agar label vertikal muat)
-    chartWidth = Math.max(labels.length * 50, 800); 
-    chartHeight = 400;
+    if (isLineChart) {
+    // Lebar canvas = jumlah OPD * 60px (lebih lebar agar label tidak menumpuk)
+    chartWidth = Math.max(labels.length * 60, 800); 
+    chartHeight = 500; // Dinaikkan agar label tidak terpotong ke bawah
     canvas.style.width = chartWidth + 'px';
     canvas.style.height = chartHeight + 'px';
     canvas.parentElement.style.overflowX = 'auto';
   }
-
   // Buat gradient untuk area line chart
   let lineGradient = null;
   if (isLineChart) {
@@ -2405,10 +2404,11 @@ function showChart(type) {
         pointHoverRadius: isLineChart ? 6 : undefined,
       }]
     },
-    options: {
+        options: {
       responsive: false,
       maintainAspectRatio: false,
       indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
+      layout: { padding: { bottom: 10 } }, // Tambahan ruang di bawah agar label tidak menempel
       plugins: {
         legend: { display: typeChart === 'pie' },
         tooltip: {
@@ -2418,15 +2418,15 @@ function showChart(type) {
         }
       },
       scales: {
-        x: {
+                        x: {
           beginAtZero: true,
           grid: { color: isLineChart ? 'rgba(226, 232, 240, 0.3)' : 'rgba(226, 232, 240, 0.6)' },
-                    ticks: {
-            autoSkip: false, // Tampilkan semua label (karena chart lebar)
-            maxRotation: 75, // Kemiringan 75 derajat
-            minRotation: 75, // Paksa 75 derajat
-            mirror: true, // MEMBALIK TEKS AGAR TERBACA DARI ATAS KE BAWAH SECARA OTOMATIS
-            font: { size: 9, family: "'Inter', sans-serif", weight: '500' } // UKURAN FONT 8px
+          ticks: {
+            autoSkip: false, // Tampilkan semua label
+            maxRotation: -75, // Kemiringan -75 derajat (dari atas ke bawah)
+            minRotation: -75, // Paksa -75 derajat
+            mirror: false, // Nonaktifkan mirror agar teks tidak terbalik
+            font: { size: 9, family: "'Inter', sans-serif", weight: '500' }
           }
         },
         y: {
