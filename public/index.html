@@ -2286,7 +2286,7 @@ function attachHandlers() {
   });
 }
 
-// ====== GRAFIK KPI (FINAL - PIE BULAT SEMPURNA, TANPA GRID) ======
+// ====== GRAFIK KPI (PIE BULAT + TANPA GRID) ======
 function showChart(type) {
   const titles = {
     rataRata: 'Rata-rata Level per OPD',
@@ -2309,7 +2309,6 @@ function showChart(type) {
   let countTrue = 0;
   let countFalse = 0;
 
-  // CEK DATA
   if (!rows || rows.length === 0) {
     alert('Data OPD belum tersedia!');
     return;
@@ -2317,9 +2316,7 @@ function showChart(type) {
 
   const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
   
-  // ==========================================================
-  // PERSIAPAN DATA LINE CHART (3 KPI - TIDAK DIUBAH)
-  // ==========================================================
+  // ====== DATA LINE CHART (3 KPI TIDAK DIUBAH) ======
   if (isLineChart) {
     labels = rows.map(r => r.opd);
     data = rows.map(r => {
@@ -2329,9 +2326,7 @@ function showChart(type) {
     });
     typeChart = 'line';
   } 
-  // ==========================================================
-  // PERSIAPAN DATA PIE CHART (6 KPI) - LINGKARAN PENUH
-  // ==========================================================
+  // ====== DATA PIE CHART (6 KPI) ======
   else if (type === 'opdLevel3') {
     totalCount = rows.length;
     countTrue = rows.filter(r => (parseFloat(r.sa) || 0) >= 3).length;
@@ -2399,9 +2394,7 @@ function showChart(type) {
   const canvas = document.getElementById('kpiChartCanvas');
   const ctx = canvas.getContext('2d');
 
-  // ==========================================================
-  // KHUSUS LINE CHART (3 KPI): TIDAK DIUBAH
-  // ==========================================================
+  // ====== KHUSUS LINE CHART (TIDAK DIUBAH) ======
   if (isLineChart) {
       let chartWidth = canvas.parentElement.clientWidth; 
       if (!chartWidth || chartWidth < 800) chartWidth = 800;
@@ -2467,26 +2460,23 @@ function showChart(type) {
         }
       });
 
-  // ==========================================================
-  // KHUSUS PIE CHART (6 KPI) - BULAT SEMPURNA TANPA SCROLL
-  // ==========================================================
+  // ====== KHUSUS PIE CHART (6 KPI - BULAT & BERSIH) ======
   } else {
-      // KUNCI UTAMA: Set Lebar dan Tinggi SAMA PERSIS (Persegi)
-      let containerWidth = canvas.parentElement.clientWidth;
-      let size = Math.min(containerWidth - 40, 450); 
-      if (!size || size < 300) size = 300;
+      // Atur ukuran 450x450 PERSIS (Persegi sempurna)
+      canvas.style.width = '450px !important';
+      canvas.style.height = '450px !important';
+      canvas.width = 450;
+      canvas.height = 450;
 
-      canvas.width = size;
-      canvas.height = size;
-      canvas.style.width = size + 'px';
-      canvas.style.height = size + 'px';
-
-      // Matikan semua scroll
+      // Matikan scroll
       canvas.parentElement.style.overflowX = 'hidden';
       canvas.parentElement.style.overflowY = 'hidden';
 
+      // Ubah background container jadi putih bersih, hilangkan garis grid
+      canvas.parentElement.style.background = '#ffffff';
+
       chartInstance = new Chart(ctx, {
-        type: 'pie', // LINGKARAN PENUH, TANPA BOLONG
+        type: 'pie',
         data: {
           labels: labels,
           datasets: [{
@@ -2525,8 +2515,7 @@ function showChart(type) {
               }
             }
           },
-          // ====== KUNCI: MATIKAN SEMUA SUMBU X & Y ======
-          // Ini mencegah munculnya garis grid dan angka 0, 0.5, 1, dst
+          // ====== KUNCI: MATIKAN SUMBU X & Y ======
           scales: {
             x: { display: false },
             y: { display: false }
