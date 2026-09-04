@@ -2286,7 +2286,7 @@ function attachHandlers() {
   });
 }
 
-// ====== GRAFIK KPI (FINAL ANTI BLANK) ======
+/// ====== GRAFIK KPI (DIPISAH: LINE & PIE) ======
 function showChart(type) {
   const titles = {
     rataRata: 'Rata-rata Level per OPD',
@@ -2303,17 +2303,18 @@ function showChart(type) {
   let labels = [];
   let data = [];
   let backgroundColor = [];
-  let borderColor = [];
   let typeChart = 'bar';
 
-  // ====== CEK PENTING: JIKA DATA KOSONG, JANGAN GAMBAR ======
+  // CEK DATA
   if (!rows || rows.length === 0) {
-    alert('Data OPD belum tersedia untuk ditampilkan!');
+    alert('Data OPD belum tersedia!');
     return;
   }
 
-  // ====== GRAFIK GARIS UNTUK 3 KPI UTAMA ======
-  if (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK') {
+  // ====== BAGIAN LINE CHART (3 KPI UTAMA) ======
+  const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
+  
+  if (isLineChart) {
     labels = rows.map(r => r.opd);
     data = rows.map(r => {
       if (type === 'rataRata') return parseFloat(r.sa) || 0;
@@ -2322,7 +2323,7 @@ function showChart(type) {
     });
     typeChart = 'line';
   } 
-  // ====== GRAFIK PIE ======
+  // ====== BAGIAN PIE CHART (6 KPI LAINNYA) ======
   else if (type === 'opdLevel3') {
     labels = ['Level >= 3', 'Level < 3'];
     data = [document.getElementById('kpiSelesai').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiSelesai').textContent.replace('%', ''))];
@@ -2358,79 +2359,48 @@ function showChart(type) {
   document.getElementById('kpiChartTitle').textContent = titles[type] || 'Grafik';
   document.getElementById('kpiChartModal').classList.add('active');
 
-  // Hancurkan chart lama jika ada
   if (chartInstance) {
     chartInstance.destroy();
     chartInstance = null;
   }
 
-  const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
   const canvas = document.getElementById('kpiChartCanvas');
   const ctx = canvas.getContext('2d');
-
-  // Reset canvas
+  
+  // Reset awal
   canvas.style.width = '100%';
   canvas.style.height = '400px';
   canvas.parentElement.style.overflowX = 'hidden';
 
-  // Atur ukuran khusus untuk Line Chart
-  if (isLineChart) {
-      let chartWidth = Math.max(labels.length * 120, 1000); // Lebar mengikuti OPD
-      let chartHeight = 600; // Tinggi tetap 600px
+  let chartOptions = {};
 
-      // WAJIB: Set atribut HTML agar Chart.js tahu ukuran fisik kanvas
+  // ==========================================================
+  // PENGATURAN KHUSUS UNTUK LINE CHART (3 KPI)
+  // ==========================================================
+  if (isLineChart) {
+      // Lebar sangat besar agar nama OPD yang panjang muat tanpa menumpuk
+      let chartWidth = Math.max(labels.length * 200, 1500); 
+      let chartHeight = 600; 
+
       canvas.width = chartWidth;
       canvas.height = chartHeight;
-
       canvas.style.width = chartWidth + 'px';
       canvas.style.height = chartHeight + 'px';
       canvas.parentElement.style.overflowX = 'auto';
-  }
 
-  // Buat gradient
-  let lineGradient = null;
-  if (isLineChart) {
-    lineGradient = ctx.createLinearGradient(0, 0, 0, 600);
-    lineGradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
-    lineGradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
-  }
+      // Gradient
+      let lineGradient = ctx.createLinearGradient(0, 0, 0, 600);
+      lineGradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
+      lineGradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
 
-  // ====== PERBAIKAN UTAMA ANTI BLANK: TUNDA GAMBAR 100ms ======
-  // Ini memberikan waktu pada browser untuk menampilkan modal
-  // sehingga ukuran kanvas sudah terbaca dengan benar.
-  setTimeout(() => {
-    chartInstance = new Chart(ctx, {
-      type: typeChart,
-      data: {
-        labels: labels,
-        datasets: [{
-          label: titles[type],
-          data: data,
-          backgroundColor: isLineChart ? lineGradient : (backgroundColor.length > 0 ? backgroundColor : 'rgba(59, 130, 246, 0.7)'),
-          borderColor: isLineChart ? 'rgba(37, 99, 235, 1)' : (borderColor.length > 0 ? borderColor : 'rgba(37, 99, 235, 1)'),
-          borderWidth: isLineChart ? 3 : 1,
-          borderRadius: 8,
-          maxBarThickness: 30,
-          fill: isLineChart ? true : (typeChart === 'line' ? true : false),
-          tension: isLineChart ? 0.4 : 0.3,
-          pointBackgroundColor: isLineChart ? 'rgba(37, 99, 235, 1)' : undefined,
-          pointBorderColor: isLineChart ? '#ffffff' : undefined,
-          pointRadius: isLineChart ? 4 : undefined,
-          pointHoverRadius: isLineChart ? 6 : undefined,
-        }]
-      },
-      options: {
+      chartOptions = {
         responsive: false,
         maintainAspectRatio: false,
-        indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
+        indexAxis: 'x',
         layout: { padding: 0 },
         plugins: {
-          legend: { display: typeChart === 'pie' },
-          tooltip: {
-            backgroundColor: '#0f172a',
-            titleFont: { size: 14, weight: 'bold' },
-            bodyFont: { size: 13 }
-          }
+          legend: { display: false },
+          tooltip: { backgroundColor: '#0f172a' }
         },
         scales: {
           x: {
@@ -2438,29 +2408,90 @@ function showChart(type) {
             grid: { display: false },
             ticks: {
               autoSkip: false, 
-              maxRotation: 0,
+              // Rotasi 45 derajat agar label panjang miring ke bawah & tidak menimpa
+              maxRotation: 45, 
               minRotation: 0,
-              mirror: false, 
-              font: { size: 13, family: "'Inter', sans-serif", weight: 'bold' }, 
+              // PERBAIKAN PENTING: Potong nama OPD yang sangat panjang
+              callback: function(value, index) {
+                let label = this.getLabelForValue(value);
+                if (label.length > 15) {
+                  return label.substring(0, 15) + '...'; 
+                }
+                return label;
+              },
+              font: { size: 12, weight: 'bold' },
               padding: 10
             }
           },
           y: {
             beginAtZero: true,
             grid: { color: 'rgba(226, 232, 240, 0.6)' },
-            ticks: {
-              font: { size: 12, family: "'Inter', sans-serif", weight: '600' }
-            }
+            ticks: { font: { size: 12 } }
           }
         },
-        animation: {
-          duration: 800,
-          easing: 'easeOutQuart'
-        }
-      }
-    });
-  }, 100); // <-- Penundaan 100ms
+        animation: { duration: 800, easing: 'easeOutQuart' }
+      };
 
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: titles[type],
+            data: data,
+            backgroundColor: lineGradient,
+            borderColor: 'rgba(37, 99, 235, 1)',
+            borderWidth: 3,
+            fill: true,
+            tension: 0.4,
+            pointBackgroundColor: 'rgba(37, 99, 235, 1)',
+            pointBorderColor: '#ffffff',
+            pointRadius: 4,
+            pointHoverRadius: 6
+          }]
+        },
+        options: chartOptions
+      });
+
+  // ==========================================================
+  // PENGATURAN KHUSUS UNTUK PIE CHART (6 KPI LAINNYA)
+  // ==========================================================
+  } else {
+      // Set ukuran kanvas bulat agar pie chart tidak gepeng
+      canvas.width = 800; 
+      canvas.height = 500;
+      canvas.style.width = '800px';
+      canvas.style.height = '500px';
+      canvas.parentElement.style.overflowX = 'auto';
+
+      chartOptions = {
+        responsive: false, 
+        maintainAspectRatio: false,
+        indexAxis: 'x', // Wajib default agar bulat
+        plugins: {
+          legend: { display: true, position: 'bottom' },
+          tooltip: { backgroundColor: '#0f172a' }
+        },
+        animation: { duration: 800, easing: 'easeOutQuart' }
+      };
+
+      chartInstance = new Chart(ctx, {
+        type: 'pie',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: titles[type],
+            data: data,
+            backgroundColor: backgroundColor,
+            borderColor: '#ffffff',
+            borderWidth: 2
+          }]
+        },
+        options: chartOptions
+      });
+  }
+
+  // Scroll ke atas
   const chartContainer = document.querySelector('.chart-container.chart-scroll');
   if (chartContainer) {
     chartContainer.scrollTop = 0;
