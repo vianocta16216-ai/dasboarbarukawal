@@ -2657,36 +2657,48 @@ async function openEditModal(id) {
 // ====== UPLOAD FILE ======
 async function uploadFile(row, subCode, paramId, level, file) {
   if (!file) return;
-  if (file.size > 20 * 1024 * 1024) throw new Error('File terlalu besar! Maks 20MB.');
+  if (file.size > 10 * 1024 * 1024) throw new Error('File terlalu besar! Maks 10MB.');
   
-  // 1. Minta link upload langsung ke R2 (GRATIS 503!)
-  const response = await callServer('getUploadUrl', {
-      opdId: row.id,
-      opdName: row.opd,
-      subunsur: subCode,
-      paramId,
-      level,
-      year: currentYear,
-      fileName: file.name,
-      fileType: file.type || 'application/octet-stream'
+  const reader = new FileReader();
+  return new Promise((resolve, reject) => {
+    reader.onload = async () => {
+      const base64 = reader.result.split(',')[1];
+      
+      let attempts = 0;
+      let success = false;
+      let lastError = '';
+
+      while (attempts < 3 && !success) {
+        try {
+          const result = await callServer('uploadFile', {
+            opdId: row.id,
+            opdName: row.opd,
+            subunsur: subCode,
+            paramId,
+            level,
+            year: currentYear,
+            fileName: file.name,
+            fileData: base64,
+            fileType: file.type || 'application/octet-stream'
+          });
+          success = true;
+          resolve({ url: result.url, fileName: result.fileName });
+        } catch (err) {
+          lastError = err.message;
+          attempts++;
+          if (attempts < 3) {
+            await new Promise(r => setTimeout(r, 1500)); 
+          }
+        }
+      }
+      
+      if (!success) {
+        reject(new Error(lastError));
+      }
+    };
+    reader.readAsDataURL(file);
   });
-
-  // 2. Upload file LANGSUNG dari Browser ke Cloudflare R2 (Tidak lewat Worker!)
-  const uploadResponse = await fetch(response.url, {
-      method: 'PUT',
-      headers: { 'Content-Type': file.type || 'application/octet-stream' },
-      body: file // Kirim file asli (bukan base64!)
-  });
-
-  if (!uploadResponse.ok) {
-      throw new Error('Gagal mengunggah file langsung ke R2');
-  }
-
-  // 3. Kembalikan URL Publik agar disimpan di database
-  const publicUrl = `https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${response.filePath}`;
-  return { url: publicUrl, fileName: file.name };
 }
-
 // Fungsi untuk membuat URL preview berdasarkan jenis file
 function getPreviewUrl(fileUrl, fileName) {
   const ext = fileName.split('.').pop().toLowerCase();
