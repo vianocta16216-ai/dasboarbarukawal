@@ -528,9 +528,9 @@ tbody input[readonly] {
 #kpiChartModal .modal {
   background: linear-gradient(135deg, #eff6ff 0%, #ede9fe 50%, #e0e7ff 100%);
   border: none;
-  max-width: 1400px; /* PERKECIL DARI 1800px AGAR PROPORSIONAL */
-  width: 95vw;
-  height: 90vh;
+  max-width: 1100px; /* Kembali ke ukuran standar */
+  width: 95%;
+  max-height: 90vh;
   text-align: center;
   animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   box-shadow: 0 25px 80px rgba(0, 0, 0, 0.3);
@@ -579,8 +579,8 @@ tbody input[readonly] {
 
 .chart-container.chart-scroll {
   max-height: 75vh;
-  overflow-x: auto; /* SCROLL KIRI-KANAN agar label tidak menumpuk */
-  overflow-y: hidden;
+  overflow-y: auto; /* SCROLL VERTIKAL agar semua OPD muat */
+  overflow-x: hidden;
   padding: 20px;
   background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
   border-radius: 16px;
@@ -589,8 +589,8 @@ tbody input[readonly] {
 }
 
 #kpiChartCanvas {
-  min-width: 2500px; /* Paksa canvas lebar agar bisa discroll horizontal */
-  height: 500px !important;
+  min-width: 100%; /* JANGAN pakai 2500px, gunakan lebar penuh */
+  height: 600px !important; /* Tinggi cukup agar banyak bar muat */
 }
 
 .chart-container {
@@ -2303,9 +2303,9 @@ function showChart(type) {
   let data = [];
   let backgroundColor = [];
   let borderColor = [];
-  let typeChart = 'line'; // Ubah ke LINE CHART
+  let typeChart = 'bar'; // HORIZONTAL BAR
 
-  // ====== GRAFIK GARIS UNTUK 3 KPI UTAMA (MUAT SEMUA OPD) ======
+  // ====== GRAFIK HORIZONTAL UNTUK 3 KPI UTAMA ======
   if (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK') {
     labels = rows.map(r => r.opd);
     data = rows.map(r => {
@@ -2314,10 +2314,10 @@ function showChart(type) {
       if (type === 'rataIEPK') return parseFloat(r.iepk) || 0;
     });
 
-    backgroundColor = 'rgba(59, 130, 246, 0.2)';
-    borderColor = '#2563eb';
+    backgroundColor = data.map(val => val > 0 ? 'rgba(59, 130, 246, 0.7)' : 'rgba(203, 213, 225, 0.5)');
+    borderColor = data.map(val => val > 0 ? 'rgba(37, 99, 235, 1)' : 'rgba(148, 163, 184, 1)');
 
-    typeChart = 'line';
+    typeChart = 'bar';
   } 
   // ====== GRAFIK PIE ======
   else if (type === 'opdLevel3') {
@@ -2367,20 +2367,19 @@ function showChart(type) {
       datasets: [{
         label: titles[type],
         data: data,
-        backgroundColor: backgroundColor.length > 0 ? backgroundColor : 'rgba(59, 130, 246, 0.2)',
-        borderColor: borderColor.length > 0 ? borderColor : '#2563eb',
-        borderWidth: 3,
-        pointBackgroundColor: '#ffffff',
-        pointBorderColor: '#2563eb',
-        pointRadius: 6,
-        pointHoverRadius: 8,
-        fill: typeChart === 'line' ? true : false, // Area gradasi di bawah garis
-        tension: 0.4
+        backgroundColor: backgroundColor.length > 0 ? backgroundColor : 'rgba(59, 130, 246, 0.7)',
+        borderColor: borderColor.length > 0 ? borderColor : 'rgba(37, 99, 235, 1)',
+        borderWidth: 1,
+        borderRadius: 8,
+        maxBarThickness: 30,
+        fill: typeChart === 'line' ? true : false,
+        tension: 0.3
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      indexAxis: typeChart === 'bar' ? 'y' : 'x', // KUNCI: HORIZONTAL BAR
       plugins: {
         legend: { display: typeChart === 'pie' },
         tooltip: {
@@ -2391,21 +2390,15 @@ function showChart(type) {
       },
       scales: {
         x: {
-          ticks: {
-            autoSkip: false, // Semua label tampil (tapi dengan scroll horizontal)
-            maxRotation: 0,  // UBAH: Jangan miring agar tidak menumpuk!
-            minRotation: 0,  // UBAH: Jangan miring agar tidak menumpuk!
-            font: { size: 11, family: "'Inter', sans-serif" }
-          },
-          grid: {
-            display: false
-          }
+          beginAtZero: true,
+          grid: { color: 'rgba(226, 232, 240, 0.6)' }
         },
         y: {
-          beginAtZero: true,
-          grid: {
-            color: 'rgba(255,255,255,0.5)'
-          }
+          ticks: {
+            autoSkip: false,
+            font: { size: 12, family: "'Inter', sans-serif", weight: '600' }
+          },
+          grid: { display: false }
         }
       },
       animation: {
@@ -2415,6 +2408,19 @@ function showChart(type) {
     }
   });
 
+  const chartContainer = document.querySelector('.chart-container.chart-scroll');
+  if (chartContainer) {
+    chartContainer.scrollTop = 0;
+  }
+}
+
+document.getElementById('kpiChartClose').addEventListener('click', function() {
+  document.getElementById('kpiChartModal').classList.remove('active');
+  if (chartInstance) {
+    chartInstance.destroy();
+    chartInstance = null;
+  }
+});
   const chartContainer = document.querySelector('.chart-container.chart-scroll');
   if (chartContainer) {
     chartContainer.scrollLeft = 0; // Reset scroll ke kiri
