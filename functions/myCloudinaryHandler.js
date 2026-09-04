@@ -13,24 +13,6 @@ const FIELD_MAP = {
   qaApip: 'qa_apip'
 };
 
-// Fungsi membuat path folder TANPA memproses Base64 (Anti 503)
-function getFilePath(params) {
-    const { opdName, subunsur, paramId, level, fileName, year } = params;
-    const unsurKey = subunsur.split('.')[0];
-    const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
-    const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80) || 'OPD';
-    const subUnsurLabel = SUBUNSUR_DATA[subunsur] ? SUBUNSUR_DATA[subunsur].label : subunsur;
-    const safeSubUnsur = subUnsurLabel.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80);
-    let paramDesc = paramId;
-    if (SUBUNSUR_DATA[subunsur] && SUBUNSUR_DATA[subunsur].params) {
-        const paramObj = SUBUNSUR_DATA[subunsur].params.find(p => p.id === paramId);
-        if (paramObj) paramDesc = paramObj.desc;
-    }
-    const safeParam = paramDesc.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 100);
-
-    return `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level_${level}/${fileName}`;
-}
-
 export const onRequest = async ({ request, env }) => {
   const ACCESS_PASSWORD = env.ACCESS_PASSWORD;
   const DELETE_PASSWORD = env.DELETE_PASSWORD;
@@ -51,6 +33,36 @@ export const onRequest = async ({ request, env }) => {
   }
 
   const year = params.year || '2026';
+
+  // Ganti Buffer dengan Uint8Array + atob (hemat CPU)
+  function getFolderStructure(params) {
+    const { fileData, fileName, opdName, subunsur, paramId, level, fileType } = params;
+    
+    const binaryString = atob(fileData);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    // UBAH BATASAN MENJADI 10MB
+    if (bytes.length / 1024 / 1024 > 10) throw new Error('File > 10MB, terlalu besar!');
+
+    const unsurKey = subunsur.split('.')[0];
+    const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
+    const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80) || 'OPD';
+    const subUnsurLabel = SUBUNSUR_DATA[subunsur] ? SUBUNSUR_DATA[subunsur].label : subunsur;
+    const safeSubUnsur = subUnsurLabel.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80);
+    let paramDesc = paramId;
+    if (SUBUNSUR_DATA[subunsur] && SUBUNSUR_DATA[subunsur].params) {
+      const paramObj = SUBUNSUR_DATA[subunsur].params.find(p => p.id === paramId);
+      if (paramObj) paramDesc = paramObj.desc;
+    }
+    const safeParam = paramDesc.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 100);
+
+    const filePath = `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level_${level}/${fileName}`;
+    return { filePath, bytes, fileType: fileType || 'application/octet-stream', fileName };
+  }
 
   try {
     switch (action) {
@@ -120,13 +132,15 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
-      // ====== PERUBAHAN PENTING: DIRECT UPLOAD (ANTI 503) ======
-      case 'getUploadUrl': {
-        // Buat path file TANPA memproses base64 (anti 503)
-        const filePath = getFilePath(params);
-        // Buat link upload PUT langsung ke R2 yang berlaku 5 menit (300 detik)
-        const uploadUrl = await env.EVIDENCE_BUCKET.createSignedUrl(filePath, 300, { method: 'PUT' });
-        return new Response(JSON.stringify({ url: uploadUrl, filePath }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      // ====== FILE (UPLOAD VIA WORKER) ======
+      case 'uploadFile': {
+        const { filePath, bytes, fileType, fileName } = getFolderStructure(params);
+        
+        await env.EVIDENCE_BUCKET.put(filePath, bytes, { httpMetadata: { contentType: fileType } });
+
+        const publicUrl = `https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
+        
+        return new Response(JSON.stringify({ url: publicUrl, fileName }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
       case 'deleteFile': {
