@@ -517,7 +517,14 @@ tbody input[readonly] {
   padding: 32px 36px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
 }
-
+.chart-container.chart-scroll {
+    max-height: 70vh; 
+    overflow-y: auto; 
+    padding: 10px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.05);
+}
 #kpiChartModal .modal {
   background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #ffffff 100%);
   border: 1px solid rgba(59, 130, 246, 0.2);
@@ -1663,7 +1670,7 @@ input[type="file"]:hover {
       <h3 id="kpiChartTitle">Grafik KPI</h3>
       <button class="modal-close" id="kpiChartClose">&times;</button>
     </div>
-    <div class="chart-container">
+    <div class="chart-container chart-scroll">
       <canvas id="kpiChartCanvas"></canvas>
     </div>
   </div>
@@ -2283,11 +2290,22 @@ function showChart(type) {
   let backgroundColor = [];
   let typeChart = 'bar';
 
-  if (type === 'rataRata') {
+  // ====== GRAFIK HORIZONTAL BAR UNTUK SEMUA KPI OPD (TANPA BATASAN) ======
+  if (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK') {
     labels = rows.map(r => r.opd);
-    data = rows.map(r => parseFloat(r.sa) || 0);
+    data = rows.map(r => {
+      if (type === 'rataRata') return parseFloat(r.sa) || 0;
+      if (type === 'rataMRI') return parseFloat(r.mri) || 0;
+      if (type === 'rataIEPK') return parseFloat(r.iepk) || 0;
+    });
+
+    // Warna biru jika ada nilai, abu-abu jika 0
+    backgroundColor = data.map(val => val > 0 ? 'rgba(59, 130, 246, 0.7)' : 'rgba(203, 213, 225, 0.5)');
+
     typeChart = 'bar';
-  } else if (type === 'opdLevel3') {
+  } 
+  // ====== GRAFIK PIE UNTUK PERSENTASE ======
+  else if (type === 'opdLevel3') {
     labels = ['Level >= 3', 'Level < 3'];
     data = [document.getElementById('kpiSelesai').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiSelesai').textContent.replace('%', ''))];
     typeChart = 'pie';
@@ -2312,20 +2330,78 @@ function showChart(type) {
     data = [document.getElementById('kpiEvidenceLengkap').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiEvidenceLengkap').textContent.replace('%', ''))];
     typeChart = 'pie';
     backgroundColor = ['#ec4899', '#e2e8f0'];
-  } else if (type === 'rataMRI') {
-    labels = rows.map(r => r.opd);
-    data = rows.map(r => parseFloat(r.mri) || 0);
-    typeChart = 'line';
   } else if (type === 'rtpSelesai') {
     labels = ['Selesai', 'Belum'];
     data = [document.getElementById('kpiRtpSelesai').textContent.replace('%', ''), 100 - parseFloat(document.getElementById('kpiRtpSelesai').textContent.replace('%', ''))];
     typeChart = 'pie';
     backgroundColor = ['#f97316', '#e2e8f0'];
-  } else if (type === 'rataIEPK') {
-    labels = rows.map(r => r.opd);
-    data = rows.map(r => parseFloat(r.iepk) || 0);
-    typeChart = 'line';
   }
+
+  document.getElementById('kpiChartTitle').textContent = titles[type] || 'Grafik';
+  document.getElementById('kpiChartModal').classList.add('active');
+
+  if (chartInstance) {
+    chartInstance.destroy();
+  }
+
+  const ctx = document.getElementById('kpiChartCanvas').getContext('2d');
+  chartInstance = new Chart(ctx, {
+    type: typeChart,
+    data: {
+      labels: labels,
+      datasets: [{
+        label: titles[type],
+        data: data,
+        backgroundColor: backgroundColor.length > 0 ? backgroundColor : 'rgba(59, 130, 246, 0.6)',
+        borderColor: 'rgba(59, 130, 246, 1)',
+        borderWidth: 1,
+        fill: typeChart === 'line' ? true : false,
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      // KUNCI PERBAIKAN: Mode Horizontal untuk bar, normal untuk pie
+      indexAxis: typeChart === 'bar' ? 'y' : 'x', 
+      plugins: {
+        legend: { display: typeChart === 'pie' }
+      },
+      scales: {
+        x: {
+          ticks: {
+            autoSkip: false, 
+            maxRotation: 0,
+            minRotation: 0
+          },
+          grid: {
+            display: typeChart !== 'bar'
+          }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            autoSkip: false, // TIDAK MEMOTONG NAMA OPD
+            font: { size: 12 }
+          },
+          grid: {
+            display: typeChart === 'bar'
+          }
+        }
+      },
+      animation: {
+        duration: 800,
+        easing: 'easeOutQuart'
+      }
+    }
+  });
+
+  // Scroll ke paling atas saat membuka chart baru
+  const chartContainer = document.querySelector('.chart-container.chart-scroll');
+  if (chartContainer) {
+    chartContainer.scrollTop = 0;
+  }
+}
 
   document.getElementById('kpiChartTitle').textContent = titles[type] || 'Grafik';
   document.getElementById('kpiChartModal').classList.add('active');
