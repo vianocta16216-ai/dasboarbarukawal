@@ -2451,20 +2451,23 @@ function showChart(type) {
         }
       });
 
-  } else {
-      // ====== PERBAIKAN UTAMA: UKURAN KOTAK PERSEGI 400x400 ======
-      canvas.width = 400;
-      canvas.height = 400;
-      canvas.style.width = '400px';
-      canvas.style.height = '400px';
-      // Hapus gaya CSS yang memaksa min-width (agar tidak gepeng)
+   } else {
+      // ====== PERBAIKAN: UKURAN 380x380 & DI TENGAH ======
+      canvas.width = 380;
+      canvas.height = 380;
+      canvas.style.width = '380px';
+      canvas.style.height = '380px';
       canvas.style.minWidth = '0';
+
+      // Pindahkan canvas ke tengah secara horizontal
+      canvas.style.display = 'block';
+      canvas.style.margin = '0 auto';
 
       canvas.parentElement.style.overflowX = 'hidden';
       canvas.parentElement.style.overflowY = 'hidden';
 
       chartInstance = new Chart(ctx, {
-        type: 'pie',
+        type: 'pie', // Lingkaran penuh (bukan donut)
         data: {
           labels: labels,
           datasets: [{
@@ -2478,7 +2481,8 @@ function showChart(type) {
         options: {
           responsive: false, 
           maintainAspectRatio: false,
-          layout: { padding: 5 },
+          // Tambahkan padding bawah agar tulisan Legend tidak terpotong
+          layout: { padding: { bottom: 20 } }, 
           plugins: {
             legend: { 
               display: true, 
@@ -2487,7 +2491,7 @@ function showChart(type) {
                 color: '#1e293b',
                 usePointStyle: true,
                 pointStyle: 'circle',
-                padding: 12,
+                padding: 15, // Beri jarak antar tulisan
                 font: { size: 12, weight: 'bold' }
               }
             },
@@ -2503,7 +2507,6 @@ function showChart(type) {
               }
             }
           },
-          // ====== KUNCI: MATIKAN GRID & SUMBU ======
           scales: {
             x: { display: false },
             y: { display: false }
