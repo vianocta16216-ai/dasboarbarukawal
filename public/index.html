@@ -2439,16 +2439,25 @@ function showChart(type) {
         }
       });
 
-  // ==========================================================
-  // KHUSUS PIE CHART (6 KPI LAIN): SAMA SEKALI TIDAK DIUBAH
+    // ==========================================================
+  // KHUSUS PIE CHART (6 KPI LAIN): FIT KE LAYAR TANPA SCROLL
   // ==========================================================
   } else {
-      // Kembalikan ke ukuran standar agar tidak gepeng
-      canvas.width = 800; 
-      canvas.height = 500;
-      canvas.style.width = '800px';
-      canvas.style.height = '500px';
-      canvas.parentElement.style.overflowX = 'auto';
+      // Ambil lebar asli kontainer (dikurangi padding 40px agar pas)
+      let containerWidth = canvas.parentElement.clientWidth - 40;
+      if (!containerWidth || containerWidth < 350) containerWidth = 350;
+
+      // Tinggi proporsional agar pie chart bulat sempurna (tidak gepeng)
+      let chartHeight = containerWidth * 0.75;
+
+      canvas.width = containerWidth;
+      canvas.height = chartHeight;
+      canvas.style.width = containerWidth + 'px';
+      canvas.style.height = chartHeight + 'px';
+
+      // KUNCI PERBAIKAN: MATIKAN SEMUA SCROLL di area grafik Pie
+      canvas.parentElement.style.overflowX = 'hidden';
+      canvas.parentElement.style.overflowY = 'hidden';
 
       // BUAT CHART
       chartInstance = new Chart(ctx, {
@@ -2466,7 +2475,6 @@ function showChart(type) {
         options: {
           responsive: false, 
           maintainAspectRatio: false,
-          indexAxis: 'x', // Default agar bulat
           plugins: {
             legend: { display: true, position: 'bottom' },
             tooltip: { backgroundColor: '#0f172a' }
