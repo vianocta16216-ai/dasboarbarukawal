@@ -8,6 +8,11 @@ const UNSUR_MAP = {
   '5': '5. EVALUASI DAN PEMANTAUAN'
 };
 
+// PERBAIKAN PENTING: Pemetaan nama field dari Frontend (camelCase) ke Database (snake_case)
+const FIELD_MAP = {
+  qaApip: 'qa_apip'
+};
+
 export const onRequest = async ({ request, env }) => {
   const ACCESS_PASSWORD = env.ACCESS_PASSWORD;
   const DELETE_PASSWORD = env.DELETE_PASSWORD;
@@ -29,14 +34,14 @@ export const onRequest = async ({ request, env }) => {
 
   const year = params.year || '2026';
 
-  // PERBAIKAN PENTING: Ganti Buffer dengan Uint8Array + atob
+  // PERBAIKAN PENTING: Ganti Buffer dengan Uint8Array + atob (karena Buffer tidak ada di Cloudflare)
   function getFolderStructure(params) {
     const { fileData, fileName, opdName, subunsur, paramId, level, fileType } = params;
     
-    // Decode base64 ke Uint8Array (menggantikan Buffer yang tidak ada di Cloudflare)
     const binaryString = atob(fileData);
     const bytes = Uint8Array.from(binaryString, char => char.charCodeAt(0));
     
+    // Disarankan maksimal 2MB agar aman di Free Plan Cloudflare Workers
     if (bytes.length / 1024 / 1024 > 5) throw new Error('File > 5MB, terlalu besar!');
 
     const unsurKey = subunsur.split('.')[0];
@@ -90,9 +95,14 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success', message: 'Data tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
+      // ====== PERBAIKAN UTAMA DI SINI ======
       case 'saveField': {
         const { opdId, field, value } = params;
-        await env.DB.prepare(`UPDATE opd_data SET ${field} = ? WHERE id = ?`).bind(value, opdId).run();
+        
+        // Ubah nama field dari Frontend ke Database jika perlu
+        const dbField = FIELD_MAP[field] || field;
+
+        await env.DB.prepare(`UPDATE opd_data SET ${dbField} = ? WHERE id = ?`).bind(value, opdId).run();
         return new Response(JSON.stringify({ status: 'success', message: 'Field tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
@@ -125,10 +135,8 @@ export const onRequest = async ({ request, env }) => {
       case 'uploadFile': {
         const { filePath, bytes, fileType, fileName } = getFolderStructure(params);
         
-        // Simpan ke R2
         await env.EVIDENCE_BUCKET.put(filePath, bytes, { httpMetadata: { contentType: fileType } });
 
-        // URL R2 yang Anda berikan:
         const publicUrl = `https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
         
         return new Response(JSON.stringify({ url: publicUrl, fileName }), { status: 200, headers: { 'Content-Type': 'application/json' } });
