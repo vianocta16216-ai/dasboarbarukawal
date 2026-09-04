@@ -2366,12 +2366,12 @@ function showChart(type) {
   canvas.parentElement.style.overflowX = 'hidden';
 
   // Jika line chart, atur lebar & tinggi agar semua OPD terlihat dan bisa di-scroll
-    let chartWidth = 800;
+      let chartWidth = 800;
   let chartHeight = 400;
+  let maxLabelLength = 0; // PENTING: Dideklarasikan di sini agar bisa diakses di bawah
   
   if (isLineChart) {
       // Hitung panjang nama OPD TERPANJANG
-      let maxLabelLength = 0;
       labels.forEach(label => {
           if (label && label.length > maxLabelLength) maxLabelLength = label.length;
       });
@@ -2419,7 +2419,8 @@ function showChart(type) {
       maintainAspectRatio: false,
       indexAxis: isLineChart ? 'x' : (typeChart === 'bar' ? 'y' : 'x'),
       
-            // Padding OTOMATIS sesuai panjang label, HANYA untuk Line Chart, 0 untuk Pie Chart
+                  // Padding OTOMATIS sesuai panjang label, HANYA untuk Line Chart, 0 untuk Pie Chart
+      // Sudah aman karena maxLabelLength sekarang dideklarasikan di luar if
       layout: { padding: { bottom: isLineChart ? Math.max(maxLabelLength * 10, 150) : 0 } },
       
       plugins: {
