@@ -2090,7 +2090,7 @@ async function saveData() {
       console.error('rows bukan array, diset kosong', rows);
       rows = [];
     }
-    // ====== PERBAIKAN: Hitung ulang SA sebelum disimpan ======
+       // Hitung ulang SA sebelum disimpan
     rows.forEach(row => {
         row.sa = calculateSA(row);
     });
@@ -2843,8 +2843,8 @@ document.getElementById('modalSave').addEventListener('click', async function() 
   selects.forEach(el => {
     const subCode = el.dataset.sub, paramId = el.dataset.param;
     row.subunsurs[subCode][paramId].level = parseInt(el.value) || 0;
-       // ====== PERBAIKAN: Hitung SA setelah pilih level ======
-  row.sa = calculateSA(row);
+        // Hitung SA setelah pilih level
+    row.sa = calculateSA(row);
   });
   textareas.forEach(el => {
     const subCode = el.dataset.sub, paramId = el.dataset.param, field = el.dataset.field;
