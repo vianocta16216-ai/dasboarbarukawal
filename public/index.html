@@ -2286,7 +2286,7 @@ function attachHandlers() {
   });
 }
 
-// ====== GRAFIK KPI (FINAL - PIE CHART KEMBALI, TOOLTIP RAPI) ======
+// ====== GRAFIK KPI (FINAL - PIE KECIL & RAPI) ======
 function showChart(type) {
   const titles = {
     rataRata: 'Rata-rata Level per OPD',
@@ -2308,7 +2308,6 @@ function showChart(type) {
   let countTrue = 0;
   let countFalse = 0;
 
-  // CEK DATA
   if (!rows || rows.length === 0) {
     alert('Data OPD belum tersedia!');
     return;
@@ -2317,7 +2316,7 @@ function showChart(type) {
   const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
   
   // ==========================================================
-  // PERSIAPAN DATA LINE CHART (3 KPI - TIDAK DIUBAH)
+  // DATA LINE CHART (3 KPI - JANGAN DIUBAH)
   // ==========================================================
   if (isLineChart) {
     labels = rows.map(r => r.opd);
@@ -2329,7 +2328,7 @@ function showChart(type) {
     typeChart = 'line';
   } 
   // ==========================================================
-  // PERSIAPAN DATA PIE CHART (6 KPI) - HITUNG JUMLAH OPD
+  // DATA PIE CHART (6 KPI)
   // ==========================================================
   else if (type === 'opdLevel3') {
     totalCount = rows.length;
@@ -2393,7 +2392,7 @@ function showChart(type) {
   const ctx = canvas.getContext('2d');
   
   // ==========================================================
-  // KHUSUS LINE CHART (3 KPI): TAMPIL SATU LAYAR (TIDAK DIUBAH)
+  // LINE CHART (3 KPI) - TIDAK DIUBAH
   // ==========================================================
   if (isLineChart) {
       let chartWidth = canvas.parentElement.clientWidth; 
@@ -2461,26 +2460,28 @@ function showChart(type) {
       });
 
   // ==========================================================
-  // KHUSUS PIE CHART (6 KPI): BENTUK LINGKARAN PENUH & TOOLTIP RAPI
+  // PIE CHART (6 KPI) - KECIL & PAS TIDAK TERPOTONG
   // ==========================================================
   } else {
-      // PERKECIL UKURAN DIAGRAM BULAT: Lebar dibatasi 600px, Tinggi disamakan (persegi)
+      // Batasi lebar maksimal diagram 450px agar muat
       let containerWidth = canvas.parentElement.clientWidth;
-      let canvasWidth = Math.min(containerWidth - 40, 600); 
-      if (!canvasWidth || canvasWidth < 350) canvasWidth = 350;
-      // Tinggi dibuat sama dengan lebar (Persegi) agar lingkaran tidak gepeng
-      let canvasHeight = canvasWidth; 
+      let canvasWidth = Math.min(containerWidth - 40, 450); 
+      if (!canvasWidth || canvasWidth < 300) canvasWidth = 300;
+
+      // Tinggi proporsional agar lingkaran tidak terpotong
+      let canvasHeight = canvasWidth * 0.75; 
 
       canvas.width = canvasWidth;
       canvas.height = canvasHeight;
       canvas.style.width = canvasWidth + 'px';
       canvas.style.height = canvasHeight + 'px';
+
+      // Matikan scroll
       canvas.parentElement.style.overflowX = 'hidden';
       canvas.parentElement.style.overflowY = 'hidden';
 
-      // BUAT CHART
       chartInstance = new Chart(ctx, {
-        type: 'pie', // KEMBALI KE PIE CHART PENUH, TANPA BOLONG
+        type: 'pie',
         data: {
           labels: labels,
           datasets: [{
@@ -2494,15 +2495,12 @@ function showChart(type) {
         options: {
           responsive: false, 
           maintainAspectRatio: false,
-          // Hapus layout padding agar lingkaran pas di tengah
-          layout: { padding: 0 }, 
+          layout: { padding: 0 },
           plugins: {
             legend: { display: true, position: 'bottom' },
             tooltip: { 
               backgroundColor: '#0f172a',
-              // PENTING: posisi 'nearest' membuat tooltip mengikuti kursor, 
-              // TIDAK tersembunyi di bawah atau terpotong
-              position: 'nearest', 
+              position: 'nearest',
               callbacks: {
                 label: function(context) {
                   let label = context.label || '';
