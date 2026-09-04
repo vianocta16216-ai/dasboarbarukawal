@@ -2657,28 +2657,34 @@ async function openEditModal(id) {
 // ====== UPLOAD FILE ======
 async function uploadFile(row, subCode, paramId, level, file) {
   if (!file) return;
-  if (file.size > 4 * 1024 * 1024) throw new Error('File terlalu besar! Maks 4MB untuk stabilitas.');
-  const reader = new FileReader();
-  return new Promise((resolve, reject) => {
-    reader.onload = async () => {
-      const base64 = reader.result.split(',')[1];
-      try {
-        const result = await callServer('uploadFile', {
-          opdId: row.id,
-          opdName: row.opd,
-          subunsur: subCode,
-          paramId,
-          level,
-          year: currentYear,
-          fileName: file.name,
-          fileData: base64,
-          fileType: file.type || 'application/octet-stream'
-        });
-        resolve({ url: result.url, fileName: result.fileName });
-      } catch (err) { reject(err); }
-    };
-    reader.readAsDataURL(file);
+  if (file.size > 20 * 1024 * 1024) throw new Error('File terlalu besar! Maks 20MB.');
+  
+  // 1. Minta link upload langsung ke R2 (GRATIS 503!)
+  const response = await callServer('getUploadUrl', {
+      opdId: row.id,
+      opdName: row.opd,
+      subunsur: subCode,
+      paramId,
+      level,
+      year: currentYear,
+      fileName: file.name,
+      fileType: file.type || 'application/octet-stream'
   });
+
+  // 2. Upload file LANGSUNG dari Browser ke Cloudflare R2 (Tidak lewat Worker!)
+  const uploadResponse = await fetch(response.url, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file // Kirim file asli (bukan base64!)
+  });
+
+  if (!uploadResponse.ok) {
+      throw new Error('Gagal mengunggah file langsung ke R2');
+  }
+
+  // 3. Kembalikan URL Publik agar disimpan di database
+  const publicUrl = `https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${response.filePath}`;
+  return { url: publicUrl, fileName: file.name };
 }
 
 // Fungsi untuk membuat URL preview berdasarkan jenis file
