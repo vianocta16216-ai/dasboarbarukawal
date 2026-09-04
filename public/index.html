@@ -2421,11 +2421,11 @@ function showChart(type) {
         x: {
           beginAtZero: true,
           grid: { color: isLineChart ? 'rgba(226, 232, 240, 0.3)' : 'rgba(226, 232, 240, 0.6)' },
-          ticks: {
-            autoSkip: false, // Tampilkan semua label (karena chart lebar)
-            maxRotation: 90, // Vertikal
-            minRotation: 90,
-            font: { size: 8, family: "'Inter', sans-serif", weight: '500' } // PERKECIL FONT MENJADI 8px
+                    ticks: {
+            autoSkip: false,
+            maxRotation: 75,   // Kemiringan 75 derajat
+            minRotation: 75,   // Paksa miring 75 derajat
+            font: { size: 9, family: "'Inter', sans-serif", weight: '500' }
           }
         },
         y: {
