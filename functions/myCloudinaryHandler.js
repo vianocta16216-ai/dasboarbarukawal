@@ -17,17 +17,27 @@ const FIELD_MAP = {
 function calculateSAFromSubunsur(subunsurs) {
     if (!subunsurs) return 0;
     let totalLevel = 0;
-    let count = 0;
+    let totalParams = 0;
+    
+    // Hitung TOTAL SEMUA PARAMETER (otomatis 43 karena looping data)
+    Object.keys(SUBUNSUR_DATA).forEach(subCode => {
+        if (SUBUNSUR_DATA[subCode].params) {
+            totalParams += SUBUNSUR_DATA[subCode].params.length;
+        }
+    });
+    
+    // Jumlahkan semua level yang ada
     Object.keys(subunsurs).forEach(subCode => {
         Object.keys(subunsurs[subCode]).forEach(paramId => {
             const level = subunsurs[subCode][paramId].level;
             if (level > 0) {
                 totalLevel += level;
-                count++;
             }
         });
     });
-    return count > 0 ? Math.round((totalLevel / count) * 100) / 100 : 0;
+    
+    // Rumus: Total Level / 43 (Total Semua Parameter)
+    return totalParams > 0 ? Math.round((totalLevel / totalParams) * 100) / 100 : 0;
 }
 
 export const onRequest = async ({ request, env }) => {
