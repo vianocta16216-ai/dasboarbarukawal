@@ -21,6 +21,9 @@ export const onRequest = async ({ request, env }) => {
   let params = {};
   const action = url.searchParams.get('action') || '';
 
+  // ==== LOG UNTUK DEBUG (Bisa dihapus nanti) ====
+  console.log("DEBUG: Aksi yang diterima server adalah:", action);
+
   if (request.method === 'POST') {
     try {
       params = await request.json();
@@ -57,7 +60,7 @@ export const onRequest = async ({ request, env }) => {
 
   try {
     switch (action) {
-      // Aksi Dasar
+      // ====== Aksi Dasar ======
       case 'getSubunsurData':
         return new Response(JSON.stringify(SUBUNSUR_DATA), { status: 200, headers: { 'Content-Type': 'application/json' } });
       case 'verifyAccess':
@@ -65,7 +68,7 @@ export const onRequest = async ({ request, env }) => {
       case 'verifyDelete':
         return new Response(JSON.stringify({ status: params.password === DELETE_PASSWORD ? 'success' : 'error', message: params.password === DELETE_PASSWORD ? 'Password hapus benar' : 'Password hapus salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       
-      // Data OPD
+      // ====== Data OPD ======
       case 'getData': {
         const { data, error } = await supabase.from('opd_data').select('*').eq('year', year);
         if (error) throw error;
@@ -73,7 +76,6 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify(mapped), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
-      // Tambah OPD (Pengaman agar tidak error "Aksi tidak dikenal")
       case 'addOpd': {
         const { id, opd, sa, evidence, qaApip, mri, iepk, rtp, status, subunsurs } = params;
         const payload = { id: id || 'r' + Math.random().toString(36).slice(2,9), opd: opd || 'OPD Baru', sa: parseFloat(sa) || 0, evidence: evidence || 'Belum', qa_apip: qaApip || 'Belum', mri: parseFloat(mri) || 0, iepk: parseFloat(iepk) || 0, rtp: rtp || 'Belum', status: status || 'Belum', subunsurs: subunsurs || {}, year };
@@ -104,7 +106,7 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
-      // Tahun
+      // ====== Tahun ======
       case 'getYears': {
         const { data } = await supabase.from('years').select('year');
         const years = data.map(x => x.year);
@@ -123,52 +125,29 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
-      // File (Upload/Delete) - Mode Supabase Storage (Paling Stabil)
+      // ====== File (Upload/Delete) ======
       case 'uploadFile': {
         const { filePath, bytes, fileType, fileName } = getFolderStructure(params);
-        
-        // ====== OPSI 1: UPLOAD KE SUPABASE STORAGE ======
         const { error } = await supabase.storage
           .from('KAWALSPIP')
           .upload(filePath, bytes, { contentType: fileType, upsert: true });
         if (error) throw new Error(error.message);
         const { data } = supabase.storage.from('KAWALSPIP').getPublicUrl(filePath);
         return new Response(JSON.stringify({ url: data.publicUrl, fileName }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        
-        /* 
-        // ====== OPSI 2: UPLOAD KE CLOUDFLARE R2 (Aktifkan jika sudah membuat Binding R2) ======
-        // Ganti URL_PUBLIK_R2 dengan URL Publik dari Bucket R2 Anda
-        await env.EVIDENCE_BUCKET.put(filePath, bytes, { httpMetadata: { contentType: fileType } });
-        const publicUrl = `https://pub-xxxxxxxxxxxxxxxxxxx.r2.dev/${filePath}`; // GANTI INI
-        return new Response(JSON.stringify({ url: publicUrl, fileName }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        */
       }
       
       case 'deleteFile': {
         const cleanUrl = params.fileUrl.split('?')[0];
-        
-        // ====== OPSI 1: HAPUS DARI SUPABASE STORAGE ======
         const marker = '/object/public/KAWALSPIP/';
         const idx = cleanUrl.indexOf(marker);
         if (idx !== -1) {
           const filePath = decodeURIComponent(cleanUrl.substring(idx + marker.length));
           await supabase.storage.from('KAWALSPIP').remove([filePath]);
         }
-        
-        /* 
-        // ====== OPSI 2: HAPUS DARI CLOUDFLARE R2 ======
-        const markerR2 = 'r2.dev/';
-        const idxR2 = cleanUrl.indexOf(markerR2);
-        if (idxR2 !== -1) {
-          const filePathR2 = decodeURIComponent(cleanUrl.substring(idxR2 + markerR2.length));
-          await env.EVIDENCE_BUCKET.delete(filePathR2);
-        }
-        */
-
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
-      // Fitur Backup (Placeholder agar tidak error)
+      // ====== FITUR BACKUP (PENTING AGAR TIDAK ERROR) ======
       case 'listBackups':
         return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } });
       case 'createBackup':
