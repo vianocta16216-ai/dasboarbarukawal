@@ -2366,21 +2366,15 @@ function showChart(type) {
   canvas.parentElement.style.overflowX = 'hidden';
 
   // Jika line chart, atur lebar & tinggi agar semua OPD terlihat dan bisa di-scroll
-      let chartWidth = 800;
-  let chartHeight = 400;
-  let maxLabelLength = 0; // PENTING: Dideklarasikan di sini agar bisa diakses di bawah
+        let chartWidth = 800;
+  let chartHeight = 1000; // TINGGI TETAP 1000px (Sangat besar agar tidak pernah terpotong)
   
   if (isLineChart) {
-      // Hitung panjang nama OPD TERPANJANG
-      labels.forEach(label => {
-          if (label && label.length > maxLabelLength) maxLabelLength = label.length;
-      });
-
-      // Lebar mengikuti jumlah OPD
-      chartWidth = Math.max(labels.length * 60, 800); 
+      // Lebar mengikuti jumlah OPD agar tidak menumpuk
+      chartWidth = Math.max(labels.length * 80, 800); 
       
-      // TINGGI OTOMATIS: Panjang teks * 12px + 300px ruang ekstra di bawah
-      chartHeight = Math.max(maxLabelLength * 12 + 300, 600); 
+      // Tinggi TETAP 1000px
+      chartHeight = 1000; 
       
       canvas.style.width = chartWidth + 'px';
       canvas.style.height = chartHeight + 'px';
@@ -2421,7 +2415,7 @@ function showChart(type) {
       
                   // Padding OTOMATIS sesuai panjang label, HANYA untuk Line Chart, 0 untuk Pie Chart
       // Sudah aman karena maxLabelLength sekarang dideklarasikan di luar if
-      layout: { padding: { bottom: isLineChart ? Math.max(maxLabelLength * 10, 150) : 0 } },
+      layout: { padding: { bottom: isLineChart ? 500 : 0 } }, // Padding bawah TETAP 500px
       
       plugins: {
         legend: { display: typeChart === 'pie' },
