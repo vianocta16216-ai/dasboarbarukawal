@@ -2732,12 +2732,16 @@ function renderFileList(row, subCode, paramId, level) {
     const ext = fileName.split('.').pop().toLowerCase();
     let displayUrl = fileUrl;
 
-    // GAMBAR: Langsung buka di tab baru (tidak download)
+    // 1. GAMBAR: Langsung buka di tab baru (tidak download)
     if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
        displayUrl = fileUrl;
     }
-    // PDF & OFFICE: Buka di Google Docs Viewer (Live View, tidak download)
-    else if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) {
+    // 2. EXCEL (XLS, XLSX): Gunakan Microsoft Office Viewer (PALING STABIL)
+    else if (['xls', 'xlsx'].includes(ext)) {
+       displayUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(fileUrl)}`;
+    }
+    // 3. PDF & WORD & POWERPOINT: Gunakan Google Docs Viewer
+    else if (['pdf', 'doc', 'docx', 'ppt', 'pptx'].includes(ext)) {
        displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
     }
 
