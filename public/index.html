@@ -3235,40 +3235,46 @@ document.getElementById('confirmBackupOk').addEventListener('click', async funct
   }
 });
 
-async function loadBackupList() {
-  const container = document.getElementById('backupListContainer');
-  const empty = document.getElementById('backupEmpty');
-  const year = currentYear;
-  try {
-    const backups = await callServer('listBackups', { year });
-    if (!backups || backups.length === 0) {
-      container.innerHTML = '';
-      empty.style.display = 'block';
-      return;
+    async function loadBackupList() {
+      const container = document.getElementById('backupListContainer');
+      const empty = document.getElementById('backupEmpty');
+      const year = currentYear;
+      try {
+        const backups = await callServer('listBackups', { year });
+        // Pengaman: pastikan backups adalah array
+        if (!Array.isArray(backups) || backups.length === 0) {
+          container.innerHTML = '';
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+        container.innerHTML = '';
+        backups.forEach(backup => {
+          // Pengaman: pastikan backup bukan undefined/null
+          if (!backup) return;
+          
+          const div = document.createElement('div');
+          div.className = 'backup-item';
+          // Escape fileName untuk mencegah error jika ada karakter aneh
+          const safeFileName = backup.fileName ? backup.fileName.replace(/'/g, "\\'") : '';
+          div.innerHTML = `
+            <span class="backup-info">
+              <strong>${backup.timestamp || 'Tanggal tidak valid'}</strong><br>
+              <small>${backup.size || 0} KB · ${backup.count || 0} OPD</small>
+            </span>
+            <div class="backup-actions">
+              <button class="restore-btn" onclick="restoreBackup('${safeFileName}', '${year}')">🔄 Pulihkan</button>
+              <button class="delete-btn" onclick="openConfirmDeleteBackup('${safeFileName}', '${year}')">🗑️</button>
+            </div>
+          `;
+          container.appendChild(div);
+        });
+      } catch (e) {
+        console.error('Gagal load backup:', e);
+        container.innerHTML = '<div style="color:red; text-align:center; padding:20px;">Gagal memuat daftar backup: ' + (e.message || 'Error tidak diketahui') + '</div>';
+        empty.style.display = 'none';
+      }
     }
-    empty.style.display = 'none';
-    container.innerHTML = '';
-    backups.forEach(backup => {
-      const div = document.createElement('div');
-      div.className = 'backup-item';
-      div.innerHTML = `
-        <span class="backup-info">
-          <strong>${backup.timestamp}</strong><br>
-          <small>${backup.size} KB · ${backup.count} OPD</small>
-        </span>
-        <div class="backup-actions">
-          <button class="restore-btn" onclick="restoreBackup('${backup.fileName}', '${year}')">🔄 Pulihkan</button>
-          <button class="delete-btn" onclick="openConfirmDeleteBackup('${backup.fileName}', '${year}')">🗑️</button>
-        </div>
-      `;
-      container.appendChild(div);
-    });
-  } catch (e) {
-    console.error('Gagal load backup:', e);
-    container.innerHTML = '<div style="color:red; text-align:center; padding:20px;">Gagal memuat daftar backup: ' + e.message + '</div>';
-    empty.style.display = 'none';
-  }
-}
 
 function restoreBackup(fileName, year) {
   backupToRestore = { fileName, year };
