@@ -1965,6 +1965,17 @@ async function loadData() {
         mri: r.mri || 0,
         iepk: r.iepk || 0
       }));
+      
+      // ====== PERBAIKAN: URUTKAN TABEL BERDASARKAN MRI & IEPK TERTINGGI KE TERENDAH ======
+      rows.sort((a, b) => {
+        let mriA = parseFloat(a.mri) || 0;
+        let mriB = parseFloat(b.mri) || 0;
+        if (mriB !== mriA) return mriB - mriA;
+        let iepkA = parseFloat(a.iepk) || 0;
+        let iepkB = parseFloat(b.iepk) || 0;
+        return iepkB - iepkA;
+      });
+      
     } else {
       console.warn('Data bukan array, rows diset kosong', data);
     }
@@ -2311,8 +2322,16 @@ function showChart(type) {
   const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
   
   if (isLineChart) {
-    labels = rows.map(r => r.opd);
-    data = rows.map(r => {
+    // ====== PERBAIKAN: URUTKAN GRAFIK DARI NILAI TERENDAH KE TERTINGGI (KIRI KE KANAN) ======
+    let chartData = [...rows];
+    if (type === 'rataMRI') {
+        chartData.sort((a, b) => (parseFloat(a.mri) || 0) - (parseFloat(b.mri) || 0));
+    } else if (type === 'rataIEPK') {
+        chartData.sort((a, b) => (parseFloat(a.iepk) || 0) - (parseFloat(b.iepk) || 0));
+    }
+    
+    labels = chartData.map(r => r.opd);
+    data = chartData.map(r => {
       if (type === 'rataRata') return parseFloat(r.sa) || 0;
       if (type === 'rataMRI') return parseFloat(r.mri) || 0;
       if (type === 'rataIEPK') return parseFloat(r.iepk) || 0;
