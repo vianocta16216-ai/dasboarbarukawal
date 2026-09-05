@@ -1581,25 +1581,6 @@ input[type="file"]:hover {
 </style>
 </head>
 <body>
-<!-- Password Lock (Hanya Input, Verifikasi di Backend) -->
-<div id="passwordOverlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:99999; display:flex; justify-content:center; align-items:center;">
-  <div style="background:#ffffff; padding:40px; border-radius:20px; max-width:420px; width:90%; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,0.3);">
-    <div style="font-size:50px; margin-bottom:10px;">🔒</div>
-    <h2 style="margin-bottom:10px; color:#0f172a; font-size:24px;">Akses Terkunci</h2>
-    <p style="margin-bottom:24px; color:#64748b; font-size:14px;">Masukkan password untuk masuk ke dashboard SPIP</p>
-    <div style="position:relative; margin-bottom:10px;">
-        <input type="password" id="accessPassword" placeholder="Password" style="width:100%; padding:12px 40px 12px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;">
-        <span id="toggleAccessPassword" class="eye-icon" style="position:absolute; right:12px; top:50%; transform:translateY(-50%);">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-            <circle cx="12" cy="12" r="3"/>
-          </svg>
-        </span>
-    </div>
-    <div id="accessError" style="display:none; background:#fee2e2; color:#dc2626; padding:12px; border-radius:8px; margin-bottom:12px; font-size:13px; font-weight:500;"></div>
-    <button id="btnAccess" style="width:100%; padding:14px; background:var(--primary); color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; font-size:14px;">Masuk</button>
-  </div>
-</div>
 
 <!-- Loading Overlay -->
 <div id="loadingOverlay">
@@ -1882,7 +1863,18 @@ input[type="file"]:hover {
     </div>
   </div>
 </div>
-
+<!-- Overlay Akses Daftar OPD -->
+<div id="opdAccessOverlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:99999; display:none; justify-content:center; align-items:center;">
+  <div style="background:#ffffff; padding:40px; border-radius:20px; max-width:420px; width:90%; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,0.3);">
+    <div style="font-size:50px; margin-bottom:10px;">🔒</div>
+    <h2 style="margin-bottom:10px; color:#0f172a; font-size:24px;">Akses Daftar OPD Terkunci</h2>
+    <p style="margin-bottom:24px; color:#64748b; font-size:14px;">Masukkan password untuk mengelola data OPD</p>
+    <input type="password" id="opdAccessPassword" placeholder="Password Daftar OPD" style="width:100%; padding:12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px; margin-bottom:12px; outline:none;">
+    <div id="opdAccessError" style="display:none; background:#fee2e2; color:#dc2626; padding:12px; border-radius:8px; margin-bottom:12px; font-size:13px; font-weight:500;"></div>
+    <button id="btnOpdAccess" style="width:100%; padding:14px; background:var(--primary); color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; font-size:14px;">Masuk</button>
+    <button id="btnOpdAccessCancel" style="width:100%; padding:10px; background:#f1f5f9; color:#334155; border:none; border-radius:8px; cursor:pointer; font-weight:600; font-size:14px; margin-top:10px;">Batal</button>
+  </div>
+</div>
 <script>
 // ====== STATUS GLOBAL ======
 let rows = [];
@@ -1956,6 +1948,8 @@ async function verifyDelete(password) {
 }
 
 // ====== NAVIGASI VIEW ======
+let opdUnlocked = false; // Status akses Daftar OPD
+
 function showDashboard() {
   document.getElementById('dashboardView').classList.remove('hidden');
   document.getElementById('opdListView').classList.add('hidden');
@@ -1968,6 +1962,12 @@ function showDashboard() {
 }
 
 function showOpdList() {
+  // Jika belum dibuka, tampilkan overlay password
+  if (!opdUnlocked) {
+    document.getElementById('opdAccessOverlay').style.display = 'flex';
+    return;
+  }
+  // Jika sudah dibuka, langsung tampilkan list
   document.getElementById('dashboardView').classList.add('hidden');
   document.getElementById('opdListView').classList.remove('hidden');
   document.getElementById('btnDashboardNav').style.display = 'inline-block';
@@ -1977,6 +1977,30 @@ function showOpdList() {
   document.getElementById('btnClear').style.display = 'inline-block';
   render();
 }
+
+// ====== PASSWORD DAFTAR OPD ======
+document.getElementById('btnOpdAccess').addEventListener('click', async function() {
+  const password = document.getElementById('opdAccessPassword').value.trim();
+  const errorDiv = document.getElementById('opdAccessError');
+  // Panggil verifikasi ke backend
+  const valid = await verifyAccess(password); // Fungsi verifyAccess sudah ada di kode asli
+  if (valid) {
+    opdUnlocked = true;
+    document.getElementById('opdAccessOverlay').style.display = 'none';
+    showOpdList();
+  } else {
+    errorDiv.textContent = '❌ Password salah!';
+    errorDiv.style.display = 'block';
+    errorDiv.style.background = '#fee2e2';
+    errorDiv.style.color = '#dc2626';
+  }
+});
+
+document.getElementById('opdAccessPassword').addEventListener('keyup', (e) => { if (e.key === 'Enter') document.getElementById('btnOpdAccess').click(); });
+document.getElementById('btnOpdAccessCancel').addEventListener('click', function() {
+  document.getElementById('opdAccessOverlay').style.display = 'none';
+  showDashboard(); // Kembali ke dashboard jika batal
+});
 
 // ====== LOAD TAHUN ======
 async function loadYears() {
@@ -2608,91 +2632,24 @@ document.getElementById('kpiChartClose').addEventListener('click', function() {
     chartInstance = null;
   }
 });
-// ====== PASSWORD ======
-document.addEventListener('DOMContentLoaded', function() {
-  const btnAccess = document.getElementById('btnAccess');
-  const accessPasswordInput = document.getElementById('accessPassword');
-  const accessError = document.getElementById('accessError');
-  const passwordOverlay = document.getElementById('passwordOverlay');
-  const toggleAccessPassword = document.getElementById('toggleAccessPassword');
-  const loadingOverlay = document.getElementById('loadingOverlay');
-  const loadingFill = document.getElementById('loadingFill');
-  const loadingPercent = document.getElementById('loadingPercent');
-
-  function showLoading() {
-    loadingOverlay.classList.add('active');
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress = Math.min(100, progress + Math.random() * 10 + 5);
-      loadingFill.style.width = progress + '%';
-      loadingPercent.textContent = Math.round(progress) + '%';
-      if (progress >= 100) {
-        clearInterval(interval);
-        setTimeout(() => {
-          loadingOverlay.classList.remove('active');
-        }, 500);
-      }
-    }, 200);
-  }
-
-  function checkAccess() {
-    const inputPass = accessPasswordInput.value.trim();
-    verifyAccess(inputPass).then(valid => {
-      if (valid) {
-        accessError.style.display = 'block';
-        accessError.style.background = '#dcfce7';
-        accessError.style.color = '#16a34a';
-        accessError.textContent = '✅ Akses diterima. Memuat dashboard...';
-        setTimeout(async function() {
-          passwordOverlay.style.display = 'none';
-          showLoading();
-          try {
-            SUBUNSUR_DATA = await callServer('getSubunsurData');
-            PARAM_LIST = [];
-            Object.keys(SUBUNSUR_DATA).forEach(subCode => {
-              SUBUNSUR_DATA[subCode].params.forEach(param => {
-                PARAM_LIST.push({ subCode: subCode, paramId: param.id, desc: param.desc, levels: param.levels });
-              });
-            });
-            await loadYears();
-            await loadData();
-            // PERUBAHAN: Setelah login sukses, langsung tampilkan dashboard
-            showDashboard();
-          } catch (e) {
-            console.error('Gagal memuat data awal:', e);
-            alert('Terjadi kesalahan saat memuat data: ' + e.message);
-          }
-        }, 500);
-      } else {
-        accessError.style.display = 'block';
-        accessError.style.background = '#fee2e2';
-        accessError.style.color = '#dc2626';
-        accessError.textContent = '❌ Password salah! Coba lagi.';
-        accessPasswordInput.value = '';
-      }
-    }).catch(err => {
-      accessError.style.display = 'block';
-      accessError.style.background = '#fee2e2';
-      accessError.style.color = '#dc2626';
-      accessError.textContent = '❌ ' + err.message;
+// ====== INISIALISASI AWAL (LANGSUNG KE DASHBOARD) ======
+(async function init() {
+  try {
+    SUBUNSUR_DATA = await callServer('getSubunsurData');
+    PARAM_LIST = [];
+    Object.keys(SUBUNSUR_DATA).forEach(subCode => {
+      SUBUNSUR_DATA[subCode].params.forEach(param => {
+        PARAM_LIST.push({ subCode: subCode, paramId: param.id, desc: param.desc, levels: param.levels });
+      });
     });
+    await loadYears();
+    await loadData();
+    showDashboard(); // Tampilkan Dashboard tanpa password
+  } catch (e) {
+    console.error('Inisialisasi gagal:', e);
+    document.getElementById('saveStatus').textContent = '⚠️ ' + e.message;
   }
-
-  btnAccess.addEventListener('click', checkAccess);
-  accessPasswordInput.addEventListener('keyup', function(event) {
-    if (event.key === 'Enter') checkAccess();
-  });
-
-  toggleAccessPassword.addEventListener('click', function() {
-    if (accessPasswordInput.type === 'password') {
-      accessPasswordInput.type = 'text';
-      toggleAccessPassword.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-    } else {
-      accessPasswordInput.type = 'password';
-      toggleAccessPassword.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-    }
-  });
-});
+})();
 
 // ====== EVENT NAVIGASI ======
 document.getElementById('btnOpdListNav').addEventListener('click', showOpdList);
