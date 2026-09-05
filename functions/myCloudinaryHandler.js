@@ -34,6 +34,7 @@ function calculateSAFromSubunsur(subunsurs) {
 }
 
 export const onRequest = async ({ request, env }) => {
+  // KEAMANAN: Password HANYA diambil dari Environment Variable di Cloudflare, tidak pernah ada di kode klien
   const ACCESS_PASSWORD = env.ACCESS_PASSWORD;
   const DELETE_PASSWORD = env.DELETE_PASSWORD;
 
@@ -86,14 +87,16 @@ export const onRequest = async ({ request, env }) => {
     switch (action) {
       case 'getSubunsurData':
         return new Response(JSON.stringify(SUBUNSUR_DATA), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        
+      // KEAMANAN: Verifikasi password hanya di sini (server side)
       case 'verifyAccess':
         return new Response(JSON.stringify({ status: params.password === ACCESS_PASSWORD ? 'success' : 'error', message: params.password === ACCESS_PASSWORD ? 'Akses diterima' : 'Password salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        
       case 'verifyDelete':
         return new Response(JSON.stringify({ status: params.password === DELETE_PASSWORD ? 'success' : 'error', message: params.password === DELETE_PASSWORD ? 'Password hapus benar' : 'Password hapus salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       
       // ====== DATABASE CLOUDFLARE D1 ======
       case 'getData': {
-        // PERBAIKAN: Tambahkan ORDER BY untuk mengurutkan berdasarkan MRI lalu IEPK secara menurun
         const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ? ORDER BY CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
         const mapped = results.map(r => {
             const subunsurs = r.subunsurs ? JSON.parse(r.subunsurs) : {};
@@ -180,7 +183,7 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
-      // ====== FITUR BACKUP (PERBAIKAN) ======
+      // ====== FITUR BACKUP ======
       case 'listBackups': {
         const prefix = `backup_${year}_`;
         let files;
