@@ -179,24 +179,32 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
-            // ====== FITUR BACKUP (PERBAIKAN) ======
-      case 'listBackups': {
+           case 'listBackups': {
         // Cari semua file di R2 dengan prefix backup_{year}_
         const prefix = `backup_${year}_`;
-        const files = await env.EVIDENCE_BUCKET.list({ prefix });
+        let files;
+        try {
+          files = await env.EVIDENCE_BUCKET.list({ prefix });
+        } catch (e) {
+          return new Response(JSON.stringify({ status: 'error', message: 'Gagal list bucket: ' + e.message }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
         
-        const backups = await Promise.all(files.objects.map(async obj => {
+        // Pengaman: pastikan files.objects ada
+        const fileList = files && files.objects ? files.objects : [];
+        
+        const backups = await Promise.all(fileList.map(async obj => {
+          // Pengaman jika obj undefined
+          if (!obj || !obj.key) return null;
+          
           const fileName = obj.key;
-          // Mengambil bagian timestamp dari nama file: backup_2027_2027-05-09_09-39-10.json
+          // Ambil timestamp dari nama file: backup_2027_2027-05-09_09-39-10.json
           const timestampStr = fileName.replace(prefix, '').replace('.json', '');
           
           // Parse timestamp format: 2027-05-09_09-39-10
-          // Ubah menjadi 2027-05-09T09:39:10 agar valid untuk JS Date
           const parts = timestampStr.split('_');
           const datePart = parts[0]; // 2027-05-09
-          const timePart = parts[1]; // 09-39-10
-          const formattedTime = timePart.replace(/-/g, ':'); // 09:39:10
-          const fullDateStr = `${datePart}T${formattedTime}`; // 2027-05-09T09:39:10
+          const timePart = parts[1] ? parts[1].replace(/-/g, ':') : '00:00:00'; // 09:39:10
+          const fullDateStr = `${datePart}T${timePart}`;
           
           const date = new Date(fullDateStr);
 
@@ -204,55 +212,30 @@ export const onRequest = async ({ request, env }) => {
           let count = 0;
           try {
             const file = await env.EVIDENCE_BUCKET.get(fileName);
-            const content = await file.text();
-            const data = JSON.parse(content);
-            if (Array.isArray(data)) {
-              count = data.length;
+            if (file) {
+              const content = await file.text();
+              const data = JSON.parse(content);
+              if (Array.isArray(data)) {
+                count = data.length;
+              }
             }
           } catch (e) {
-            count = 0; // Jika gagal baca, biarkan 0
+            count = 0;
           }
 
           return { 
             fileName, 
             timestamp: isNaN(date.getTime()) ? 'Tanggal tidak valid' : date.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }), 
-            size: Math.round(obj.size / 1024), // dalam KB
+            size: Math.round((obj.size || 0) / 1024), 
             count: count
           };
         }));
+        
+        // Filter hasil yang null
+        const validBackups = backups.filter(b => b !== null);
 
-        return new Response(JSON.stringify(backups), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify(validBackups), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
-
-      case 'createBackup': {
-        // Ambil semua data OPD untuk tahun tersebut
-        const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ?").bind(year).all();
-        
-        if (results.length === 0) {
-          return new Response(JSON.stringify({ status: 'error', message: 'Tidak ada data OPD untuk tahun ini!' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        }
-
-        // Format timestamp yang valid dan aman untuk file: 2027-05-09_09-39-10
-        const now = new Date();
-        const pad = (n) => n.toString().padStart(2, '0');
-        const timestamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-        
-        const fileName = `backup_${year}_${timestamp}.json`;
-        const data = JSON.stringify(results);
-
-        // Simpan ke R2
-        await env.EVIDENCE_BUCKET.put(fileName, data, { httpMetadata: { contentType: 'application/json' } });
-
-        return new Response(JSON.stringify({ status: 'success', message: 'Backup berhasil dibuat', fileName }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      }
-
-      case 'restoreBackup': {
-        const { fileName } = params;
-        const file = await env.EVIDENCE_BUCKET.get(fileName);
-        
-        if (!file) {
-          return new Response(JSON.stringify({ status: 'error', message: 'Backup tidak ditemukan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        }
 
         const data = JSON.parse(await file.text());
         
