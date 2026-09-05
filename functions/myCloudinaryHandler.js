@@ -8,35 +8,28 @@ const UNSUR_MAP = {
   '5': '5. EVALUASI DAN PEMANTAUAN'
 };
 
-// Pemetaan nama field dari Frontend (camelCase) ke Database (snake_case)
 const FIELD_MAP = {
   qaApip: 'qa_apip'
 };
 
-// Fungsi bantu untuk menghitung SA (Self Assessment) dari subunsur
 function calculateSAFromSubunsur(subunsurs) {
     if (!subunsurs) return 0;
     let totalLevel = 0;
     let totalParams = 0;
     
-    // Hitung TOTAL SEMUA PARAMETER (otomatis 43 karena looping data)
     Object.keys(SUBUNSUR_DATA).forEach(subCode => {
         if (SUBUNSUR_DATA[subCode].params) {
             totalParams += SUBUNSUR_DATA[subCode].params.length;
         }
     });
     
-    // Jumlahkan semua level yang ada
     Object.keys(subunsurs).forEach(subCode => {
         Object.keys(subunsurs[subCode]).forEach(paramId => {
             const level = subunsurs[subCode][paramId].level;
-            if (level > 0) {
-                totalLevel += level;
-            }
+            if (level > 0) totalLevel += level;
         });
     });
     
-    // Rumus: Total Level / 43 (Total Semua Parameter)
     return totalParams > 0 ? Math.round((totalLevel / totalParams) * 100) / 100 : 0;
 }
 
@@ -61,7 +54,6 @@ export const onRequest = async ({ request, env }) => {
 
   const year = params.year || '2026';
 
-  // Ganti Buffer dengan Uint8Array + atob (hemat CPU)
   function getFolderStructure(params) {
     const { fileData, fileName, opdName, subunsur, paramId, level, fileType } = params;
     
@@ -72,7 +64,6 @@ export const onRequest = async ({ request, env }) => {
         bytes[i] = binaryString.charCodeAt(i);
     }
     
-    // UBAH BATASAN MENJADI 10MB
     if (bytes.length / 1024 / 1024 > 10) throw new Error('File > 10MB, terlalu besar!');
 
     const unsurKey = subunsur.split('.')[0];
@@ -134,7 +125,6 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success', message: 'Data tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       
-      // ====== PERBAIKAN UTAMA DI SINI ======
       case 'saveField': {
         const { opdId, field, value } = params;
         const dbField = FIELD_MAP[field] || field;
@@ -189,15 +179,76 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
-      // ====== FITUR BACKUP ======
-      case 'listBackups':
-        return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      case 'createBackup':
-        return new Response(JSON.stringify({ status: 'success', message: 'Backup tidak tersedia di konfigurasi ini' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      case 'restoreBackup':
-        return new Response(JSON.stringify({ status: 'error', message: 'Backup tidak tersedia' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      case 'deleteBackup':
+      // ====== FITUR BACKUP (PERBAIKAN UTAMA) ======
+      case 'listBackups': {
+        // Cari semua file di R2 dengan prefix backup_{year}_
+        const prefix = `backup_${year}_`;
+        const files = await env.EVIDENCE_BUCKET.list({ prefix });
+        
+        const backups = files.objects.map(obj => {
+          const fileName = obj.key;
+          const timestamp = fileName.replace(prefix, '').replace('.json', '');
+          // Format timestamp yang lebih mudah dibaca, misal: 2026-05-09 12:30
+          const date = new Date(timestamp);
+          return { 
+            fileName, 
+            timestamp: date.toLocaleString('id-ID'), 
+            size: Math.round(obj.size / 1024), // dalam KB
+            count: 0 // Kita akan isi count saat restore atau ambil dari file
+          };
+        });
+
+        return new Response(JSON.stringify(backups), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      case 'createBackup': {
+        // Ambil semua data OPD untuk tahun tersebut
+        const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ?").bind(year).all();
+        
+        if (results.length === 0) {
+          return new Response(JSON.stringify({ status: 'error', message: 'Tidak ada data OPD untuk tahun ini!' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19); // Format aman untuk filename
+        const fileName = `backup_${year}_${timestamp}.json`;
+        const data = JSON.stringify(results);
+
+        // Simpan ke R2
+        await env.EVIDENCE_BUCKET.put(`backup_${year}_${timestamp}.json`, data, { httpMetadata: { contentType: 'application/json' } });
+
+        return new Response(JSON.stringify({ status: 'success', message: 'Backup berhasil dibuat', fileName }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      case 'restoreBackup': {
+        const { fileName } = params;
+        const file = await env.EVIDENCE_BUCKET.get(fileName);
+        
+        if (!file) {
+          return new Response(JSON.stringify({ status: 'error', message: 'Backup tidak ditemukan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        const data = JSON.parse(await file.text());
+        
+        // Hapus data lama untuk tahun tersebut
+        await env.DB.prepare("DELETE FROM opd_data WHERE year = ?").bind(year).run();
+
+        // Masukkan kembali data dari backup
+        for (const row of data) {
+          const subunsurs = row.subunsurs ? JSON.parse(row.subunsurs) : {};
+          const sa = calculateSAFromSubunsur(subunsurs);
+
+          await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(row.id, row.opd||'', sa, row.evidence||'Belum', row.qa_apip || row.qaApip || 'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year).run();
+        }
+
+        return new Response(JSON.stringify({ status: 'success', message: 'Data berhasil dipulihkan dari backup' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      case 'deleteBackup': {
+        const { fileName } = params;
+        await env.EVIDENCE_BUCKET.delete(fileName);
         return new Response(JSON.stringify({ status: 'success', message: 'Backup dihapus' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
 
       default:
         return new Response(JSON.stringify({ status: 'error', message: 'Aksi tidak dikenal: ' + action }), { status: 200, headers: { 'Content-Type': 'application/json' } });
