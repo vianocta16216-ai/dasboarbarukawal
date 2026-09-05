@@ -3235,20 +3235,23 @@ document.getElementById('confirmBackupOk').addEventListener('click', async funct
   }
 });
 
-    async function loadBackupList() {
+        async function loadBackupList() {
       const container = document.getElementById('backupListContainer');
       const empty = document.getElementById('backupEmpty');
       const year = currentYear;
       try {
         const backups = await callServer('listBackups', { year });
+        
         // Pengaman: pastikan backups adalah array
         if (!Array.isArray(backups) || backups.length === 0) {
           container.innerHTML = '';
           empty.style.display = 'block';
           return;
         }
+        
         empty.style.display = 'none';
         container.innerHTML = '';
+        
         backups.forEach(backup => {
           // Pengaman: pastikan backup bukan undefined/null
           if (!backup) return;
@@ -3257,6 +3260,7 @@ document.getElementById('confirmBackupOk').addEventListener('click', async funct
           div.className = 'backup-item';
           // Escape fileName untuk mencegah error jika ada karakter aneh
           const safeFileName = backup.fileName ? backup.fileName.replace(/'/g, "\\'") : '';
+          
           div.innerHTML = `
             <span class="backup-info">
               <strong>${backup.timestamp || 'Tanggal tidak valid'}</strong><br>
