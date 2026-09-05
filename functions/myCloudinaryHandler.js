@@ -93,7 +93,8 @@ export const onRequest = async ({ request, env }) => {
       
       // ====== DATABASE CLOUDFLARE D1 ======
       case 'getData': {
-        const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ?").bind(year).all();
+        // PERBAIKAN: Tambahkan ORDER BY untuk mengurutkan berdasarkan MRI lalu IEPK secara menurun
+        const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ? ORDER BY CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
         const mapped = results.map(r => {
             const subunsurs = r.subunsurs ? JSON.parse(r.subunsurs) : {};
             const sa = calculateSAFromSubunsur(subunsurs);
