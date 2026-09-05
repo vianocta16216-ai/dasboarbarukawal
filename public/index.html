@@ -52,6 +52,113 @@ body {
   display: none !important;
 }
 
+/* ===== LOADING OVERLAY ===== */
+#loadingOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  transition: opacity 0.5s ease;
+}
+
+#loadingOverlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.loading-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 40px 48px;
+  text-align: center;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  max-width: 420px;
+  width: 90%;
+}
+
+.loading-logo {
+  font-size: 64px;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+}
+
+.loading-card h2 {
+  color: #ffffff;
+  font-size: 28px;
+  font-weight: 800;
+  margin: 0 0 8px;
+  letter-spacing: -0.5px;
+  text-shadow: 0 4px 10px rgba(0,0,0,0.2);
+}
+
+.loading-card p {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+  margin: 0 0 28px;
+}
+
+.loading-progress {
+  width: 100%;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.loading-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #60a5fa, #3b82f6, #8b5cf6);
+  border-radius: 20px;
+  width: 0%;
+  transition: width 0.2s;
+}
+
+.loading-wave {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  animation: waveMove 1.5s infinite linear;
+  border-radius: 20px;
+}
+
+@keyframes waveMove {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(300%); }
+}
+
+.loading-percent {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 14px;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.loading-status {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  margin-top: 8px;
+  font-style: italic;
+}
+
 /* ===== HEADER / TOPBAR ===== */
 .topbar {
   background: var(--header-gradient);
@@ -132,7 +239,7 @@ button.danger {
 }
 
 button.danger:hover {
-  background: rgba(220, 38, 38, 0.3);
+  background: rgba(220,  38, 38, 0.3);
   color: #ffffff;
 }
 
@@ -1486,87 +1593,6 @@ input[type="file"]:hover {
   background: var(--primary);
 }
 
-#loadingOverlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
-  z-index: 2000;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-direction: column;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.3s;
-}
-#loadingOverlay.active {
-  opacity: 1;
-  visibility: visible;
-}
-.loading-card {
-  background: rgba(255,255,255,0.1);
-  border-radius: 20px;
-  padding: 30px;
-  text-align: center;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-  backdrop-filter: blur(8px);
-}
-.loading-card h2 {
-  color: #ffffff;
-  margin-bottom: 10px;
-  font-size: 28px;
-  font-weight: 700;
-}
-.loading-card p {
-  color: rgba(255,255,255,0.8);
-  margin-bottom: 24px;
-  font-size: 14px;
-}
-.loading-progress {
-  width: 300px;
-  height: 40px;
-  background: rgba(255,255,255,0.2);
-  border-radius: 20px;
-  overflow: hidden;
-  position: relative;
-  margin-bottom: 20px;
-}
-.loading-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #60a5fa, #3b82f6, #8b5cf6);
-  border-radius: 20px;
-  width: 0%;
-  transition: width 0.3s;
-}
-.loading-wave {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  width: 200%;
-  height: 100%;
-  background: rgba(255,255,255,0.3);
-  animation: waveMove 2s linear infinite;
-  border-radius: 40px;
-  overflow: hidden;
-}
-@keyframes waveMove {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-.loading-percent {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  color: #ffffff;
-  font-weight: 700;
-  font-size: 18px;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-}
-
 .save-indicator {
   display: inline-block;
   margin-left: 6px;
@@ -1590,13 +1616,15 @@ input[type="file"]:hover {
 <!-- Loading Overlay -->
 <div id="loadingOverlay">
   <div class="loading-card">
-    <h2>⏳ Memuat Data</h2>
-    <p>Sedang menyiapkan dashboard untuk Anda...</p>
+    <div class="loading-logo">📊</div>
+    <h2>KAWAL SPIP</h2>
+    <p>Memuat data maturitas SPIP...</p>
     <div class="loading-progress">
       <div class="loading-progress-fill" id="loadingFill"></div>
       <div class="loading-wave"></div>
       <div class="loading-percent" id="loadingPercent">0%</div>
     </div>
+    <div class="loading-status" id="loadingStatus">Mempersiapkan dashboard...</div>
   </div>
 </div>
 
