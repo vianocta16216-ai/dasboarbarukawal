@@ -137,6 +137,32 @@ button:disabled {
   transform: none !important;
 }
 
+/* ===== TOMBOL NAVIGASI MODERN GRADIENT ===== */
+.nav-btn {
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  color: #fff;
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3);
+}
+
+.nav-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(59, 130, 246, 0.4);
+  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+}
+
+.nav-btn.light {
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+}
+
 /* ===== KPI CARDS ===== */
 .kpi-grid {
   display: grid;
@@ -1555,7 +1581,7 @@ input[type="file"]:hover {
 </style>
 </head>
 <body>
-<!-- Password Lock -->
+<!-- Password Lock (Hanya Input, Verifikasi di Backend) -->
 <div id="passwordOverlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:99999; display:flex; justify-content:center; align-items:center;">
   <div style="background:#ffffff; padding:40px; border-radius:20px; max-width:420px; width:90%; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,0.3);">
     <div style="font-size:50px; margin-bottom:10px;">🔒</div>
@@ -1594,82 +1620,92 @@ input[type="file"]:hover {
     <div><h1>📊 KAWAL SPIP</h1><p class="sub">Pemantauan maturitas SPIP Terintegrasi Seluruh OPD · Kabupaten Mahakam Ulu</p></div>
   </div>
   <div class="actions">
+    <!-- TOMBOL NAVIGASI MODERN GRADIENT -->
+    <button id="btnDashboardNav" class="nav-btn light" style="display: none;">📈 Dashboard</button>
+    <button id="btnOpdListNav" class="nav-btn">🏢 Daftar OPD</button>
+    
     <label style="color:#ffffff; font-size:14px; display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.1); padding:8px 12px; border-radius:10px;">
       <span>Tahun:</span>
       <select id="yearSelect" style="background:#ffffff; border:none; padding:8px; border-radius:6px; font-size:14px; color:#0f172a;"></select>
       <button id="btnDeleteYear" title="Hapus Tahun" style="background:rgba(220,38,38,0.3); color:#ffffff; padding:8px; border-radius:6px;">🗑️</button>
     </label>
     <button id="btnAddYear" style="background:rgba(37,99,235,0.7); color:#ffffff;">➕ Tambah Tahun</button>
-    <button id="btnAdd" class="primary">＋ Tambah OPD</button>
-    <button id="btnBackup" class="primary" style="background:rgba(255,255,255,0.2);">🔄 Riwayat Backup</button>
-    <button id="btnClear" class="danger">🗑️ Kosongkan</button>
+    <button id="btnAdd" class="primary" style="display: none;">＋ Tambah OPD</button>
+    <button id="btnBackup" class="primary" style="background:rgba(255,255,255,0.2); display: none;">🔄 Riwayat Backup</button>
+    <button id="btnClear" class="danger" style="display: none;">🗑️ Kosongkan</button>
   </div>
 </div>
 
-<!-- KPI Cards -->
-<div class="kpi-grid">
-  <div class="kpi" id="kpi-card-1" onclick="showChart('rataRata')">
-    <div class="kpi-header"><span class="kpi-label">Rata‑rata Level</span></div>
-    <div class="kpi-value" id="kpiRata">0.0</div>
-    <div class="kpi-bar"><div class="kpi-fill" id="kpiRataBar" style="width:0%"></div></div>
-    <div class="kpi-note" id="kpiRataNote">0 OPD</div>
-  </div>
-  <div class="kpi" id="kpi-card-2" onclick="showChart('opdLevel3')">
-    <div class="kpi-header"><span class="kpi-label">OPD Level ≥3</span></div>
-    <div class="kpi-value" id="kpiSelesai">0%</div>
-    <div class="kpi-bar"><div class="kpi-fill" id="kpiSelesaiBar" style="width:0%"></div></div>
-    <div class="kpi-note" id="kpiSelesaiNote">0 dari 0 OPD</div>
-  </div>
-  <div class="kpi" id="kpi-card-3" onclick="showChart('qaApip')">
-    <div class="kpi-header"><span class="kpi-label">QA APIP Selesai</span><span class="kpi-icon">✅</span></div>
-    <div class="kpi-value" id="kpiQaApip">0%</div>
-    <div class="kpi-bar"><div class="kpi-fill" id="kpiQaApipBar" style="width:0%"></div></div>
-    <div class="kpi-note" id="kpiQaApipNote">0 dari 0 OPD</div>
-  </div>
-  <div class="kpi" id="kpi-card-4" onclick="showChart('level2')">
-    <div class="kpi-header"><span class="kpi-label">Level ≤2</span></div>
-    <div class="kpi-value" id="kpiRendah">0%</div>
-    <div class="kpi-bar"><div class="kpi-fill" id="kpiRendahBar" style="width:0%"></div></div>
-    <div class="kpi-note" id="kpiRendahNote">0 OPD</div>
-  </div>
-  <div class="kpi" id="kpi-card-5" onclick="showChart('statusSelesai')">
-    <div class="kpi-header"><span class="kpi-label">OPD Selesai (Status)</span></div>
-    <div class="kpi-value" id="kpiStatusSelesai">0%</div>
-    <div class="kpi-bar"><div class="kpi-fill" id="kpiStatusSelesaiBar" style="width:0%"></div></div>
-    <div class="kpi-note" id="kpiStatusSelesaiNote">0 dari 0 OPD</div>
-  </div>
-  <div class="kpi" id="kpi-card-6" onclick="showChart('evidenceLengkap')">
-    <div class="kpi-header"><span class="kpi-label">Evidence Lengkap</span></div>
-    <div class="kpi-value" id="kpiEvidenceLengkap">0%</div>
-    <div class="kpi-bar"><div class="kpi-fill" id="kpiEvidenceLengkapBar" style="width:0%"></div></div>
-    <div class="kpi-note" id="kpiEvidenceLengkapNote">0 dari 0 OPD</div>
-  </div>
-  <div class="kpi" id="kpi-card-7" onclick="showChart('rataMRI')">
-    <div class="kpi-header"><span class="kpi-label">Rata‑rata MRI</span><span class="kpi-icon">📈</span></div>
-    <div class="kpi-value" id="kpiMRI">0.0</div>
-    <div class="kpi-bar"><div class="kpi-fill" id="kpiMRIBar" style="width:0%"></div></div>
-    <div class="kpi-note" id="kpiMRINote">0 OPD terisi</div>
-  </div>
-  <div class="kpi" id="kpi-card-8" onclick="showChart('rtpSelesai')">
-    <div class="kpi-header"><span class="kpi-label">RTP Selesai</span></div>
-    <div class="kpi-value" id="kpiRtpSelesai">0%</div>
-    <div class="kpi-bar"><div class="kpi-fill" id="kpiRtpSelesaiBar" style="width:0%"></div></div>
-    <div class="kpi-note" id="kpiRtpSelesaiNote">0 dari 0 OPD</div>
-  </div>
-  <div class="kpi" id="kpi-card-9" onclick="showChart('rataIEPK')">
-    <div class="kpi-header"><span class="kpi-label">Rata‑rata IEPK</span><span class="kpi-icon">📈</span></div>
-    <div class="kpi-value" id="kpiIEPK">0.0</div>
-    <div class="kpi-bar"><div class="kpi-fill" id="kpiIEPKBar" style="width:0%"></div></div>
-    <div class="kpi-note" id="kpiIEPKNote">0 OPD terisi</div>
+<!-- ===== VIEW: DASHBOARD (KPI) ===== -->
+<div id="dashboardView" class="view-section hidden">
+  <!-- KPI Cards -->
+  <div class="kpi-grid">
+    <div class="kpi" id="kpi-card-1" onclick="showChart('rataRata')">
+      <div class="kpi-header"><span class="kpi-label">Rata‑rata Level</span></div>
+      <div class="kpi-value" id="kpiRata">0.0</div>
+      <div class="kpi-bar"><div class="kpi-fill" id="kpiRataBar" style="width:0%"></div></div>
+      <div class="kpi-note" id="kpiRataNote">0 OPD</div>
+    </div>
+    <div class="kpi" id="kpi-card-2" onclick="showChart('opdLevel3')">
+      <div class="kpi-header"><span class="kpi-label">OPD Level ≥3</span></div>
+      <div class="kpi-value" id="kpiSelesai">0%</div>
+      <div class="kpi-bar"><div class="kpi-fill" id="kpiSelesaiBar" style="width:0%"></div></div>
+      <div class="kpi-note" id="kpiSelesaiNote">0 dari 0 OPD</div>
+    </div>
+    <div class="kpi" id="kpi-card-3" onclick="showChart('qaApip')">
+      <div class="kpi-header"><span class="kpi-label">QA APIP Selesai</span><span class="kpi-icon">✅</span></div>
+      <div class="kpi-value" id="kpiQaApip">0%</div>
+      <div class="kpi-bar"><div class="kpi-fill" id="kpiQaApipBar" style="width:0%"></div></div>
+      <div class="kpi-note" id="kpiQaApipNote">0 dari 0 OPD</div>
+    </div>
+    <div class="kpi" id="kpi-card-4" onclick="showChart('level2')">
+      <div class="kpi-header"><span class="kpi-label">Level ≤2</span></div>
+      <div class="kpi-value" id="kpiRendah">0%</div>
+      <div class="kpi-bar"><div class="kpi-fill" id="kpiRendahBar" style="width:0%"></div></div>
+      <div class="kpi-note" id="kpiRendahNote">0 OPD</div>
+    </div>
+    <div class="kpi" id="kpi-card-5" onclick="showChart('statusSelesai')">
+      <div class="kpi-header"><span class="kpi-label">OPD Selesai (Status)</span></div>
+      <div class="kpi-value" id="kpiStatusSelesai">0%</div>
+      <div class="kpi-bar"><div class="kpi-fill" id="kpiStatusSelesaiBar" style="width:0%"></div></div>
+      <div class="kpi-note" id="kpiStatusSelesaiNote">0 dari 0 OPD</div>
+    </div>
+    <div class="kpi" id="kpi-card-6" onclick="showChart('evidenceLengkap')">
+      <div class="kpi-header"><span class="kpi-label">Evidence Lengkap</span></div>
+      <div class="kpi-value" id="kpiEvidenceLengkap">0%</div>
+      <div class="kpi-bar"><div class="kpi-fill" id="kpiEvidenceLengkapBar" style="width:0%"></div></div>
+      <div class="kpi-note" id="kpiEvidenceLengkapNote">0 dari 0 OPD</div>
+    </div>
+    <div class="kpi" id="kpi-card-7" onclick="showChart('rataMRI')">
+      <div class="kpi-header"><span class="kpi-label">Rata‑rata MRI</span><span class="kpi-icon">📈</span></div>
+      <div class="kpi-value" id="kpiMRI">0.0</div>
+      <div class="kpi-bar"><div class="kpi-fill" id="kpiMRIBar" style="width:0%"></div></div>
+      <div class="kpi-note" id="kpiMRINote">0 OPD terisi</div>
+    </div>
+    <div class="kpi" id="kpi-card-8" onclick="showChart('rtpSelesai')">
+      <div class="kpi-header"><span class="kpi-label">RTP Selesai</span></div>
+      <div class="kpi-value" id="kpiRtpSelesai">0%</div>
+      <div class="kpi-bar"><div class="kpi-fill" id="kpiRtpSelesaiBar" style="width:0%"></div></div>
+      <div class="kpi-note" id="kpiRtpSelesaiNote">0 dari 0 OPD</div>
+    </div>
+    <div class="kpi" id="kpi-card-9" onclick="showChart('rataIEPK')">
+      <div class="kpi-header"><span class="kpi-label">Rata‑rata IEPK</span><span class="kpi-icon">📈</span></div>
+      <div class="kpi-value" id="kpiIEPK">0.0</div>
+      <div class="kpi-bar"><div class="kpi-fill" id="kpiIEPKBar" style="width:0%"></div></div>
+      <div class="kpi-note" id="kpiIEPKNote">0 OPD terisi</div>
+    </div>
   </div>
 </div>
 
-<!-- Panel Tabel -->
-<div class="panel">
-  <div class="panel-head"><h2>🏢 Daftar OPD - Tahun <span id="currentYearLabel">2026</span></h2><p class="status-msg" id="saveStatus"></p></div>
-  <p class="desc">Isi data langsung pada tabel. Klik tombol ✎ untuk mengedit 25 subunsur, evidence, dan upload file untuk masing‑masing level.</p>
-  <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:160px;">OPD</th><th style="width:80px;">SA</th><th style="min-width:130px;">Evidence</th><th style="min-width:130px;">QA APIP</th><th style="width:110px;">MRI</th><th style="width:110px;">IEPK</th><th style="min-width:120px;">RTP</th><th style="min-width:120px;">Status</th><th style="min-width:150px;">Kelengkapan</th><th style="width:60px;">Detail</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
-  <div class="empty-state" id="emptyState" style="display:none;">Belum ada OPD. Klik <strong>"Tambah OPD"</strong> untuk memulai.</div>
+<!-- ===== VIEW: DAFTAR OPD (FITUR LENGKAP) ===== -->
+<div id="opdListView" class="view-section hidden">
+  <!-- Panel Tabel -->
+  <div class="panel">
+    <div class="panel-head"><h2>🏢 Daftar OPD - Tahun <span id="currentYearLabel">2026</span></h2><p class="status-msg" id="saveStatus"></p></div>
+    <p class="desc">Isi data langsung pada tabel. Klik tombol ✎ untuk mengedit 25 subunsur, evidence, dan upload file untuk masing‑masing level.</p>
+    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:160px;">OPD</th><th style="width:80px;">SA</th><th style="min-width:130px;">Evidence</th><th style="min-width:130px;">QA APIP</th><th style="width:110px;">MRI</th><th style="width:110px;">IEPK</th><th style="min-width:120px;">RTP</th><th style="min-width:120px;">Status</th><th style="min-width:150px;">Kelengkapan</th><th style="width:60px;">Detail</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
+    <div class="empty-state" id="emptyState" style="display:none;">Belum ada OPD. Klik <strong>"Tambah OPD"</strong> untuk memulai.</div>
+  </div>
 </div>
 
 <!-- Modal Grafik KPI -->
@@ -1917,6 +1953,29 @@ async function verifyDelete(password) {
     console.error(e);
     return false;
   }
+}
+
+// ====== NAVIGASI VIEW ======
+function showDashboard() {
+  document.getElementById('dashboardView').classList.remove('hidden');
+  document.getElementById('opdListView').classList.add('hidden');
+  document.getElementById('btnDashboardNav').style.display = 'none';
+  document.getElementById('btnOpdListNav').style.display = 'inline-block';
+  document.getElementById('btnAdd').style.display = 'none';
+  document.getElementById('btnBackup').style.display = 'none';
+  document.getElementById('btnClear').style.display = 'none';
+  updateKpisLocal();
+}
+
+function showOpdList() {
+  document.getElementById('dashboardView').classList.add('hidden');
+  document.getElementById('opdListView').classList.remove('hidden');
+  document.getElementById('btnDashboardNav').style.display = 'inline-block';
+  document.getElementById('btnOpdListNav').style.display = 'none';
+  document.getElementById('btnAdd').style.display = 'inline-block';
+  document.getElementById('btnBackup').style.display = 'inline-block';
+  document.getElementById('btnClear').style.display = 'inline-block';
+  render();
 }
 
 // ====== LOAD TAHUN ======
@@ -2597,6 +2656,8 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             await loadYears();
             await loadData();
+            // PERUBAHAN: Setelah login sukses, langsung tampilkan dashboard
+            showDashboard();
           } catch (e) {
             console.error('Gagal memuat data awal:', e);
             alert('Terjadi kesalahan saat memuat data: ' + e.message);
@@ -2632,6 +2693,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 });
+
+// ====== EVENT NAVIGASI ======
+document.getElementById('btnOpdListNav').addEventListener('click', showOpdList);
+document.getElementById('btnDashboardNav').addEventListener('click', showDashboard);
 
 // ====== EVENT DELEGATION ======
 document.addEventListener('click', function(e) {
@@ -3448,6 +3513,8 @@ if (urlParams.get('access') === 'portal') {
       });
       await loadYears();
       await loadData();
+      // PERUBAHAN: Tampilkan dashboard jika akses portal
+      showDashboard();
     } catch (e) {
       console.error('Inisialisasi gagal:', e);
       document.getElementById('saveStatus').textContent = '⚠️ ' + e.message;
