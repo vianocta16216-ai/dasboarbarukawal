@@ -179,8 +179,8 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
-           case 'listBackups': {
-        // Cari semua file di R2 dengan prefix backup_{year}_
+      // ====== FITUR BACKUP (PERBAIKAN) ======
+      case 'listBackups': {
         const prefix = `backup_${year}_`;
         let files;
         try {
@@ -189,26 +189,21 @@ export const onRequest = async ({ request, env }) => {
           return new Response(JSON.stringify({ status: 'error', message: 'Gagal list bucket: ' + e.message }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
         
-        // Pengaman: pastikan files.objects ada
         const fileList = files && files.objects ? files.objects : [];
         
         const backups = await Promise.all(fileList.map(async obj => {
-          // Pengaman jika obj undefined
           if (!obj || !obj.key) return null;
           
           const fileName = obj.key;
-          // Ambil timestamp dari nama file: backup_2027_2027-05-09_09-39-10.json
           const timestampStr = fileName.replace(prefix, '').replace('.json', '');
           
-          // Parse timestamp format: 2027-05-09_09-39-10
           const parts = timestampStr.split('_');
-          const datePart = parts[0]; // 2027-05-09
-          const timePart = parts[1] ? parts[1].replace(/-/g, ':') : '00:00:00'; // 09:39:10
+          const datePart = parts[0];
+          const timePart = parts[1] ? parts[1].replace(/-/g, ':') : '00:00:00';
           const fullDateStr = `${datePart}T${timePart}`;
           
           const date = new Date(fullDateStr);
 
-          // Baca isi file untuk mendapatkan jumlah OPD (count)
           let count = 0;
           try {
             const file = await env.EVIDENCE_BUCKET.get(fileName);
@@ -231,18 +226,42 @@ export const onRequest = async ({ request, env }) => {
           };
         }));
         
-        // Filter hasil yang null
         const validBackups = backups.filter(b => b !== null);
 
         return new Response(JSON.stringify(validBackups), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
+      case 'createBackup': {
+        const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ?").bind(year).all();
+        
+        if (results.length === 0) {
+          return new Response(JSON.stringify({ status: 'error', message: 'Tidak ada data OPD untuk tahun ini!' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        const now = new Date();
+        const pad = (n) => n.toString().padStart(2, '0');
+        const timestamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+        
+        const fileName = `backup_${year}_${timestamp}.json`;
+        const data = JSON.stringify(results);
+
+        await env.EVIDENCE_BUCKET.put(fileName, data, { httpMetadata: { contentType: 'application/json' } });
+
+        return new Response(JSON.stringify({ status: 'success', message: 'Backup berhasil dibuat', fileName }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      case 'restoreBackup': {
+        const { fileName } = params;
+        const file = await env.EVIDENCE_BUCKET.get(fileName);
+        
+        if (!file) {
+          return new Response(JSON.stringify({ status: 'error', message: 'Backup tidak ditemukan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+
         const data = JSON.parse(await file.text());
         
-        // Hapus data lama untuk tahun tersebut
         await env.DB.prepare("DELETE FROM opd_data WHERE year = ?").bind(year).run();
 
-        // Masukkan kembali data dari backup
         for (const row of data) {
           const subunsurs = row.subunsurs ? JSON.parse(row.subunsurs) : {};
           const sa = calculateSAFromSubunsur(subunsurs);
