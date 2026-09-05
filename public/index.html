@@ -87,9 +87,24 @@ body {
 }
 
 .loading-logo {
-  font-size: 64px;
-  margin-bottom: 12px;
-  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 16px;
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+  animation: logoPulse 2s infinite ease-in-out;
+}
+
+.loading-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@keyframes logoPulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 8px 20px rgba(0,0,0,0.3); }
+  50% { transform: scale(1.05); box-shadow: 0 12px 30px rgba(0,0,0,0.4); }
 }
 
 .loading-card h2 {
@@ -157,6 +172,13 @@ body {
   font-size: 13px;
   margin-top: 8px;
   font-style: italic;
+}
+
+.loading-error {
+  color: #fca5a5;
+  font-size: 13px;
+  margin-top: 8px;
+  display: none;
 }
 
 /* ===== HEADER / TOPBAR ===== */
@@ -1616,7 +1638,10 @@ input[type="file"]:hover {
 <!-- Loading Overlay -->
 <div id="loadingOverlay">
   <div class="loading-card">
-    <div class="loading-logo">📊</div>
+    <div class="loading-logo">
+      <!-- GANTI logo.png dengan file logo SPIP Anda -->
+      <img src="logo.png" alt="Logo SPIP Mahakam Ulu">
+    </div>
     <h2>KAWAL SPIP</h2>
     <p>Memuat data maturitas SPIP...</p>
     <div class="loading-progress">
@@ -1625,6 +1650,7 @@ input[type="file"]:hover {
       <div class="loading-percent" id="loadingPercent">0%</div>
     </div>
     <div class="loading-status" id="loadingStatus">Mempersiapkan dashboard...</div>
+    <div class="loading-error" id="loadingError">Terjadi kesalahan saat memuat data. Periksa koneksi server.</div>
   </div>
 </div>
 
@@ -2673,7 +2699,28 @@ document.getElementById('kpiChartClose').addEventListener('click', function() {
 });
 // ====== INISIALISASI AWAL (LANGSUNG KE DASHBOARD) ======
 (async function init() {
+  const loadingOverlay = document.getElementById('loadingOverlay');
+  const loadingFill = document.getElementById('loadingFill');
+  const loadingPercent = document.getElementById('loadingPercent');
+  const loadingStatus = document.getElementById('loadingStatus');
+  const loadingError = document.getElementById('loadingError');
+
+  // Fungsi untuk mengupdate progress bar
+  function setProgress(pct, status) {
+    loadingFill.style.width = pct + '%';
+    loadingPercent.textContent = Math.round(pct) + '%';
+    loadingStatus.textContent = status;
+  }
+
+  // Timeout pengaman: jika 10 detik belum selesai, tampilkan error
+  const timeoutId = setTimeout(() => {
+    loadingError.style.display = 'block';
+    loadingError.textContent = 'Terlalu lama memuat data. Periksa server / koneksi internet Anda.';
+    loadingStatus.textContent = 'Gagal memuat...';
+  }, 10000);
+
   try {
+    setProgress(10, 'Memuat data subunsur...');
     SUBUNSUR_DATA = await callServer('getSubunsurData');
     PARAM_LIST = [];
     Object.keys(SUBUNSUR_DATA).forEach(subCode => {
@@ -2681,11 +2728,25 @@ document.getElementById('kpiChartClose').addEventListener('click', function() {
         PARAM_LIST.push({ subCode: subCode, paramId: param.id, desc: param.desc, levels: param.levels });
       });
     });
+    
+    setProgress(50, 'Memuat daftar tahun...');
     await loadYears();
+    
+    setProgress(80, 'Memuat data OPD...');
     await loadData();
-    showDashboard(); // Tampilkan Dashboard tanpa password
+    
+    clearTimeout(timeoutId);
+    setProgress(100, 'Selesai! Membuka dashboard...');
+    setTimeout(() => {
+      loadingOverlay.classList.add('hidden');
+      showDashboard();
+    }, 400);
   } catch (e) {
+    clearTimeout(timeoutId);
     console.error('Inisialisasi gagal:', e);
+    loadingError.style.display = 'block';
+    loadingError.textContent = 'Terjadi kesalahan: ' + e.message;
+    loadingStatus.textContent = 'Gagal memuat data';
     document.getElementById('saveStatus').textContent = '⚠️ ' + e.message;
   }
 })();
