@@ -179,24 +179,47 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
-      // ====== FITUR BACKUP (PERBAIKAN UTAMA) ======
+            // ====== FITUR BACKUP (PERBAIKAN) ======
       case 'listBackups': {
         // Cari semua file di R2 dengan prefix backup_{year}_
         const prefix = `backup_${year}_`;
         const files = await env.EVIDENCE_BUCKET.list({ prefix });
         
-        const backups = files.objects.map(obj => {
+        const backups = await Promise.all(files.objects.map(async obj => {
           const fileName = obj.key;
-          const timestamp = fileName.replace(prefix, '').replace('.json', '');
-          // Format timestamp yang lebih mudah dibaca, misal: 2026-05-09 12:30
-          const date = new Date(timestamp);
+          // Mengambil bagian timestamp dari nama file: backup_2027_2027-05-09_09-39-10.json
+          const timestampStr = fileName.replace(prefix, '').replace('.json', '');
+          
+          // Parse timestamp format: 2027-05-09_09-39-10
+          // Ubah menjadi 2027-05-09T09:39:10 agar valid untuk JS Date
+          const parts = timestampStr.split('_');
+          const datePart = parts[0]; // 2027-05-09
+          const timePart = parts[1]; // 09-39-10
+          const formattedTime = timePart.replace(/-/g, ':'); // 09:39:10
+          const fullDateStr = `${datePart}T${formattedTime}`; // 2027-05-09T09:39:10
+          
+          const date = new Date(fullDateStr);
+
+          // Baca isi file untuk mendapatkan jumlah OPD (count)
+          let count = 0;
+          try {
+            const file = await env.EVIDENCE_BUCKET.get(fileName);
+            const content = await file.text();
+            const data = JSON.parse(content);
+            if (Array.isArray(data)) {
+              count = data.length;
+            }
+          } catch (e) {
+            count = 0; // Jika gagal baca, biarkan 0
+          }
+
           return { 
             fileName, 
-            timestamp: date.toLocaleString('id-ID'), 
+            timestamp: isNaN(date.getTime()) ? 'Tanggal tidak valid' : date.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }), 
             size: Math.round(obj.size / 1024), // dalam KB
-            count: 0 // Kita akan isi count saat restore atau ambil dari file
+            count: count
           };
-        });
+        }));
 
         return new Response(JSON.stringify(backups), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
@@ -209,12 +232,16 @@ export const onRequest = async ({ request, env }) => {
           return new Response(JSON.stringify({ status: 'error', message: 'Tidak ada data OPD untuk tahun ini!' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
 
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19); // Format aman untuk filename
+        // Format timestamp yang valid dan aman untuk file: 2027-05-09_09-39-10
+        const now = new Date();
+        const pad = (n) => n.toString().padStart(2, '0');
+        const timestamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+        
         const fileName = `backup_${year}_${timestamp}.json`;
         const data = JSON.stringify(results);
 
         // Simpan ke R2
-        await env.EVIDENCE_BUCKET.put(`backup_${year}_${timestamp}.json`, data, { httpMetadata: { contentType: 'application/json' } });
+        await env.EVIDENCE_BUCKET.put(fileName, data, { httpMetadata: { contentType: 'application/json' } });
 
         return new Response(JSON.stringify({ status: 'success', message: 'Backup berhasil dibuat', fileName }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
