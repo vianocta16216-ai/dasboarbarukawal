@@ -249,7 +249,7 @@ export const onRequest = async ({ request, env }) => {
         const publicUrl = `https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
         return new Response(JSON.stringify({ url: publicUrl, fileName, googleDriveId: gdriveId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
-      case 'deleteFile': {
+                 case 'deleteFile': {
         const cleanUrl = params.fileUrl.split('?')[0];
         const marker = 'r2.dev/';
         const idx = cleanUrl.indexOf(marker);
@@ -262,8 +262,8 @@ export const onRequest = async ({ request, env }) => {
           try {
             await deleteGoogleDriveFile(env, params.gdriveId);
           } catch (err) {
-            console.error('Gagal hapus Google Drive:', err.message);
-            // Jangan gagalkan proses jika GDrive gagal, R2 sudah terhapus
+            // Kirim error ke client agar terlihat
+            return new Response(JSON.stringify({ status: 'error', message: 'Gagal hapus di Google Drive: ' + err.message }), { status: 200, headers: { 'Content-Type': 'application/json' } });
           }
         }
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
