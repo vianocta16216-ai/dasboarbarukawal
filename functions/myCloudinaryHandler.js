@@ -35,7 +35,7 @@ function calculateSAFromSubunsur(subunsurs) {
   return totalParams > 0 ? Math.round((totalLevel / totalParams) * 100) / 100 : 0;
 }
 
-// ============ GOOGLE DRIVE INTEGRATION (VERSI BARU - RESUMABLE UPLOAD) ============
+// ============ GOOGLE DRIVE INTEGRATION (RESUMABLE UPLOAD) ============
 async function getGoogleAccessToken(env) {
   const { GOOGLE_DRIVE_CLIENT_EMAIL, GOOGLE_DRIVE_PRIVATE_KEY } = env;
   if (!GOOGLE_DRIVE_CLIENT_EMAIL || !GOOGLE_DRIVE_PRIVATE_KEY) {
@@ -108,11 +108,9 @@ function pemToArrayBuffer(pem) {
   return bytes.buffer;
 }
 
-// ====== FUNGSI UPLOAD BARU (RESUMABLE UPLOAD) ======
 async function uploadToGoogleDrive(env, fileName, bytes, folderId) {
   const accessToken = await getGoogleAccessToken(env);
 
-  // Langkah 1: Buat session upload
   const metadata = {
     name: fileName,
     parents: [folderId]
@@ -137,7 +135,6 @@ async function uploadToGoogleDrive(env, fileName, bytes, folderId) {
   const location = initResponse.headers.get('Location');
   if (!location) throw new Error('Tidak ada URL upload dari Google Drive');
 
-  // Langkah 2: Upload file bytes ke URL yang diberikan
   const uploadResponse = await fetch(location, {
     method: 'PUT',
     headers: {
@@ -151,7 +148,7 @@ async function uploadToGoogleDrive(env, fileName, bytes, folderId) {
   if (!uploadResponse.ok) {
     throw new Error('Gagal upload file ke Google Drive: ' + JSON.stringify(result));
   }
-  return result.id; // ID file di Google Drive
+  return result.id;
 }
 // ============ END GOOGLE DRIVE INTEGRATION ============
 
@@ -215,7 +212,6 @@ export const onRequest = async ({ request, env }) => {
       case 'verifyDelete':
         return new Response(JSON.stringify({ status: params.password === DELETE_PASSWORD ? 'success' : 'error', message: params.password === DELETE_PASSWORD ? 'Password hapus benar' : 'Password hapus salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
-      // ====== DATABASE CLOUDFLARE D1 ======
       case 'getData': {
         const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ? ORDER BY CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
         const mapped = results.map(r => {
@@ -262,7 +258,6 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
-      // ====== TAHUN ======
       case 'getYears': {
         const { results } = await env.DB.prepare("SELECT year FROM years").all();
         const years = results.map(x => x.year);
@@ -281,20 +276,17 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
-      // ====== FILE (UPLOAD VIA WORKER) ======
       case 'uploadFile': {
         const { filePath, bytes, fileType, fileName } = getFolderStructure(params);
 
-        // 1. Upload ke Cloudflare R2
         await env.EVIDENCE_BUCKET.put(filePath, bytes, { httpMetadata: { contentType: fileType } });
 
-        // 2. Upload ke Google Drive (jika konfigurasi ada)
         let gdriveId = null;
         if (env.GOOGLE_DRIVE_FOLDER_ID && env.GOOGLE_DRIVE_CLIENT_EMAIL && env.GOOGLE_DRIVE_PRIVATE_KEY) {
           try {
             gdriveId = await uploadToGoogleDrive(env, fileName, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
           } catch (err) {
-            console.error('Gagal upload ke Google Drive:', err.message);
+            throw new Error('Gagal upload ke Google Drive: ' + err.message);
           }
         }
 
@@ -314,7 +306,6 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
-      // ====== FITUR BACKUP ======
       case 'listBackups': {
         const prefix = `backup_${year}_`;
         let files;
@@ -375,17 +366,15 @@ export const onRequest = async ({ request, env }) => {
         const fileName = `backup_${year}_${timestamp}.json`;
         const data = JSON.stringify(results);
 
-        // 1. Simpan ke Cloudflare R2
         await env.EVIDENCE_BUCKET.put(fileName, data, { httpMetadata: { contentType: 'application/json' } });
 
-        // 2. Simpan juga ke Google Drive
         if (env.GOOGLE_DRIVE_FOLDER_ID && env.GOOGLE_DRIVE_CLIENT_EMAIL && env.GOOGLE_DRIVE_PRIVATE_KEY) {
           try {
             const bytes = new TextEncoder().encode(data);
             await uploadToGoogleDrive(env, fileName, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
             await uploadToGoogleDrive(env, DB_FILE_NAME, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
           } catch (err) {
-            console.error('Gagal upload backup ke Google Drive:', err.message);
+            throw new Error('Gagal upload backup ke Google Drive: ' + err.message);
           }
         }
 
