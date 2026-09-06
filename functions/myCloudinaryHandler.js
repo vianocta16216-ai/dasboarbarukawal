@@ -35,57 +35,21 @@ function calculateSAFromSubunsur(subunsurs) {
   return totalParams > 0 ? Math.round((totalLevel / totalParams) * 100) / 100 : 0;
 }
 
-// ============ GOOGLE DRIVE INTEGRATION (RESUMABLE UPLOAD) ============
+// ============ GOOGLE DRIVE INTEGRATION (OAUTH USER ACCOUNT - REFRESH TOKEN) ============
 async function getGoogleAccessToken(env) {
-  const { GOOGLE_DRIVE_CLIENT_EMAIL, GOOGLE_DRIVE_PRIVATE_KEY } = env;
-  if (!GOOGLE_DRIVE_CLIENT_EMAIL || !GOOGLE_DRIVE_PRIVATE_KEY) {
+  const { GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET, GOOGLE_DRIVE_REFRESH_TOKEN } = env;
+  if (!GOOGLE_DRIVE_CLIENT_ID || !GOOGLE_DRIVE_CLIENT_SECRET || !GOOGLE_DRIVE_REFRESH_TOKEN) {
     throw new Error('Google Drive credentials not configured');
   }
-
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: 'RS256', typ: 'JWT' };
-  const claim = {
-    iss: GOOGLE_DRIVE_CLIENT_EMAIL,
-    scope: 'https://www.googleapis.com/auth/drive.file',
-    aud: 'https://oauth2.googleapis.com/token',
-    iat: now,
-    exp: now + 3600
-  };
-
-  const encodedHeader = btoa(JSON.stringify(header)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const encodedClaim = btoa(JSON.stringify(claim)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  const unsignedToken = `${encodedHeader}.${encodedClaim}`;
-
-  const privateKey = GOOGLE_DRIVE_PRIVATE_KEY.replace(/\\n/g, '\n');
-  const keyData = privateKey;
-
-  const key = await crypto.subtle.importKey(
-    'pkcs8',
-    pemToArrayBuffer(keyData),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-
-  const signature = await crypto.subtle.sign(
-    { name: 'RSASSA-PKCS1-v1_5' },
-    key,
-    new TextEncoder().encode(unsignedToken)
-  );
-
-  const encodedSignature = btoa(String.fromCharCode(...new Uint8Array(signature)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-
-  const jwt = `${unsignedToken}.${encodedSignature}`;
 
   const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-      assertion: jwt
+      client_id: GOOGLE_DRIVE_CLIENT_ID,
+      client_secret: GOOGLE_DRIVE_CLIENT_SECRET,
+      refresh_token: GOOGLE_DRIVE_REFRESH_TOKEN,
+      grant_type: 'refresh_token'
     })
   });
 
@@ -94,18 +58,6 @@ async function getGoogleAccessToken(env) {
     throw new Error('Failed to get Google Drive access token: ' + JSON.stringify(tokenData));
   }
   return tokenData.access_token;
-}
-
-function pemToArrayBuffer(pem) {
-  const base64 = pem.replace(/-----BEGIN PRIVATE KEY-----/, '')
-                    .replace(/-----END PRIVATE KEY-----/, '')
-                    .replace(/\s/g, '');
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes.buffer;
 }
 
 async function uploadToGoogleDrive(env, fileName, bytes, folderId) {
@@ -282,7 +234,7 @@ export const onRequest = async ({ request, env }) => {
         await env.EVIDENCE_BUCKET.put(filePath, bytes, { httpMetadata: { contentType: fileType } });
 
         let gdriveId = null;
-        if (env.GOOGLE_DRIVE_FOLDER_ID && env.GOOGLE_DRIVE_CLIENT_EMAIL && env.GOOGLE_DRIVE_PRIVATE_KEY) {
+        if (env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_SECRET && env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_FOLDER_ID) {
           try {
             gdriveId = await uploadToGoogleDrive(env, fileName, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
           } catch (err) {
@@ -291,7 +243,6 @@ export const onRequest = async ({ request, env }) => {
         }
 
         const publicUrl = `https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
-
         return new Response(JSON.stringify({ url: publicUrl, fileName, googleDriveId: gdriveId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
@@ -368,7 +319,7 @@ export const onRequest = async ({ request, env }) => {
 
         await env.EVIDENCE_BUCKET.put(fileName, data, { httpMetadata: { contentType: 'application/json' } });
 
-        if (env.GOOGLE_DRIVE_FOLDER_ID && env.GOOGLE_DRIVE_CLIENT_EMAIL && env.GOOGLE_DRIVE_PRIVATE_KEY) {
+        if (env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_SECRET && env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_FOLDER_ID) {
           try {
             const bytes = new TextEncoder().encode(data);
             await uploadToGoogleDrive(env, fileName, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
