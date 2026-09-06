@@ -35,7 +35,7 @@ function calculateSAFromSubunsur(subunsurs) {
   return totalParams > 0 ? Math.round((totalLevel / totalParams) * 100) / 100 : 0;
 }
 
-// ============ GOOGLE DRIVE INTEGRATION (OAUTH USER ACCOUNT - REFRESH TOKEN) ============
+// ============ GOOGLE DRIVE INTEGRATION (OAUTH - DUKUNG SUBFOLDER) ============
 async function getGoogleAccessToken(env) {
   const { GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET, GOOGLE_DRIVE_REFRESH_TOKEN } = env;
   if (!GOOGLE_DRIVE_CLIENT_ID || !GOOGLE_DRIVE_CLIENT_SECRET || !GOOGLE_DRIVE_REFRESH_TOKEN) {
@@ -60,12 +60,59 @@ async function getGoogleAccessToken(env) {
   return tokenData.access_token;
 }
 
-async function uploadToGoogleDrive(env, fileName, bytes, folderId) {
+async function createFolder(accessToken, parentId, folderName) {
+  const response = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      name: folderName,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentId]
+    })
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error('Gagal membuat folder: ' + JSON.stringify(data));
+  }
+  return data.id;
+}
+
+async function getOrCreateFolder(accessToken, parentId, folderName) {
+  // Cari folder dengan nama yang sama di parent
+  const query = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`;
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+
+  const data = await response.json();
+  if (data.files && data.files.length > 0) {
+    return data.files[0].id; // Gunakan folder yang sudah ada
+  }
+  // Jika belum ada, buat baru
+  return await createFolder(accessToken, parentId, folderName);
+}
+
+async function uploadToGoogleDrive(env, filePath, fileName, bytes, rootFolderId) {
   const accessToken = await getGoogleAccessToken(env);
 
+  // Pecah path menjadi segmen folder (tanpa nama file)
+  const pathSegments = filePath.split('/');
+  pathSegments.pop(); // Hapus nama file (elemen terakhir)
+
+  let currentFolderId = rootFolderId;
+  for (const folderName of pathSegments) {
+    if (!folderName) continue;
+    currentFolderId = await getOrCreateFolder(accessToken, currentFolderId, folderName);
+  }
+
+  // Upload file ke folder terakhir
   const metadata = {
     name: fileName,
-    parents: [folderId]
+    parents: [currentFolderId]
   };
 
   const initResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
@@ -236,7 +283,7 @@ export const onRequest = async ({ request, env }) => {
         let gdriveId = null;
         if (env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_SECRET && env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_FOLDER_ID) {
           try {
-            gdriveId = await uploadToGoogleDrive(env, fileName, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
+            gdriveId = await uploadToGoogleDrive(env, filePath, fileName, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
           } catch (err) {
             throw new Error('Gagal upload ke Google Drive: ' + err.message);
           }
@@ -322,8 +369,8 @@ export const onRequest = async ({ request, env }) => {
         if (env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_SECRET && env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_FOLDER_ID) {
           try {
             const bytes = new TextEncoder().encode(data);
-            await uploadToGoogleDrive(env, fileName, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
-            await uploadToGoogleDrive(env, DB_FILE_NAME, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
+            await uploadToGoogleDrive(env, fileName, fileName, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
+            await uploadToGoogleDrive(env, DB_FILE_NAME, DB_FILE_NAME, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
           } catch (err) {
             throw new Error('Gagal upload backup ke Google Drive: ' + err.message);
           }
