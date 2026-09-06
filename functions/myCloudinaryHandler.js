@@ -235,21 +235,24 @@ export const onRequest = async ({ request, env }) => {
         await env.DB.prepare("DELETE FROM years WHERE year = ?").bind(params.year).run();
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
-      case 'uploadFile': {
+            case 'uploadFile': {
         const { filePath, bytes, fileType, fileName } = getFolderStructure(params);
         await env.EVIDENCE_BUCKET.put(filePath, bytes, { httpMetadata: { contentType: fileType } });
+
         let gdriveId = null;
         if (env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_SECRET && env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_FOLDER_ID) {
           try {
             gdriveId = await uploadToGoogleDrive(env, filePath, fileName, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
           } catch (err) {
-            throw new Error('Gagal upload ke Google Drive: ' + err.message);
+            console.error('Gagal upload ke Google Drive:', err.message);
+            // JANGAN throw, agar file tetap tersimpan di R2 dan data tidak hilang
           }
         }
+
         const publicUrl = `https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
         return new Response(JSON.stringify({ url: publicUrl, fileName, googleDriveId: gdriveId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
-                       case 'deleteFile': {
+                             case 'deleteFile': {
         const cleanUrl = params.fileUrl.split('?')[0];
         const marker = 'r2.dev/';
         const idx = cleanUrl.indexOf(marker);
@@ -258,23 +261,17 @@ export const onRequest = async ({ request, env }) => {
           await env.EVIDENCE_BUCKET.delete(filePath);
         }
 
-        // ====== PERBAIKAN PENTING ======
+        // Perbaikan: Hapus di Google Drive jika ada gdriveId
         if (params.gdriveId) {
           try {
             await deleteGoogleDriveFile(env, params.gdriveId);
           } catch (err) {
-            // Kirim error ke client agar terlihat, bukan hanya console.error
+            // Kirim error ke client agar terlihat
             return new Response(JSON.stringify({ 
               status: 'error', 
               message: 'Gagal hapus di Google Drive: ' + err.message 
             }), { status: 200, headers: { 'Content-Type': 'application/json' } });
           }
-        } else {
-          // Jika gdriveId tidak ada, beri tahu pengguna
-          return new Response(JSON.stringify({ 
-            status: 'error', 
-            message: 'File ini tidak memiliki ID Google Drive. Kemungkinan file diupload sebelum perbaikan. Silakan upload ulang file ini.' 
-          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
 
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
