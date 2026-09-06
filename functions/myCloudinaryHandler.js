@@ -249,7 +249,7 @@ export const onRequest = async ({ request, env }) => {
         const publicUrl = `https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
         return new Response(JSON.stringify({ url: publicUrl, fileName, googleDriveId: gdriveId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
-                 case 'deleteFile': {
+                       case 'deleteFile': {
         const cleanUrl = params.fileUrl.split('?')[0];
         const marker = 'r2.dev/';
         const idx = cleanUrl.indexOf(marker);
@@ -257,15 +257,26 @@ export const onRequest = async ({ request, env }) => {
           const filePath = decodeURIComponent(cleanUrl.substring(idx + marker.length));
           await env.EVIDENCE_BUCKET.delete(filePath);
         }
-        // Perbaikan: hapus juga dari Google Drive jika ada gdriveId
+
+        // ====== PERBAIKAN PENTING ======
         if (params.gdriveId) {
           try {
             await deleteGoogleDriveFile(env, params.gdriveId);
           } catch (err) {
-            // Kirim error ke client agar terlihat
-            return new Response(JSON.stringify({ status: 'error', message: 'Gagal hapus di Google Drive: ' + err.message }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            // Kirim error ke client agar terlihat, bukan hanya console.error
+            return new Response(JSON.stringify({ 
+              status: 'error', 
+              message: 'Gagal hapus di Google Drive: ' + err.message 
+            }), { status: 200, headers: { 'Content-Type': 'application/json' } });
           }
+        } else {
+          // Jika gdriveId tidak ada, beri tahu pengguna
+          return new Response(JSON.stringify({ 
+            status: 'error', 
+            message: 'File ini tidak memiliki ID Google Drive. Kemungkinan file diupload sebelum perbaikan. Silakan upload ulang file ini.' 
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
+
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       case 'listBackups': {
