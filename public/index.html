@@ -2959,7 +2959,8 @@ async function openEditModal(id) {
           if (!targetRow.subunsurs[subCode][paramId]['files' + level]) targetRow.subunsurs[subCode][paramId]['files' + level] = [];
           targetRow.subunsurs[subCode][paramId]['files' + level].push({
   url: result.url,
-  fileName: result.fileName || file.name
+  fileName: result.fileName || file.name,
+  gdriveId: result.gdriveId  // <---- TAMBAHKAN INI
 });
           renderFileList(targetRow, subCode, paramId, level);
           completed++;
@@ -3103,7 +3104,15 @@ function removeUploadedFile(opdId, subCode, paramId, level, fileUrl) {
   const files = row.subunsurs[subCode][paramId]['files' + level] || [];
   const fileObj = files.find(f => f.url === fileUrl);
   const fileName = fileObj ? fileObj.fileName : 'File';
-  fileToDelete = { opdId, subCode, paramId, level, fileUrl, fileName };
+  fileToDelete = { 
+    opdId, 
+    subCode, 
+    paramId, 
+    level, 
+    fileUrl, 
+    fileName, 
+    gdriveId: fileObj ? fileObj.gdriveId : null   // <---- TAMBAHKAN INI
+  };
   document.getElementById('fileDeleteMessage').textContent = `Yakin ingin menghapus file "${fileName}"?`;
   document.getElementById('fileDeleteModal').classList.add('active');
 }
@@ -3116,11 +3125,11 @@ document.getElementById('fileDeleteOk').addEventListener('click', async function
   btnOk.disabled = true;
   btnOk.textContent = '⏳ Menghapus...';
   
-  const { opdId, subCode, paramId, level, fileUrl } = fileToDelete;
+  const { opdId, subCode, paramId, level, fileUrl, gdriveId } = fileToDelete;  // <---- Ambil gdriveId
   const row = rows.find(r => r.id === opdId);
   if (row) {
     try {
-      const result = await callServer('deleteFile', { fileUrl });
+      const result = await callServer('deleteFile', { fileUrl, gdriveId });  // <---- Kirim gdriveId
       if (result.status === 'error') { showWarning('❌ ' + result.message); return; }
       const files = row.subunsurs[subCode][paramId]['files' + level] || [];
       const index = files.findIndex(f => f.url === fileUrl);
