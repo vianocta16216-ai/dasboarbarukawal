@@ -3130,7 +3130,10 @@ document.getElementById('fileDeleteOk').addEventListener('click', async function
   if (row) {
     try {
       const result = await callServer('deleteFile', { fileUrl, gdriveId });  // <---- Kirim gdriveId
-      if (result.status === 'error') { showWarning('❌ ' + result.message); return; }
+      if (result.status === 'error') { 
+        showWarning('❌ ' + result.message); 
+        return; 
+      }
       const files = row.subunsurs[subCode][paramId]['files' + level] || [];
       const index = files.findIndex(f => f.url === fileUrl);
       if (index > -1) {
