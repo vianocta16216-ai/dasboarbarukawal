@@ -12,7 +12,7 @@ const FIELD_MAP = {
   qaApip: 'qa_apip'
 };
 
-const DB_FILE_NAME = 'SAKIP_DB.json'; // Nama file backup di Google Drive
+const DB_FILE_NAME = 'SAKIP_DB.json';
 
 function calculateSAFromSubunsur(subunsurs) {
   if (!subunsurs) return 0;
@@ -35,7 +35,7 @@ function calculateSAFromSubunsur(subunsurs) {
   return totalParams > 0 ? Math.round((totalLevel / totalParams) * 100) / 100 : 0;
 }
 
-// ============ GOOGLE DRIVE INTEGRATION ============
+// ============ GOOGLE DRIVE INTEGRATION (VERSI BARU - RESUMABLE UPLOAD) ============
 async function getGoogleAccessToken(env) {
   const { GOOGLE_DRIVE_CLIENT_EMAIL, GOOGLE_DRIVE_PRIVATE_KEY } = env;
   if (!GOOGLE_DRIVE_CLIENT_EMAIL || !GOOGLE_DRIVE_PRIVATE_KEY) {
@@ -59,7 +59,6 @@ async function getGoogleAccessToken(env) {
   const privateKey = GOOGLE_DRIVE_PRIVATE_KEY.replace(/\\n/g, '\n');
   const keyData = privateKey;
 
-  // Import private key
   const key = await crypto.subtle.importKey(
     'pkcs8',
     pemToArrayBuffer(keyData),
@@ -109,41 +108,54 @@ function pemToArrayBuffer(pem) {
   return bytes.buffer;
 }
 
+// ====== FUNGSI UPLOAD BARU (RESUMABLE UPLOAD) ======
 async function uploadToGoogleDrive(env, fileName, bytes, folderId) {
   const accessToken = await getGoogleAccessToken(env);
 
+  // Langkah 1: Buat session upload
   const metadata = {
     name: fileName,
     parents: [folderId]
   };
 
-  const boundary = 'WebKitFormBoundary' + Math.random().toString(16).substring(2);
-  const body = new FormData();
-
-  // Metadata part
-  body.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-  // File part
-  body.append('file', new Blob([bytes], { type: 'application/octet-stream' }), fileName);
-
-  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+  const initResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'Content-Type': `multipart/related; boundary=${boundary}`
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Type': 'application/octet-stream',
+      'X-Upload-Content-Length': bytes.length.toString()
     },
-    body
+    body: JSON.stringify(metadata)
   });
 
-  const result = await response.json();
-  if (!response.ok) {
-    throw new Error('Google Drive upload failed: ' + JSON.stringify(result));
+  if (!initResponse.ok) {
+    const errText = await initResponse.text();
+    throw new Error('Gagal inisialisasi upload: ' + errText);
   }
-  return result.id; // file ID
+
+  const location = initResponse.headers.get('Location');
+  if (!location) throw new Error('Tidak ada URL upload dari Google Drive');
+
+  // Langkah 2: Upload file bytes ke URL yang diberikan
+  const uploadResponse = await fetch(location, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': bytes.length.toString()
+    },
+    body: bytes
+  });
+
+  const result = await uploadResponse.json();
+  if (!uploadResponse.ok) {
+    throw new Error('Gagal upload file ke Google Drive: ' + JSON.stringify(result));
+  }
+  return result.id; // ID file di Google Drive
 }
 // ============ END GOOGLE DRIVE INTEGRATION ============
 
 export const onRequest = async ({ request, env }) => {
-  // KEAMANAN: Password HANYA diambil dari Environment Variable di Cloudflare
   const ACCESS_PASSWORD = env.ACCESS_PASSWORD;
   const DELETE_PASSWORD = env.DELETE_PASSWORD;
 
@@ -288,11 +300,7 @@ export const onRequest = async ({ request, env }) => {
 
         const publicUrl = `https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
 
-        return new Response(JSON.stringify({
-          url: publicUrl,
-          fileName,
-          googleDriveId: gdriveId // opsional, bisa diabaikan di client
-        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ url: publicUrl, fileName, googleDriveId: gdriveId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
       case 'deleteFile': {
@@ -303,7 +311,6 @@ export const onRequest = async ({ request, env }) => {
           const filePath = decodeURIComponent(cleanUrl.substring(idx + marker.length));
           await env.EVIDENCE_BUCKET.delete(filePath);
         }
-        // Tidak menghapus di Google Drive (opsional)
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
@@ -346,12 +353,7 @@ export const onRequest = async ({ request, env }) => {
             count = 0;
           }
 
-          return {
-            fileName,
-            timestamp: isNaN(date.getTime()) ? 'Tanggal tidak valid' : date.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
-            size: Math.round((obj.size || 0) / 1024),
-            count: count
-          };
+          return { fileName, timestamp: isNaN(date.getTime()) ? 'Tanggal tidak valid' : date.toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }), size: Math.round((obj.size || 0) / 1024), count: count };
         }));
 
         const validBackups = backups.filter(b => b !== null);
@@ -376,12 +378,12 @@ export const onRequest = async ({ request, env }) => {
         // 1. Simpan ke Cloudflare R2
         await env.EVIDENCE_BUCKET.put(fileName, data, { httpMetadata: { contentType: 'application/json' } });
 
-        // 2. Simpan juga ke Google Drive (dua nama: asli + SAKIP_DB.json)
+        // 2. Simpan juga ke Google Drive
         if (env.GOOGLE_DRIVE_FOLDER_ID && env.GOOGLE_DRIVE_CLIENT_EMAIL && env.GOOGLE_DRIVE_PRIVATE_KEY) {
           try {
             const bytes = new TextEncoder().encode(data);
             await uploadToGoogleDrive(env, fileName, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
-            await uploadToGoogleDrive(env, DB_FILE_NAME, bytes, env.GOOGLE_DRIVE_FOLDER_ID); // backup terakhir dengan nama tetap
+            await uploadToGoogleDrive(env, DB_FILE_NAME, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
           } catch (err) {
             console.error('Gagal upload backup ke Google Drive:', err.message);
           }
