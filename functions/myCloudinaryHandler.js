@@ -13,12 +13,6 @@ const FIELD_MAP = {
 };
 
 const DB_FILE_NAME = 'SAKIP_DB.json';
-
-// ============ GOOGLE SHEETS KERTAS KERJA — 1 WORKBOOK / OPD ============
-// Setiap OPD + Tahun memiliki SATU Google Spreadsheet.
-// Spreadsheet tersebut merupakan salinan utuh dari workbook template,
-// sehingga semua sheet KK, merge, formula, format, dan referensi antar-sheet
-// tetap berada dalam satu file seperti Excel sumber.
 const DEFAULT_KK_TEMPLATE_SPREADSHEET_ID = '1ozFUON9VcxDZdgZ-v4HvhP54ulPxkqoRvV2G3SNlolE';
 const KK_TEMPLATE_SHEET_NAMES = [
   'KKLEAD_SPIP',
@@ -41,6 +35,35 @@ const KK_TEMPLATE_SHEET_NAMES = [
   'KK 7 INSP',
   'KK 8 INSP'
 ];
+
+// ============ KEAMANAN: SANITASI & RATE LIMITING ============
+function sanitizeString(str) {
+  return String(str || '')
+    .replace(/[<>"'`\\]/g, '')          // Hapus karakter berbahaya XSS
+    .replace(/\.\./g, '')               // Hapus path traversal
+    .replace(/[\/:*?"<>|#%{}]/g, ' ')   // Hapus karakter path ilegal
+    .trim()
+    .substring(0, 150) || 'OPD';
+}
+
+async function checkRateLimit(env, ip, action) {
+  const now = Date.now();
+  const limit = 5;
+  const windowMs = 10 * 60 * 1000;
+
+  const { results } = await env.DB.prepare(
+    "SELECT COUNT(*) as count FROM login_attempts WHERE ip = ? AND action = ? AND timestamp > ?"
+  ).bind(ip, action, now - windowMs).all();
+
+  if (results[0].count >= limit) {
+    throw new Error('Terlalu banyak percobaan. Coba lagi dalam 10 menit.');
+  }
+
+  await env.DB.prepare(
+    "INSERT INTO login_attempts (ip, action, timestamp) VALUES (?, ?, ?)"
+  ).bind(ip, action, now).run();
+}
+// ============ END KEAMANAN ============
 
 function safeDriveName(v, fallback='OPD') {
   return String(v || fallback)
@@ -110,8 +133,6 @@ function normalizeKkData(raw) {
       sheets: Array.isArray(data.sheets) ? data.sheets : KK_TEMPLATE_SHEET_NAMES
     };
   }
-  // Legacy structure (19 spreadsheet/file links) is intentionally not reused.
-  // A new single workbook will be created for the OPD.
   return { version: 3, workbookSpreadsheetId: null, workbookUrl: null, workbookName: null, sheets: KK_TEMPLATE_SHEET_NAMES };
 }
 
@@ -159,8 +180,6 @@ async function ensureKkSpreadsheet(env, params) {
   }
 
   const workbookName = `${opdName} - Kertas Kerja SPIP - ${yearValue}`;
-  // Drive files.copy menyalin seluruh file Google Sheets sekaligus.
-  // Karena template sudah berisi semua tab KK, tidak perlu copy sheet satu per satu.
   const copied = await copyDriveFile(accessToken, templateId, workbookName, opdFolder);
   const workbookUrl = copied.webViewLink || `https://docs.google.com/spreadsheets/d/${encodeURIComponent(copied.id)}/edit`;
 
@@ -173,7 +192,6 @@ async function ensureKkSpreadsheet(env, params) {
     sheets: KK_TEMPLATE_SHEET_NAMES
   };
 }
-// ============ END GOOGLE SHEETS KERTAS KERJA — 1 WORKBOOK / OPD ============
 
 function calculateSAFromSubunsur(subunsurs) {
   if (!subunsurs) return 0;
@@ -191,7 +209,6 @@ function calculateSAFromSubunsur(subunsurs) {
   return totalParams > 0 ? Math.round((totalLevel / totalParams) * 100) / 100 : 0;
 }
 
-// ============ GOOGLE DRIVE INTEGRATION (OAUTH - REFRESH TOKEN) ============
 async function getGoogleAccessToken(env) {
   const { GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET, GOOGLE_DRIVE_REFRESH_TOKEN } = env;
   if (!GOOGLE_DRIVE_CLIENT_ID || !GOOGLE_DRIVE_CLIENT_SECRET || !GOOGLE_DRIVE_REFRESH_TOKEN) {
@@ -298,7 +315,6 @@ async function deleteGoogleDriveFile(env, fileId) {
     throw new Error('Gagal hapus file di Google Drive: ' + errText);
   }
 }
-// ============ END GOOGLE DRIVE INTEGRATION ============
 
 export const onRequest = async ({ request, env }) => {
   const ACCESS_PASSWORD = env.ACCESS_PASSWORD;
@@ -306,6 +322,13 @@ export const onRequest = async ({ request, env }) => {
   const url = new URL(request.url);
   let params = {};
   let action = url.searchParams.get('action') || '';
+
+  // Daftar aksi sensitif yang tidak boleh diakses via GET
+  const SENSITIVE_ACTIONS = [
+    'verifyAccess', 'verifyDelete', 'addOpd', 'saveData', 'saveField',
+    'uploadFile', 'deleteFile', 'deleteOpd', 'addYear', 'deleteYear',
+    'createBackup', 'restoreBackup', 'deleteBackup'
+  ];
 
   if (request.method === 'POST') {
     try {
@@ -315,10 +338,23 @@ export const onRequest = async ({ request, env }) => {
       return new Response(JSON.stringify({ status: 'error', message: 'Invalid JSON body' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
   } else {
+    if (SENSITIVE_ACTIONS.includes(action)) {
+      return new Response(JSON.stringify({ status: 'error', message: 'Method GET tidak diizinkan untuk aksi ini. Gunakan POST.' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
+    }
     url.searchParams.forEach((value, key) => { params[key] = value; });
   }
 
   const year = params.year || '2026';
+
+  // Rate limiting untuk aksi login
+  if (action === 'verifyAccess' || action === 'verifyDelete') {
+    const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+    try {
+      await checkRateLimit(env, clientIp, action);
+    } catch (err) {
+      return new Response(JSON.stringify({ status: 'error', message: err.message }), { status: 429, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
 
   function getFolderStructure(params) {
     const { fileData, fileName, opdName, subunsur, paramId, level, fileType } = params;
@@ -329,17 +365,21 @@ export const onRequest = async ({ request, env }) => {
     if (bytes.length / 1024 / 1024 > 10) throw new Error('File > 10MB, terlalu besar!');
     const unsurKey = subunsur.split('.')[0];
     const unsurName = UNSUR_MAP[unsurKey] || `Unsur ${unsurKey}`;
-    const safeOpd = opdName.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80) || 'OPD';
+    
+    // Sanitasi semua komponen path
+    const safeOpd = sanitizeString(opdName).substring(0, 80) || 'OPD';
     const subUnsurLabel = SUBUNSUR_DATA[subunsur] ? SUBUNSUR_DATA[subunsur].label : subunsur;
-    const safeSubUnsur = subUnsurLabel.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 80);
+    const safeSubUnsur = sanitizeString(subUnsurLabel).substring(0, 80);
     let paramDesc = paramId;
     if (SUBUNSUR_DATA[subunsur] && SUBUNSUR_DATA[subunsur].params) {
       const paramObj = SUBUNSUR_DATA[subunsur].params.find(p => p.id === paramId);
       if (paramObj) paramDesc = paramObj.desc;
     }
-    const safeParam = paramDesc.replace(/[^a-zA-Z0-9\s.-]/g, '').substring(0, 100);
-    const filePath = `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level_${level}/${fileName}`;
-    return { filePath, bytes, fileType: fileType || 'application/octet-stream', fileName };
+    const safeParam = sanitizeString(paramDesc).substring(0, 100);
+    const safeFileName = sanitizeString(fileName).substring(0, 150);
+    
+    const filePath = `kawal_spip/${year}/${safeOpd}/${unsurName}/${safeSubUnsur}/${safeParam}/Level_${level}/${safeFileName}`;
+    return { filePath, bytes, fileType: fileType || 'application/octet-stream', fileName: safeFileName };
   }
 
   try {
@@ -366,7 +406,7 @@ export const onRequest = async ({ request, env }) => {
 
       case 'addOpd': {
         const id = params.id || 'r' + Math.random().toString(36).slice(2,9);
-        const opd = params.opd || 'OPD Baru';
+        const opd = sanitizeString(params.opd || 'OPD Baru');
         const subunsurs = params.subunsurs || {};
         const sa = calculateSAFromSubunsur(subunsurs);
         await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year, kk_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
@@ -381,7 +421,7 @@ export const onRequest = async ({ request, env }) => {
           const sa = calculateSAFromSubunsur(subunsurs);
           const kkData = row.kkData || {};
           await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year, kk_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(row.id, row.opd||'', sa, row.evidence||'Belum', row.qaApip||'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year, JSON.stringify(kkData)).run();
+            .bind(row.id, sanitizeString(row.opd||''), sa, row.evidence||'Belum', row.qaApip||'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year, JSON.stringify(kkData)).run();
         }
         return new Response(JSON.stringify({ status: 'success', message: 'Data tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
@@ -532,7 +572,7 @@ export const onRequest = async ({ request, env }) => {
           const sa = calculateSAFromSubunsur(subunsurs);
           const kkData = row.kk_data || row.kkData || {};
           await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year, kk_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(row.id, row.opd||'', sa, row.evidence||'Belum', row.qa_apip || row.qaApip || 'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year, JSON.stringify(kkData)).run();
+            .bind(row.id, sanitizeString(row.opd||''), sa, row.evidence||'Belum', row.qa_apip || row.qaApip || 'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year, JSON.stringify(kkData)).run();
         }
         return new Response(JSON.stringify({ status: 'success', message: 'Data berhasil dipulihkan dari backup' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
