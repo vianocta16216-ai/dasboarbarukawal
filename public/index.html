@@ -462,7 +462,7 @@ table {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;
-  min-width: 1200px;
+  min-width: 1300px;
 }
 
 thead th {
@@ -535,7 +535,8 @@ tbody td:nth-child(10) {
 }
 
 tbody td:nth-child(11),
-tbody td:nth-child(12) {
+tbody td:nth-child(12),
+tbody td:nth-child(13) {
   background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
   text-align: center;
 }
@@ -4180,14 +4181,13 @@ setInterval(async function() {
 }, 20000);
 
 // ============================================================
-// KERTAS KERJA SPIP
+// KERTAS KERJA SPIP (PERBAIKAN ERROR ID)
 // ============================================================
 let kkData = {};
 let kkEditingRowId = null;
 
 // Data referensi dari Excel (struktur KK)
 const KK_REF = {
-  // KKLEAD I_PEMDA
   kkLeadI: {
     kk1: {
       items: [
@@ -4204,7 +4204,6 @@ const KK_REF = {
     }
   },
   
-  // KKLEAD II - Struktur dan Proses
   kkLeadII: {
     lingkungan: [
       { kode: '1.1', label: 'Penegakan Integritas dan Nilai Etika', params: 8 },
@@ -4243,7 +4242,6 @@ const KK_REF = {
     ]
   },
   
-  // KKLEAD III - Pencapaian Tujuan
   kkLeadIII: {
     items: [
       { no: 'A.1', indikator: 'Capaian Outcome', bobot: 0.2, sumber: 'KK 5.1A + KK 5.1B' },
@@ -4256,33 +4254,29 @@ const KK_REF = {
   }
 };
 
-// Fungsi untuk membuka modal kertas kerja
+// Helper untuk mengganti titik menjadi underscore agar valid sebagai ID
+function safeId(str) {
+  return str.replace(/\./g, '_');
+}
+
 function openKkModal(id) {
   const row = rows.find(r => r.id === id);
   if (!row) return;
   
   kkEditingRowId = id;
-  
-  // Load data kertas kerja dari row
   kkData = row.kkData || {};
   
-  // Set nama OPD
   document.getElementById('kkOpdName').textContent = row.opd || 'Tanpa Nama';
   
-  // Render kertas kerja
   renderKkTab1();
   renderKkTab2();
   renderKkTab3();
   renderKkTab4();
   
-  // Tampilkan modal
   document.getElementById('kkModal').classList.add('active');
-  
-  // Reset tabs
   showKkTab('kktab1');
 }
 
-// Fungsi untuk berpindah tab
 function showKkTab(tabId) {
   document.querySelectorAll('.kk-tab-content').forEach(el => el.classList.add('hidden'));
   document.getElementById(tabId).classList.remove('hidden');
@@ -4297,13 +4291,13 @@ function showKkTab(tabId) {
 
 // RENDER TAB 1: KK LEAD I
 function renderKkTab1() {
-  // KK 1 - Sasaran Strategis
   const kk1Body = document.getElementById('kk1Body');
   kk1Body.innerHTML = '';
   
   KK_REF.kkLeadI.kk1.items.forEach(item => {
     item.sub.forEach((sub, subIdx) => {
       const paramId = `${item.kode}.${sub}`;
+      const safeParam = safeId(paramId);
       const defaultValue = kkData[`kk1_${paramId}`] || 0;
       
       const tr = document.createElement('tr');
@@ -4312,13 +4306,12 @@ function renderKkTab1() {
         <td class="kk-label">${item.uraian}</td>
         <td>${subIdx === 0 ? item.bobot : ''}</td>
         <td><input type="number" class="kk-input" data-kk="kk1" data-param="${paramId}" value="${defaultValue}" min="0" max="100" step="1"></td>
-        <td class="kk-score" id="kk1_score_${paramId}">0</td>
+        <td class="kk-score" id="kk1_score_${safeParam}">0</td>
       `;
       kk1Body.appendChild(tr);
     });
   });
   
-  // Tambahkan baris total
   const trTotal = document.createElement('tr');
   trTotal.innerHTML = `
     <td colspan="3" style="text-align:right; font-weight:700; background:#f1f5f9;">Total</td>
@@ -4327,13 +4320,13 @@ function renderKkTab1() {
   `;
   kk1Body.appendChild(trTotal);
   
-  // KK 2 - Strategi Pencapaian
   const kk2Body = document.getElementById('kk2Body');
   kk2Body.innerHTML = '';
   
   KK_REF.kkLeadI.kk2.items.forEach(item => {
     item.sub.forEach((sub, subIdx) => {
       const paramId = `${item.kode}.${sub}`;
+      const safeParam = safeId(paramId);
       const defaultValue = kkData[`kk2_${paramId}`] || 0;
       
       const tr = document.createElement('tr');
@@ -4342,13 +4335,12 @@ function renderKkTab1() {
         <td class="kk-label">${item.uraian}</td>
         <td>${subIdx === 0 ? item.bobot : ''}</td>
         <td><input type="number" class="kk-input" data-kk="kk2" data-param="${paramId}" value="${defaultValue}" min="0" max="100" step="1"></td>
-        <td class="kk-score" id="kk2_score_${paramId}">0</td>
+        <td class="kk-score" id="kk2_score_${safeParam}">0</td>
       `;
       kk2Body.appendChild(tr);
     });
   });
   
-  // Tambahkan baris total
   const trTotal2 = document.createElement('tr');
   trTotal2.innerHTML = `
     <td colspan="3" style="text-align:right; font-weight:700; background:#f1f5f9;">Total</td>
@@ -4357,12 +4349,12 @@ function renderKkTab1() {
   `;
   kk2Body.appendChild(trTotal2);
   
-  // Event listener untuk input
   kk1Body.querySelectorAll('input[data-kk="kk1"]').forEach(input => {
     input.addEventListener('input', function() {
       const param = this.dataset.param;
       const val = parseFloat(this.value) || 0;
-      const skor = document.getElementById(`kk1_score_${param}`);
+      const safeParam = safeId(param);
+      const skor = document.getElementById(`kk1_score_${safeParam}`);
       if (skor) skor.textContent = val;
       calculateKk1Total();
     });
@@ -4372,7 +4364,8 @@ function renderKkTab1() {
     input.addEventListener('input', function() {
       const param = this.dataset.param;
       const val = parseFloat(this.value) || 0;
-      const skor = document.getElementById(`kk2_score_${param}`);
+      const safeParam = safeId(param);
+      const skor = document.getElementById(`kk2_score_${safeParam}`);
       if (skor) skor.textContent = val;
       calculateKk2Total();
     });
@@ -4397,7 +4390,6 @@ function calculateKk1Total() {
     total += skorAkhir;
   });
   document.getElementById('kk1Total').textContent = total.toFixed(2);
-  // Simpan ke kkData
   kkData['kk1_total'] = total;
 }
 
@@ -4434,7 +4426,8 @@ function renderKk2Section(bodyId, sectionData, sectionKey) {
   
   sectionData.forEach(item => {
     for (let paramNo = 1; paramNo <= item.params; paramNo++) {
-      const paramId = `${item.kode}_${paramNo}`;
+      const paramId = `${item.kode}_${paramNo}`; // tidak mengandung titik karena underscore
+      const safeParam = safeId(paramId);
       const defaultValue = kkData[`kk2_${sectionKey}_${paramId}`] || 3;
       
       const tr = document.createElement('tr');
@@ -4447,13 +4440,12 @@ function renderKk2Section(bodyId, sectionData, sectionKey) {
         <td><input type="number" class="kk-input" data-kk="kk2_${sectionKey}" data-param="${paramId}_mri" value="${kkData[`kk2_${sectionKey}_${paramId}_mri`] || 3}" min="1" max="5" step="1"></td>
         <td><input type="number" class="kk-input" data-kk="kk2_${sectionKey}" data-param="${paramId}_iepk" value="${kkData[`kk2_${sectionKey}_${paramId}_iepk`] || 3}" min="1" max="5" step="1"></td>
         <td><input type="number" class="kk-input" data-kk="kk2_${sectionKey}" data-param="${paramId}_ketaatan" value="${kkData[`kk2_${sectionKey}_${paramId}_ketaatan`] || 3}" min="1" max="5" step="1"></td>
-        <td class="kk-score" id="kk2_${sectionKey}_avg_${paramId}">0</td>
+        <td class="kk-score" id="kk2_${sectionKey}_avg_${safeParam}">0</td>
       `;
       body.appendChild(tr);
     }
   });
   
-  // Hitung rata-rata untuk setiap item
   body.querySelectorAll('input[data-kk]').forEach(input => {
     input.addEventListener('input', function() {
       calculateKk2Avg(bodyId, sectionData, sectionKey);
@@ -4471,6 +4463,8 @@ function calculateKk2Avg(bodyId, sectionData, sectionKey) {
     let count = 0;
     for (let paramNo = 1; paramNo <= item.params; paramNo++) {
       const paramId = `${item.kode}_${paramNo}`;
+      const safeParam = safeId(paramId);
+      
       const inputSpip = body.querySelector(`input[data-kk="kk2_${sectionKey}"][data-param="${paramId}"]`);
       const inputMri = body.querySelector(`input[data-kk="kk2_${sectionKey}"][data-param="${paramId}_mri"]`);
       const inputIepk = body.querySelector(`input[data-kk="kk2_${sectionKey}"][data-param="${paramId}_iepk"]`);
@@ -4483,7 +4477,7 @@ function calculateKk2Avg(bodyId, sectionData, sectionKey) {
       
       const avg = (spipVal + mriVal + iepkVal + ketaatanVal) / 4;
       
-      const avgEl = body.querySelector(`#kk2_${sectionKey}_avg_${paramId}`);
+      const avgEl = body.querySelector(`#kk2_${sectionKey}_avg_${safeParam}`);
       if (avgEl) avgEl.textContent = avg.toFixed(2);
       
       total += avg;
@@ -4528,32 +4522,22 @@ function renderKkTab3() {
 
 // RENDER TAB 4: SUMMARY
 function renderKkTab4() {
-  // Hitung summary
   calculateKkSummary();
 }
 
 function calculateKkSummary() {
-  // KKLEAD_SPIP - Perhitungan
-  // BOBOT PERENCANAAN = 0.4
   const perencanaan = (kkData['kk1_total'] || 0) * 0.4 + (kkData['kk2_total'] || 0) * 0.4;
-  
-  // BOBOT STRUKTUR DAN PROSES = 0.3
   const struktur = kkData['kk2_lingkungan_1.1_avg'] || 0;
-  
-  // Pencapaian Tujuan = 0.3
   const pencapaian = (kkData['kk3_A.1'] || 0) * 0.2 + (kkData['kk3_A.2'] || 0) * 0.1 + (kkData['kk3_B.1'] || 0) * 0.25 + (kkData['kk3_C.1'] || 0) * 0.25 + (kkData['kk3_D.1'] || 0) * 0.2;
   
-  // Update display
   document.getElementById('kkSummaryPerencanaan').textContent = perencanaan.toFixed(2);
   document.getElementById('kkSummaryStruktur').textContent = struktur.toFixed(2);
   document.getElementById('kkSummaryPencapaian').textContent = pencapaian.toFixed(2);
   
-  // Maturitas Akhir
   const maturitas = (perencanaan * 0.4) + (struktur * 0.3) + (pencapaian * 0.3);
   document.getElementById('kkMaturitasAkhir').textContent = maturitas.toFixed(2);
 }
 
-// Tutup modal
 document.getElementById('kkClose').addEventListener('click', closeKkModal);
 document.getElementById('kkCancel').addEventListener('click', closeKkModal);
 
@@ -4562,7 +4546,6 @@ function closeKkModal() {
   kkEditingRowId = null;
 }
 
-// Simpan kertas kerja
 document.getElementById('kkSave').addEventListener('click', async function() {
   if (!kkEditingRowId) return;
   
@@ -4575,30 +4558,24 @@ document.getElementById('kkSave').addEventListener('click', async function() {
   const row = rows.find(r => r.id === kkEditingRowId);
   if (!row) return;
   
-  // Kumpulkan semua data input
   const kkFormData = {};
   
-  // KK1
   document.querySelectorAll('input[data-kk="kk1"]').forEach(input => {
     kkFormData[`kk1_${input.dataset.param}`] = parseFloat(input.value) || 0;
   });
   
-  // KK2
   document.querySelectorAll('input[data-kk^="kk2_"]').forEach(input => {
     const fullParam = input.dataset.param;
     kkFormData[`kk2_${input.dataset.kk}_${fullParam}`] = parseFloat(input.value) || 0;
   });
   
-  // KK3
   document.querySelectorAll('input[data-kk="kk3"]').forEach(input => {
     kkFormData[`kk3_${input.dataset.param}`] = parseFloat(input.value) || 0;
   });
   
-  // Simpan ke row
   row.kkData = kkFormData;
   
   try {
-    // Simpan ke server (gunakan saveData atau callServer)
     await callServer('saveKkData', { opdId: kkEditingRowId, kkData: JSON.stringify(kkFormData), year: currentYear });
     
     statusDiv.textContent = '✅ Kertas kerja berhasil disimpan!';
@@ -4613,9 +4590,7 @@ document.getElementById('kkSave').addEventListener('click', async function() {
   }
 });
 
-// Inisialisasi event listener saat page load
 document.addEventListener('DOMContentLoaded', function() {
-  // Tutup modal jika klik di luar area modal
   document.getElementById('kkModal').addEventListener('click', function(e) {
     if (e.target === this) {
       closeKkModal();
