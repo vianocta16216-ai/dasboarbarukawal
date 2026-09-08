@@ -19,7 +19,7 @@ const DB_FILE_NAME = 'SAKIP_DB.json';
 // Spreadsheet tersebut merupakan salinan utuh dari workbook template,
 // sehingga semua sheet KK, merge, formula, format, dan referensi antar-sheet
 // tetap berada dalam satu file seperti Excel sumber.
-const DEFAULT_KK_TEMPLATE_SPREADSHEET_ID = '1HcJIZOfM0sj7YLsKAPc9WUvE75hU9AMw';
+const DEFAULT_KK_TEMPLATE_SPREADSHEET_ID = '1ozFUON9VcxDZdgZ-v4HvhP54ulPxkqoRvV2G3SNlolE';
 const KK_TEMPLATE_SHEET_NAMES = [
   'KKLEAD_SPIP',
   'KKLEAD I_PEMDA',
