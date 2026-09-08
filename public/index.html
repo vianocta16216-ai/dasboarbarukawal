@@ -1676,7 +1676,7 @@ input[type="file"]:hover {
   background: #ffffff;
   border-radius: 20px;
   width: 100%;
-  max-width: 1400px;
+  max-width: 1600px;
   max-height: 92vh;
   overflow-y: auto;
   padding: 0;
@@ -1819,6 +1819,14 @@ input[type="file"]:hover {
   border-color: var(--primary);
   outline: none;
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.kk-select {
+  width: 120px;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 12px;
 }
 
 .kk-summary {
@@ -2252,161 +2260,90 @@ input[type="file"]:hover {
       <div class="kk-save-status" id="kkSaveStatus"></div>
       <!-- Tabs Navigasi -->
       <div class="kk-tabs">
-        <button class="kk-tab-btn active" onclick="showKkTab('kktab1')">KK LEAD I - Penetapan Tujuan</button>
-        <button class="kk-tab-btn" onclick="showKkTab('kktab2')">KK LEAD II - Struktur & Proses</button>
-        <button class="kk-tab-btn" onclick="showKkTab('kktab3')">KK LEAD III - Pencapaian Tujuan</button>
-        <button class="kk-tab-btn" onclick="showKkTab('kktab4')">KKLEAD_SPIP - Rekap</button>
+        <button class="kk-tab-btn active" onclick="showKkTab('kktab1')">KKLEAD I</button>
+        <button class="kk-tab-btn" onclick="showKkTab('kktab2')">KKLEAD II</button>
+        <button class="kk-tab-btn" onclick="showKkTab('kktab3')">KKLEAD III</button>
+        <button class="kk-tab-btn" onclick="showKkTab('kktab4')">KKLEAD_SPIP</button>
       </div>
 
-      <!-- TAB 1: KK LEAD I - Penetapan Tujuan -->
+      <!-- TAB 1: KKLEAD I -->
       <div class="kk-tab-content" id="kktab1">
         <div class="kk-subsection">
           <h5>📌 A. Kualitas Sasaran Strategis (KK 1)</h5>
           <div class="kk-table-container">
             <table class="kk-table">
               <thead>
-                <tr>
-                  <th>No</th>
-                  <th>Uraian</th>
-                  <th>Bobot</th>
-                  <th>Skor</th>
-                  <th>Skor Akhir</th>
-                </tr>
+                <tr><th>No</th><th>Uraian</th><th>Bobot</th><th>Skor</th><th>Skor Akhir</th></tr>
               </thead>
-              <tbody id="kk1Body">
-                <!-- Kertas kerja akan diisi via JavaScript -->
-              </tbody>
+              <tbody id="kk1Body"></tbody>
             </table>
           </div>
         </div>
-
         <div class="kk-subsection">
           <h5>📌 B. Kualitas Strategi Pencapaian Sasaran Strategis (KK 2)</h5>
           <div class="kk-table-container">
             <table class="kk-table">
               <thead>
-                <tr>
-                  <th>No</th>
-                  <th>Uraian</th>
-                  <th>Bobot</th>
-                  <th>Skor</th>
-                  <th>Skor Akhir</th>
-                </tr>
+                <tr><th>No</th><th>Uraian</th><th>Bobot</th><th>Skor</th><th>Skor Akhir</th></tr>
               </thead>
-              <tbody id="kk2Body">
-                <!-- Kertas kerja akan diisi via JavaScript -->
-              </tbody>
+              <tbody id="kk2Body"></tbody>
             </table>
           </div>
         </div>
       </div>
 
-      <!-- TAB 2: KK LEAD II - Struktur & Proses -->
+      <!-- TAB 2: KKLEAD II -->
       <div class="kk-tab-content hidden" id="kktab2">
         <div class="kk-subsection">
           <h5>🏛️ 1. Lingkungan Pengendalian</h5>
           <div class="kk-table-container">
             <table class="kk-table">
               <thead>
-                <tr>
-                  <th>Kode</th>
-                  <th>Uraian Subunsur</th>
-                  <th>No</th>
-                  <th>Uraian Parameter</th>
-                  <th>Nilai SPIP</th>
-                  <th>Nilai MRI</th>
-                  <th>Nilai IEPK</th>
-                  <th>Nilai Ketaatan</th>
-                  <th>Kesimpulan</th>
-                </tr>
+                <tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Uraian Parameter</th><th>Nilai SPIP</th><th>Nilai MRI</th><th>Nilai IEPK</th><th>Nilai Ketaatan</th><th>Kesimpulan</th></tr>
               </thead>
               <tbody id="kk2LingkunganBody"></tbody>
             </table>
           </div>
         </div>
-
         <div class="kk-subsection">
           <h5>📊 2. Penilaian Risiko</h5>
           <div class="kk-table-container">
             <table class="kk-table">
               <thead>
-                <tr>
-                  <th>Kode</th>
-                  <th>Uraian Subunsur</th>
-                  <th>No</th>
-                  <th>Uraian Parameter</th>
-                  <th>Nilai SPIP</th>
-                  <th>Nilai MRI</th>
-                  <th>Nilai IEPK</th>
-                  <th>Nilai Ketaatan</th>
-                  <th>Kesimpulan</th>
-                </tr>
+                <tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Uraian Parameter</th><th>Nilai SPIP</th><th>Nilai MRI</th><th>Nilai IEPK</th><th>Nilai Ketaatan</th><th>Kesimpulan</th></tr>
               </thead>
               <tbody id="kk2RisikoBody"></tbody>
             </table>
           </div>
         </div>
-
         <div class="kk-subsection">
           <h5>🛡️ 3. Kegiatan Pengendalian</h5>
           <div class="kk-table-container">
             <table class="kk-table">
               <thead>
-                <tr>
-                  <th>Kode</th>
-                  <th>Uraian Subunsur</th>
-                  <th>No</th>
-                  <th>Uraian Parameter</th>
-                  <th>Nilai SPIP</th>
-                  <th>Nilai MRI</th>
-                  <th>Nilai IEPK</th>
-                  <th>Nilai Ketaatan</th>
-                  <th>Kesimpulan</th>
-                </tr>
+                <tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Uraian Parameter</th><th>Nilai SPIP</th><th>Nilai MRI</th><th>Nilai IEPK</th><th>Nilai Ketaatan</th><th>Kesimpulan</th></tr>
               </thead>
               <tbody id="kk2KegiatanBody"></tbody>
             </table>
           </div>
         </div>
-
         <div class="kk-subsection">
           <h5>📢 4. Informasi dan Komunikasi</h5>
           <div class="kk-table-container">
             <table class="kk-table">
               <thead>
-                <tr>
-                  <th>Kode</th>
-                  <th>Uraian Subunsur</th>
-                  <th>No</th>
-                  <th>Uraian Parameter</th>
-                  <th>Nilai SPIP</th>
-                  <th>Nilai MRI</th>
-                  <th>Nilai IEPK</th>
-                  <th>Nilai Ketaatan</th>
-                  <th>Kesimpulan</th>
-                </tr>
+                <tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Uraian Parameter</th><th>Nilai SPIP</th><th>Nilai MRI</th><th>Nilai IEPK</th><th>Nilai Ketaatan</th><th>Kesimpulan</th></tr>
               </thead>
               <tbody id="kk2InfoBody"></tbody>
             </table>
           </div>
         </div>
-
         <div class="kk-subsection">
           <h5>👁️ 5. Pemantauan</h5>
           <div class="kk-table-container">
             <table class="kk-table">
               <thead>
-                <tr>
-                  <th>Kode</th>
-                  <th>Uraian Subunsur</th>
-                  <th>No</th>
-                  <th>Uraian Parameter</th>
-                  <th>Nilai SPIP</th>
-                  <th>Nilai MRI</th>
-                  <th>Nilai IEPK</th>
-                  <th>Nilai Ketaatan</th>
-                  <th>Kesimpulan</th>
-                </tr>
+                <tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Uraian Parameter</th><th>Nilai SPIP</th><th>Nilai MRI</th><th>Nilai IEPK</th><th>Nilai Ketaatan</th><th>Kesimpulan</th></tr>
               </thead>
               <tbody id="kk2PemantauanBody"></tbody>
             </table>
@@ -2414,21 +2351,14 @@ input[type="file"]:hover {
         </div>
       </div>
 
-      <!-- TAB 3: KK LEAD III - Pencapaian Tujuan -->
+      <!-- TAB 3: KKLEAD III -->
       <div class="kk-tab-content hidden" id="kktab3">
         <div class="kk-subsection">
           <h5>📊 Pencapaian Tujuan</h5>
           <div class="kk-table-container">
             <table class="kk-table">
               <thead>
-                <tr>
-                  <th>No</th>
-                  <th>Pencapaian Tujuan</th>
-                  <th>Indikator</th>
-                  <th>Definisi Indikator</th>
-                  <th>Cara Pengukuran</th>
-                  <th>Capaian K/L/D</th>
-                </tr>
+                <tr><th>No</th><th>Pencapaian Tujuan</th><th>Indikator</th><th>Definisi Indikator</th><th>Cara Pengukuran</th><th>Capaian K/L/D</th></tr>
               </thead>
               <tbody id="kk3Body"></tbody>
             </table>
@@ -2436,7 +2366,7 @@ input[type="file"]:hover {
         </div>
       </div>
 
-      <!-- TAB 4: KKLEAD_SPIP - Rekap -->
+      <!-- TAB 4: KKLEAD_SPIP -->
       <div class="kk-tab-content hidden" id="kktab4">
         <div class="kk-summary">
           <h4>📊 PENYIMPULAN NILAI MATURITAS PENYELENGGARAAN SPIP TERINTEGRASI</h4>
@@ -2459,45 +2389,6 @@ input[type="file"]:hover {
         <div class="kk-summary" style="background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); border-color: #10b981; margin-top: 16px;">
           <h4 style="color: #065f46;">🎯 MATURITAS PENYELENGGARAAN SPIP TERINTEGRASI</h4>
           <div style="text-align: center; font-size: 48px; font-weight: 800; color: #065f46; margin: 20px 0;" id="kkMaturitasAkhir">0.00</div>
-        </div>
-
-        <div class="kk-subsection">
-          <h5>📊 MANAJEMEN RISIKO INDEKS (MRI)</h5>
-          <div class="kk-table-container">
-            <table class="kk-table">
-              <thead>
-                <tr>
-                  <th>Area/Komponen</th>
-                  <th>Bobot</th>
-                  <th>Skor</th>
-                  <th>Nilai</th>
-                </tr>
-              </thead>
-              <tbody id="kkMriBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="kk-subsection">
-          <h5>🛡️ INDEKS EFEKTIVITAS PENGENDALIAN KORUPSI (IEPK)</h5>
-          <div class="kk-table-container">
-            <table class="kk-table">
-              <thead>
-                <tr>
-                  <th>Pilar</th>
-                  <th>Bobot</th>
-                  <th>Skor</th>
-                  <th>Nilai</th>
-                </tr>
-              </thead>
-              <tbody id="kkIepkBody"></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="kk-subsection">
-          <h5>🏛️ KAPABILITAS APIP</h5>
-          <div style="font-size: 20px; font-weight: 700; color: #1e3a8a; text-align: center; padding: 16px;" id="kkKapabilitasApip">0.00</div>
         </div>
       </div>
 
@@ -2530,11 +2421,8 @@ let originalRows = [];
 
 // ====== PANGGIL SERVER (CLOUDFLARE PAGES FUNCTION) ======
 function callServer(action, params = {}) {
-  // ====== PERBAIKAN PENTING: Nama fungsi HARUS myCloudinaryHandler ======
   const functionUrl = '/myCloudinaryHandler';
-  
   const hasLargePayload = params.fileData || params.rows;
-
   if (hasLargePayload) {
     return fetch(functionUrl, {
       method: 'POST',
@@ -2583,7 +2471,7 @@ async function verifyDelete(password) {
 }
 
 // ====== NAVIGASI VIEW ======
-let opdUnlocked = false; // Status akses Daftar OPD
+let opdUnlocked = false;
 
 function showDashboard() {
   document.getElementById('dashboardView').classList.remove('hidden');
@@ -2593,19 +2481,16 @@ function showDashboard() {
   document.getElementById('btnAdd').style.display = 'none';
   document.getElementById('btnBackup').style.display = 'none';
   document.getElementById('btnClear').style.display = 'none';
-  // Sembunyikan tombol hapus tahun dan tambah tahun di dashboard
   document.getElementById('btnDeleteYear').style.display = 'none';
   document.getElementById('btnAddYear').style.display = 'none';
   updateKpisLocal();
 }
 
 function showOpdList() {
-  // Jika belum dibuka, tampilkan overlay password
   if (!opdUnlocked) {
     document.getElementById('opdAccessOverlay').style.display = 'flex';
     return;
   }
-  // Jika sudah dibuka, langsung tampilkan list
   document.getElementById('dashboardView').classList.add('hidden');
   document.getElementById('opdListView').classList.remove('hidden');
   document.getElementById('btnDashboardNav').style.display = 'inline-block';
@@ -2613,7 +2498,6 @@ function showOpdList() {
   document.getElementById('btnAdd').style.display = 'inline-block';
   document.getElementById('btnBackup').style.display = 'inline-block';
   document.getElementById('btnClear').style.display = 'inline-block';
-  // Tampilkan tombol hapus tahun dan tambah tahun di daftar OPD
   document.getElementById('btnDeleteYear').style.display = 'inline-block';
   document.getElementById('btnAddYear').style.display = 'inline-block';
   render();
@@ -2623,8 +2507,7 @@ function showOpdList() {
 document.getElementById('btnOpdAccess').addEventListener('click', async function() {
   const password = document.getElementById('opdAccessPassword').value.trim();
   const errorDiv = document.getElementById('opdAccessError');
-  // Panggil verifikasi ke backend
-  const valid = await verifyAccess(password); // Fungsi verifyAccess sudah ada di kode asli
+  const valid = await verifyAccess(password);
   if (valid) {
     opdUnlocked = true;
     document.getElementById('opdAccessOverlay').style.display = 'none';
@@ -2640,7 +2523,7 @@ document.getElementById('btnOpdAccess').addEventListener('click', async function
 document.getElementById('opdAccessPassword').addEventListener('keyup', (e) => { if (e.key === 'Enter') document.getElementById('btnOpdAccess').click(); });
 document.getElementById('btnOpdAccessCancel').addEventListener('click', function() {
   document.getElementById('opdAccessOverlay').style.display = 'none';
-  showDashboard(); // Kembali ke dashboard jika batal
+  showDashboard();
 });
 
 // ====== LOAD TAHUN ======
@@ -2690,8 +2573,6 @@ async function loadData() {
         iepk: r.iepk || 0,
         kkData: r.kkData || {}
       }));
-      
-      // ====== PERBAIKAN: URUTKAN TABEL BERDASARKAN MRI & IEPK TERTINGGI KE TERENDAH ======
       rows.sort((a, b) => {
         let mriA = parseFloat(a.mri) || 0;
         let mriB = parseFloat(b.mri) || 0;
@@ -2700,12 +2581,10 @@ async function loadData() {
         let iepkB = parseFloat(b.iepk) || 0;
         return iepkB - iepkA;
       });
-      
     } else {
       console.warn('Data bukan array, rows diset kosong', data);
     }
     originalRows = JSON.parse(JSON.stringify(rows));
-    
     status.textContent = '✅ Data dimuat';
     setTimeout(() => { status.textContent = ''; }, 1500);
     render();
@@ -2718,32 +2597,26 @@ async function loadData() {
     updateKpisLocal();
   }
 }
+
 // ====== FUNGSI: Hitung SA berdasarkan 43 total parameter ======
 function calculateSA(row) {
     if (!row.subunsurs) return 0;
     let totalLevel = 0;
     let totalParams = 0;
-    
-    // Hitung TOTAL SEMUA PARAMETER (otomatis 43 karena looping data)
     Object.keys(SUBUNSUR_DATA).forEach(subCode => {
         if (SUBUNSUR_DATA[subCode].params) {
             totalParams += SUBUNSUR_DATA[subCode].params.length;
         }
     });
-    
-    // Jumlahkan semua level yang diisi
     Object.keys(row.subunsurs).forEach(subCode => {
         Object.keys(row.subunsurs[subCode]).forEach(paramId => {
             const level = row.subunsurs[subCode][paramId].level;
-            if (level > 0) {
-                totalLevel += level;
-            }
+            if (level > 0) totalLevel += level;
         });
     });
-    
-    // Rumus: Total Level / 43 (Total Semua Parameter)
     return totalParams > 0 ? Math.round((totalLevel / totalParams) * 100) / 100 : 0;
 }
+
 // ====== HITUNG KPI LOKAL ======
 function updateKpisLocal() {
   const total = rows.length;
@@ -2852,7 +2725,6 @@ async function saveData() {
       console.error('rows bukan array, diset kosong', rows);
       rows = [];
     }
-       // Hitung ulang SA sebelum disimpan
     rows.forEach(row => {
         row.sa = calculateSA(row);
     });
@@ -3048,7 +2920,6 @@ function showChart(type) {
   const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
   
   if (isLineChart) {
-    // ====== PERBAIKAN: URUTKAN GRAFIK DARI NILAI TERENDAH KE TERTINGGI (KIRI KE KANAN) ======
     let chartData = [...rows];
     if (type === 'rataMRI') {
         chartData.sort((a, b) => (parseFloat(a.mri) || 0) - (parseFloat(b.mri) || 0));
@@ -3197,14 +3068,12 @@ function showChart(type) {
       });
 
    } else {
-      // ====== PERBAIKAN: UKURAN 380x380 & DI TENGAH ======
       canvas.width = 380;
       canvas.height = 380;
       canvas.style.width = '380px';
       canvas.style.height = '380px';
       canvas.style.minWidth = '0';
 
-      // Pindahkan canvas ke tengah secara horizontal
       canvas.style.display = 'block';
       canvas.style.margin = '0 auto';
 
@@ -3212,7 +3081,7 @@ function showChart(type) {
       canvas.parentElement.style.overflowY = 'hidden';
 
       chartInstance = new Chart(ctx, {
-        type: 'pie', // Lingkaran penuh (bukan donut)
+        type: 'pie',
         data: {
           labels: labels,
           datasets: [{
@@ -3226,7 +3095,6 @@ function showChart(type) {
         options: {
           responsive: false, 
           maintainAspectRatio: false,
-          // Tambahkan padding bawah agar tulisan Legend tidak terpotong
           layout: { padding: { bottom: 20 } }, 
           plugins: {
             legend: { 
@@ -3236,7 +3104,7 @@ function showChart(type) {
                 color: '#1e293b',
                 usePointStyle: true,
                 pointStyle: 'circle',
-                padding: 15, // Beri jarak antar tulisan
+                padding: 15,
                 font: { size: 12, weight: 'bold' }
               }
             },
@@ -3267,7 +3135,6 @@ function showChart(type) {
   }
 }
 
-// Listener tombol tutup modal grafik
 document.getElementById('kpiChartClose').addEventListener('click', function() {
   document.getElementById('kpiChartModal').classList.remove('active');
   if (chartInstance) {
@@ -3275,6 +3142,7 @@ document.getElementById('kpiChartClose').addEventListener('click', function() {
     chartInstance = null;
   }
 });
+
 // ====== INISIALISASI AWAL (LANGSUNG KE DASHBOARD) ======
 (async function init() {
   const loadingOverlay = document.getElementById('loadingOverlay');
@@ -3283,14 +3151,12 @@ document.getElementById('kpiChartClose').addEventListener('click', function() {
   const loadingStatus = document.getElementById('loadingStatus');
   const loadingError = document.getElementById('loadingError');
 
-  // Fungsi untuk mengupdate progress bar
   function setProgress(pct, status) {
     loadingFill.style.width = pct + '%';
     loadingPercent.textContent = Math.round(pct) + '%';
     loadingStatus.textContent = status;
   }
 
-  // Timeout pengaman: jika 10 detik belum selesai, tampilkan error
   const timeoutId = setTimeout(() => {
     loadingError.style.display = 'block';
     loadingError.textContent = 'Terlalu lama memuat data. Periksa server / koneksi internet Anda.';
@@ -3974,7 +3840,6 @@ document.getElementById('confirmBackupOk').addEventListener('click', async funct
       try {
         const backups = await callServer('listBackups', { year });
         
-        // Pengaman: pastikan backups adalah array
         if (!Array.isArray(backups) || backups.length === 0) {
           container.innerHTML = '';
           empty.style.display = 'block';
@@ -3985,12 +3850,10 @@ document.getElementById('confirmBackupOk').addEventListener('click', async funct
         container.innerHTML = '';
         
         backups.forEach(backup => {
-          // Pengaman: pastikan backup bukan undefined/null
           if (!backup) return;
           
           const div = document.createElement('div');
           div.className = 'backup-item';
-          // Escape fileName untuk mencegah error jika ada karakter aneh
           const safeFileName = backup.fileName ? backup.fileName.replace(/'/g, "\\'") : '';
           
           div.innerHTML = `
@@ -4161,7 +4024,6 @@ if (urlParams.get('access') === 'portal') {
       });
       await loadYears();
       await loadData();
-      // PERUBAHAN: Tampilkan dashboard jika akses portal
       showDashboard();
     } catch (e) {
       console.error('Inisialisasi gagal:', e);
