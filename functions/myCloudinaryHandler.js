@@ -266,7 +266,6 @@ export const onRequest = async ({ request, env }) => {
             gdriveId = await uploadToGoogleDrive(env, filePath, fileName, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
           } catch (err) {
             console.error('Gagal upload ke Google Drive:', err.message);
-            // JANGAN throw, agar file tetap tersimpan di R2 dan data tidak hilang
           }
         }
 
@@ -283,15 +282,11 @@ export const onRequest = async ({ request, env }) => {
           await env.EVIDENCE_BUCKET.delete(filePath);
         }
 
-        // Perbaikan: Hapus di Google Drive jika ada gdriveId
         if (params.gdriveId) {
           try {
             await deleteGoogleDriveFile(env, params.gdriveId);
           } catch (err) {
-            return new Response(JSON.stringify({ 
-              status: 'error', 
-              message: 'Gagal hapus di Google Drive: ' + err.message 
-            }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ status: 'error', message: 'Gagal hapus di Google Drive: ' + err.message }), { status: 200, headers: { 'Content-Type': 'application/json' } });
           }
         }
 
