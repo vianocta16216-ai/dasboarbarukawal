@@ -4085,6 +4085,7 @@ setInterval(async function() {
 // ============================================================
 // KERTAS KERJA SPIP - SESUAI EXCEL (LENGKAP)
 // ============================================================
+
 let kkData = {};
 let kkEditingRowId = null;
 
@@ -4092,31 +4093,27 @@ let kkEditingRowId = null;
 const KK_REF = {
   kkLeadI: {
     sasaranPemda: [
-      { no: 1, uraian: 'Meningkatnya konektivitas antar wilayah kecamatan', indikator: 'Persentase jalan kabupaten dalam kondisi baik (> 40 KM/Jam)', target: '0.05', hasil: 'Y' },
-      { no: 2, uraian: 'Meningkatnya cakupan rumah tangga yang teraliri air bersih', indikator: 'Persentase Capaian Akses Air Minum Layak', target: '26%', hasil: 'Y' },
-      { no: 3, uraian: 'Meningkatnya cakupan rumah tangga pengguna listrik', indikator: 'Persentase KK yang dialiri listrik (%)', target: '95.88', hasil: 'Y' },
-      { no: 4, uraian: 'Meningkatnya cakupan dan kualitas jaringan telekomunikasi dan internet', indikator: 'Cakupan Layanan Telekomunikasi', target: '89', hasil: 'Y' },
-      { no: 5, uraian: 'Meningkatnya jumlah rumah yang memenuhi persyaratan rumah layak huni', indikator: 'Rasio rumah layak huni', target: '18,43%', hasil: 'Y' },
-      { no: 6, uraian: 'Menurunnya tingkat pencemaran tanah, air dan udara', indikator: 'Hasil Pengukuran Indeks kualitas Air', target: '64.71', hasil: 'Y' },
-      { no: 6, uraian: 'Menurunnya tingkat pencemaran tanah, air dan udara', indikator: 'Hasil Pengukuruan Indeks kualitas Udara', target: '92.9', hasil: 'Y' },
-      { no: 6, uraian: 'Menurunnya tingkat pencemaran tanah, air dan udara', indikator: 'Hasil Pengukuran Indeks Kualitas Lahan', target: '100', hasil: 'Y' },
-      { no: 7, uraian: 'Meningkatnya produktivitas usaha dan kesejahteraan pelaku ekonomi pertanian, perkebunan, peternakan dan perikanan', indikator: 'Kontribusi Lapangan Usaha Pertanian (Dalam Arti Luas) (%)', target: '75.49', hasil: 'Y' },
-      { no: 8, uraian: 'Meningkatnya peran sektor Usaha Mikro, Kecil dan Menengah (UMKM), ekonomi kreatif dan BUMKam', indikator: 'Kontribusi Lapangan Usaha Perdagangan dan Jasa (%)', target: '19.27', hasil: 'Y' },
-      { no: 9, uraian: 'Meningkatnya investasi daerah', indikator: 'Jumlah nilai investasi berskala nasional (PMDN/PMA) (Dalam Milyar)', target: '2986.349', hasil: 'Y' },
-      { no: 10, uraian: 'Berkurangnya angka kemiskinan', indikator: 'Angka Kemiskinan', target: '10.02', hasil: 'Y' },
-      { no: 11, uraian: 'Menurunnya Tingkat Pengangguran Terbuka (TPT)', indikator: 'Tingkat Pengangguran Terbuka (%)', target: '4.6', hasil: 'Y' },
-      { no: 12, uraian: 'Meningkatnya Taraf Pendidikan Masyarakat', indikator: 'Angka rata-rata lama sekolah', target: '8.46', hasil: 'Y' },
-      { no: 12, uraian: 'Meningkatnya Taraf Pendidikan Masyarakat', indikator: 'Harapan Lama Sekolah', target: '12.85', hasil: 'Y' },
-      { no: 13, uraian: 'Meningkatnya derajat Kesehatan Masyarakat', indikator: 'Umur Harapan Hidup (Tahun)', target: '72.3', hasil: 'Y' },
-      { no: 14, uraian: 'Terwujudnya Birokrasi yang memiliki pelayanan publik berkualitas', indikator: 'Indeks Kepuasan Masyarakat', target: '70.51', hasil: 'Y' },
-      { no: 15, uraian: 'Meningkatnya kinerja tata kelola keuangan dan aset daerah', indikator: 'Opini BPK (WTP)', target: 'WTP', hasil: 'Y' },
-      { no: 16, uraian: 'Terwujudnya tata kelola pemerintahan kampung yang baik', indikator: 'Jumlah Desa Maju', target: '8', hasil: 'Y' },
-      { no: 16, uraian: 'Terwujudnya tata kelola pemerintahan kampung yang baik', indikator: 'Jumlah Desa Tertinggal', target: '13', hasil: 'Y' }
+      { no: 1, uraian: 'Meningkatnya konektivitas antar wilayah kecamatan', indikator: 'Persentase jalan kabupaten dalam kondisi baik (> 40 KM/Jam)', target: '0.05' },
+      { no: 2, uraian: 'Meningkatnya cakupan rumah tangga yang teraliri air bersih', indikator: 'Persentase Capaian Akses Air Minum Layak', target: '26%' },
+      { no: 3, uraian: 'Meningkatnya cakupan rumah tangga pengguna listrik', indikator: 'Persentase KK yang dialiri listrik (%)', target: '95.88' },
+      { no: 4, uraian: 'Meningkatnya cakupan dan kualitas jaringan telekomunikasi dan internet', indikator: 'Cakupan Layanan Telekomunikasi', target: '89' },
+      { no: 5, uraian: 'Meningkatnya jumlah rumah yang memenuhi persyaratan rumah layak huni', indikator: 'Rasio rumah layak huni', target: '18,43%' },
+      { no: 6, uraian: 'Menurunnya tingkat pencemaran tanah, air dan udara', indikator: 'Indeks kualitas Air', target: '64.71' },
+      { no: 7, uraian: 'Meningkatnya produktivitas usaha dan kesejahteraan pelaku ekonomi pertanian', indikator: 'Kontribusi Lapangan Usaha Pertanian', target: '75.49' },
+      { no: 8, uraian: 'Meningkatnya peran sektor UMKM, ekonomi kreatif dan BUMKam', indikator: 'Kontribusi Lapangan Usaha Perdagangan dan Jasa', target: '19.27' },
+      { no: 9, uraian: 'Meningkatnya investasi daerah', indikator: 'Jumlah nilai investasi berskala nasional', target: '2986.349' },
+      { no: 10, uraian: 'Berkurangnya angka kemiskinan', indikator: 'Angka Kemiskinan', target: '10.02' },
+      { no: 11, uraian: 'Menurunnya Tingkat Pengangguran Terbuka', indikator: 'Tingkat Pengangguran Terbuka', target: '4.6' },
+      { no: 12, uraian: 'Meningkatnya Taraf Pendidikan Masyarakat', indikator: 'Angka rata-rata lama sekolah', target: '8.46' },
+      { no: 13, uraian: 'Meningkatnya derajat Kesehatan Masyarakat', indikator: 'Umur Harapan Hidup', target: '72.3' },
+      { no: 14, uraian: 'Terwujudnya Birokrasi yang memiliki pelayanan publik berkualitas', indikator: 'Indeks Kepuasan Masyarakat', target: '70.51' },
+      { no: 15, uraian: 'Meningkatnya kinerja tata kelola keuangan dan aset daerah', indikator: 'Opini BPK (WTP)', target: 'WTP' },
+      { no: 16, uraian: 'Terwujudnya tata kelola pemerintahan kampung yang baik', indikator: 'Jumlah Desa Maju', target: '8' }
     ],
     sasaranOpd: [
-      { no: 1, uraian: 'Meningkatnya pelayanan publik', indikator: 'Indeks Kepuasan Masyarakat', target: '80', hasil: 'Y' },
-      { no: 2, uraian: 'Meningkatnya kinerja keuangan daerah', indikator: 'Opini BPK', target: 'WTP', hasil: 'Y' },
-      { no: 3, uraian: 'Meningkatnya kualitas SDM', indikator: 'Indeks Profesionalitas ASN', target: '85', hasil: 'Y' }
+      { no: 1, uraian: 'Meningkatnya pelayanan publik', indikator: 'Indeks Kepuasan Masyarakat', target: '80' },
+      { no: 2, uraian: 'Meningkatnya kinerja keuangan daerah', indikator: 'Opini BPK', target: 'WTP' },
+      { no: 3, uraian: 'Meningkatnya kualitas SDM', indikator: 'Indeks Profesionalitas ASN', target: '85' }
     ]
   },
   kkLeadII: {
@@ -4125,10 +4122,10 @@ const KK_REF = {
       { kode: '1.2', label: 'Komitmen terhadap Kompetensi', params: 1 },
       { kode: '1.3', label: 'Kepemimpinan yang Kondusif', params: 7 },
       { kode: '1.4', label: 'Struktur Organisasi Sesuai Kebutuhan', params: 1 },
-      { kode: '1.5', label: 'Pendelegasian Wewenang dan Tanggung Jawab yang Tepat', params: 1 },
-      { kode: '1.6', label: 'Penyusunan dan Penerapan Kebijakan yang Sehat tentang Pembinaan SDM', params: 3 },
+      { kode: '1.5', label: 'Pendelegasian Wewenang dan Tanggung Jawab', params: 1 },
+      { kode: '1.6', label: 'Pembinaan SDM', params: 3 },
       { kode: '1.7', label: 'Perwujudan Peran APIP yang Efektif', params: 1 },
-      { kode: '1.8', label: 'Hubungan Kerja yang Baik dengan Instansi Pemerintah Terkait', params: 2 },
+      { kode: '1.8', label: 'Hubungan Kerja dengan Instansi Terkait', params: 2 },
       { kode: '2.1', label: 'Identifikasi Risiko', params: 3 },
       { kode: '2.2', label: 'Analisis Risiko', params: 6 },
       { kode: '3.1', label: 'Reviu atas Kinerja', params: 1 },
@@ -4165,9 +4162,9 @@ function openKkModal(id) {
   if (!row) return;
   kkEditingRowId = id;
   kkData = row.kkData || {};
-  
+
   document.getElementById('kkOpdName').textContent = row.opd || 'Tanpa Nama';
-  
+
   renderKkLeadSpip();
   renderKkLeadI();
   renderKkLeadII();
@@ -4187,7 +4184,7 @@ function openKkModal(id) {
   renderKk6();
   renderKk7();
   renderKk8();
-  
+
   document.getElementById('kkModal').classList.add('active');
   showKkTab('kktab1');
 }
@@ -4205,15 +4202,15 @@ function showKkTab(tabId) {
 function renderKkLeadSpip() {
   const body = document.getElementById('kkSpipRekapBody');
   let html = '';
-  
+
   const perencanaan = calculatePerencanaan();
   const struktur = calculateStruktur();
   const pencapaian = calculatePencapaian();
   const maturitas = perencanaan + struktur + pencapaian;
-  
+
   const mri = calculateMri();
   const iepk = calculateIepk();
-  
+
   html += `<tr><td>Perencanaan (40%)</td><td>${perencanaan.toFixed(2)}</td></tr>`;
   html += `<tr><td>Struktur & Proses (30%)</td><td>${struktur.toFixed(2)}</td></tr>`;
   html += `<tr><td>Pencapaian Tujuan (30%)</td><td>${pencapaian.toFixed(2)}</td></tr>`;
@@ -4221,7 +4218,7 @@ function renderKkLeadSpip() {
   html += `<tr><td>MRI</td><td>${mri.toFixed(2)}</td></tr>`;
   html += `<tr><td>IEPK</td><td>${iepk.toFixed(2)}</td></tr>`;
   html += `<tr><td>Kapabilitas APIP</td><td>${(kkData['kapabilitasApip'] || 3).toFixed(2)}</td></tr>`;
-  
+
   body.innerHTML = html;
   document.getElementById('kkMaturitasAkhir').textContent = maturitas.toFixed(2);
   document.getElementById('kkMriAkhir').textContent = mri.toFixed(2);
@@ -4265,17 +4262,17 @@ function calculateIepk() {
 function renderKkLeadI() {
   const container = document.getElementById('kkLeadIBody');
   let html = '<h6>Kualitas Sasaran Strategis (KK 1)</h6><table class="kk-table"><thead><tr><th>No</th><th>Uraian</th><th>Bobot</th><th>Skor</th></tr></thead><tbody>';
-  
+
   const kk1Items = [
     { kode: '1.1', uraian: 'Sasaran Strategis Pemda', bobot: 0.5 },
     { kode: '1.2', uraian: 'Sasaran Strategis OPD', bobot: 0.5 }
   ];
-  
+
   kk1Items.forEach(item => {
     const val = kkData[`kk1_${item.kode}`] || 0;
     html += `<tr><td>${item.kode}</td><td>${item.uraian}</td><td>${item.bobot}</td><td><input type="number" class="kk-input" data-kk="kk1" data-param="${item.kode}" value="${val}" min="0" max="100"></td></tr>`;
   });
-  
+
   html += '</tbody></table><br>';
   html += '<h6>Kualitas Strategi Pencapaian Sasaran (KK 2)</h6><table class="kk-table"><thead><tr><th>No</th><th>Uraian</th><th>Bobot</th><th>Skor</th></tr></thead><tbody>';
   const kk2Items = [
@@ -4295,7 +4292,7 @@ function renderKkLeadI() {
 function renderKkLeadII() {
   const container = document.getElementById('kkLeadIIBody');
   let html = '<table class="kk-table"><thead><tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Nilai SPIP</th><th>Nilai MRI</th><th>Nilai IEPK</th><th>Nilai Ketaatan</th></tr></thead><tbody>';
-  
+
   KK_REF.kkLeadII.subunsur.forEach(item => {
     for (let i = 1; i <= item.params; i++) {
       const paramId = `${item.kode}_${i}`;
@@ -4325,10 +4322,10 @@ function renderKkLeadIII() {
 // ================= RENDER KKE 1.1 =================
 function renderKk11() {
   const container = document.getElementById('kk11Body');
-  let html = '<table class="kk-table"><thead><tr><th>NO</th><th>URAIAN SASARAN STRATEGIS</th><th>INDIKATOR</th><th>TARGET</th><th>HASIL</th></tr></thead><tbody>';
+  let html = '<table class="kk-table"><thead><tr><th>NO</th><th>URAIAN SASARAN STRATEGIS</th><th>INDIKATOR</th><th>TARGET</th><th>HASIL (Y/T)</th></tr></thead><tbody>';
   (KK_REF.kkLeadI.sasaranPemda || []).forEach((item, idx) => {
-    const val = kkData[`kk11_${idx}`] || item.hasil || '';
-    html += `<tr><td>${idx+1}</td><td>${item.uraian}</td><td>${item.indikator}</td><td>${item.target}</td><td><input type="text" class="kk-input" data-kk="kk11" data-param="${idx}" value="${val}" style="width:80px;"></td></tr>`;
+    const val = kkData[`kk11_${idx}`] || '';
+    html += `<tr><td>${idx+1}</td><td>${item.uraian}</td><td>${item.indikator}</td><td>${item.target}</td><td><input type="text" class="kk-input" data-kk="kk11" data-param="${idx}" value="${val}" style="width:60px;"></td></tr>`;
   });
   html += '</tbody></table>';
   container.innerHTML = html;
@@ -4337,10 +4334,10 @@ function renderKk11() {
 // ================= RENDER KKE 1.2 =================
 function renderKk12() {
   const container = document.getElementById('kk12Body');
-  let html = '<table class="kk-table"><thead><tr><th>NO</th><th>SASARAN STRATEGIS OPD</th><th>INDIKATOR</th><th>TARGET</th><th>HASIL</th></tr></thead><tbody>';
+  let html = '<table class="kk-table"><thead><tr><th>NO</th><th>SASARAN STRATEGIS OPD</th><th>INDIKATOR</th><th>TARGET</th><th>HASIL (Y/T)</th></tr></thead><tbody>';
   (KK_REF.kkLeadI.sasaranOpd || []).forEach((item, idx) => {
-    const val = kkData[`kk12_${idx}`] || item.hasil || '';
-    html += `<tr><td>${idx+1}</td><td>${item.uraian}</td><td>${item.indikator}</td><td>${item.target}</td><td><input type="text" class="kk-input" data-kk="kk12" data-param="${idx}" value="${val}" style="width:80px;"></td></tr>`;
+    const val = kkData[`kk12_${idx}`] || '';
+    html += `<tr><td>${idx+1}</td><td>${item.uraian}</td><td>${item.indikator}</td><td>${item.target}</td><td><input type="text" class="kk-input" data-kk="kk12" data-param="${idx}" value="${val}" style="width:60px;"></td></tr>`;
   });
   html += '</tbody></table>';
   container.innerHTML = html;
@@ -4365,19 +4362,150 @@ function renderDynamicRows(kk) {
   });
 }
 
-// Fungsi placeholder untuk sheet lain (bisa diisi sesuai kebutuhan)
-function renderKk22() { document.getElementById('kk22Body').innerHTML = '<p>Isi KK 2.2 - Sasaran Kegiatan</p>'; }
-function renderKk23() { document.getElementById('kk23Body').innerHTML = '<p>Isi KK 2.3 - Sub Kegiatan</p>'; }
-function renderKk31() { document.getElementById('kk31Body').innerHTML = '<p>Isi KK 3.1 - Struktur Proses T1</p>'; }
-function renderKk32() { document.getElementById('kk32Body').innerHTML = '<p>Isi KK 3.2 - Struktur Proses T2</p>'; }
-function renderKk33() { document.getElementById('kk33Body').innerHTML = '<p>Isi KK 3.3 - Struktur Proses T3</p>'; }
-function renderKk34() { document.getElementById('kk34Body').innerHTML = '<p>Isi KK 3.4 - Struktur Proses T4</p>'; }
-function renderKk51a() { document.getElementById('kk51aBody').innerHTML = '<p>Isi KK 5.1A - Capaian Sasaran Strategis K/L/D</p>'; }
-function renderKk51b() { document.getElementById('kk51bBody').innerHTML = '<p>Isi KK 5.1B - Capaian Sasaran Strategis OPD</p>'; }
-function renderKk52() { document.getElementById('kk52Body').innerHTML = '<p>Isi KK 5.2 - Capaian Output</p>'; }
-function renderKk6() { document.getElementById('kk6Body').innerHTML = '<p>Isi KK 6 - Keandalan Pelaporan Keuangan</p>'; }
-function renderKk7() { document.getElementById('kk7Body').innerHTML = '<p>Isi KK 7 - Pengamanan Aset</p>'; }
-function renderKk8() { document.getElementById('kk8Body').innerHTML = '<p>Isi KK 8 - Ketaatan Peraturan</p>'; }
+// ================= RENDER KKE 2.2 =================
+function renderKk22() {
+  const container = document.getElementById('kk22Body');
+  container.innerHTML = '<p>Isi data KK 2.2 - Sasaran Kegiatan</p><table class="kk-table"><thead><tr><th>No</th><th>Nama Kegiatan</th><th>Sasaran</th><th>Indikator</th><th>Target</th><th>Hasil</th></tr></thead><tbody id="kk22Tbody"></tbody></table><button class="kk-add-row" data-kk="kk22">+ Tambah Baris</button>';
+  renderDynamicRows('kk22');
+}
+
+// ================= RENDER KKE 2.3 =================
+function renderKk23() {
+  const container = document.getElementById('kk23Body');
+  container.innerHTML = '<p>Isi data KK 2.3 - Sub Kegiatan</p><table class="kk-table"><thead><tr><th>No</th><th>Nama Sub Kegiatan</th><th>Sasaran</th><th>Indikator</th><th>Target</th><th>Hasil</th></tr></thead><tbody id="kk23Tbody"></tbody></table><button class="kk-add-row" data-kk="kk23">+ Tambah Baris</button>';
+  renderDynamicRows('kk23');
+}
+
+// ================= RENDER KK 3.1 =================
+function renderKk31() {
+  const container = document.getElementById('kk31Body');
+  let html = '<table class="kk-table"><thead><tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Nilai SPIP</th></tr></thead><tbody>';
+  KK_REF.kkLeadII.subunsur.forEach(item => {
+    for (let i = 1; i <= item.params; i++) {
+      const paramId = `${item.kode}_${i}`;
+      const spipVal = kkData[`kk31_${paramId}`] || 3;
+      html += `<tr><td>${item.kode}</td><td>${item.label}</td><td>${i}</td><td><input type="number" class="kk-input" data-kk="kk31" data-param="${paramId}" value="${spipVal}" min="1" max="5"></td></tr>`;
+    }
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ================= RENDER KK 3.2 =================
+function renderKk32() {
+  const container = document.getElementById('kk32Body');
+  let html = '<table class="kk-table"><thead><tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Nilai SPIP</th></tr></thead><tbody>';
+  KK_REF.kkLeadII.subunsur.forEach(item => {
+    for (let i = 1; i <= item.params; i++) {
+      const paramId = `${item.kode}_${i}`;
+      const spipVal = kkData[`kk32_${paramId}`] || 3;
+      html += `<tr><td>${item.kode}</td><td>${item.label}</td><td>${i}</td><td><input type="number" class="kk-input" data-kk="kk32" data-param="${paramId}" value="${spipVal}" min="1" max="5"></td></tr>`;
+    }
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ================= RENDER KK 3.3 =================
+function renderKk33() {
+  const container = document.getElementById('kk33Body');
+  let html = '<table class="kk-table"><thead><tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Nilai SPIP</th></tr></thead><tbody>';
+  KK_REF.kkLeadII.subunsur.forEach(item => {
+    for (let i = 1; i <= item.params; i++) {
+      const paramId = `${item.kode}_${i}`;
+      const spipVal = kkData[`kk33_${paramId}`] || 3;
+      html += `<tr><td>${item.kode}</td><td>${item.label}</td><td>${i}</td><td><input type="number" class="kk-input" data-kk="kk33" data-param="${paramId}" value="${spipVal}" min="1" max="5"></td></tr>`;
+    }
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ================= RENDER KK 3.4 =================
+function renderKk34() {
+  const container = document.getElementById('kk34Body');
+  let html = '<table class="kk-table"><thead><tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Nilai SPIP</th></tr></thead><tbody>';
+  KK_REF.kkLeadII.subunsur.forEach(item => {
+    for (let i = 1; i <= item.params; i++) {
+      const paramId = `${item.kode}_${i}`;
+      const spipVal = kkData[`kk34_${paramId}`] || 3;
+      html += `<tr><td>${item.kode}</td><td>${item.label}</td><td>${i}</td><td><input type="number" class="kk-input" data-kk="kk34" data-param="${paramId}" value="${spipVal}" min="1" max="5"></td></tr>`;
+    }
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ================= RENDER KK 5.1A =================
+function renderKk51a() {
+  const container = document.getElementById('kk51aBody');
+  let html = '<table class="kk-table"><thead><tr><th>No</th><th>Sasaran Strategis</th><th>Indikator</th><th>Target</th><th>Realisasi</th></tr></thead><tbody>';
+  (KK_REF.kkLeadI.sasaranPemda || []).forEach((item, idx) => {
+    const realisasi = kkData[`kk51a_${idx}`] || '';
+    html += `<tr><td>${idx+1}</td><td>${item.uraian}</td><td>${item.indikator}</td><td>${item.target}</td><td><input type="text" class="kk-input" data-kk="kk51a" data-param="${idx}" value="${realisasi}" style="width:80px;"></td></tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ================= RENDER KK 5.1B =================
+function renderKk51b() {
+  const container = document.getElementById('kk51bBody');
+  let html = '<table class="kk-table"><thead><tr><th>No</th><th>Sasaran Strategis OPD</th><th>Indikator</th><th>Target</th><th>Realisasi</th></tr></thead><tbody>';
+  (KK_REF.kkLeadI.sasaranOpd || []).forEach((item, idx) => {
+    const realisasi = kkData[`kk51b_${idx}`] || '';
+    html += `<tr><td>${idx+1}</td><td>${item.uraian}</td><td>${item.indikator}</td><td>${item.target}</td><td><input type="text" class="kk-input" data-kk="kk51b" data-param="${idx}" value="${realisasi}" style="width:80px;"></td></tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ================= RENDER KK 5.2 =================
+function renderKk52() {
+  const container = document.getElementById('kk52Body');
+  container.innerHTML = '<p>Isi KK 5.2 - Capaian Output</p><table class="kk-table"><thead><tr><th>No</th><th>Indikator Output</th><th>Target</th><th>Realisasi</th></tr></thead><tbody id="kk52Tbody"></tbody></table><button class="kk-add-row" data-kk="kk52">+ Tambah Baris</button>';
+  renderDynamicRows('kk52');
+}
+
+// ================= RENDER KK 6 =================
+function renderKk6() {
+  const container = document.getElementById('kk6Body');
+  let html = '<table class="kk-table"><thead><tr><th>Tahun</th><th>Opini BPK</th><th>Keterangan</th></tr></thead><tbody>';
+  for (let i = 0; i < 5; i++) {
+    const year = new Date().getFullYear() - i;
+    const opini = kkData[`kk6_${year}`] || '';
+    const ket = kkData[`kk6_ket_${year}`] || '';
+    html += `<tr><td>${year}</td><td><input type="text" class="kk-input" data-kk="kk6" data-param="${year}" value="${opini}" style="width:150px;"></td><td><input type="text" class="kk-input" data-kk="kk6_ket" data-param="${year}" value="${ket}" style="width:200px;"></td></tr>`;
+  }
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ================= RENDER KK 7 =================
+function renderKk7() {
+  const container = document.getElementById('kk7Body');
+  let html = '<table class="kk-table"><thead><tr><th>Tahun</th><th>Catatan Pengamanan Aset</th></tr></thead><tbody>';
+  for (let i = 0; i < 5; i++) {
+    const year = new Date().getFullYear() - i;
+    const catatan = kkData[`kk7_${year}`] || '';
+    html += `<tr><td>${year}</td><td><input type="text" class="kk-input" data-kk="kk7" data-param="${year}" value="${catatan}" style="width:250px;"></td></tr>`;
+  }
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ================= RENDER KK 8 =================
+function renderKk8() {
+  const container = document.getElementById('kk8Body');
+  let html = '<table class="kk-table"><thead><tr><th>Tahun</th><th>Jumlah Temuan</th></tr></thead><tbody>';
+  for (let i = 0; i < 5; i++) {
+    const year = new Date().getFullYear() - i;
+    const jumlah = kkData[`kk8_${year}`] || '';
+    html += `<tr><td>${year}</td><td><input type="number" class="kk-input" data-kk="kk8" data-param="${year}" value="${jumlah}" min="0"></td></tr>`;
+  }
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
 
 // ================= Event Listener untuk input =================
 document.addEventListener('input', function(e) {
@@ -4386,12 +4514,12 @@ document.addEventListener('input', function(e) {
     const param = e.target.dataset.param;
     const val = e.target.value;
     kkData[`${kk}_${param}`] = val;
-    
+
     if (kk === 'kk1') calculateKk1Total();
     if (kk === 'kk2') calculateKk2Total();
     if (kk === 'kk3') calculatePencapaian();
     if (kk.startsWith('kk2_')) calculateStruktur();
-    if (kk === 'kk1' || kk === 'kk2' || kk === 'kk3') renderKkLeadSpip();
+    if (kk === 'kk1' || kk === 'kk2' || kk === 'kk3' || kk.startsWith('kk2_')) renderKkLeadSpip();
   }
 });
 
@@ -4444,6 +4572,14 @@ function calculateKk2Total() {
   const kk2c = parseFloat(kkData['kk2_2.3']) || 0;
   kkData['kk2_total'] = (kk2a + kk2b + kk2c) / 3;
 }
+
+// ====== EVENT LISTENER UNTUK TAB (PENTING! JANGAN HAPUS) ======
+document.querySelectorAll('.kk-tab-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const tabId = this.getAttribute('data-tab');
+    showKkTab(tabId);
+  });
+});
 </script>
 </body>
 </html>
