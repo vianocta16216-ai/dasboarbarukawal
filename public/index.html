@@ -1,6 +1,3 @@
-
-
-
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -2038,11 +2035,34 @@ let pendingSave = false;
 let chartInstance = null;
 let originalRows = [];
 
+// ============================================================
+// PERUBAHAN KEAMANAN: TAMBAHKAN FUNGSI ESCAPE HTML
+// ============================================================
+function escapeHtml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 // ====== PANGGIL SERVER ======
+// PERUBAHAN KEAMANAN: GANTI VERSI SEBELUMNYA DENGAN VERSI AMAN INI
 function callServer(action, params = {}) {
   const functionUrl = '/myCloudinaryHandler';
-  const hasLargePayload = params.fileData || params.rows;
-  if (hasLargePayload) {
+  
+  // Daftar aksi sensitif yang TIDAK BOLEH lewat URL (Query String)
+  const sensitiveActions = [
+    'verifyAccess', 'verifyDelete', 'saveData', 'saveField', 
+    'addOpd', 'deleteOpd', 'uploadFile', 'deleteFile', 
+    'addYear', 'deleteYear', 'createBackup', 'restoreBackup', 'deleteBackup'
+  ];
+  
+  // Aksi sensitif harus menggunakan POST
+  const method = (sensitiveActions.includes(action) || params.fileData || params.rows) ? 'POST' : 'GET';
+
+  if (method === 'POST') {
     return fetch(functionUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2368,6 +2388,7 @@ async function saveData() {
 }
 
 // ====== RENDER TABEL ======
+// PERUBAHAN KEAMANAN: GANTI FUNGSI RENDER DENGAN VERSI YANG MENGGUNAKAN escapeHtml
 function render() {
   const tbody = document.getElementById('tableBody');
   const empty = document.getElementById('emptyState');
@@ -2402,11 +2423,12 @@ function render() {
       } else {
         kelengkapanClass = 'badge-kosong'; kelengkapanLabel = 'Belum';
       }
+      // PERUBAHAN KEAMANAN: gunakan escapeHtml untuk nama OPD
       return `<tr>
         <td style="text-align:center;">${index + 1}</td>
         <td>
           <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-weight:500;">${r.opd || 'Tanpa Nama'}</span>
+            <span style="font-weight:500;">${escapeHtml(r.opd || 'Tanpa Nama')}</span>
             <button class="btn-edit-name" data-id="${r.id}" title="Ubah Nama" style="background:none; border:none; cursor:pointer; font-size:18px; padding:0;">✏️</button>
           </div>
         </td>
@@ -3138,8 +3160,9 @@ function renderFileList(row, subCode, paramId, level) {
 
     const div = document.createElement('div');
     div.style.cssText = 'display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px; border-radius:6px; margin-top:6px;';
+    // PERUBAHAN KEAMANAN: gunakan escapeHtml untuk fileName
     div.innerHTML = `
-      <a href="${displayUrl}" target="_blank" rel="noopener" class="file-link" style="flex-grow:1; margin:0;">📎 ${fileName}</a>
+      <a href="${displayUrl}" target="_blank" rel="noopener" class="file-link" style="flex-grow:1; margin:0;">📎 ${escapeHtml(fileName)}</a>
       <button type="button" onclick="removeUploadedFile('${row.id}', '${subCode}', '${paramId}', ${level}, '${fileUrl}')" style="background:#fee2e2; color:#dc2626; border:none; border-radius:6px; padding:4px 8px; cursor:pointer; font-size:12px;">🗑️ Hapus</button>
     `;
     fileListEl.appendChild(div);
