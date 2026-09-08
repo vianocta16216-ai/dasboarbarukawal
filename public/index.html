@@ -708,7 +708,7 @@ tbody input[readonly] {
 #kpiChartModal .modal {
   background: linear-gradient(135deg, #eff6ff 0%, #ede9fe 50%, #e0e7ff 100%);
   border: none;
-  max-width: 1100px; /* Kembali ke ukuran standar */
+  max-width: 1100px;
   width: 95%;
   max-height: 90vh;
   text-align: center;
@@ -1953,7 +1953,6 @@ input[type="file"]:hover {
 <div id="loadingOverlay">
   <div class="loading-card">
     <div class="loading-logo">
-      <!-- GANTI logo.png dengan file logo SPIP Anda -->
       <img src="logo.png" alt="Logo SPIP Mahakam Ulu">
     </div>
     <h2>KAWAL SPIP</h2>
@@ -1974,7 +1973,6 @@ input[type="file"]:hover {
     <div><h1>📊 KAWAL SPIP</h1><p class="sub">Pemantauan maturitas SPIP Terintegrasi Seluruh OPD · Kabupaten Mahakam Ulu</p></div>
   </div>
   <div class="actions">
-    <!-- TOMBOL NAVIGASI MODERN GRADIENT -->
     <button id="btnDashboardNav" class="nav-btn light" style="display: none;">📈 Dashboard</button>
     <button id="btnOpdListNav" class="nav-btn">🏢 Daftar OPD</button>
     
@@ -1992,7 +1990,6 @@ input[type="file"]:hover {
 
 <!-- ===== VIEW: DASHBOARD (KPI) ===== -->
 <div id="dashboardView" class="view-section hidden">
-  <!-- KPI Cards -->
   <div class="kpi-grid">
     <div class="kpi" id="kpi-card-1" onclick="showChart('rataRata')">
       <div class="kpi-header"><span class="kpi-label">Rata‑rata Level</span></div>
@@ -2053,7 +2050,6 @@ input[type="file"]:hover {
 
 <!-- ===== VIEW: DAFTAR OPD (FITUR LENGKAP) ===== -->
 <div id="opdListView" class="view-section hidden">
-  <!-- Panel Tabel -->
   <div class="panel">
     <div class="panel-head"><h2>🏢 Daftar OPD - Tahun <span id="currentYearLabel">2026</span></h2><p class="status-msg" id="saveStatus"></p></div>
     <p class="desc">Isi data langsung pada tabel. Klik tombol ✎ untuk mengedit 25 subunsur, evidence, dan upload file untuk masing‑masing level.</p>
@@ -2258,144 +2254,195 @@ input[type="file"]:hover {
     </div>
     <div class="kk-content">
       <div class="kk-save-status" id="kkSaveStatus"></div>
-      <!-- Tabs Navigasi -->
       <div class="kk-tabs">
-        <button class="kk-tab-btn active" onclick="showKkTab('kktab1')">KKLEAD I</button>
-        <button class="kk-tab-btn" onclick="showKkTab('kktab2')">KKLEAD II</button>
-        <button class="kk-tab-btn" onclick="showKkTab('kktab3')">KKLEAD III</button>
-        <button class="kk-tab-btn" onclick="showKkTab('kktab4')">KKLEAD_SPIP</button>
+        <button class="kk-tab-btn active" data-tab="kktab1">KKLEAD_SPIP</button>
+        <button class="kk-tab-btn" data-tab="kktab2">KKLEAD I</button>
+        <button class="kk-tab-btn" data-tab="kktab3">KKLEAD II</button>
+        <button class="kk-tab-btn" data-tab="kktab4">KKLEAD III</button>
+        <button class="kk-tab-btn" data-tab="kktab5">KKE 1.1</button>
+        <button class="kk-tab-btn" data-tab="kktab6">KKE 1.2</button>
+        <button class="kk-tab-btn" data-tab="kktab7">KKE 2.1</button>
+        <button class="kk-tab-btn" data-tab="kktab8">KKE 2.2</button>
+        <button class="kk-tab-btn" data-tab="kktab9">KKE 2.3</button>
+        <button class="kk-tab-btn" data-tab="kktab10">KK 3.1</button>
+        <button class="kk-tab-btn" data-tab="kktab11">KK 3.2</button>
+        <button class="kk-tab-btn" data-tab="kktab12">KK 3.3</button>
+        <button class="kk-tab-btn" data-tab="kktab13">KK 3.4</button>
+        <button class="kk-tab-btn" data-tab="kktab14">KK 5.1A</button>
+        <button class="kk-tab-btn" data-tab="kktab15">KK 5.1B</button>
+        <button class="kk-tab-btn" data-tab="kktab16">KK 5.2</button>
+        <button class="kk-tab-btn" data-tab="kktab17">KK 6</button>
+        <button class="kk-tab-btn" data-tab="kktab18">KK 7</button>
+        <button class="kk-tab-btn" data-tab="kktab19">KK 8</button>
       </div>
 
-      <!-- TAB 1: KKLEAD I -->
+      <!-- KKLEAD_SPIP -->
       <div class="kk-tab-content" id="kktab1">
         <div class="kk-subsection">
-          <h5>📌 A. Kualitas Sasaran Strategis (KK 1)</h5>
+          <h5>📊 REKAPITULASI MATURITAS SPIP, MRI, IEPK</h5>
           <div class="kk-table-container">
             <table class="kk-table">
-              <thead>
-                <tr><th>No</th><th>Uraian</th><th>Bobot</th><th>Skor</th><th>Skor Akhir</th></tr>
-              </thead>
-              <tbody id="kk1Body"></tbody>
+              <thead><tr><th>Komponen</th><th>Nilai</th></tr></thead>
+              <tbody id="kkSpipRekapBody"></tbody>
             </table>
           </div>
         </div>
-        <div class="kk-subsection">
-          <h5>📌 B. Kualitas Strategi Pencapaian Sasaran Strategis (KK 2)</h5>
-          <div class="kk-table-container">
-            <table class="kk-table">
-              <thead>
-                <tr><th>No</th><th>Uraian</th><th>Bobot</th><th>Skor</th><th>Skor Akhir</th></tr>
-              </thead>
-              <tbody id="kk2Body"></tbody>
-            </table>
+        <div class="kk-summary">
+          <h4>MATURITAS AKHIR</h4>
+          <div class="kk-summary-grid">
+            <div class="kk-summary-item"><div class="label">Maturitas</div><div class="value" id="kkMaturitasAkhir">0.00</div></div>
+            <div class="kk-summary-item"><div class="label">MRI</div><div class="value" id="kkMriAkhir">0.00</div></div>
+            <div class="kk-summary-item"><div class="label">IEPK</div><div class="value" id="kkIepkAkhir">0.00</div></div>
           </div>
+        </div>
+        <div class="kk-actions">
+          <button class="kk-cancel" id="kkCancel">Batal</button>
+          <button class="kk-save" id="kkSave">💾 Simpan Semua</button>
         </div>
       </div>
 
-      <!-- TAB 2: KKLEAD II -->
+      <!-- KKLEAD I -->
       <div class="kk-tab-content hidden" id="kktab2">
         <div class="kk-subsection">
-          <h5>🏛️ 1. Lingkungan Pengendalian</h5>
-          <div class="kk-table-container">
-            <table class="kk-table">
-              <thead>
-                <tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Uraian Parameter</th><th>Nilai SPIP</th><th>Nilai MRI</th><th>Nilai IEPK</th><th>Nilai Ketaatan</th><th>Kesimpulan</th></tr>
-              </thead>
-              <tbody id="kk2LingkunganBody"></tbody>
-            </table>
-          </div>
-        </div>
-        <div class="kk-subsection">
-          <h5>📊 2. Penilaian Risiko</h5>
-          <div class="kk-table-container">
-            <table class="kk-table">
-              <thead>
-                <tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Uraian Parameter</th><th>Nilai SPIP</th><th>Nilai MRI</th><th>Nilai IEPK</th><th>Nilai Ketaatan</th><th>Kesimpulan</th></tr>
-              </thead>
-              <tbody id="kk2RisikoBody"></tbody>
-            </table>
-          </div>
-        </div>
-        <div class="kk-subsection">
-          <h5>🛡️ 3. Kegiatan Pengendalian</h5>
-          <div class="kk-table-container">
-            <table class="kk-table">
-              <thead>
-                <tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Uraian Parameter</th><th>Nilai SPIP</th><th>Nilai MRI</th><th>Nilai IEPK</th><th>Nilai Ketaatan</th><th>Kesimpulan</th></tr>
-              </thead>
-              <tbody id="kk2KegiatanBody"></tbody>
-            </table>
-          </div>
-        </div>
-        <div class="kk-subsection">
-          <h5>📢 4. Informasi dan Komunikasi</h5>
-          <div class="kk-table-container">
-            <table class="kk-table">
-              <thead>
-                <tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Uraian Parameter</th><th>Nilai SPIP</th><th>Nilai MRI</th><th>Nilai IEPK</th><th>Nilai Ketaatan</th><th>Kesimpulan</th></tr>
-              </thead>
-              <tbody id="kk2InfoBody"></tbody>
-            </table>
-          </div>
-        </div>
-        <div class="kk-subsection">
-          <h5>👁️ 5. Pemantauan</h5>
-          <div class="kk-table-container">
-            <table class="kk-table">
-              <thead>
-                <tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Uraian Parameter</th><th>Nilai SPIP</th><th>Nilai MRI</th><th>Nilai IEPK</th><th>Nilai Ketaatan</th><th>Kesimpulan</th></tr>
-              </thead>
-              <tbody id="kk2PemantauanBody"></tbody>
-            </table>
-          </div>
+          <h5>📌 Kertas Kerja Penetapan Tujuan</h5>
+          <div class="kk-table-container" id="kkLeadIBody"></div>
         </div>
       </div>
 
-      <!-- TAB 3: KKLEAD III -->
+      <!-- KKLEAD II -->
       <div class="kk-tab-content hidden" id="kktab3">
         <div class="kk-subsection">
-          <h5>📊 Pencapaian Tujuan</h5>
-          <div class="kk-table-container">
-            <table class="kk-table">
-              <thead>
-                <tr><th>No</th><th>Pencapaian Tujuan</th><th>Indikator</th><th>Definisi Indikator</th><th>Cara Pengukuran</th><th>Capaian K/L/D</th></tr>
-              </thead>
-              <tbody id="kk3Body"></tbody>
-            </table>
-          </div>
+          <h5>📌 Kertas Kerja Struktur dan Proses</h5>
+          <div class="kk-table-container" id="kkLeadIIBody"></div>
         </div>
       </div>
 
-      <!-- TAB 4: KKLEAD_SPIP -->
+      <!-- KKLEAD III -->
       <div class="kk-tab-content hidden" id="kktab4">
-        <div class="kk-summary">
-          <h4>📊 PENYIMPULAN NILAI MATURITAS PENYELENGGARAAN SPIP TERINTEGRASI</h4>
-          <div class="kk-summary-grid">
-            <div class="kk-summary-item">
-              <div class="label">Perencanaan</div>
-              <div class="value" id="kkSummaryPerencanaan">0.00</div>
-            </div>
-            <div class="kk-summary-item">
-              <div class="label">Struktur & Proses</div>
-              <div class="value" id="kkSummaryStruktur">0.00</div>
-            </div>
-            <div class="kk-summary-item">
-              <div class="label">Pencapaian Tujuan</div>
-              <div class="value" id="kkSummaryPencapaian">0.00</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="kk-summary" style="background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); border-color: #10b981; margin-top: 16px;">
-          <h4 style="color: #065f46;">🎯 MATURITAS PENYELENGGARAAN SPIP TERINTEGRASI</h4>
-          <div style="text-align: center; font-size: 48px; font-weight: 800; color: #065f46; margin: 20px 0;" id="kkMaturitasAkhir">0.00</div>
+        <div class="kk-subsection">
+          <h5>📌 Kertas Kerja Pencapaian Tujuan</h5>
+          <div class="kk-table-container" id="kkLeadIIIBody"></div>
         </div>
       </div>
 
-      <!-- Actions -->
-      <div class="kk-actions">
-        <button class="kk-cancel" id="kkCancel">Batal</button>
-        <button class="kk-save" id="kkSave">💾 Simpan Kertas Kerja</button>
+      <!-- KKE 1.1 -->
+      <div class="kk-tab-content hidden" id="kktab5">
+        <div class="kk-subsection">
+          <h5>KK 1.1 - PENILAIAN SASARAN STRATEGIS PEMDA</h5>
+          <div class="kk-table-container" id="kk11Body"></div>
+        </div>
+      </div>
+
+      <!-- KKE 1.2 -->
+      <div class="kk-tab-content hidden" id="kktab6">
+        <div class="kk-subsection">
+          <h5>KK 1.2 - PENILAIAN SASARAN STRATEGIS OPD</h5>
+          <div class="kk-table-container" id="kk12Body"></div>
+        </div>
+      </div>
+
+      <!-- KKE 2.1 -->
+      <div class="kk-tab-content hidden" id="kktab7">
+        <div class="kk-subsection">
+          <h5>KK 2.1 - PENILAIAN SASARAN PROGRAM</h5>
+          <div class="kk-table-container" id="kk21Body"></div>
+        </div>
+      </div>
+
+      <!-- KKE 2.2 -->
+      <div class="kk-tab-content hidden" id="kktab8">
+        <div class="kk-subsection">
+          <h5>KK 2.2 - PENILAIAN SASARAN KEGIATAN</h5>
+          <div class="kk-table-container" id="kk22Body"></div>
+        </div>
+      </div>
+
+      <!-- KKE 2.3 -->
+      <div class="kk-tab-content hidden" id="kktab9">
+        <div class="kk-subsection">
+          <h5>KK 2.3 - PENILAIAN SUB KEGIATAN</h5>
+          <div class="kk-table-container" id="kk23Body"></div>
+        </div>
+      </div>
+
+      <!-- KK 3.1 -->
+      <div class="kk-tab-content hidden" id="kktab10">
+        <div class="kk-subsection">
+          <h5>KK 3.1 - STRUKTUR PROSES T1 (EFEKTIVITAS)</h5>
+          <div class="kk-table-container" id="kk31Body"></div>
+        </div>
+      </div>
+
+      <!-- KK 3.2 -->
+      <div class="kk-tab-content hidden" id="kktab11">
+        <div class="kk-subsection">
+          <h5>KK 3.2 - STRUKTUR PROSES T2 (KEUANGAN)</h5>
+          <div class="kk-table-container" id="kk32Body"></div>
+        </div>
+      </div>
+
+      <!-- KK 3.3 -->
+      <div class="kk-tab-content hidden" id="kktab12">
+        <div class="kk-subsection">
+          <h5>KK 3.3 - STRUKTUR PROSES T3 (ASET)</h5>
+          <div class="kk-table-container" id="kk33Body"></div>
+        </div>
+      </div>
+
+      <!-- KK 3.4 -->
+      <div class="kk-tab-content hidden" id="kktab13">
+        <div class="kk-subsection">
+          <h5>KK 3.4 - STRUKTUR PROSES T4 (KETAATAN)</h5>
+          <div class="kk-table-container" id="kk34Body"></div>
+        </div>
+      </div>
+
+      <!-- KK 5.1A -->
+      <div class="kk-tab-content hidden" id="kktab14">
+        <div class="kk-subsection">
+          <h5>KK 5.1A - CAPAIAN SASARAN STRATEGIS K/L/D</h5>
+          <div class="kk-table-container" id="kk51aBody"></div>
+        </div>
+      </div>
+
+      <!-- KK 5.1B -->
+      <div class="kk-tab-content hidden" id="kktab15">
+        <div class="kk-subsection">
+          <h5>KK 5.1B - CAPAIAN SASARAN STRATEGIS OPD</h5>
+          <div class="kk-table-container" id="kk51bBody"></div>
+        </div>
+      </div>
+
+      <!-- KK 5.2 -->
+      <div class="kk-tab-content hidden" id="kktab16">
+        <div class="kk-subsection">
+          <h5>KK 5.2 - CAPAIAN OUTPUT</h5>
+          <div class="kk-table-container" id="kk52Body"></div>
+        </div>
+      </div>
+
+      <!-- KK 6 -->
+      <div class="kk-tab-content hidden" id="kktab17">
+        <div class="kk-subsection">
+          <h5>KK 6 - KEANDALAN PELAPORAN KEUANGAN</h5>
+          <div class="kk-table-container" id="kk6Body"></div>
+        </div>
+      </div>
+
+      <!-- KK 7 -->
+      <div class="kk-tab-content hidden" id="kktab18">
+        <div class="kk-subsection">
+          <h5>KK 7 - PENGAMANAN ASET</h5>
+          <div class="kk-table-container" id="kk7Body"></div>
+        </div>
+      </div>
+
+      <!-- KK 8 -->
+      <div class="kk-tab-content hidden" id="kktab19">
+        <div class="kk-subsection">
+          <h5>KK 8 - KETAATAN PERATURAN</h5>
+          <div class="kk-table-container" id="kk8Body"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -2419,7 +2466,7 @@ let pendingSave = false;
 let chartInstance = null;
 let originalRows = [];
 
-// ====== PANGGIL SERVER (CLOUDFLARE PAGES FUNCTION) ======
+// ====== PANGGIL SERVER ======
 function callServer(action, params = {}) {
   const functionUrl = '/myCloudinaryHandler';
   const hasLargePayload = params.fileData || params.rows;
@@ -3474,19 +3521,16 @@ async function uploadFile(row, subCode, paramId, level, file) {
 function getPreviewUrl(fileUrl, fileName) {
   const ext = fileName.split('.').pop().toLowerCase();
 
-  // PDF, Word, PowerPoint: Buka di Google Docs Viewer (stabil)
   if (['pdf', 'doc', 'docx', 'ppt', 'pptx'].includes(ext)) {
     const encodedUrl = encodeURIComponent(fileUrl);
     return `https://docs.google.com/viewer?embedded=true&url=${encodedUrl}`;
   }
 
-  // Excel (.xls, .xlsx): Buka di Microsoft Office Viewer (LEBIH CEPAT untuk Excel)
   if (['xls', 'xlsx'].includes(ext)) {
     const encodedUrl = encodeURIComponent(fileUrl);
     return `https://view.officeapps.live.com/op/view.aspx?src=${encodedUrl}`;
   }
 
-  // Gambar (JPG, PNG, GIF, WEBP): Buka langsung (dipaksa lewat tab baru di renderFileList)
   if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
     return fileUrl;
   }
@@ -3521,15 +3565,12 @@ function renderFileList(row, subCode, paramId, level) {
     const ext = fileName.split('.').pop().toLowerCase();
     let displayUrl = fileUrl;
 
-    // 1. GAMBAR: Langsung buka
     if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
        displayUrl = fileUrl;
     }
-    // 2. EXCEL: PAKAI MICROSOFT VIEWER
     else if (['xls', 'xlsx'].includes(ext)) {
        displayUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(fileUrl)}`;
     }
-    // 3. PDF & WORD: PAKAI GOOGLE DOCS
     else if (['pdf', 'doc', 'docx', 'ppt', 'pptx'].includes(ext)) {
        displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
     }
@@ -3607,7 +3648,6 @@ document.getElementById('modalSave').addEventListener('click', async function() 
   selects.forEach(el => {
     const subCode = el.dataset.sub, paramId = el.dataset.param;
     row.subunsurs[subCode][paramId].level = parseInt(el.value) || 0;
-        // Hitung SA setelah pilih level
     row.sa = calculateSA(row);
   });
   textareas.forEach(el => {
@@ -4043,31 +4083,40 @@ setInterval(async function() {
 }, 20000);
 
 // ============================================================
-// KERTAS KERJA SPIP (PERBAIKAN ERROR ID)
+// KERTAS KERJA SPIP - SESUAI EXCEL (LENGKAP)
 // ============================================================
 let kkData = {};
 let kkEditingRowId = null;
 
-// Data referensi dari Excel (struktur KK)
+// Data referensi dari Excel
 const KK_REF = {
   kkLeadI: {
-    kk1: {
-      items: [
-        { kode: '1.1', uraian: 'Sasaran Strategis Pemda', bobot: 0.5, sub: ['a', 'b', 'c', 'd', 'e'] },
-        { kode: '1.2', uraian: 'Sasaran Strategis OPD', bobot: 0.5, sub: ['a', 'b', 'c', 'd', 'e'] }
-      ]
-    },
-    kk2: {
-      items: [
-        { kode: '2.1', uraian: 'Kualitas Sasaran Program', bobot: 1/3, sub: ['a', 'b', 'c', 'd', 'e'] },
-        { kode: '2.2', uraian: 'Kualitas Sasaran Kegiatan', bobot: 1/3, sub: ['a', 'b', 'c', 'd', 'e'] },
-        { kode: '2.3', uraian: 'Kualitas Sub Kegiatan', bobot: 1/3, sub: ['a', 'b', 'c', 'd'] }
-      ]
-    }
+    sasaranPemda: [
+      { no: 1, uraian: 'Meningkatnya konektivitas antar wilayah kecamatan', indikator: 'Persentase jalan kabupaten dalam kondisi baik', target: '0.05', hasil: 'Y' },
+      { no: 2, uraian: 'Meningkatnya cakupan rumah tangga yang teraliri air bersih', indikator: 'Persentase Capaian Akses Air Minum Layak', target: '26%', hasil: 'Y' },
+      { no: 3, uraian: 'Meningkatnya cakupan rumah tangga pengguna listrik', indikator: 'Persentase KK yang dialiri listrik', target: '95.88', hasil: 'Y' },
+      { no: 4, uraian: 'Meningkatnya cakupan dan kualitas jaringan telekomunikasi dan internet', indikator: 'Cakupan Layanan Telekomunikasi', target: '89', hasil: 'Y' },
+      { no: 5, uraian: 'Meningkatnya jumlah rumah yang memenuhi persyaratan rumah layak huni', indikator: 'Rasio rumah layak huni', target: '18.43%', hasil: 'Y' },
+      { no: 6, uraian: 'Menurunnya tingkat pencemaran tanah, air dan udara', indikator: 'Indeks kualitas Air', target: '64.71', hasil: 'Y' },
+      { no: 7, uraian: 'Meningkatnya produktivitas usaha dan kesejahteraan pelaku ekonomi pertanian', indikator: 'Kontribusi Lapangan Usaha Pertanian', target: '75.49', hasil: 'Y' },
+      { no: 8, uraian: 'Meningkatnya peran sektor UMKM, ekonomi kreatif dan BUMKam', indikator: 'Kontribusi Lapangan Usaha Perdagangan dan Jasa', target: '19.27', hasil: 'Y' },
+      { no: 9, uraian: 'Meningkatnya investasi daerah', indikator: 'Jumlah nilai investasi berskala nasional', target: '2986.349', hasil: 'Y' },
+      { no: 10, uraian: 'Berkurangnya angka kemiskinan', indikator: 'Angka Kemiskinan', target: '10.02', hasil: 'Y' },
+      { no: 11, uraian: 'Menurunnya Tingkat Pengangguran Terbuka', indikator: 'Tingkat Pengangguran Terbuka', target: '4.6', hasil: 'Y' },
+      { no: 12, uraian: 'Meningkatnya Taraf Pendidikan Masyarakat', indikator: 'Angka rata-rata lama sekolah', target: '8.46', hasil: 'Y' },
+      { no: 13, uraian: 'Meningkatnya derajat Kesehatan Masyarakat', indikator: 'Umur Harapan Hidup', target: '72.3', hasil: 'Y' },
+      { no: 14, uraian: 'Terwujudnya Birokrasi yang memiliki pelayanan publik berkualitas', indikator: 'Indeks Kepuasan Masyarakat', target: '70.51', hasil: 'Y' },
+      { no: 15, uraian: 'Meningkatnya kinerja tata kelola keuangan dan aset daerah', indikator: 'Opini BPK (WTP)', target: 'WTP', hasil: 'Y' },
+      { no: 16, uraian: 'Terwujudnya tata kelola pemerintahan kampung yang baik', indikator: 'Jumlah Desa Maju', target: '8', hasil: 'Y' }
+    ],
+    sasaranOpd: [
+      { no: 1, uraian: 'Meningkatnya pelayanan publik', indikator: 'Indeks Kepuasan Masyarakat', target: '80', hasil: 'Y' },
+      { no: 2, uraian: 'Meningkatnya kinerja keuangan daerah', indikator: 'Opini BPK', target: 'WTP', hasil: 'Y' },
+      { no: 3, uraian: 'Meningkatnya kualitas SDM', indikator: 'Indeks Profesionalitas ASN', target: '85', hasil: 'Y' }
+    ]
   },
-  
   kkLeadII: {
-    lingkungan: [
+    subunsur: [
       { kode: '1.1', label: 'Penegakan Integritas dan Nilai Etika', params: 8 },
       { kode: '1.2', label: 'Komitmen terhadap Kompetensi', params: 1 },
       { kode: '1.3', label: 'Kepemimpinan yang Kondusif', params: 7 },
@@ -4075,13 +4124,9 @@ const KK_REF = {
       { kode: '1.5', label: 'Pendelegasian Wewenang dan Tanggung Jawab', params: 1 },
       { kode: '1.6', label: 'Pembinaan SDM', params: 3 },
       { kode: '1.7', label: 'Perwujudan Peran APIP yang Efektif', params: 1 },
-      { kode: '1.8', label: 'Hubungan Kerja dengan Instansi Terkait', params: 2 }
-    ],
-    risiko: [
+      { kode: '1.8', label: 'Hubungan Kerja dengan Instansi Terkait', params: 2 },
       { kode: '2.1', label: 'Identifikasi Risiko', params: 3 },
-      { kode: '2.2', label: 'Analisis Risiko', params: 6 }
-    ],
-    kegiatan: [
+      { kode: '2.2', label: 'Analisis Risiko', params: 6 },
       { kode: '3.1', label: 'Reviu atas Kinerja', params: 1 },
       { kode: '3.2', label: 'Pembinaan SDM', params: 1 },
       { kode: '3.3', label: 'Pengendalian Sistem Informasi', params: 1 },
@@ -4092,48 +4137,52 @@ const KK_REF = {
       { kode: '3.8', label: 'Pencatatan Akurat', params: 1 },
       { kode: '3.9', label: 'Pembatasan Akses', params: 1 },
       { kode: '3.10', label: 'Akuntabilitas Sumber Daya', params: 1 },
-      { kode: '3.11', label: 'Dokumentasi SPI', params: 1 }
-    ],
-    informasi: [
+      { kode: '3.11', label: 'Dokumentasi SPI', params: 1 },
       { kode: '4.1', label: 'Informasi yang Relevan', params: 5 },
-      { kode: '4.2', label: 'Komunikasi yang Efektif', params: 1 }
-    ],
-    pemantauan: [
+      { kode: '4.2', label: 'Komunikasi yang Efektif', params: 1 },
       { kode: '5.1', label: 'Pemantauan Berkelanjutan', params: 3 },
       { kode: '5.2', label: 'Evaluasi Terpisah', params: 2 }
     ]
   },
-  
   kkLeadIII: {
     items: [
-      { no: 'A.1', indikator: 'Capaian Outcome', bobot: 0.2, sumber: 'KK 5.1A + KK 5.1B' },
-      { no: 'A.2', indikator: 'Capaian Output', bobot: 0.1, sumber: 'KK 5.2' },
-      { no: 'B.1', indikator: 'Opini LK', bobot: 0.25, sumber: 'KK 6' },
-      { no: 'C.1', indikator: 'Catatan Pengamanan Aset', bobot: 0.25, sumber: 'KK 7' },
-      { no: 'D.1', indikator: 'Temuan Ketaatan - BPK', bobot: 0.2, sumber: 'KK 8' },
-      { no: 'D.2', indikator: 'IEPK', bobot: 0, sumber: 'KKLEAD_SPIP' }
+      { no: 'A.1', indikator: 'Capaian Outcome', bobot: 0.2 },
+      { no: 'A.2', indikator: 'Capaian Output', bobot: 0.1 },
+      { no: 'B.1', indikator: 'Opini LK', bobot: 0.25 },
+      { no: 'C.1', indikator: 'Pengamanan Aset', bobot: 0.25 },
+      { no: 'D.1', indikator: 'Temuan Ketaatan', bobot: 0.2 }
     ]
   }
 };
 
-// Helper untuk mengganti titik menjadi underscore agar valid sebagai ID
-function safeId(str) {
-  return str.replace(/\./g, '_');
-}
-
+// Fungsi untuk membuka modal kertas kerja
 function openKkModal(id) {
   const row = rows.find(r => r.id === id);
   if (!row) return;
-  
   kkEditingRowId = id;
   kkData = row.kkData || {};
   
   document.getElementById('kkOpdName').textContent = row.opd || 'Tanpa Nama';
   
-  renderKkTab1();
-  renderKkTab2();
-  renderKkTab3();
-  renderKkTab4();
+  renderKkLeadSpip();
+  renderKkLeadI();
+  renderKkLeadII();
+  renderKkLeadIII();
+  renderKk11();
+  renderKk12();
+  renderKk21();
+  renderKk22();
+  renderKk23();
+  renderKk31();
+  renderKk32();
+  renderKk33();
+  renderKk34();
+  renderKk51a();
+  renderKk51b();
+  renderKk52();
+  renderKk6();
+  renderKk7();
+  renderKk8();
   
   document.getElementById('kkModal').classList.add('active');
   showKkTab('kktab1');
@@ -4142,323 +4191,255 @@ function openKkModal(id) {
 function showKkTab(tabId) {
   document.querySelectorAll('.kk-tab-content').forEach(el => el.classList.add('hidden'));
   document.getElementById(tabId).classList.remove('hidden');
-  
-  document.querySelectorAll('.kk-tab-btn').forEach((btn, idx) => {
+  document.querySelectorAll('.kk-tab-btn').forEach(btn => {
     btn.classList.remove('active');
-    if (idx === ['kktab1', 'kktab2', 'kktab3', 'kktab4'].indexOf(tabId)) {
-      btn.classList.add('active');
-    }
+    if (btn.getAttribute('data-tab') === tabId) btn.classList.add('active');
   });
 }
 
-// RENDER TAB 1: KK LEAD I
-function renderKkTab1() {
-  const kk1Body = document.getElementById('kk1Body');
-  kk1Body.innerHTML = '';
+// ================= RENDER KKLEAD_SPIP =================
+function renderKkLeadSpip() {
+  const body = document.getElementById('kkSpipRekapBody');
+  let html = '';
   
-  KK_REF.kkLeadI.kk1.items.forEach(item => {
-    item.sub.forEach((sub, subIdx) => {
-      const paramId = `${item.kode}.${sub}`;
-      const safeParam = safeId(paramId);
-      const defaultValue = kkData[`kk1_${paramId}`] || 0;
-      
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${sub.toUpperCase()}</td>
-        <td class="kk-label">${item.uraian}</td>
-        <td>${subIdx === 0 ? item.bobot : ''}</td>
-        <td><input type="number" class="kk-input" data-kk="kk1" data-param="${paramId}" value="${defaultValue}" min="0" max="100" step="1"></td>
-        <td class="kk-score" id="kk1_score_${safeParam}">0</td>
-      `;
-      kk1Body.appendChild(tr);
-    });
-  });
+  const perencanaan = calculatePerencanaan();
+  const struktur = calculateStruktur();
+  const pencapaian = calculatePencapaian();
+  const maturitas = perencanaan + struktur + pencapaian;
   
-  const trTotal = document.createElement('tr');
-  trTotal.innerHTML = `
-    <td colspan="3" style="text-align:right; font-weight:700; background:#f1f5f9;">Total</td>
-    <td style="font-weight:700; background:#f1f5f9;">=</td>
-    <td class="kk-score" id="kk1Total" style="font-weight:800; font-size:16px;">0.00</td>
-  `;
-  kk1Body.appendChild(trTotal);
+  const mri = calculateMri();
+  const iepk = calculateIepk();
   
-  const kk2Body = document.getElementById('kk2Body');
-  kk2Body.innerHTML = '';
+  html += `<tr><td>Perencanaan (40%)</td><td>${perencanaan.toFixed(2)}</td></tr>`;
+  html += `<tr><td>Struktur & Proses (30%)</td><td>${struktur.toFixed(2)}</td></tr>`;
+  html += `<tr><td>Pencapaian Tujuan (30%)</td><td>${pencapaian.toFixed(2)}</td></tr>`;
+  html += `<tr><td><strong>MATURITAS AKHIR</strong></td><td><strong>${maturitas.toFixed(2)}</strong></td></tr>`;
+  html += `<tr><td>MRI</td><td>${mri.toFixed(2)}</td></tr>`;
+  html += `<tr><td>IEPK</td><td>${iepk.toFixed(2)}</td></tr>`;
+  html += `<tr><td>Kapabilitas APIP</td><td>${(kkData['kapabilitasApip'] || 3).toFixed(2)}</td></tr>`;
   
-  KK_REF.kkLeadI.kk2.items.forEach(item => {
-    item.sub.forEach((sub, subIdx) => {
-      const paramId = `${item.kode}.${sub}`;
-      const safeParam = safeId(paramId);
-      const defaultValue = kkData[`kk2_${paramId}`] || 0;
-      
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${sub.toUpperCase()}</td>
-        <td class="kk-label">${item.uraian}</td>
-        <td>${subIdx === 0 ? item.bobot : ''}</td>
-        <td><input type="number" class="kk-input" data-kk="kk2" data-param="${paramId}" value="${defaultValue}" min="0" max="100" step="1"></td>
-        <td class="kk-score" id="kk2_score_${safeParam}">0</td>
-      `;
-      kk2Body.appendChild(tr);
-    });
-  });
-  
-  const trTotal2 = document.createElement('tr');
-  trTotal2.innerHTML = `
-    <td colspan="3" style="text-align:right; font-weight:700; background:#f1f5f9;">Total</td>
-    <td style="font-weight:700; background:#f1f5f9;">=</td>
-    <td class="kk-score" id="kk2Total" style="font-weight:800; font-size:16px;">0.00</td>
-  `;
-  kk2Body.appendChild(trTotal2);
-  
-  kk1Body.querySelectorAll('input[data-kk="kk1"]').forEach(input => {
-    input.addEventListener('input', function() {
-      const param = this.dataset.param;
-      const val = parseFloat(this.value) || 0;
-      const safeParam = safeId(param);
-      const skor = document.getElementById(`kk1_score_${safeParam}`);
-      if (skor) skor.textContent = val;
-      calculateKk1Total();
-    });
-  });
-  
-  kk2Body.querySelectorAll('input[data-kk="kk2"]').forEach(input => {
-    input.addEventListener('input', function() {
-      const param = this.dataset.param;
-      const val = parseFloat(this.value) || 0;
-      const safeParam = safeId(param);
-      const skor = document.getElementById(`kk2_score_${safeParam}`);
-      if (skor) skor.textContent = val;
-      calculateKk2Total();
-    });
-  });
-  
-  calculateKk1Total();
-  calculateKk2Total();
-}
-
-function calculateKk1Total() {
-  let total = 0;
-  KK_REF.kkLeadI.kk1.items.forEach(item => {
-    let subTotal = 0;
-    item.sub.forEach(sub => {
-      const paramId = `${item.kode}.${sub}`;
-      const input = document.querySelector(`input[data-kk="kk1"][data-param="${paramId}"]`);
-      const val = parseFloat(input?.value) || 0;
-      subTotal += val;
-    });
-    const avg = item.sub.length > 0 ? subTotal / item.sub.length : 0;
-    const skorAkhir = avg * item.bobot;
-    total += skorAkhir;
-  });
-  document.getElementById('kk1Total').textContent = total.toFixed(2);
-  kkData['kk1_total'] = total;
-}
-
-function calculateKk2Total() {
-  let total = 0;
-  KK_REF.kkLeadI.kk2.items.forEach(item => {
-    let subTotal = 0;
-    item.sub.forEach(sub => {
-      const paramId = `${item.kode}.${sub}`;
-      const input = document.querySelector(`input[data-kk="kk2"][data-param="${paramId}"]`);
-      const val = parseFloat(input?.value) || 0;
-      subTotal += val;
-    });
-    const avg = item.sub.length > 0 ? subTotal / item.sub.length : 0;
-    const skorAkhir = avg * item.bobot;
-    total += skorAkhir;
-  });
-  document.getElementById('kk2Total').textContent = total.toFixed(2);
-  kkData['kk2_total'] = total;
-}
-
-// RENDER TAB 2: KK LEAD II
-function renderKkTab2() {
-  renderKk2Section('kk2LingkunganBody', KK_REF.kkLeadII.lingkungan, 'lingkungan');
-  renderKk2Section('kk2RisikoBody', KK_REF.kkLeadII.risiko, 'risiko');
-  renderKk2Section('kk2KegiatanBody', KK_REF.kkLeadII.kegiatan, 'kegiatan');
-  renderKk2Section('kk2InfoBody', KK_REF.kkLeadII.informasi, 'informasi');
-  renderKk2Section('kk2PemantauanBody', KK_REF.kkLeadII.pemantauan, 'pemantauan');
-}
-
-function renderKk2Section(bodyId, sectionData, sectionKey) {
-  const body = document.getElementById(bodyId);
-  body.innerHTML = '';
-  
-  sectionData.forEach(item => {
-    for (let paramNo = 1; paramNo <= item.params; paramNo++) {
-      const paramId = `${item.kode}_${paramNo}`; // tidak mengandung titik karena underscore
-      const safeParam = safeId(paramId);
-      const defaultValue = kkData[`kk2_${sectionKey}_${paramId}`] || 3;
-      
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${item.kode}</td>
-        <td class="kk-label">${item.label}</td>
-        <td>${paramNo}</td>
-        <td>Parameter ${paramNo}</td>
-        <td><input type="number" class="kk-input" data-kk="kk2_${sectionKey}" data-param="${paramId}" value="${defaultValue}" min="1" max="5" step="1"></td>
-        <td><input type="number" class="kk-input" data-kk="kk2_${sectionKey}" data-param="${paramId}_mri" value="${kkData[`kk2_${sectionKey}_${paramId}_mri`] || 3}" min="1" max="5" step="1"></td>
-        <td><input type="number" class="kk-input" data-kk="kk2_${sectionKey}" data-param="${paramId}_iepk" value="${kkData[`kk2_${sectionKey}_${paramId}_iepk`] || 3}" min="1" max="5" step="1"></td>
-        <td><input type="number" class="kk-input" data-kk="kk2_${sectionKey}" data-param="${paramId}_ketaatan" value="${kkData[`kk2_${sectionKey}_${paramId}_ketaatan`] || 3}" min="1" max="5" step="1"></td>
-        <td class="kk-score" id="kk2_${sectionKey}_avg_${safeParam}">0</td>
-      `;
-      body.appendChild(tr);
-    }
-  });
-  
-  body.querySelectorAll('input[data-kk]').forEach(input => {
-    input.addEventListener('input', function() {
-      calculateKk2Avg(bodyId, sectionData, sectionKey);
-    });
-  });
-  
-  calculateKk2Avg(bodyId, sectionData, sectionKey);
-}
-
-function calculateKk2Avg(bodyId, sectionData, sectionKey) {
-  const body = document.getElementById(bodyId);
-  
-  sectionData.forEach(item => {
-    let total = 0;
-    let count = 0;
-    for (let paramNo = 1; paramNo <= item.params; paramNo++) {
-      const paramId = `${item.kode}_${paramNo}`;
-      const safeParam = safeId(paramId);
-      
-      const inputSpip = body.querySelector(`input[data-kk="kk2_${sectionKey}"][data-param="${paramId}"]`);
-      const inputMri = body.querySelector(`input[data-kk="kk2_${sectionKey}"][data-param="${paramId}_mri"]`);
-      const inputIepk = body.querySelector(`input[data-kk="kk2_${sectionKey}"][data-param="${paramId}_iepk"]`);
-      const inputKetaatan = body.querySelector(`input[data-kk="kk2_${sectionKey}"][data-param="${paramId}_ketaatan"]`);
-      
-      const spipVal = parseFloat(inputSpip?.value) || 0;
-      const mriVal = parseFloat(inputMri?.value) || 0;
-      const iepkVal = parseFloat(inputIepk?.value) || 0;
-      const ketaatanVal = parseFloat(inputKetaatan?.value) || 0;
-      
-      const avg = (spipVal + mriVal + iepkVal + ketaatanVal) / 4;
-      
-      const avgEl = body.querySelector(`#kk2_${sectionKey}_avg_${safeParam}`);
-      if (avgEl) avgEl.textContent = avg.toFixed(2);
-      
-      total += avg;
-      count++;
-    }
-    
-    const itemAvg = count > 0 ? total / count : 0;
-    kkData[`kk2_${sectionKey}_${item.kode}_avg`] = itemAvg;
-  });
-}
-
-// RENDER TAB 3: KK LEAD III
-function renderKkTab3() {
-  const body = document.getElementById('kk3Body');
-  body.innerHTML = '';
-  
-  KK_REF.kkLeadIII.items.forEach(item => {
-    const defaultValue = kkData[`kk3_${item.no}`] || 3;
-    
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${item.no}</td>
-      <td class="kk-label">${item.indikator}</td>
-      <td>${item.sumber}</td>
-      <td>${item.bobot}</td>
-      <td>${item.indikator}</td>
-      <td><input type="number" class="kk-input" data-kk="kk3" data-param="${item.no}" value="${defaultValue}" min="1" max="5" step="1"></td>
-    `;
-    body.appendChild(tr);
-  });
-  
-  body.querySelectorAll('input[data-kk="kk3"]').forEach(input => {
-    input.addEventListener('input', function() {
-      const param = this.dataset.param;
-      kkData[`kk3_${param}`] = parseFloat(this.value) || 0;
-      calculateKkSummary();
-    });
-  });
-  
-  calculateKkSummary();
-}
-
-// RENDER TAB 4: SUMMARY
-function renderKkTab4() {
-  calculateKkSummary();
-}
-
-function calculateKkSummary() {
-  const perencanaan = (kkData['kk1_total'] || 0) * 0.4 + (kkData['kk2_total'] || 0) * 0.4;
-  const struktur = kkData['kk2_lingkungan_1.1_avg'] || 0;
-  const pencapaian = (kkData['kk3_A.1'] || 0) * 0.2 + (kkData['kk3_A.2'] || 0) * 0.1 + (kkData['kk3_B.1'] || 0) * 0.25 + (kkData['kk3_C.1'] || 0) * 0.25 + (kkData['kk3_D.1'] || 0) * 0.2;
-  
-  document.getElementById('kkSummaryPerencanaan').textContent = perencanaan.toFixed(2);
-  document.getElementById('kkSummaryStruktur').textContent = struktur.toFixed(2);
-  document.getElementById('kkSummaryPencapaian').textContent = pencapaian.toFixed(2);
-  
-  const maturitas = (perencanaan * 0.4) + (struktur * 0.3) + (pencapaian * 0.3);
+  body.innerHTML = html;
   document.getElementById('kkMaturitasAkhir').textContent = maturitas.toFixed(2);
+  document.getElementById('kkMriAkhir').textContent = mri.toFixed(2);
+  document.getElementById('kkIepkAkhir').textContent = iepk.toFixed(2);
 }
 
+function calculatePerencanaan() {
+  const kk1 = parseFloat(kkData['kk1_total']) || 0;
+  const kk2 = parseFloat(kkData['kk2_total']) || 0;
+  return (kk1 * 0.5 + kk2 * 0.5) * 0.4;
+}
+
+function calculateStruktur() {
+  let total = 0, count = 0;
+  KK_REF.kkLeadII.subunsur.forEach(item => {
+    const val = parseFloat(kkData[`kk2_${item.kode}_avg`]) || 3;
+    total += val;
+    count++;
+  });
+  return (total / count) * 0.3;
+}
+
+function calculatePencapaian() {
+  let total = 0;
+  KK_REF.kkLeadIII.items.forEach(item => {
+    const val = parseFloat(kkData[`kk3_${item.no}`]) || 1;
+    total += val * item.bobot;
+  });
+  return total * 0.3;
+}
+
+function calculateMri() {
+  return (kkData['mri'] || 3);
+}
+
+function calculateIepk() {
+  return (kkData['iepk'] || 3);
+}
+
+// ================= RENDER KKLEAD I =================
+function renderKkLeadI() {
+  const container = document.getElementById('kkLeadIBody');
+  let html = '<h6>Kualitas Sasaran Strategis (KK 1)</h6><table class="kk-table"><thead><tr><th>No</th><th>Uraian</th><th>Bobot</th><th>Skor</th></tr></thead><tbody>';
+  
+  const kk1Items = [
+    { kode: '1.1', uraian: 'Sasaran Strategis Pemda', bobot: 0.5 },
+    { kode: '1.2', uraian: 'Sasaran Strategis OPD', bobot: 0.5 }
+  ];
+  
+  kk1Items.forEach(item => {
+    const val = kkData[`kk1_${item.kode}`] || 0;
+    html += `<tr><td>${item.kode}</td><td>${item.uraian}</td><td>${item.bobot}</td><td><input type="number" class="kk-input" data-kk="kk1" data-param="${item.kode}" value="${val}" min="0" max="100"></td></tr>`;
+  });
+  
+  html += '</tbody></table><br>';
+  html += '<h6>Kualitas Strategi Pencapaian Sasaran (KK 2)</h6><table class="kk-table"><thead><tr><th>No</th><th>Uraian</th><th>Bobot</th><th>Skor</th></tr></thead><tbody>';
+  const kk2Items = [
+    { kode: '2.1', uraian: 'Kualitas Sasaran Program', bobot: 1/3 },
+    { kode: '2.2', uraian: 'Kualitas Sasaran Kegiatan', bobot: 1/3 },
+    { kode: '2.3', uraian: 'Kualitas Sub Kegiatan', bobot: 1/3 }
+  ];
+  kk2Items.forEach(item => {
+    const val = kkData[`kk2_${item.kode}`] || 0;
+    html += `<tr><td>${item.kode}</td><td>${item.uraian}</td><td>${item.bobot}</td><td><input type="number" class="kk-input" data-kk="kk2" data-param="${item.kode}" value="${val}" min="0" max="100"></td></tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ================= RENDER KKLEAD II =================
+function renderKkLeadII() {
+  const container = document.getElementById('kkLeadIIBody');
+  let html = '<table class="kk-table"><thead><tr><th>Kode</th><th>Uraian Subunsur</th><th>No</th><th>Nilai SPIP</th><th>Nilai MRI</th><th>Nilai IEPK</th><th>Nilai Ketaatan</th></tr></thead><tbody>';
+  
+  KK_REF.kkLeadII.subunsur.forEach(item => {
+    for (let i = 1; i <= item.params; i++) {
+      const paramId = `${item.kode}_${i}`;
+      const spipVal = kkData[`kk2_spip_${paramId}`] || 3;
+      const mriVal = kkData[`kk2_mri_${paramId}`] || 3;
+      const iepkVal = kkData[`kk2_iepk_${paramId}`] || 3;
+      const ketaatanVal = kkData[`kk2_ketaatan_${paramId}`] || 3;
+      html += `<tr><td>${item.kode}</td><td>${item.label}</td><td>${i}</td><td><input type="number" class="kk-input" data-kk="kk2_spip" data-param="${paramId}" value="${spipVal}" min="1" max="5"></td><td><input type="number" class="kk-input" data-kk="kk2_mri" data-param="${paramId}" value="${mriVal}" min="1" max="5"></td><td><input type="number" class="kk-input" data-kk="kk2_iepk" data-param="${paramId}" value="${iepkVal}" min="1" max="5"></td><td><input type="number" class="kk-input" data-kk="kk2_ketaatan" data-param="${paramId}" value="${ketaatanVal}" min="1" max="5"></td></tr>`;
+    }
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ================= RENDER KKLEAD III =================
+function renderKkLeadIII() {
+  const container = document.getElementById('kkLeadIIIBody');
+  let html = '<table class="kk-table"><thead><tr><th>No</th><th>Indikator</th><th>Bobot</th><th>Capaian</th></tr></thead><tbody>';
+  KK_REF.kkLeadIII.items.forEach(item => {
+    const val = kkData[`kk3_${item.no}`] || 1;
+    html += `<tr><td>${item.no}</td><td>${item.indikator}</td><td>${item.bobot}</td><td><input type="number" class="kk-input" data-kk="kk3" data-param="${item.no}" value="${val}" min="1" max="5"></td></tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ================= RENDER KKE 1.1 =================
+function renderKk11() {
+  const container = document.getElementById('kk11Body');
+  let html = '<table class="kk-table"><thead><tr><th>NO</th><th>URAIAN SASARAN STRATEGIS</th><th>INDIKATOR</th><th>TARGET</th><th>HASIL</th></tr></thead><tbody>';
+  (KK_REF.kkLeadI.sasaranPemda || []).forEach((item, idx) => {
+    const val = kkData[`kk11_${idx}`] || item.hasil || '';
+    html += `<tr><td>${idx+1}</td><td>${item.uraian}</td><td>${item.indikator}</td><td>${item.target}</td><td><input type="text" class="kk-input" data-kk="kk11" data-param="${idx}" value="${val}" style="width:80px;"></td></tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ================= RENDER KKE 1.2 =================
+function renderKk12() {
+  const container = document.getElementById('kk12Body');
+  let html = '<table class="kk-table"><thead><tr><th>NO</th><th>SASARAN STRATEGIS OPD</th><th>INDIKATOR</th><th>TARGET</th><th>HASIL</th></tr></thead><tbody>';
+  (KK_REF.kkLeadI.sasaranOpd || []).forEach((item, idx) => {
+    const val = kkData[`kk12_${idx}`] || item.hasil || '';
+    html += `<tr><td>${idx+1}</td><td>${item.uraian}</td><td>${item.indikator}</td><td>${item.target}</td><td><input type="text" class="kk-input" data-kk="kk12" data-param="${idx}" value="${val}" style="width:80px;"></td></tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ================= RENDER KKE 2.1 =================
+function renderKk21() {
+  const container = document.getElementById('kk21Body');
+  container.innerHTML = '<p>Isi data KK 2.1 - Sasaran Program</p><table class="kk-table"><thead><tr><th>No</th><th>Nama Program</th><th>Sasaran</th><th>Indikator</th><th>Target</th><th>Hasil</th></tr></thead><tbody id="kk21Tbody"></tbody></table><button class="kk-add-row" data-kk="kk21">+ Tambah Baris</button>';
+  renderDynamicRows('kk21');
+}
+
+function renderDynamicRows(kk) {
+  const tbody = document.getElementById(`${kk}Tbody`);
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  const rowsData = kkData[`${kk}_rows`] || [];
+  rowsData.forEach((row, idx) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${idx+1}</td><td><input type="text" class="kk-input" data-kk="${kk}" data-param="nama_${idx}" value="${row.nama || ''}" style="width:150px;"></td><td><input type="text" class="kk-input" data-kk="${kk}" data-param="sasaran_${idx}" value="${row.sasaran || ''}" style="width:150px;"></td><td><input type="text" class="kk-input" data-kk="${kk}" data-param="indikator_${idx}" value="${row.indikator || ''}" style="width:150px;"></td><td><input type="text" class="kk-input" data-kk="${kk}" data-param="target_${idx}" value="${row.target || ''}" style="width:80px;"></td><td><input type="text" class="kk-input" data-kk="${kk}" data-param="hasil_${idx}" value="${row.hasil || ''}" style="width:80px;"></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// Fungsi placeholder untuk sheet lain (bisa diisi sesuai kebutuhan)
+function renderKk22() { document.getElementById('kk22Body').innerHTML = '<p>Isi KK 2.2 - Sasaran Kegiatan</p>'; }
+function renderKk23() { document.getElementById('kk23Body').innerHTML = '<p>Isi KK 2.3 - Sub Kegiatan</p>'; }
+function renderKk31() { document.getElementById('kk31Body').innerHTML = '<p>Isi KK 3.1 - Struktur Proses T1</p>'; }
+function renderKk32() { document.getElementById('kk32Body').innerHTML = '<p>Isi KK 3.2 - Struktur Proses T2</p>'; }
+function renderKk33() { document.getElementById('kk33Body').innerHTML = '<p>Isi KK 3.3 - Struktur Proses T3</p>'; }
+function renderKk34() { document.getElementById('kk34Body').innerHTML = '<p>Isi KK 3.4 - Struktur Proses T4</p>'; }
+function renderKk51a() { document.getElementById('kk51aBody').innerHTML = '<p>Isi KK 5.1A - Capaian Sasaran Strategis K/L/D</p>'; }
+function renderKk51b() { document.getElementById('kk51bBody').innerHTML = '<p>Isi KK 5.1B - Capaian Sasaran Strategis OPD</p>'; }
+function renderKk52() { document.getElementById('kk52Body').innerHTML = '<p>Isi KK 5.2 - Capaian Output</p>'; }
+function renderKk6() { document.getElementById('kk6Body').innerHTML = '<p>Isi KK 6 - Keandalan Pelaporan Keuangan</p>'; }
+function renderKk7() { document.getElementById('kk7Body').innerHTML = '<p>Isi KK 7 - Pengamanan Aset</p>'; }
+function renderKk8() { document.getElementById('kk8Body').innerHTML = '<p>Isi KK 8 - Ketaatan Peraturan</p>'; }
+
+// ================= Event Listener untuk input =================
+document.addEventListener('input', function(e) {
+  if (e.target.classList.contains('kk-input')) {
+    const kk = e.target.dataset.kk;
+    const param = e.target.dataset.param;
+    const val = e.target.value;
+    kkData[`${kk}_${param}`] = val;
+    
+    if (kk === 'kk1') calculateKk1Total();
+    if (kk === 'kk2') calculateKk2Total();
+    if (kk === 'kk3') calculatePencapaian();
+    if (kk.startsWith('kk2_')) calculateStruktur();
+    if (kk === 'kk1' || kk === 'kk2' || kk === 'kk3') renderKkLeadSpip();
+  }
+});
+
+// Fungsi tambah baris dinamis
+document.addEventListener('click', function(e) {
+  if (e.target.classList.contains('kk-add-row')) {
+    const kk = e.target.dataset.kk;
+    const rowsData = kkData[`${kk}_rows`] || [];
+    rowsData.push({});
+    kkData[`${kk}_rows`] = rowsData;
+    renderDynamicRows(kk);
+  }
+});
+
+// ================= Simpan =================
+document.getElementById('kkSave').addEventListener('click', async function() {
+  const row = rows.find(r => r.id === kkEditingRowId);
+  if (!row) return;
+  row.kkData = kkData;
+  try {
+    await callServer('saveKkData', { opdId: kkEditingRowId, kkData: JSON.stringify(kkData), year: currentYear });
+    const status = document.getElementById('kkSaveStatus');
+    status.textContent = '✅ Data tersimpan!';
+    status.style.color = 'green';
+    setTimeout(() => { status.textContent = ''; }, 2000);
+  } catch (err) {
+    const status = document.getElementById('kkSaveStatus');
+    status.textContent = '❌ Gagal menyimpan: ' + err.message;
+    status.style.color = 'red';
+  }
+});
+
+// ================= Tutup modal =================
 document.getElementById('kkClose').addEventListener('click', closeKkModal);
 document.getElementById('kkCancel').addEventListener('click', closeKkModal);
-
 function closeKkModal() {
   document.getElementById('kkModal').classList.remove('active');
   kkEditingRowId = null;
 }
 
-document.getElementById('kkSave').addEventListener('click', async function() {
-  if (!kkEditingRowId) return;
-  
-  const statusDiv = document.getElementById('kkSaveStatus');
-  statusDiv.className = 'kk-save-status';
-  statusDiv.style.display = 'block';
-  statusDiv.textContent = '⏳ Menyimpan kertas kerja...';
-  statusDiv.className = 'kk-save-status';
-  
-  const row = rows.find(r => r.id === kkEditingRowId);
-  if (!row) return;
-  
-  const kkFormData = {};
-  
-  document.querySelectorAll('input[data-kk="kk1"]').forEach(input => {
-    kkFormData[`kk1_${input.dataset.param}`] = parseFloat(input.value) || 0;
-  });
-  
-  document.querySelectorAll('input[data-kk^="kk2_"]').forEach(input => {
-    const fullParam = input.dataset.param;
-    kkFormData[`kk2_${input.dataset.kk}_${fullParam}`] = parseFloat(input.value) || 0;
-  });
-  
-  document.querySelectorAll('input[data-kk="kk3"]').forEach(input => {
-    kkFormData[`kk3_${input.dataset.param}`] = parseFloat(input.value) || 0;
-  });
-  
-  row.kkData = kkFormData;
-  
-  try {
-    await callServer('saveKkData', { opdId: kkEditingRowId, kkData: JSON.stringify(kkFormData), year: currentYear });
-    
-    statusDiv.textContent = '✅ Kertas kerja berhasil disimpan!';
-    statusDiv.className = 'kk-save-status success';
-    setTimeout(() => {
-      statusDiv.style.display = 'none';
-      closeKkModal();
-    }, 1500);
-  } catch (err) {
-    statusDiv.textContent = '❌ Gagal menyimpan: ' + err.message;
-    statusDiv.className = 'kk-save-status error';
-  }
-});
+function calculateKk1Total() {
+  const kk1a = parseFloat(kkData['kk1_1.1']) || 0;
+  const kk1b = parseFloat(kkData['kk1_1.2']) || 0;
+  kkData['kk1_total'] = (kk1a + kk1b) / 2;
+}
 
-document.addEventListener('DOMContentLoaded', function() {
-  document.getElementById('kkModal').addEventListener('click', function(e) {
-    if (e.target === this) {
-      closeKkModal();
-    }
-  });
-});
+function calculateKk2Total() {
+  const kk2a = parseFloat(kkData['kk2_2.1']) || 0;
+  const kk2b = parseFloat(kkData['kk2_2.2']) || 0;
+  const kk2c = parseFloat(kkData['kk2_2.3']) || 0;
+  kkData['kk2_total'] = (kk2a + kk2b + kk2c) / 3;
+}
 </script>
 </body>
 </html>
