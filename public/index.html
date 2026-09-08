@@ -1,5 +1,6 @@
 
 
+
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -1948,268 +1949,107 @@ input[type="file"]:hover {
   }
 }
 
-/* ===== KK EXCEL-LIKE GRID (ADDED; EXISTING APP FEATURES UNCHANGED) ===== */
-.kk-excel-toolbar{
-  position:sticky;top:0;z-index:9;display:flex;align-items:center;gap:14px;
-  padding:10px 12px;margin-bottom:10px;background:#f8fafc;border:1px solid #cbd5e1;
-  box-shadow:0 2px 6px rgba(15,23,42,.06);font-size:12px;
-}
-.kk-excel-toolbar strong{font-size:13px;color:#0f172a}
-.kk-excel-tip{color:#64748b;flex:1}
-.kk-add-sheet-row{background:#0f766e!important;color:#fff!important;border:none!important;
-  padding:8px 12px!important;border-radius:7px!important;font-size:12px!important;cursor:pointer}
-.kk-excel-scroll{overflow:auto;border:1px solid #94a3b8;background:#fff;max-height:69vh;
-  box-shadow:inset 0 1px 4px rgba(0,0,0,.04)}
-.kk-excel-table{border-collapse:collapse;width:max-content;min-width:100%;table-layout:fixed;
-  font-family:Calibri,Arial,sans-serif;font-size:11px;color:#111827;background:#fff}
-.kk-excel-table td{border:1px solid #9ca3af;padding:4px 6px;vertical-align:top;min-height:22px;
-  position:relative;white-space:pre-wrap;word-break:break-word;background:#fff}
-.kk-excel-table tr:nth-child(n+6) td{background:#fff}
-.kk-excel-table .kk-excel-title{font-weight:700;text-align:center;font-size:12px}
-.kk-excel-table .kk-excel-header{font-weight:700;text-align:center;background:#e5e7eb}
-.kk-excel-table tr:nth-child(3) td,.kk-excel-table tr:nth-child(4) td,.kk-excel-table tr:nth-child(5) td{
-  background:#e5e7eb;font-weight:700;text-align:center}
-.kk-cell-editor{min-height:16px;outline:none;cursor:text;padding:1px 2px;border-radius:2px}
-.kk-cell-editor:focus{background:#eff6ff;box-shadow:inset 0 0 0 1px #3b82f6}
-.kk-cell-editor.is-empty{color:#94a3b8}
-.kk-empty-hint{opacity:.0}
-.kk-cell-editor:hover .kk-empty-hint,.kk-cell-editor:focus .kk-empty-hint{opacity:.65}
-.kk-formula-value{min-height:16px;font-weight:600;color:#0f172a}
-.kk-formula-tag{position:absolute;right:2px;top:1px;font-size:8px;line-height:10px;color:#7c3aed;
-  background:#ede9fe;border-radius:3px;padding:0 2px;opacity:.8}
-.kk-extra-row td{background:#f8fffb!important}
-.kk-excel-table td:has(.kk-cell-editor):hover{background:#f8fbff!important}
-.kk-table-container{overflow:visible}
-@media(max-width:768px){
-  .kk-excel-toolbar{flex-wrap:wrap}.kk-excel-tip{flex-basis:100%;order:3}.kk-excel-scroll{max-height:72vh}
-}
-
 
 /* ============================================================
-   PENYEMPURNAAN KERTAS KERJA — MODE EXCEL
-   Tidak mengubah dashboard/OPD/backup/server.
+   KERTAS KERJA — EXCEL-LIKE GRID
+   Sumber struktur/data: KK_EXCEL dari workbook XLSX
+   Fokus: tampilan rapi, edit sel, rumus, tambah/hapus baris,
+   performa dan persistensi tanpa mengubah fitur dashboard.
    ============================================================ */
+.kk-table-container{width:100%;min-width:0;overflow:visible}
 .kk-excel-toolbar{
-  position:sticky;
-  top:0;
-  z-index:20;
-  display:flex;
-  align-items:center;
-  gap:8px;
-  flex-wrap:wrap;
-  padding:10px 12px;
-  margin-bottom:8px;
-  background:#f8fafc;
-  border:1px solid #cbd5e1;
-  border-radius:10px;
+  position:sticky;top:0;z-index:50;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:7px 9px;margin:0 0 7px;
+  background:#f7f9fc;border:1px solid #c8d1dc;border-radius:6px;
+  color:#1f2937;font:12px/1.35 Calibri,Arial,sans-serif;
+  box-shadow:0 1px 2px rgba(0,0,0,.06)
 }
-.kk-excel-toolbar strong{
-  font-size:13px;
-  font-weight:800;
-  color:#0f172a;
-  margin-right:6px;
-}
-.kk-excel-tip{
-  flex:1 1 260px;
-  font-size:11px;
-  color:#64748b;
+.kk-excel-toolbar strong{font-size:13px;font-weight:700;white-space:nowrap;color:#1f2937}
+.kk-excel-tip{flex:1 1 360px;color:#667085;font-size:11px}
+.kk-excel-tip b{color:#6d28d9}
+.kk-row-insert-position{
+  height:30px;padding:4px 8px;border:1px solid #b8c2ce;border-radius:4px;
+  background:#fff;color:#1f2937;font-size:12px
 }
 .kk-excel-toolbar button{
-  color:#0f172a;
-  background:#fff;
-  border:1px solid #cbd5e1;
-  box-shadow:none;
-  padding:7px 10px;
-  border-radius:7px;
-  font-size:12px;
-  font-weight:700;
-  transform:none !important;
+  height:30px;padding:4px 10px;border:1px solid #b8c2ce;border-radius:4px;
+  background:#fff;color:#1f2937;font-size:12px;font-weight:700;
+  cursor:pointer;box-shadow:none;transform:none!important
 }
-.kk-excel-toolbar button:hover{
-  background:#eff6ff;
-  border-color:#93c5fd;
-  color:#1d4ed8;
-  transform:none !important;
-}
-.kk-excel-toolbar .kk-add-sheet-row{
-  background:#0f766e;
-  color:#fff;
-  border-color:#0f766e;
-}
-.kk-excel-toolbar .kk-add-sheet-row:hover{
-  background:#115e59;
-  color:#fff;
-}
-.kk-excel-toolbar .kk-delete-sheet-row{
-  background:#fff;
-  color:#b91c1c;
-  border-color:#fecaca;
-}
-.kk-excel-toolbar .kk-delete-sheet-row:hover{
-  background:#fef2f2;
-  color:#991b1b;
-}
-.kk-excel-toolbar .kk-restore-sheet-row{
-  background:#fff;
-  color:#475569;
-  border-color:#cbd5e1;
-}
-.kk-excel-scroll{
-  overflow:auto;
-  max-height:72vh;
-  border:1px solid #94a3b8;
-  background:#fff;
-  border-radius:8px;
-  box-shadow:0 4px 12px rgba(15,23,42,.06);
-}
-.kk-excel-table{
-  border-collapse:collapse;
-  width:max-content;
-  min-width:100%;
-  table-layout:fixed;
-  font-family:Arial, Calibri, "Segoe UI", sans-serif;
-  font-size:12px;
-  color:#111827;
-}
-.kk-excel-table td{
-  position:relative;
-  border:1px solid #9ca3af;
-  padding:4px 6px;
-  vertical-align:top;
-  min-height:24px;
-  line-height:1.25;
-  background:#fff;
-}
-.kk-excel-table tr.kk-row-selected td{
-  box-shadow:inset 0 0 0 2px #2563eb;
-}
-.kk-excel-table tr.kk-row-extra td{
-  background:#f0fdf4;
-}
-.kk-excel-table tr.kk-row-extra.kk-row-selected td{
-  background:#dcfce7;
-}
-.kk-excel-table .kk-excel-title{
-  font-weight:700;
-  text-align:center;
-  font-size:12px;
-  background:#fff;
-}
-.kk-excel-table .kk-excel-header{
-  font-weight:700;
-  text-align:center;
-  background:#e5e7eb;
-}
-.kk-excel-table tr:nth-child(3) td,
-.kk-excel-table tr:nth-child(4) td,
-.kk-excel-table tr:nth-child(5) td{
-  background:#f3f4f6;
-}
-.kk-excel-table .kk-cell-editor{
-  min-height:16px;
-  outline:none;
-  cursor:text;
-  padding:1px 2px;
-  border-radius:2px;
-  white-space:pre-wrap;
-  word-break:break-word;
-}
-.kk-excel-table .kk-cell-editor:focus{
-  background:#eff6ff;
-  box-shadow:inset 0 0 0 1px #3b82f6;
-}
-.kk-excel-table .kk-cell-editor.is-empty{
-  color:#94a3b8;
-}
-.kk-excel-table .kk-empty-hint{
-  opacity:.45;
-  font-style:italic;
-  user-select:none;
-}
-.kk-excel-table .kk-cell-editor:hover .kk-empty-hint,
-.kk-excel-table .kk-cell-editor:focus .kk-empty-hint{
-  opacity:.75;
-}
-.kk-excel-table .kk-formula-value{
-  min-height:16px;
-  font-weight:600;
-  color:#0f172a;
-  white-space:pre-wrap;
-  word-break:break-word;
-}
-.kk-excel-table .kk-formula-cell{
-  background:#eef2ff !important;
-}
-.kk-excel-table .kk-formula-tag{
-  position:absolute;
-  right:2px;
-  top:1px;
-  font-size:8px;
-  line-height:10px;
-  color:#7c3aed;
-  font-weight:800;
-  pointer-events:none;
-}
-.kk-excel-table .kk-row-number-cell{
-  background:#f8fafc !important;
-  color:#64748b;
-}
-.kk-excel-table .kk-row-number{
-  font-size:10px;
-  font-weight:700;
-  text-align:center;
-  user-select:none;
-}
-.kk-excel-table td[data-hidden-row="1"]{
-  display:none;
-}
-@media (max-width:768px){
-  .kk-excel-scroll{max-height:70vh}
-  .kk-excel-toolbar{align-items:stretch}
-  .kk-excel-toolbar button{flex:1 1 auto}
-  .kk-excel-tip{order:3;flex-basis:100%}
-}
-
-
-/* ===== FINAL KK EXCEL VISUAL/EDITING OVERRIDE ===== */
-.kk-excel-toolbar{
-  position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
-  padding:8px 10px;margin:0 0 8px;background:#f3f4f6;border:1px solid #b7b7b7;border-radius:6px;
-  box-shadow:0 1px 2px rgba(0,0,0,.06);font-size:12px;color:#222;
-}
-.kk-excel-toolbar strong{font-size:13px;color:#1f1f1f}
-.kk-excel-tip{flex:1 1 320px;color:#666;font-size:11px;line-height:1.4}
-.kk-row-insert-position{height:31px;padding:4px 7px;border:1px solid #b7b7b7;border-radius:4px;background:#fff;color:#222;font-size:12px}
-.kk-excel-toolbar button{height:31px;padding:5px 10px;border-radius:4px;border:1px solid #b7b7b7;background:#fff;color:#222;font-size:12px;font-weight:700;box-shadow:none;transform:none!important}
-.kk-excel-toolbar button:hover{background:#f0f0f0;border-color:#8d8d8d;color:#111;transform:none!important}
+.kk-excel-toolbar button:hover{background:#eef4fb;border-color:#8fa5bd;color:#124b80}
 .kk-excel-toolbar .kk-add-sheet-row{background:#107c41;color:#fff;border-color:#107c41}
 .kk-excel-toolbar .kk-add-sheet-row:hover{background:#0b6435;color:#fff}
 .kk-excel-toolbar .kk-delete-sheet-row{color:#a61b1b;border-color:#d8a3a3}
 .kk-excel-toolbar .kk-delete-sheet-row:hover{background:#fff5f5;color:#8b1111}
-.kk-excel-toolbar .kk-restore-sheet-row{color:#3f3f3f}
-.kk-excel-scroll{overflow:auto;max-height:73vh;border:1px solid #9e9e9e;background:#fff;border-radius:3px;box-shadow:none}
-.kk-excel-table{border-collapse:collapse;border-spacing:0;width:max-content;min-width:max-content;table-layout:fixed;font-family:Calibri,Arial,sans-serif;font-size:11px;color:#000;background:#fff}
-.kk-excel-table td{position:relative;padding:2px 4px;vertical-align:top;line-height:1.15;min-width:24px;box-sizing:border-box;background:#fff;overflow:visible}
-.kk-excel-table tr.kk-row-selected td{box-shadow:inset 0 0 0 2px #1a73e8;z-index:2}
-.kk-excel-table tr.kk-row-extra td{background:#fffdf0!important;box-shadow:inset 0 0 0 1px #d9c36a}
-.kk-cell-editor{display:block;min-height:16px;width:100%;margin:0;padding:0 1px;outline:none;border-radius:1px;cursor:text;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
+.kk-excel-toolbar .kk-restore-sheet-row{color:#475467}
+.kk-excel-toolbar .kk-restore-formula{color:#6d28d9;border-color:#c4b5fd}
+.kk-excel-toolbar .kk-restore-formula:hover{background:#f5f3ff;color:#5b21b6}
+
+.kk-excel-scroll{
+  width:100%;max-width:100%;height:73vh;min-height:280px;
+  overflow:auto;border:1px solid #8f99a6;border-radius:3px;
+  background:#fff;box-shadow:inset 0 1px 2px rgba(0,0,0,.04);
+  overscroll-behavior:contain
+}
+.kk-excel-table{
+  border-collapse:collapse;border-spacing:0;
+  width:max-content;min-width:max-content;
+  table-layout:fixed;
+  font-family:Calibri,Arial,sans-serif;font-size:11px;
+  line-height:1.18;color:#111827;background:#fff
+}
+.kk-excel-table td{
+  position:relative;padding:2px 4px;vertical-align:top;
+  box-sizing:border-box;border:1px solid #9aa4b2;background:#fff;
+  overflow:visible
+}
+.kk-excel-table tr.kk-row-selected td{
+  box-shadow:inset 0 0 0 2px #1a73e8;z-index:2
+}
+.kk-excel-table td.kk-cell-active{
+  box-shadow:inset 0 0 0 2px #1a73e8!important;z-index:3
+}
+.kk-excel-table tr.kk-row-extra td{
+  background:#fffdf0!important;
+  box-shadow:inset 0 0 0 1px #d7c26d
+}
+.kk-cell-editor{
+  display:block;width:100%;min-height:16px;
+  margin:0;padding:0 1px;outline:none;border:0;
+  cursor:text;background:transparent;
+  white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word
+}
 .kk-cell-editor:hover{background:rgba(255,255,255,.55)}
-.kk-cell-editor:focus{background:#eaf3ff;box-shadow:inset 0 0 0 1px #1a73e8}
+.kk-cell-editor:focus{background:#eaf3ff}
 .kk-cell-editor.is-empty{color:#9aa0a6}
 .kk-empty-hint{opacity:.55;font-style:italic;user-select:none}
-.kk-cell-editor:hover .kk-empty-hint,.kk-cell-editor:focus .kk-empty-hint{opacity:.8}
+.kk-cell-editor:hover .kk-empty-hint,.kk-cell-editor:focus .kk-empty-hint{opacity:.85}
 .kk-excel-table .kk-formula-cell{background:#f1f3fb}
+.kk-excel-table .kk-formula-cell.kk-manual-override{background:#fff7ed}
 .kk-excel-table .kk-has-formula{font-weight:600}
-.kk-formula-tag{position:absolute;right:2px;top:1px;font-size:8px;line-height:9px;color:#6d4aff;font-weight:700;pointer-events:none;opacity:.8}
-.kk-excel-table td:has(.kk-cell-editor){transition:background .08s}
-.kk-excel-table td:has(.kk-cell-editor):focus-within{background:#eaf3ff}
-@media(max-width:768px){
- .kk-excel-toolbar{align-items:stretch}
- .kk-excel-toolbar button,.kk-row-insert-position{flex:1 1 auto}
- .kk-excel-tip{order:4;flex-basis:100%}
- .kk-excel-scroll{max-height:70vh}
+.kk-formula-tag{
+  position:absolute;right:2px;top:1px;
+  font-size:8px;line-height:9px;color:#6d4aff;font-weight:700;
+  pointer-events:none;opacity:.8
 }
-
+.kk-formula-tag.manual{color:#b45309;background:#ffedd5;border-radius:3px;padding:0 2px}
+.kk-excel-table td:has(.kk-cell-editor):focus-within{background:#eaf3ff}
+.kk-excel-table td[data-empty-cell="1"]{background:#fff!important}
+.kk-cell-editor[data-editing-formula="1"]{
+  font-family:Consolas,"Courier New",monospace;color:#111827
+}
+.kk-active-cell-note{
+  flex:0 0 auto;color:#475467;max-width:280px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+}
+@media(max-width:768px){
+  .kk-excel-toolbar{align-items:stretch}
+  .kk-excel-toolbar button,.kk-row-insert-position{flex:1 1 auto}
+  .kk-excel-tip{order:5;flex-basis:100%}
+  .kk-active-cell-note{order:4;flex-basis:100%;max-width:none}
+  .kk-excel-scroll{height:70vh}
+}
 </style>
 </head>
 <body>
@@ -4368,33 +4208,65 @@ const KK_CELL_STYLE_IDS = {"KKLEAD_SPIP":{"C3":1,"C4":48,"C6":59,"D6":63,"E6":68
    - Hapus baris benar-benar mengeluarkan baris dari model tampilan.
    ============================================================ */
 
+// ============================================================
+// KERTAS KERJA SPIP — MODE EXCEL (V2)
+// Struktur/formula tetap mengikuti KK_EXCEL dari workbook XLSX.
+// Fitur:
+// 1) trailing blank rows tidak dirender -> jauh lebih ringan
+// 2) semua sel tetap dapat diedit
+// 3) formula tidak hilang saat sel diedit: rumus asli disimpan
+// 4) double-click/F2 = edit rumus; input biasa = override manual
+// 5) "Pulihkan Rumus" mengembalikan formula asli
+// 6) tambah/hapus baris virtual, tanpa merusak template dasar
+// 7) formula cross-sheet + range mengikuti baris virtual
+// 8) save debounce -> backend saveKkData tetap dipakai
+// ============================================================
+
 let kkData = {};
 let kkEditingRowId = null;
 let kkActiveTab = 'kktab1';
 let kkSelectedRow = null;
+let kkSelectedCell = null;
 let kkRefreshTimer = null;
+let kkFormulaRefreshTimer = null;
+let kkSaveTimer = null;
+let kkSaveInFlight = null;
+let kkSaveQueued = false;
 let kkSeq = 1;
+let kkLastCommitted = new Map();
 
 function kkEsc(v){
-  return String(v==null?'':v)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;');
+  return String(v==null?'':'')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function kkColToNum(s){
-  let n=0; for(const ch of String(s||'').toUpperCase()) n=n*26+ch.charCodeAt(0)-64; return n;
+  let n=0;
+  for(const ch of String(s||'').toUpperCase()) n=n*26+ch.charCodeAt(0)-64;
+  return n;
 }
 function kkNumToCol(n){
-  let s=''; while(n){const r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=Math.floor((n-1)/26);} return s;
+  let s='';
+  while(n){const r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=Math.floor((n-1)/26);}
+  return s;
 }
 function kkSplitCoord(coord){
-  const m=/^\$?([A-Z]+)\$?(\d+)$/.exec(String(coord).toUpperCase());
-  return m?{col:m[1],row:+m[2]}:null;
+  const m=/^\$?([A-Z]+)\$?(\d+)$/i.exec(String(coord||'').trim());
+  return m?{col:m[1].toUpperCase(),row:+m[2]}:null;
 }
-function kkCellKey(sheet,coord){return `${sheet}!${String(coord).replace(/\$/g,'').toUpperCase()}`;}
-function kkBaseCell(sheet,coord){return KK_EXCEL[sheet]?.cells?.[coord]||null;}
+function kkCellKey(sheet,coord){
+  return `${sheet}!${String(coord).replace(/\$/g,'').toUpperCase()}`;
+}
+function kkBaseCell(sheet,coord){
+  return KK_EXCEL[sheet]?.cells?.[coord]||null;
+}
 function kkGetOverrides(){
   if(!kkData.__excel || typeof kkData.__excel!=='object') kkData.__excel={};
   return kkData.__excel;
+}
+function kkGetFormulaBackups(){
+  if(!kkData.__formulaBackups || typeof kkData.__formulaBackups!=='object') kkData.__formulaBackups={};
+  return kkData.__formulaBackups;
 }
 function kkGetInsertedRows(){
   if(!kkData.__insertedRows || typeof kkData.__insertedRows!=='object') kkData.__insertedRows={};
@@ -4404,15 +4276,35 @@ function kkGetHiddenRows(){
   if(!kkData.__hiddenRows || typeof kkData.__hiddenRows!=='object') kkData.__hiddenRows={};
   return kkData.__hiddenRows;
 }
+function kkRememberFormula(sheet,coord){
+  const base=kkBaseCell(sheet,coord);
+  if(base?.f){
+    const backups=kkGetFormulaBackups();
+    const key=kkCellKey(sheet,coord);
+    if(!backups[key]) backups[key]=base.f;
+  }
+}
 function kkGetBaseBounds(sheet){
-  const s=KK_EXCEL[sheet]||{}; let maxRow=1,maxCol=1;
-  Object.keys(s.cells||{}).forEach(coord=>{
-    const p=kkSplitCoord(coord); if(!p)return;
-    maxRow=Math.max(maxRow,p.row); maxCol=Math.max(maxCol,kkColToNum(p.col));
+  const s=KK_EXCEL[sheet]||{};
+  let maxRow=1,maxCol=1;
+
+  // PENTING: hanya sel yang benar-benar berisi data/rumus yang menentukan batas.
+  // Banyak XLSX memiliki style-only cells sampai baris 200/300+.
+  Object.entries(s.cells||{}).forEach(([coord,cell])=>{
+    const p=kkSplitCoord(coord);
+    if(!p)return;
+    const meaningful=cell && (cell.v!==null && cell.v!==undefined || !!cell.f);
+    if(!meaningful)return;
+    maxRow=Math.max(maxRow,p.row);
+    maxCol=Math.max(maxCol,kkColToNum(p.col));
   });
+
+  // Merge yang melebar melewati konten tetap dipertahankan.
   (s.merges||[]).forEach(ref=>{
-    const m=/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/i.exec(ref); if(!m)return;
-    maxRow=Math.max(maxRow,+m[2],+m[4]); maxCol=Math.max(maxCol,kkColToNum(m[1]),kkColToNum(m[3]));
+    const m=/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/i.exec(ref);
+    if(!m)return;
+    maxRow=Math.max(maxRow,+m[2],+m[4]);
+    maxCol=Math.max(maxCol,kkColToNum(m[1]),kkColToNum(m[3]));
   });
   return {rows:maxRow,cols:maxCol};
 }
@@ -4421,19 +4313,25 @@ function kkStyle(sheet,coord){
   const base=kkBaseCell(sheet,coord)||{};
   const s=KK_STYLE_BOOK[String(kkStyleId(sheet,coord))]||{};
   return {
-    fill:s.fill||null,font:s.font||null,size:s.size||null,bold:(base.b!=null?!!base.b:!!s.bold),
-    italic:!!s.italic,color:s.color||null,ha:base.ha||s.ha||null,va:base.va||s.va||null,
-    wrap:(base.wrap!=null?!!base.wrap:(s.wrap!=null?s.wrap:true)),border:s.border
+    fill:s.fill||null,font:s.font||null,size:s.size||null,
+    bold:(base.b!=null?!!base.b:!!s.bold),italic:!!s.italic,
+    color:s.color||null,ha:base.ha||s.ha||null,va:base.va||s.va||null,
+    wrap:(base.wrap!=null?!!base.wrap:(s.wrap!=null?s.wrap:true)),
+    border:s.border
   };
 }
 function kkMergeMap(sheet){
   const map=new Map();
-  (KK_EXCEL[sheet]?.merges||[]).forEach(a=>{
-    const m=/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/i.exec(a);if(!m)return;
+  (KK_EXCEL[sheet]?.merges||[]).forEach(ref=>{
+    const m=/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/i.exec(ref);
+    if(!m)return;
     const c1=kkColToNum(m[1]),r1=+m[2],c2=kkColToNum(m[3]),r2=+m[4];
     map.set(`${m[1]}${r1}`,{r1,c1,r2,c2,rows:r2-r1+1,cols:c2-c1+1});
-    for(let r=r1;r<=r2;r++)for(let c=c1;c<=c2;c++){
-      if(!(r===r1&&c===c1))map.set(`${kkNumToCol(c)}${r}`,{skip:true,master:`${m[1]}${r1}`});
+    for(let r=r1;r<=r2;r++){
+      for(let c=c1;c<=c2;c++){
+        if(r===r1&&c===c1)continue;
+        map.set(`${kkNumToCol(c)}${r}`,{skip:true,master:`${m[1]}${r1}`});
+      }
     }
   });
   return map;
@@ -4441,7 +4339,7 @@ function kkMergeMap(sheet){
 function kkIsMergedBaseRow(sheet,row){
   return (KK_EXCEL[sheet]?.merges||[]).some(ref=>{
     const m=/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/i.exec(ref);
-    return m && row>=+m[2] && row<=+m[4];
+    return !!(m && row>=+m[2] && row<=+m[4]);
   });
 }
 
@@ -4450,60 +4348,71 @@ function kkInsertList(sheet){
   const all=kkGetInsertedRows()[sheet];
   return Array.isArray(all)?all:[];
 }
-function kkNextInsertId(){
-  return `ins_${Date.now()}_${kkSeq++}`;
-}
+function kkNextInsertId(){return `ins_${Date.now()}_${kkSeq++}`;}
 function kkCreateInsert(sheet,anchor,order,templateRow){
-  const obj={id:kkNextInsertId(),anchor:Number(anchor),order:Number(order),templateRow:Number(templateRow),overrides:{}};
+  const obj={
+    id:kkNextInsertId(),
+    anchor:Number(anchor),
+    order:Number(order),
+    templateRow:Number(templateRow),
+    overrides:{}
+  };
   const all=kkInsertList(sheet);
-  all.push(obj); kkGetInsertedRows()[sheet]=all; return obj;
+  all.push(obj);kkGetInsertedRows()[sheet]=all;
+  return obj;
 }
 function kkSortInsertRows(list){
-  return [...list].sort((a,b)=>a.anchor-b.anchor || a.order-b.order || String(a.id).localeCompare(String(b.id)));
+  return [...list].sort((a,b)=>a.anchor-b.anchor||a.order-b.order||String(a.id).localeCompare(String(b.id)));
 }
 function kkBuildRowModel(sheet){
-  const b=kkGetBaseBounds(sheet), hidden=new Set((kkGetHiddenRows()[sheet]||[]).map(Number));
+  const b=kkGetBaseBounds(sheet);
+  const hidden=new Set((kkGetHiddenRows()[sheet]||[]).map(Number));
   const ins=kkSortInsertRows(kkInsertList(sheet));
   const byAnchor=new Map();
+
   ins.forEach(x=>{
     if(!byAnchor.has(x.anchor))byAnchor.set(x.anchor,[]);
     byAnchor.get(x.anchor).push(x);
   });
+
   const out=[];
   for(let baseRow=1;baseRow<=b.rows;baseRow++){
-    const before=byAnchor.get(baseRow)||[];
-    before.forEach(x=>out.push({kind:'insert',insert:x}));
-    if(!hidden.has(baseRow)) out.push({kind:'base',baseRow});
+    (byAnchor.get(baseRow)||[]).forEach(x=>out.push({kind:'insert',insert:x}));
+    if(!hidden.has(baseRow))out.push({kind:'base',baseRow});
   }
   (byAnchor.get(b.rows+1)||[]).forEach(x=>out.push({kind:'insert',insert:x}));
   return out.map((entry,i)=>({...entry,displayRow:i+1}));
 }
 function kkDisplayRowForBaseRow(sheet,baseRow){
-  const model=kkBuildRowModel(sheet);
-  const e=model.find(x=>x.kind==='base' && x.baseRow===Number(baseRow));
+  const e=kkBuildRowModel(sheet).find(x=>x.kind==='base'&&x.baseRow===Number(baseRow));
   return e?e.displayRow:null;
 }
 function kkEntryForDisplayRow(sheet,displayRow){
   return kkBuildRowModel(sheet).find(x=>x.displayRow===Number(displayRow))||null;
 }
-function kkTemplateRowForInsert(ins){
-  return Number(ins.templateRow)||1;
+function kkTemplateRowForInsert(ins){return Number(ins.templateRow)||1;}
+function kkClampSheetColumn(sheet,col){
+  return Math.max(1,Math.min(kkGetBaseBounds(sheet).cols,col));
 }
 
-/* Translate a source formula to current virtual display rows. */
+/* ---------- formula translation ---------- */
 function kkTranslateFormulaForBase(sheet,formula){
   if(!formula)return formula;
-  const srcSheet=sheet;
   return String(formula).replace(
     /((?:'[^']+'|[A-Za-z_][A-Za-z0-9_. ]*)!)?(\$?)([A-Z]{1,3})(\$?)(\d+)/g,
     (m,sheetPart,absCol,col,absRow,rowStr)=>{
-      let targetSheet=srcSheet;
+      let targetSheet=sheet;
       if(sheetPart){
         targetSheet=sheetPart.slice(0,-1);
-        if(targetSheet.startsWith("'")&&targetSheet.endsWith("'"))targetSheet=targetSheet.slice(1,-1).replace(/''/g,"'");
+        if(targetSheet.startsWith("'")&&targetSheet.endsWith("'"))
+          targetSheet=targetSheet.slice(1,-1).replace(/''/g,"'");
       }
       const baseRow=Number(rowStr);
       const displayRow=kkDisplayRowForBaseRow(targetSheet,baseRow);
+
+      // Baris dasar yang dihapus:
+      // - single-cell ref dibiarkan sebagai #0 semantic
+      // - range endpoint ditangani oleh evaluator melalui display rows yang ada.
       if(displayRow==null)return m;
       return `${sheetPart||''}${absCol}${col}${absRow}${displayRow}`;
     }
@@ -4512,21 +4421,31 @@ function kkTranslateFormulaForBase(sheet,formula){
 function kkTranslateFormulaForInsert(sheet,formula,templateBaseRow,insertDisplayRow){
   if(!formula)return formula;
   const delta=Number(insertDisplayRow)-Number(templateBaseRow);
-  let shifted=String(formula).replace(
+
+  // Hanya referensi ke sheet aktif yang digeser.
+  const shifted=String(formula).replace(
     /((?:'[^']+'|[A-Za-z_][A-Za-z0-9_. ]*)!)?(\$?)([A-Z]{1,3})(\$?)(\d+)/g,
     (m,sheetPart,absCol,col,absRow,rowStr)=>{
+      let targetSheet=sheet;
+      if(sheetPart){
+        targetSheet=sheetPart.slice(0,-1);
+        if(targetSheet.startsWith("'")&&targetSheet.endsWith("'"))
+          targetSheet=targetSheet.slice(1,-1).replace(/''/g,"'");
+      }
       let r=Number(rowStr);
-      if(absRow!=='$') r+=delta;
+      if((!sheetPart || targetSheet===sheet) && absRow!=='$')r+=delta;
       return `${sheetPart||''}${absCol}${col}${absRow}${r}`;
     }
   );
+
   return shifted.replace(
     /((?:'[^']+'|[A-Za-z_][A-Za-z0-9_. ]*)!)?(\$?)([A-Z]{1,3})(\$?)(\d+)/g,
     (m,sheetPart,absCol,col,absRow,rowStr)=>{
       let targetSheet=sheet;
       if(sheetPart){
         targetSheet=sheetPart.slice(0,-1);
-        if(targetSheet.startsWith("'")&&targetSheet.endsWith("'"))targetSheet=targetSheet.slice(1,-1).replace(/''/g,"'");
+        if(targetSheet.startsWith("'")&&targetSheet.endsWith("'"))
+          targetSheet=targetSheet.slice(1,-1).replace(/''/g,"'");
       }
       const baseRow=Number(rowStr);
       const displayRow=kkDisplayRowForBaseRow(targetSheet,baseRow);
@@ -4541,48 +4460,62 @@ function kkRawBaseCell(sheet,baseCoord){
   const key=kkCellKey(sheet,baseCoord);
   const ov=kkGetOverrides()[key];
   const base=kkBaseCell(sheet,baseCoord);
+
   if(ov!==undefined){
-    if(ov && typeof ov==='object' && Object.prototype.hasOwnProperty.call(ov,'formula'))
-      return {formula:String(ov.formula||''),nf:base?.nf||'',override:true};
-    if(ov && typeof ov==='object' && Object.prototype.hasOwnProperty.call(ov,'value'))
-      return {value:ov.value,nf:base?.nf||'',override:true};
-    return {value:ov,nf:base?.nf||'',override:true};
+    if(ov && typeof ov==='object' && Object.prototype.hasOwnProperty.call(ov,'formula')){
+      return {formula:String(ov.formula||''),nf:base?.nf||'',override:true,manualOverride:true,baseFormula:base?.f||kkGetFormulaBackups()[key]||null};
+    }
+    if(ov && typeof ov==='object' && Object.prototype.hasOwnProperty.call(ov,'value')){
+      return {value:ov.value,nf:base?.nf||'',override:true,manualOverride:true,baseFormula:base?.f||kkGetFormulaBackups()[key]||null};
+    }
+    return {value:ov,nf:base?.nf||'',override:true,manualOverride:true,baseFormula:base?.f||kkGetFormulaBackups()[key]||null};
   }
   if(!base)return null;
-  if(base.f!=null)return {formula:base.f,nf:base.nf||'',cached:base.cv};
+  if(base.f!=null)return {formula:base.f,nf:base.nf||'',cached:base.cv,baseFormula:base.f};
   return {value:base.v,nf:base.nf||''};
 }
 function kkRawInsertCell(sheet,ins,c,displayRow){
-  const coord=kkNumToCol(c)+kkTemplateRowForInsert(ins);
-  const template=kkBaseCell(sheet,coord);
-  const ov=ins.overrides?.[kkNumToCol(c)];
+  const col=kkNumToCol(c);
+  const templateCoord=col+kkTemplateRowForInsert(ins);
+  const template=kkBaseCell(sheet,templateCoord);
+  const ov=ins.overrides?.[col];
+
   if(ov!==undefined){
-    if(ov && typeof ov==='object' && Object.prototype.hasOwnProperty.call(ov,'formula'))
-      return {formula:String(ov.formula||''),nf:template?.nf||'',override:true};
-    if(ov && typeof ov==='object' && Object.prototype.hasOwnProperty.call(ov,'value'))
-      return {value:ov.value,nf:template?.nf||'',override:true};
-    return {value:ov,nf:template?.nf||'',override:true};
+    if(ov && typeof ov==='object' && Object.prototype.hasOwnProperty.call(ov,'formula')){
+      return {formula:String(ov.formula||''),nf:template?.nf||'',override:true,manualOverride:true,baseFormula:template?.f||null};
+    }
+    if(ov && typeof ov==='object' && Object.prototype.hasOwnProperty.call(ov,'value')){
+      return {value:ov.value,nf:template?.nf||'',override:true,manualOverride:true,baseFormula:template?.f||null};
+    }
+    return {value:ov,nf:template?.nf||'',override:true,manualOverride:true,baseFormula:template?.f||null};
   }
   if(template?.f!=null){
-    return {formula:kkTranslateFormulaForInsert(sheet,template.f,kkTemplateRowForInsert(ins),displayRow),nf:template.nf||'',cached:template.cv};
+    return {
+      formula:kkTranslateFormulaForInsert(sheet,template.f,kkTemplateRowForInsert(ins),displayRow),
+      nf:template.nf||'',cached:template.cv,baseFormula:template.f
+    };
   }
   return {value:'',nf:template?.nf||''};
 }
 function kkRawDisplayCell(sheet,displayRow,c){
   const entry=kkEntryForDisplayRow(sheet,displayRow);
   if(!entry)return null;
+
   if(entry.kind==='base'){
     const coord=kkNumToCol(c)+entry.baseRow;
     const raw=kkRawBaseCell(sheet,coord);
-    if(raw?.formula) raw.formula=kkTranslateFormulaForBase(sheet,raw.formula);
+    if(raw?.formula)raw.formula=kkTranslateFormulaForBase(sheet,raw.formula);
     return raw;
   }
   return kkRawInsertCell(sheet,entry.insert,c,displayRow);
 }
 function kkSetBaseCellValue(sheet,baseCoord,value){
   const key=kkCellKey(sheet,baseCoord);
-  if(String(value??'').trim().startsWith('=')){
-    kkGetOverrides()[key]={formula:String(value).trim()};
+  const base=kkBaseCell(sheet,baseCoord);
+  if(base?.f)kkRememberFormula(sheet,baseCoord);
+  const text=String(value??'');
+  if(text.trim().startsWith('=')){
+    kkGetOverrides()[key]={formula:text.trim()};
   }else{
     kkGetOverrides()[key]={value:value};
   }
@@ -4590,22 +4523,83 @@ function kkSetBaseCellValue(sheet,baseCoord,value){
 function kkSetInsertCellValue(ins,c,value){
   if(!ins.overrides)ins.overrides={};
   const key=kkNumToCol(c);
-  if(String(value??'').trim().startsWith('='))ins.overrides[key]={formula:String(value).trim()};
+  const text=String(value??'');
+  if(text.trim().startsWith('='))ins.overrides[key]={formula:text.trim()};
   else ins.overrides[key]={value:value};
+}
+function kkRestoreBaseFormula(sheet,baseCoord){
+  const key=kkCellKey(sheet,baseCoord);
+  const backup=kkGetFormulaBackups()[key]||kkBaseCell(sheet,baseCoord)?.f;
+  if(!backup)return false;
+  kkGetOverrides()[key]={formula:backup};
+  return true;
+}
+function kkRestoreInsertFormula(ins,c){
+  const key=kkNumToCol(c),template=kkBaseCell(''+ins._sheet,key+kkTemplateRowForInsert(ins));
+  const backup=ins.formulaBackups?.[key]||template?.f;
+  if(!backup)return false;
+  if(!ins.overrides)ins.overrides={};
+  ins.overrides[key]={formula:backup};
+  return true;
 }
 
 /* ---------- formula engine ---------- */
-function kkNormalizeFormula(f){return String(f||'').replace(/^_xlfn\./i,'').trim();}
+function kkNormalizeFormula(f){
+  return String(f||'').replace(/^_xlfn\./i,'').trim().replace(/^\s*=\s*/,'');
+}
 function kkTokenize(s){
   const t=[];let i=0;
   while(i<s.length){
     const ch=s[i];
     if(/\s/.test(ch)){i++;continue;}
-    if(ch==='"'){let j=i+1,str='';while(j<s.length){if(s[j]==='"'&&s[j+1]==='"'){str+='"';j+=2;continue;}if(s[j]==='"')break;str+=s[j++];}t.push({k:'str',v:str});i=j+1;continue;}
-    if(ch==="'"){let j=i+1;while(j<s.length){if(s[j]==="'"&&s[j+1]!=="'")break;if(s[j]==="'"&&s[j+1]==="'"){j+=2;continue;}j++;}const q=s.slice(i,j+1);if(s[j+1]==='!'){j+=2;const m=/\$?[A-Z]{1,3}\$?\d+/.exec(s.slice(j));if(m){t.push({k:'ref',v:q+'!'+m[0]});i=j+m[0].length;continue;}}}
-    if(/[A-Za-z_]/.test(ch)){let j=i;while(j<s.length&&/[A-Za-z0-9_\. ]/.test(s[j]))j++;const word=s.slice(i,j).trim();if(s[j]==='!'){j++;const m=/\$?[A-Z]{1,3}\$?\d+/.exec(s.slice(j));if(m){t.push({k:'ref',v:word+'!'+m[0]});i=j+m[0].length;continue;}}if(/^[A-Za-z]{1,3}\d+$/.test(word)){t.push({k:'ref',v:word});i=j;continue;}t.push({k:'id',v:word});i=j;continue;}
-    if(/[0-9.]/.test(ch)){const m=/\d+(?:\.\d+)?(?:%|[eE][+-]?\d+)?/.exec(s.slice(i));if(m){let v=m[0],num=parseFloat(v);if(v.endsWith('%'))num/=100;t.push({k:'num',v:num});i+=v.length;continue;}}
-    if(ch==='>'||ch==='<'||ch==='='){const two=s.slice(i,i+2);if(two==='>='||two==='<='||two==='<>'){t.push({k:'op',v:two});i+=2;continue;}t.push({k:'op',v:ch});i++;continue;}
+    if(ch==='"'){
+      let j=i+1,str='';
+      while(j<s.length){
+        if(s[j]==='"'&&s[j+1]==='"'){str+='"';j+=2;continue;}
+        if(s[j]==='"')break;
+        str+=s[j++];
+      }
+      t.push({k:'str',v:str});i=j+1;continue;
+    }
+    if(ch==="'"){
+      let j=i+1;
+      while(j<s.length){
+        if(s[j]==="'"&&s[j+1]!=="'")break;
+        if(s[j]==="'"&&s[j+1]==="'"){j+=2;continue;}
+        j++;
+      }
+      const q=s.slice(i,j+1);
+      if(s[j+1]==='!'){
+        j+=2;
+        const m=/\$?[A-Z]{1,3}\$?\d+/i.exec(s.slice(j));
+        if(m){t.push({k:'ref',v:q+'!'+m[0]});i=j+m[0].length;continue;}
+      }
+    }
+    if(/[A-Za-z_]/.test(ch)){
+      let j=i;
+      while(j<s.length&&/[A-Za-z0-9_. ]/.test(s[j]))j++;
+      const word=s.slice(i,j).trim();
+      if(s[j]==='!'){
+        j++;
+        const m=/\$?[A-Z]{1,3}\$?\d+/i.exec(s.slice(j));
+        if(m){t.push({k:'ref',v:word+'!'+m[0]});i=j+m[0].length;continue;}
+      }
+      if(/^[A-Za-z]{1,3}\d+$/i.test(word)){t.push({k:'ref',v:word.toUpperCase()});i=j;continue;}
+      t.push({k:'id',v:word});i=j;continue;
+    }
+    if(/[0-9.]/.test(ch)){
+      const m=/\d+(?:\.\d+)?(?:%|[eE][+-]?\d+)?/.exec(s.slice(i));
+      if(m){
+        let v=m[0],num=parseFloat(v);
+        if(v.endsWith('%'))num/=100;
+        t.push({k:'num',v:num});i+=v.length;continue;
+      }
+    }
+    if(ch==='>'||ch==='<'||ch==='='){
+      const two=s.slice(i,i+2);
+      if(two==='>='||two==='<='||two==='<>'){t.push({k:'op',v:two});i+=2;continue;}
+      t.push({k:'op',v:ch});i++;continue;
+    }
     if('+-*/^(),:'.includes(ch)){t.push({k:ch,v:ch});i++;continue;}
     if(ch==='&'){t.push({k:'op',v:'&'});i++;continue;}
     i++;
@@ -4613,76 +4607,247 @@ function kkTokenize(s){
   t.push({k:'eof',v:''});return t;
 }
 function kkExpandRange(sheet,a,b){
-  const x=kkSplitCoord(a),y=kkSplitCoord(b);if(!x||!y)return [];
-  const out=[];const c1=kkColToNum(x.col),c2=kkColToNum(y.col);const r1=Math.min(x.row,y.row),r2=Math.max(x.row,y.row);
-  for(let r=r1;r<=r2;r++)for(let c=Math.min(c1,c2);c<=Math.max(c1,c2);c++)out.push({sheet,coord:kkNumToCol(c)+r});
+  const x=kkSplitCoord(a),y=kkSplitCoord(b);
+  if(!x||!y)return [];
+  const c1=kkColToNum(x.col),c2=kkColToNum(y.col);
+  const r1=Math.min(x.row,y.row),r2=Math.max(x.row,y.row);
+  const out=[];
+
+  // Formula rows are display rows after translation.
+  for(let r=r1;r<=r2;r++){
+    const e=kkEntryForDisplayRow(sheet,r);
+    if(!e)continue;
+    for(let c=Math.min(c1,c2);c<=Math.max(c1,c2);c++){
+      out.push({sheet,displayRow:r,coord:kkNumToCol(c)+(e.kind==='base'?e.baseRow:r),entry:e,col:c});
+    }
+  }
   return out;
 }
 function kkRefToParts(ref,currentSheet){
-  const clean=String(ref||'').replace(/\$/g,'');let m=/^(.*?)!([A-Z]{1,3}\d+)$/i.exec(clean);
-  if(m){let sh=m[1];if(sh.startsWith("'")&&sh.endsWith("'"))sh=sh.slice(1,-1).replace(/''/g,"'");return {sheet:sh,coord:m[2].toUpperCase()};}
+  const clean=String(ref||'').replace(/\$/g,'').trim();
+  const m=/^(.*?)!([A-Z]{1,3}\d+)$/i.exec(clean);
+  if(m){
+    let sh=m[1];
+    if(sh.startsWith("'")&&sh.endsWith("'"))sh=sh.slice(1,-1).replace(/''/g,"'");
+    return {sheet:sh,coord:m[2].toUpperCase()};
+  }
   return {sheet:currentSheet,coord:clean.toUpperCase()};
 }
-function kkGetSheetCellValue(sheet,coord,stack=[]){
-  const key=kkCellKey(sheet,coord);if(stack.includes(key))return 0;
-  const raw=kkRawDisplayCell(sheet,Number(kkSplitCoord(coord)?.row||0),kkColToNum(kkSplitCoord(coord)?.col||'A'));
+function kkGetSheetCellValue(sheet,coordOrDisplayRow,colMaybe,stack=[]){
+  let displayRow,coord;
+  if(typeof coordOrDisplayRow==='number'){
+    displayRow=coordOrDisplayRow;
+    coord=kkNumToCol(Number(colMaybe||1))+displayRow;
+  }else{
+    coord=String(coordOrDisplayRow||'').toUpperCase();
+    const p=kkSplitCoord(coord);
+    if(!p)return 0;
+    displayRow=p.row;
+  }
+  const key=kkCellKey(sheet,coord);
+  if(stack.includes(key))return 0;
+  const raw=kkRawDisplayCell(sheet,displayRow,kkColToNum(kkSplitCoord(coord)?.col||'A'));
   if(!raw)return null;
   if(Object.prototype.hasOwnProperty.call(raw,'value'))return raw.value;
   if(Object.prototype.hasOwnProperty.call(raw,'formula')){
-    if(sheet==='KK 5.2 OPD' && raw.formula==='R6:R28/Q6:Q28') return raw.cached ?? 0;
-    return kkEvalSheetFormula(sheet,raw.formula,[...stack,key]);
+    const evaluated=kkEvalSheetFormula(sheet,raw.formula,[...stack,key]);
+    if(evaluated.ok)return evaluated.value;
+    return raw.cached??0;
   }
   return null;
 }
 function kkEvalSheetFormula(sheet,formula,stack=[]){
-  const tokens=kkTokenize(kkNormalizeFormula(formula).replace(/^=/,'').replace(/;/g,',').replace(/\$/g,''));
-  let p=0;
-  const asNum=v=>{if(v===null||v===undefined||v==='')return 0;const n=Number(v);return Number.isFinite(n)?n:0;};
-  const eq=(a,b)=>String(a??'')===String(b??'')||asNum(a)===asNum(b);
-  const flatten=arg=>{
-    if(arg?.__range){const a=kkRefToParts(arg.start,sheet),b=kkRefToParts(arg.end,sheet);return kkExpandRange(a.sheet,a.coord,b.coord).map(x=>kkGetSheetCellValue(x.sheet,x.coord,stack));}
-    if(arg?.__ref){const r=kkRefToParts(arg.ref,sheet);return [kkGetSheetCellValue(r.sheet,r.coord,stack)];}
-    return [arg];
-  };
-  const toBool=v=>typeof v==='boolean'?v:(typeof v==='string'?['true','y'].includes(v.toLowerCase()):!!asNum(v));
-  const peek=()=>tokens[p],take=()=>tokens[p++];
-  function expression(){return compare();}
-  function compare(){let v=concat(),o=peek();if(o.k==='op'&&['=','<>','>','<','>=','<='].includes(o.v)){take();const r=concat();if(o.v==='=')return eq(v,r);if(o.v==='<>')return !eq(v,r);if(o.v==='>')return asNum(v)>asNum(r);if(o.v==='<')return asNum(v)<asNum(r);if(o.v==='>=')return asNum(v)>=asNum(r);if(o.v==='<=' )return asNum(v)<=asNum(r);}return v;}
-  function concat(){let v=add();while(peek().k==='op'&&peek().v==='&'){take();v=String(v??'')+String(add()??'');}return v;}
-  function add(){let v=mul();while(peek().k==='+'||peek().k==='-'){const o=take().k,r=mul();v=o==='+'?asNum(v)+asNum(r):asNum(v)-asNum(r);}return v;}
-  function mul(){let v=pow();while(peek().k==='*'||peek().k==='/'){const o=take().k,r=pow();v=o==='*'?asNum(v)*asNum(r):(asNum(r)===0?0:asNum(v)/asNum(r));}return v;}
-  function pow(){let v=unary();while(peek().k==='^'){take();v=Math.pow(asNum(v),asNum(unary()));}return v;}
-  function unary(){if(peek().k==='+'){take();return asNum(unary());}if(peek().k==='-'){take();return -asNum(unary());}return primary();}
-  function arg(){const st=peek();if(st.k==='ref'){const save=p;take();if(peek().k===':'){take();const en=take();return {__range:true,start:st.v,end:en.v};}p=save;}return expression();}
-  function primary(){
-    const t=peek();
-    if(t.k==='num'){take();return t.v;}
-    if(t.k==='str'){take();return t.v;}
-    if(t.k==='ref'){take();if(peek().k===':'){take();const e=take();return {__range:true,start:t.v,end:e.v};}const r=kkRefToParts(t.v,sheet);return kkGetSheetCellValue(r.sheet,r.coord,stack);}
-    if(t.k==='id'){take();const n=t.v.toUpperCase();if(peek().k==='('){take();const a=[];if(peek().k!==')'){while(true){a.push(arg());if(peek().k===','){take();continue;}break;}}if(peek().k===')')take();return fn(n,a);}if(n==='TRUE')return true;if(n==='FALSE')return false;return n;}
-    if(t.k==='('){take();const v=expression();if(peek().k===')')take();return v;}
-    take();return 0;
+  try{
+    const tokens=kkTokenize(kkNormalizeFormula(formula).replace(/;/g,','));
+    let p=0;
+    const asNum=v=>{
+      if(v===null||v===undefined||v==='')return 0;
+      if(typeof v==='boolean')return v?1:0;
+      const n=Number(v);return Number.isFinite(n)?n:0;
+    };
+    const isRange=v=>v&&typeof v==='object'&&v.__range;
+    const flatten=arg=>{
+      if(isRange(arg)){
+        return kkExpandRange(arg.sheet,arg.start,arg.end)
+          .map(x=>kkGetSheetCellValue(x.sheet,x.displayRow,x.col,stack));
+      }
+      if(arg?.__ref){
+        const r=kkRefToParts(arg.ref,sheet);
+        const p2=kkSplitCoord(r.coord);
+        return p2?[kkGetSheetCellValue(r.sheet,p2.row,kkColToNum(p2.col),stack)]:[0];
+      }
+      return [arg];
+    };
+    const toBool=v=>typeof v==='boolean'?v:(typeof v==='string'?['true','y','yes'].includes(v.toLowerCase()):!!asNum(v));
+    const peek=()=>tokens[p],take=()=>tokens[p++];
+    function expression(){return compare();}
+    function compare(){
+      let v=concat(),o=peek();
+      if(o.k==='op'&&['=','<>','>','<','>=','<='].includes(o.v)){
+        take();const r=concat();
+        if(o.v==='=')return String(v??'')===String(r??'')||asNum(v)===asNum(r);
+        if(o.v==='<>')return !(String(v??'')===String(r??'')||asNum(v)===asNum(r));
+        if(o.v==='>')return asNum(v)>asNum(r);
+        if(o.v==='<')return asNum(v)<asNum(r);
+        if(o.v==='>=')return asNum(v)>=asNum(r);
+        if(o.v==='<=' )return asNum(v)<=asNum(r);
+      }
+      return v;
+    }
+    function concat(){
+      let v=add();
+      while(peek().k==='op'&&peek().v==='&'){take();v=String(v??'')+String(add()??'');}
+      return v;
+    }
+    function add(){
+      let v=mul();
+      while(peek().k==='+'||peek().k==='-'){
+        const o=take().k,r=mul();
+        v=o==='+'?asNum(v)+asNum(r):asNum(v)-asNum(r);
+      }
+      return v;
+    }
+    function mul(){
+      let v=pow();
+      while(peek().k==='*'||peek().k==='/'){
+        const o=take().k,r=pow();
+        if(isRange(v)&&isRange(r)){
+          const av=flatten(v).map(asNum),bv=flatten(r).map(asNum);
+          if(o==='/' && bv.length && av.length){
+            // Excel-like array ratio used by KK 5.2:
+            // aggregate ratio when a scalar result is expected.
+            const den=bv.reduce((a,b)=>a+b,0);
+            v=den===0?0:av.reduce((a,b)=>a+b,0)/den;
+          }else{
+            const n=Math.min(av.length,bv.length);
+            v=o==='*'?Array.from({length:n},(_,i)=>av[i]*bv[i]):[];
+          }
+        }else{
+          v=o==='*'?asNum(v)*asNum(r):(asNum(r)===0?0:asNum(v)/asNum(r));
+        }
+      }
+      return v;
+    }
+    function pow(){
+      let v=unary();
+      while(peek().k==='^'){take();v=Math.pow(asNum(v),asNum(unary()));}
+      return v;
+    }
+    function unary(){
+      if(peek().k==='+'){take();return asNum(unary());}
+      if(peek().k==='-'){take();return -asNum(unary());}
+      return primary();
+    }
+    function arg(){
+      const st=peek();
+      if(st.k==='ref'){
+        take();
+        if(peek().k===':'){
+          take();const en=take();
+          const a=kkRefToParts(st.v,sheet),b=kkRefToParts(en.v,sheet);
+          return {__range:true,sheet:a.sheet,start:a.coord,end:b.coord};
+        }
+        p--; // preserve token for primary()
+      }
+      return expression();
+    }
+    function primary(){
+      const t=peek();
+      if(t.k==='num'){take();return t.v;}
+      if(t.k==='str'){take();return t.v;}
+      if(t.k==='ref'){
+        take();
+        if(peek().k===':'){
+          take();const e=take();
+          const a=kkRefToParts(t.v,sheet),b=kkRefToParts(e.v,sheet);
+          return {__range:true,sheet:a.sheet,start:a.coord,end:b.coord};
+        }
+        const r=kkRefToParts(t.v,sheet);
+        const pp=kkSplitCoord(r.coord);
+        return pp?kkGetSheetCellValue(r.sheet,r.coord,stack):0;
+      }
+      if(t.k==='id'){
+        take();
+        const n=t.v.toUpperCase();
+        if(peek().k==='('){
+          take();const a=[];
+          if(peek().k!==')'){
+            while(true){
+              a.push(arg());
+              if(peek().k===','){take();continue;}
+              break;
+            }
+          }
+          if(peek().k===')')take();
+          return fn(n,a);
+        }
+        if(n==='TRUE')return true;
+        if(n==='FALSE')return false;
+        return n;
+      }
+      if(t.k==='('){take();const v=expression();if(peek().k===')')take();return v;}
+      take();return 0;
+    }
+    function fn(n,a){
+      n=n.replace(/^_XLFN\./,'');
+      if(n==='IF')return toBool(flatten(a[0])[0])?flatten(a[1])[0]:flatten(a[2])[0];
+      if(n==='IFERROR'){
+        const val=flatten(a[0])[0];
+        return (val===null||val===undefined||!Number.isFinite(Number(val)))?flatten(a[1])[0]:val;
+      }
+      if(n==='SUM')return a.flatMap(flatten).reduce((x,v)=>x+asNum(v),0);
+      if(n==='AVERAGE'){
+        const v=a.flatMap(flatten).filter(x=>x!==null&&x!==undefined&&x!=='').map(Number).filter(Number.isFinite);
+        return v.length?v.reduce((x,y)=>x+y,0)/v.length:0;
+      }
+      if(n==='COUNTA')return a.flatMap(flatten).filter(v=>v!==null&&v!==undefined&&v!=='').length;
+      if(n==='COUNTIF'){
+        const v=flatten(a[0]),c=flatten(a[1])[0];
+        return v.filter(x=>String(x??'')===String(c??'')).length;
+      }
+      if(n==='MODE.SNGL'){
+        const v=a.flatMap(flatten).filter(x=>x!==null&&x!==undefined&&x!=='')
+          .map(Number).filter(Number.isFinite),m={};
+        v.forEach(x=>m[x]=(m[x]||0)+1);
+        if(!v.length)return 0;
+        const k=Object.keys(m).sort((x,y)=>m[y]-m[x]||Number(x)-Number(y))[0];
+        return Number(k);
+      }
+      if(n==='MIN'){
+        const v=a.flatMap(flatten).filter(x=>x!==null&&x!==undefined&&x!=='').map(Number).filter(Number.isFinite);
+        return v.length?Math.min(...v):0;
+      }
+      if(n==='MAX'){
+        const v=a.flatMap(flatten).filter(x=>x!==null&&x!==undefined&&x!=='').map(Number).filter(Number.isFinite);
+        return v.length?Math.max(...v):0;
+      }
+      if(n==='ROUND'){
+        const v=asNum(flatten(a[0])[0]),d=asNum(flatten(a[1])[0]);
+        const p10=Math.pow(10,d);return Math.round(v*p10)/p10;
+      }
+      if(n==='ABS')return Math.abs(asNum(flatten(a[0])[0]));
+      if(n==='AND')return a.every(x=>toBool(flatten(x)[0]));
+      if(n==='OR')return a.some(x=>toBool(flatten(x)[0]));
+      if(n==='NOT')return !toBool(flatten(a[0])[0]);
+      if(n==='ISNUMBER')return Number.isFinite(Number(flatten(a[0])[0]));
+      return {__unsupported:true};
+    }
+    const result=expression();
+    if(result&&result.__unsupported)return {ok:false};
+    return {ok:true,value:result};
+  }catch(e){
+    return {ok:false,error:e};
   }
-  function fn(n,a){
-    n=n.replace(/^_XLFN\./,'');
-    if(n==='IF')return toBool(a[0])?a[1]:a[2];
-    if(n==='SUM')return a.flatMap(flatten).reduce((x,v)=>x+asNum(v),0);
-    if(n==='AVERAGE'){const v=a.flatMap(flatten).filter(x=>x!==null&&x!==undefined&&x!=='').map(Number).filter(Number.isFinite);return v.length?v.reduce((x,y)=>x+y,0)/v.length:0;}
-    if(n==='COUNTA')return a.flatMap(flatten).filter(v=>v!==null&&v!==undefined&&v!=='').length;
-    if(n==='COUNTIF'){const v=flatten(a[0]),c=a[1];return v.filter(x=>String(x??'')===String(c??'')).length;}
-    if(n==='MODE.SNGL'){const v=a.flatMap(flatten).filter(x=>x!==null&&x!==undefined&&x!=='').map(Number).filter(Number.isFinite),m={};v.forEach(x=>m[x]=(m[x]||0)+1);return v.length?Number(Object.keys(m).sort((x,y)=>m[y]-m[x]||Number(x)-Number(y))[0]):0;}
-    if(n==='MIN'){const v=a.flatMap(flatten).filter(x=>x!==null&&x!==undefined&&x!=='').map(Number).filter(Number.isFinite);return v.length?Math.min(...v):0;}
-    if(n==='MAX'){const v=a.flatMap(flatten).filter(x=>x!==null&&x!==undefined&&x!=='').map(Number).filter(Number.isFinite);return v.length?Math.max(...v):0;}
-    return 0;
-  }
-  try{return expression();}catch(e){return 0;}
 }
 
-/* ---------- format/render ---------- */
+/* ---------- value/format ---------- */
 function kkFormatValue(v,nf=''){
   if(v===null||v===undefined)return '';
   if(typeof v==='number'){
-    if(/%/.test(nf)){const d=(nf.match(/0\.(0+)/)||[])[1]?.length??0;return (v*100).toFixed(d)+'%';}
+    if(/%/.test(nf)){
+      const d=(nf.match(/0\.(0+)/)||[])[1]?.length??2;
+      return (v*100).toFixed(d)+'%';
+    }
     if(Number.isInteger(v))return String(v);
     const d=(nf.match(/0\.(0+)/)||[])[1]?.length??2;
     return v.toFixed(Math.min(8,Math.max(0,d)));
@@ -4690,7 +4855,7 @@ function kkFormatValue(v,nf=''){
   return String(v);
 }
 function kkStyleInline(sheet,coord){
-  const st=kkStyle(sheet,coord);const bits=[];
+  const st=kkStyle(sheet,coord),bits=[];
   if(st.fill)bits.push(`background:${st.fill}`);
   if(st.font)bits.push(`font-family:${st.font},Arial,sans-serif`);
   if(st.size)bits.push(`font-size:${st.size}px`);
@@ -4701,255 +4866,585 @@ function kkStyleInline(sheet,coord){
   if(st.va)bits.push(`vertical-align:${st.va}`);
   bits.push(`white-space:${st.wrap?'pre-wrap':'pre'}`);
   if(st.border){
-    bits.push(`border-top:${st.border.top}`,`border-right:${st.border.right}`,`border-bottom:${st.border.bottom}`,`border-left:${st.border.left}`);
+    bits.push(`border-top:${st.border.top}`,`border-right:${st.border.right}`,
+      `border-bottom:${st.border.bottom}`,`border-left:${st.border.left}`);
   }
   return bits.join(';');
+}
+function kkIsManualOverride(raw){
+  return !!raw?.override && !!raw?.manualOverride;
 }
 function kkDisplayCellSource(sheet,displayRow,c){
   const entry=kkEntryForDisplayRow(sheet,displayRow);
   if(!entry)return null;
   if(entry.kind==='base'){
-    return {entry,coord:kkNumToCol(c)+entry.baseRow,raw:kkRawDisplayCell(sheet,displayRow,c),styleCoord:kkNumToCol(c)+entry.baseRow,insert:null};
+    return {
+      entry,
+      coord:kkNumToCol(c)+entry.baseRow,
+      raw:kkRawDisplayCell(sheet,displayRow,c),
+      styleCoord:kkNumToCol(c)+entry.baseRow,
+      insert:null
+    };
   }
   const t=kkNumToCol(c)+kkTemplateRowForInsert(entry.insert);
-  return {entry,coord:kkNumToCol(c)+displayRow,raw:kkRawDisplayCell(sheet,displayRow,c),styleCoord:t,insert:entry.insert};
+  entry.insert._sheet=sheet;
+  return {
+    entry,
+    coord:kkNumToCol(c)+displayRow,
+    raw:kkRawDisplayCell(sheet,displayRow,c),
+    styleCoord:t,
+    insert:entry.insert
+  };
 }
 function kkRenderEditor(sheet,displayRow,c,source){
   const raw=source.raw;
   const coord=kkNumToCol(c)+displayRow;
   let value='';
   let formula=null;
-  if(raw?.formula){formula=raw.formula;value=kkFormatValue(kkGetSheetCellValue(sheet,coord),raw.nf||'');}
-  else if(raw && Object.prototype.hasOwnProperty.call(raw,'value')) value=raw.value??'';
+
+  if(raw?.formula){
+    formula=raw.formula;
+    value=kkFormatValue(kkGetSheetCellValue(sheet,displayRow,c),'0');
+    // gunakan number format asli
+    value=kkFormatValue(kkGetSheetCellValue(sheet,displayRow,c),raw.nf||'');
+  }else if(raw && Object.prototype.hasOwnProperty.call(raw,'value')){
+    value=raw.value??'';
+  }
+
   const empty=String(value)==='';
-  const attr = source.insert ? `data-extra-id="${kkEsc(source.insert.id)}"` : `data-base-cell="${kkEsc(source.coord)}"`;
+  const manual=kkIsManualOverride(raw);
+  const attr=source.insert
+    ? `data-extra-id="${kkEsc(source.insert.id)}"`
+    : `data-base-cell="${kkEsc(source.coord)}"`;
+  const title=[];
+  if(formula)title.push('Rumus: '+formula);
+  if(manual&&raw.baseFormula)title.push('Rumus asli: '+raw.baseFormula);
+
   return `<div class="kk-cell-editor${empty?' is-empty':''}${formula?' kk-has-formula':''}"
-    contenteditable="true" tabindex="0" spellcheck="false" data-sheet="${kkEsc(sheet)}"
-    data-display-row="${displayRow}" data-col="${c}" ${attr}
-    data-formula="${formula?kkEsc(formula):''}" data-empty="${empty?'1':'0'}"
-    title="${formula?kkEsc('Rumus: '+formula):''}">${empty?'<span class="kk-empty-hint">Klik untuk isi</span>':kkEsc(value)}</div>`;
+    contenteditable="true" tabindex="0" spellcheck="false"
+    data-sheet="${kkEsc(sheet)}" data-display-row="${displayRow}" data-col="${c}"
+    ${attr} data-formula="${formula?kkEsc(formula):''}"
+    data-base-formula="${raw?.baseFormula?kkEsc(raw.baseFormula):''}"
+    data-editing-formula="0" data-empty="${empty?'1':'0'}"
+    title="${kkEsc(title.join('\n'))}">${empty?'<span class="kk-empty-hint">Klik untuk isi</span>':kkEsc(value)}</div>`;
 }
 function kkRenderCell(sheet,displayRow,c,map){
-  const source=kkDisplayCellSource(sheet,displayRow,c); if(!source)return '';
-  const coord=source.styleCoord,mm=map.get(source.coord);
-  if(!source.insert && mm?.skip)return '';
-  let span='';
-  if(!source.insert && mm && !mm.skip) span=` rowspan="${mm.rows}" colspan="${mm.cols}"`;
+  const source=kkDisplayCellSource(sheet,displayRow,c);
+  if(!source)return '';
+
+  const mm=source.insert?null:map.get(source.coord);
+  if(!source.insert&&mm?.skip)return '';
   const raw=source.raw;
   const formula=!!raw?.formula;
-  const cls=`kk-excel-cell${formula?' kk-formula-cell':''}`;
-  const style=kkStyleInline(sheet,coord);
+  const manual=kkIsManualOverride(raw);
+  const active=kkSelectedCell&&kkSelectedCell.sheet===sheet&&
+    kkSelectedCell.displayRow===displayRow&&kkSelectedCell.col===c;
+  let span='';
+  if(!source.insert&&mm&&!mm.skip)span=` rowspan="${mm.rows}" colspan="${mm.cols}"`;
+
+  const cls=`kk-excel-cell${formula?' kk-formula-cell':''}${manual?' kk-manual-override':''}${active?' kk-cell-active':''}`;
+  const style=kkStyleInline(sheet,source.styleCoord);
   const editor=kkRenderEditor(sheet,displayRow,c,source);
-  return `<td class="${cls}"${span} data-sheet="${kkEsc(sheet)}" data-display-row="${displayRow}" data-col="${c}" style="${style}">${editor}${formula?'<span class="kk-formula-tag">fx</span>':''}</td>`;
+  const tag=formula?`<span class="kk-formula-tag${manual?' manual':''}">${manual?'fx*':'fx'}</span>`:'';
+  return `<td class="${cls}"${span}
+      data-sheet="${kkEsc(sheet)}" data-display-row="${displayRow}" data-col="${c}"
+      data-empty-cell="${(!raw||(!raw.value&&!raw.formula))?'1':'0'}"
+      style="${style}">${editor}${tag}</td>`;
 }
 function kkContainerForTab(tabId){
-  const ids={kktab2:'kkLeadIBody',kktab3:'kkLeadIIBody',kktab4:'kkLeadIIIBody',
-    kktab5:'kk11Body',kktab6:'kk12Body',kktab7:'kk21Body',kktab8:'kk22Body',kktab9:'kk23Body',
-    kktab10:'kk31Body',kktab11:'kk32Body',kktab12:'kk33Body',kktab13:'kk34Body',
-    kktab14:'kk51aBody',kktab15:'kk51bBody',kktab16:'kk52Body',kktab17:'kk6Body',
-    kktab18:'kk7Body',kktab19:'kk8Body'};
+  const ids={
+    kktab2:'kkLeadIBody',kktab3:'kkLeadIIBody',kktab4:'kkLeadIIIBody',
+    kktab5:'kk11Body',kktab6:'kk12Body',kktab7:'kk21Body',kktab8:'kk22Body',
+    kktab9:'kk23Body',kktab10:'kk31Body',kktab11:'kk32Body',kktab12:'kk33Body',
+    kktab13:'kk34Body',kktab14:'kk51aBody',kktab15:'kk51bBody',kktab16:'kk52Body',
+    kktab17:'kk6Body',kktab18:'kk7Body',kktab19:'kk8Body'
+  };
   return tabId==='kktab1'?document.getElementById('kkSpipRekapBody'):document.getElementById(ids[tabId]);
 }
-function kkRenderSheet(tabId){
-  const sheet=KK_TAB_SHEETS[tabId],s=KK_EXCEL[sheet];if(!s)return;
-  const container=kkContainerForTab(tabId);if(!container)return;
-  const b=kkGetBaseBounds(sheet),model=kkBuildRowModel(sheet),map=kkMergeMap(sheet),selected=kkSelectedRow;
+function kkRenderSheet(tabId,restoreFocus=null){
+  const sheet=KK_TAB_SHEETS[tabId],s=KK_EXCEL[sheet];
+  if(!s)return;
+  const container=kkContainerForTab(tabId);
+  if(!container)return;
+
+  const b=kkGetBaseBounds(sheet);
+  const model=kkBuildRowModel(sheet);
+  const map=kkMergeMap(sheet);
+  const selected=kkSelectedRow;
   const cols=Array.from({length:b.cols},(_,i)=>i+1);
+
   let html=`<div class="kk-excel-toolbar">
     <strong>${kkEsc(sheet)}</strong>
-    <span class="kk-excel-tip">Excel mode · semua sel dapat diedit · <b>fx</b> tetap dihitung otomatis · klik baris untuk memilih posisi.</span>
+    <span class="kk-active-cell-note" id="kkActiveCellNote">Sel: —</span>
+    <span class="kk-excel-tip">
+      Excel mode · klik sel untuk edit · <b>double-click/F2</b> pada fx untuk edit rumus ·
+      <b>Enter</b> turun · <b>Tab</b> ke kanan · <b>Esc</b> batal
+    </span>
     <select class="kk-row-insert-position" data-sheet="${kkEsc(sheet)}" aria-label="Posisi tambah baris">
-      <option value="above">Di atas baris</option><option value="below">Di bawah baris</option><option value="end">Di akhir</option>
+      <option value="above">Di atas baris</option>
+      <option value="below">Di bawah baris</option>
+      <option value="end">Di akhir</option>
     </select>
     <button type="button" class="kk-add-sheet-row" data-sheet="${kkEsc(sheet)}">＋ Tambah Baris</button>
     <button type="button" class="kk-delete-sheet-row" data-sheet="${kkEsc(sheet)}">🗑 Hapus Baris</button>
-    <button type="button" class="kk-restore-sheet-row" data-sheet="${kkEsc(sheet)}">↶ Pulihkan</button>
+    <button type="button" class="kk-restore-sheet-row" data-sheet="${kkEsc(sheet)}">↶ Pulihkan Baris</button>
+    <button type="button" class="kk-restore-formula" data-sheet="${kkEsc(sheet)}">↶ Pulihkan Rumus</button>
   </div>
   <div class="kk-excel-scroll"><table class="kk-excel-table" data-sheet="${kkEsc(sheet)}"><colgroup>`;
+
   cols.forEach(c=>{
     const col=kkNumToCol(c),w=s.widths?.[col]??10;
-    html+=`<col style="width:${Math.max(42,Math.min(460,w*7.1))}px">`;
+    // width XLSX dipertahankan, tetapi dibatasi agar tidak menimbulkan kolom ekstrem.
+    const px=Math.max(44,Math.min(520,Math.round(w*7.05)));
+    html+=`<col style="width:${px}px">`;
   });
-  html+='</colgroup><tbody>';
 
+  html+='</colgroup><tbody>';
   for(const row of model){
     const d=row.displayRow;
     const isSelected=selected&&selected.sheet===sheet&&selected.displayRow===d;
     const h=(row.kind==='base'?s.heights?.[row.baseRow]:null)??15.75;
     const extraClass=row.kind==='insert'?' kk-row-extra':'';
-    html+=`<tr class="${isSelected?'kk-row-selected ':''}${extraClass.trim()}" data-sheet="${kkEsc(sheet)}" data-display-row="${d}" style="height:${Math.max(15,h)}px">`;
-    for(const c of cols) html+=kkRenderCell(sheet,d,c,map);
+    html+=`<tr class="${isSelected?'kk-row-selected ':''}${extraClass.trim()}"
+      data-sheet="${kkEsc(sheet)}" data-display-row="${d}"
+      style="height:${Math.max(15,Math.min(420,h))}px">`;
+    for(const c of cols)html+=kkRenderCell(sheet,d,c,map);
     html+='</tr>';
   }
   html+='</tbody></table></div>';
   container.innerHTML=html;
+
+  const note=document.getElementById('kkActiveCellNote');
+  if(note&&kkSelectedCell&&kkSelectedCell.sheet===sheet)
+    note.textContent=`Sel: ${kkNumToCol(kkSelectedCell.col)}${kkSelectedCell.displayRow}`;
+
+  if(restoreFocus){
+    requestAnimationFrame(()=>{
+      const q=`.kk-cell-editor[data-sheet="${CSS.escape(sheet)}"][data-display-row="${restoreFocus.row}"][data-col="${restoreFocus.col}"]`;
+      const ed=document.querySelector(q);
+      if(ed){
+        ed.focus();
+        if(restoreFocus.formulaMode)kkEnterFormulaEdit(ed,true);
+        else{
+          const r=document.createRange();r.selectNodeContents(ed);r.collapse(false);
+          const so=window.getSelection();so.removeAllRanges();so.addRange(r);
+        }
+      }
+    });
+  }
 }
 function kkRefreshSummary(){
   const matur=kkGetSheetCellValue('KKLEAD_SPIP','I61')??0;
   const mri=kkGetSheetCellValue('KKLEAD_SPIP','I64')??0;
   const iepk=kkGetSheetCellValue('KKLEAD_SPIP','I81')??0;
-  [['kkMaturitasAkhir',matur],['kkMriAkhir',mri],['kkIepkAkhir',iepk]].forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.textContent=kkFormatValue(v,'0.00');});
+  [['kkMaturitasAkhir',matur],['kkMriAkhir',mri],['kkIepkAkhir',iepk]]
+    .forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.textContent=kkFormatValue(v,'0.00');});
 }
-function kkRerenderAndRestore(sheet,displayRow,col,formulaMode=false){
-  kkRenderSheet(kkActiveTab);kkRefreshSummary();
-  setTimeout(()=>{
-    const sel=`.kk-cell-editor[data-sheet="${CSS.escape(sheet)}"][data-display-row="${displayRow}"][data-col="${col}"]`;
-    const ed=document.querySelector(sel); if(!ed)return;
-    ed.focus();
-    if(formulaMode)kkEnterFormulaEdit(ed,true);
-    else{
-      const range=document.createRange();range.selectNodeContents(ed);range.collapse(false);
-      const selObj=window.getSelection();selObj.removeAllRanges();selObj.addRange(range);
+function kkUpdateActiveCellNote(){
+  const el=document.getElementById('kkActiveCellNote');
+  if(!el)return;
+  if(!kkSelectedCell){el.textContent='Sel: —';return;}
+  const cell=kkRawDisplayCell(kkSelectedCell.sheet,kkSelectedCell.displayRow,kkSelectedCell.col);
+  const coord=`${kkNumToCol(kkSelectedCell.col)}${kkSelectedCell.displayRow}`;
+  el.textContent=cell?.formula?`Sel: ${coord} · fx`:`Sel: ${coord}`;
+}
+function kkRefreshFormulaDom(sheet){
+  const active=kkSelectedCell&&kkSelectedCell.sheet===sheet?kkSelectedCell:null;
+  document.querySelectorAll(`.kk-cell-editor[data-sheet="${CSS.escape(sheet)}"]`).forEach(ed=>{
+    if(active&&+ed.dataset.displayRow===active.displayRow&&+ed.dataset.col===active.col)return;
+    if(ed.dataset.editingFormula==='1')return;
+    const raw=kkRawDisplayCell(sheet,+ed.dataset.displayRow,+ed.dataset.col);
+    if(!raw?.formula)return;
+    const val=kkGetSheetCellValue(sheet,+ed.dataset.displayRow,+ed.dataset.col);
+    const text=kkFormatValue(val,raw.nf||'');
+    if(ed.textContent!==String(text??'')){
+      ed.textContent=text||'';
+      ed.dataset.empty=text?'0':'1';
     }
-  },0);
+  });
+  kkRefreshSummary();
 }
+function kkScheduleFormulaRefresh(sheet){
+  clearTimeout(kkFormulaRefreshTimer);
+  kkFormulaRefreshTimer=setTimeout(()=>kkRefreshFormulaDom(sheet),120);
+}
+function kkScheduleSave(){
+  clearTimeout(kkSaveTimer);
+  kkSaveQueued=true;
+  kkSaveTimer=setTimeout(()=>kkPersistKkData(),900);
+}
+async function kkPersistKkData(){
+  if(!kkEditingRowId)return;
+  if(kkSaveInFlight){
+    kkSaveQueued=true;return;
+  }
+  kkSaveQueued=false;
+  const row=rows.find(r=>r.id===kkEditingRowId);
+  if(!row)return;
+  row.kkData=kkData;
 
-/* ---------- add/delete/restore rows ---------- */
+  const status=document.getElementById('kkSaveStatus');
+  if(status){
+    status.className='kk-save-status';
+    status.style.display='block';
+    status.textContent='⏳ Menyimpan perubahan Kertas Kerja...';
+  }
+  kkSaveInFlight=(async()=>{
+    try{
+      await callServer('saveKkData',{
+        opdId:kkEditingRowId,
+        kkData:JSON.stringify(kkData),
+        year:currentYear
+      });
+      if(status){
+        status.className='kk-save-status success';
+        status.textContent='✅ Perubahan Kertas Kerja tersimpan.';
+      }
+      setTimeout(()=>{if(status){status.textContent='';status.style.display='none';}},1600);
+    }catch(err){
+      if(status){
+        status.className='kk-save-status error';
+        status.textContent='❌ Gagal menyimpan: '+err.message;
+      }
+    }finally{
+      kkSaveInFlight=null;
+      if(kkSaveQueued)kkPersistKkData();
+    }
+  })();
+  await kkSaveInFlight;
+}
+function kkCommitEditor(ed,rerender=true){
+  if(!ed)return;
+  const sh=ed.dataset.sheet,displayRow=+ed.dataset.displayRow,col=+ed.dataset.col;
+  const entry=kkEntryForDisplayRow(sh,displayRow);
+  if(!entry)return;
+
+  const text=kkGetEditorValue(ed);
+  const key=`${sh}!${entry.kind==='base'?entry.baseRow:entry.insert.id}!${col}`;
+
+  if(entry.kind==='insert'){
+    kkSetInsertCellValue(entry.insert,col,text);
+  }else{
+    kkSetBaseCellValue(sh,entry.baseCoord||kkNumToCol(col)+entry.baseRow,text);
+  }
+
+  kkLastCommitted.set(key,text);
+  ed.dataset.editingFormula='0';
+  ed.dataset.formula=text.trim().startsWith('=')?text.trim():'';
+  ed.classList.toggle('kk-has-formula',text.trim().startsWith('='));
+  ed.classList.toggle('is-empty',text==='');
+  kkScheduleSave();
+  kkScheduleFormulaRefresh(sh);
+
+  if(rerender){
+    kkRenderSheet(kkActiveTab,{row:displayRow,col,formulaMode:false});
+    kkUpdateActiveCellNote();
+  }
+}
+function kkGetEditorValue(ed){
+  return ed.innerText.replace(/\u00a0/g,' ').replace(/\r/g,'');
+}
+function kkEnterFormulaEdit(ed,selectAll=false){
+  if(!ed?.classList.contains('kk-has-formula'))return;
+  const f=ed.dataset.formula||kkRawDisplayCell(ed.dataset.sheet,+ed.dataset.displayRow,+ed.dataset.col)?.formula||'';
+  ed.textContent=f;
+  ed.dataset.editingFormula='1';
+  ed.dataset.empty='0';
+  ed.classList.remove('is-empty');
+  ed.focus();
+  if(selectAll){
+    const r=document.createRange();r.selectNodeContents(ed);
+    const s=window.getSelection();s.removeAllRanges();s.addRange(r);
+  }
+}
+function kkCancelEditor(ed){
+  if(!ed)return;
+  const sh=ed.dataset.sheet,displayRow=+ed.dataset.displayRow,col=+ed.dataset.col;
+  kkRenderSheet(kkActiveTab,{row:displayRow,col,formulaMode:false});
+}
+function kkRestoreSelectedFormula(){
+  if(!kkSelectedCell){
+    showWarning('Pilih sel yang memiliki rumus terlebih dahulu.');return;
+  }
+  const {sheet,displayRow,col}=kkSelectedCell;
+  const entry=kkEntryForDisplayRow(sheet,displayRow);
+  if(!entry){
+    showWarning('Sel tidak ditemukan.');return;
+  }
+  let ok=false;
+  if(entry.kind==='insert'){
+    // Simpan sheet pada object insert untuk kompatibilitas data lama.
+    entry.insert._sheet=sheet;
+    ok=kkRestoreInsertFormula(entry.insert,col);
+  }else{
+    ok=kkRestoreBaseFormula(sheet,kkNumToCol(col)+entry.baseRow);
+  }
+  if(!ok){
+    showWarning('Sel ini tidak mempunyai rumus asli yang dapat dipulihkan.');
+    return;
+  }
+  kkScheduleSave();
+  kkRenderSheet(kkActiveTab,{row:displayRow,col,formulaMode:false});
+  kkRefreshSummary();
+}
+function kkAddRow(sheet,position){
+  const sel=kkSelectedEntry(sheet);
+  const baseMax=kkGetBaseBounds(sheet).rows;
+  let anchor=baseMax+1,order=Date.now();
+  let templateRow=Math.min(baseMax,Math.max(1,
+    sel?.kind==='base'?sel.baseRow:
+    (sel?.kind==='insert'?sel.insert.templateRow:baseMax)
+  ));
+
+  if(position==='above'&&sel){
+    if(sel.kind==='base'){anchor=sel.baseRow;order=Date.now();}
+    else{anchor=sel.insert.anchor;order=sel.insert.order-0.5;}
+  }else if(position==='below'&&sel){
+    if(sel.kind==='base'){anchor=sel.baseRow+1;order=Date.now();}
+    else{anchor=sel.insert.anchor;order=sel.insert.order+0.5;}
+  }
+
+  const ins=kkCreateInsert(sheet,anchor,order,templateRow);
+  ins._sheet=sheet;
+
+  const model=kkBuildRowModel(sheet);
+  const d=model.find(x=>x.kind==='insert'&&x.insert.id===ins.id)?.displayRow||1;
+  kkSelectedRow={sheet,displayRow:d,insertId:ins.id};
+  kkSelectedCell={sheet,displayRow:d,col:1};
+  kkScheduleSave();
+  kkRenderSheet(kkActiveTab,{row:d,col:1,formulaMode:false});
+  kkRefreshSummary();
+}
+function kkDeleteSelectedRow(sheet){
+  const entry=kkSelectedEntry(sheet);
+  if(!entry){
+    showWarning('Klik baris yang ingin dihapus terlebih dahulu.');return;
+  }
+  if(entry.kind==='insert'){
+    const arr=kkInsertList(sheet),i=arr.findIndex(x=>x.id===entry.insert.id);
+    if(i>=0)arr.splice(i,1);
+    kkSelectedRow=null;kkSelectedCell=null;kkScheduleSave();
+    kkRenderSheet(kkActiveTab);kkRefreshSummary();return;
+  }
+  const baseRow=entry.baseRow;
+  if(kkIsMergedBaseRow(sheet,baseRow)){
+    showWarning('Baris template XLSX ini merupakan bagian dari merge. Gunakan "Pulihkan Baris" setelah perubahan atau hapus baris manual yang ditambahkan.');
+    return;
+  }
+  if(!confirm(`Hapus baris ${entry.displayRow} dari sheet "${sheet}"?\n\nBaris akan hilang dari tampilan dan tidak lagi masuk perhitungan range.`))return;
+
+  const h=kkGetHiddenRows();
+  if(!Array.isArray(h[sheet]))h[sheet]=[];
+  if(!h[sheet].includes(baseRow))h[sheet].push(baseRow);
+
+  kkSelectedRow=null;kkSelectedCell=null;
+  kkScheduleSave();
+  kkRenderSheet(kkActiveTab);kkRefreshSummary();
+}
+function kkRestoreLast(sheet){
+  const h=kkGetHiddenRows();
+  const list=Array.isArray(h[sheet])?h[sheet]:[];
+  if(!list.length){
+    showWarning('Tidak ada baris yang dihapus pada sheet ini.');return;
+  }
+  list.sort((a,b)=>a-b);
+  const row=list.pop();
+  h[sheet]=list;
+  const restored=kkBuildRowModel(sheet).find(x=>x.kind==='base'&&x.baseRow===row);
+  if(restored){
+    kkSelectedRow={sheet,displayRow:restored.displayRow};
+    kkSelectedCell={sheet,displayRow:restored.displayRow,col:1};
+  }
+  kkScheduleSave();
+  kkRenderSheet(kkActiveTab);
+  kkRefreshSummary();
+}
 function kkSelectedEntry(sheet){
   if(!kkSelectedRow||kkSelectedRow.sheet!==sheet)return null;
   return kkEntryForDisplayRow(sheet,kkSelectedRow.displayRow);
 }
-function kkAddRow(sheet,position){
-  const model=kkBuildRowModel(sheet),sel=kkSelectedEntry(sheet);
-  const baseMax=kkGetBaseBounds(sheet).rows;
-  let anchor=baseMax+1, order=Date.now();
-  let templateRow=Math.min(baseMax,Math.max(1,sel?.kind==='base'?sel.baseRow:(sel?.kind==='insert'?sel.insert.templateRow:baseMax)));
-  if(position==='above' && sel){
-    if(sel.kind==='base'){anchor=sel.baseRow;order=(Date.now());}
-    else {anchor=sel.insert.anchor;order=sel.insert.order-0.5;}
-  }else if(position==='below' && sel){
-    if(sel.kind==='base'){anchor=sel.baseRow+1;order=Date.now();}
-    else {anchor=sel.insert.anchor;order=sel.insert.order+0.5;}
-  }
-  const ins=kkCreateInsert(sheet,anchor,order,templateRow);
-  // no manual values are copied; formulas and original formatting are inherited from template row.
-  kkSelectedRow={sheet,displayRow:kkBuildRowModel(sheet).find(x=>x.kind==='insert'&&x.insert.id===ins.id)?.displayRow||1,insertId:ins.id};
-  kkRenderSheet(kkActiveTab);kkRefreshSummary();
-  setTimeout(()=>{
-    const ed=document.querySelector(`.kk-cell-editor[data-sheet="${CSS.escape(sheet)}"][data-extra-id="${CSS.escape(ins.id)}"]`);
-    ed?.focus();
-  },0);
-}
-function kkDeleteSelectedRow(sheet){
-  const entry=kkSelectedEntry(sheet);
-  if(!entry){showWarning('Klik baris yang ingin dihapus terlebih dahulu.');return;}
-  if(entry.kind==='insert'){
-    const arr=kkInsertList(sheet),i=arr.findIndex(x=>x.id===entry.insert.id);if(i>=0)arr.splice(i,1);
-    kkSelectedRow=null;kkRenderSheet(kkActiveTab);kkRefreshSummary();return;
-  }
-  const baseRow=entry.baseRow;
-  if(kkIsMergedBaseRow(sheet,baseRow)){
-    showWarning('Baris ini adalah bagian dari merge template XLSX. Hapus melalui baris manual yang ditambahkan atau gunakan Pulihkan setelah perubahan lain.');
-    return;
-  }
-  if(!confirm(`Hapus baris ${entry.displayRow} dari Kertas Kerja sheet "${sheet}"?\\n\\nBaris akan dikeluarkan dari tampilan dan tidak lagi dihitung oleh rumus range.`)) return;
-  const h=kkGetHiddenRows();if(!Array.isArray(h[sheet]))h[sheet]=[];if(!h[sheet].includes(baseRow))h[sheet].push(baseRow);
-  kkSelectedRow=null;kkRenderSheet(kkActiveTab);kkRefreshSummary();
-}
-function kkRestoreLast(sheet){
-  const h=kkGetHiddenRows(),list=Array.isArray(h[sheet])?h[sheet]:[];
-  if(!list.length){showWarning('Tidak ada baris yang dihapus pada sheet ini.');return;}
-  const row=list.sort((a,b)=>a-b).pop();h[sheet]=list;kkRenderSheet(kkActiveTab);kkRefreshSummary();
-  const restored=kkBuildRowModel(sheet).find(x=>x.kind==='base'&&x.baseRow===row);
-  if(restored)kkSelectedRow={sheet,displayRow:restored.displayRow};
-}
 
-/* ---------- editor ---------- */
-function kkGetEditorValue(ed){return ed.innerText.replace(/\u00a0/g,' ').replace(/\r/g,'');}
-function kkEnterFormulaEdit(ed,selectAll=false){
-  if(!ed?.classList.contains('kk-has-formula'))return;
-  const f=ed.dataset.formula||'';
-  ed.innerText=f;ed.dataset.editingFormula='1';ed.dataset.empty='0';ed.classList.remove('is-empty');
-  ed.focus();
-  if(selectAll){const r=document.createRange();r.selectNodeContents(ed);const s=window.getSelection();s.removeAllRanges();s.addRange(r);}
-}
+/* ---------- event handlers ---------- */
 document.addEventListener('focusin',e=>{
-  const ed=e.target.closest('.kk-cell-editor');if(!ed)return;
-  if(ed.dataset.empty==='1'){ed.innerHTML='';ed.dataset.empty='0';ed.classList.remove('is-empty');}
+  const ed=e.target.closest('.kk-cell-editor');
+  if(!ed)return;
+  if(ed.dataset.empty==='1'){
+    ed.innerHTML='';
+    ed.dataset.empty='0';
+    ed.classList.remove('is-empty');
+  }
+  kkSelectedCell={
+    sheet:ed.dataset.sheet,
+    displayRow:+ed.dataset.displayRow,
+    col:+ed.dataset.col
+  };
+  kkSelectedRow={sheet:ed.dataset.sheet,displayRow:+ed.dataset.displayRow};
+  ed.closest('tr')?.classList.add('kk-row-selected');
+  kkUpdateActiveCellNote();
 });
 document.addEventListener('dblclick',e=>{
-  const ed=e.target.closest('.kk-cell-editor');if(ed&&ed.classList.contains('kk-has-formula'))kkEnterFormulaEdit(ed,true);
+  const ed=e.target.closest('.kk-cell-editor');
+  if(ed&&ed.classList.contains('kk-has-formula'))kkEnterFormulaEdit(ed,true);
 });
-document.addEventListener('input',e=>{
-  const ed=e.target.closest('.kk-cell-editor');if(!ed)return;
-  const sh=ed.dataset.sheet,displayRow=+ed.dataset.displayRow,col=+ed.dataset.col;
-  const raw=kkGetEditorValue(ed);
-  const entry=kkEntryForDisplayRow(sh,displayRow);if(!entry)return;
-  if(entry.kind==='insert') kkSetInsertCellValue(entry.insert,col,raw);
-  else kkSetBaseCellValue(sh,entry.coord||kkNumToCol(col)+entry.baseRow,raw);
-  ed.dataset.formula=raw.trim().startsWith('=')?raw.trim():'';
-  ed.classList.toggle('kk-has-formula',raw.trim().startsWith('='));
-  ed.dataset.empty=raw==='';
-  ed.classList.toggle('is-empty',raw==='');
-  clearTimeout(kkRefreshTimer);
-  kkRefreshTimer=setTimeout(()=>kkRerenderAndRestore(sh,displayRow,col,raw.trim().startsWith('=')),220);
-});
-document.addEventListener('blur',e=>{
-  const ed=e.target.closest('.kk-cell-editor');if(!ed)return;
-  if(kkGetEditorValue(ed).trim()===''){
-    ed.innerHTML='<span class="kk-empty-hint">Klik untuk isi</span>';ed.dataset.empty='1';ed.classList.add('is-empty');
-  }
-},{capture:true});
 document.addEventListener('keydown',e=>{
-  const ed=e.target.closest('.kk-cell-editor');if(!ed)return;
+  const ed=e.target.closest('.kk-cell-editor');
+  if(!ed)return;
+
   const sh=ed.dataset.sheet,displayRow=+ed.dataset.displayRow,col=+ed.dataset.col;
+  const sheetInfo=KK_EXCEL[sh];
+  const maxCol=sheetInfo?kkGetBaseBounds(sh).cols:col;
+
+  if(e.key==='F2'&&ed.classList.contains('kk-has-formula')){
+    e.preventDefault();kkEnterFormulaEdit(ed,true);return;
+  }
+
+  if(e.key==='Escape'){
+    e.preventDefault();
+    kkCancelEditor(ed);
+    return;
+  }
+
   if(e.key==='Enter'&&!e.shiftKey){
     e.preventDefault();
-    const next=document.querySelector(`.kk-cell-editor[data-sheet="${CSS.escape(sh)}"][data-display-row="${displayRow+1}"]`);
-    if(next){next.focus();return;}
+    kkCommitEditor(ed,true);
+    const nextRow=displayRow+1;
+    const next=document.querySelector(`.kk-cell-editor[data-sheet="${CSS.escape(sh)}"][data-display-row="${nextRow}"][data-col="${col}"]`);
+    if(next){
+      requestAnimationFrame(()=>next.focus());
+    }
+    return;
   }
+
   if(e.key==='Tab'){
     e.preventDefault();
-    const cells=[...document.querySelectorAll(`.kk-cell-editor[data-sheet="${CSS.escape(sh)}"]`)];
-    const i=cells.indexOf(ed),next=e.shiftKey?cells[i-1]:cells[i+1];if(next)next.focus();
-  }
-  if(e.key==='Escape'){
-    e.preventDefault();kkRenderSheet(kkActiveTab);
+    kkCommitEditor(ed,true);
+    let nextCol=e.shiftKey?col-1:col+1,nextRow=displayRow;
+    if(nextCol<1){nextCol=maxCol;nextRow=Math.max(1,displayRow-1);}
+    if(nextCol>maxCol){nextCol=1;nextRow=displayRow+1;}
+    const next=document.querySelector(`.kk-cell-editor[data-sheet="${CSS.escape(sh)}"][data-display-row="${nextRow}"][data-col="${nextCol}"]`);
+    if(next)requestAnimationFrame(()=>next.focus());
+    return;
   }
 });
+document.addEventListener('input',e=>{
+  const ed=e.target.closest('.kk-cell-editor');
+  if(!ed)return;
+  // Jangan rerender saat mengetik. Ini menghilangkan lag + cursor jump.
+  const sh=ed.dataset.sheet,displayRow=+ed.dataset.displayRow,col=+ed.dataset.col;
+  const raw=kkGetEditorValue(ed);
+  const entry=kkEntryForDisplayRow(sh,displayRow);
+  if(!entry)return;
+
+  if(ed.dataset.editingFormula==='1'){
+    // Teks sementara rumus tidak disimpan per-keystroke; commit saat Enter/Tab/blur.
+    ed.dataset.formula=raw.trim().startsWith('=')?raw.trim():raw;
+  }else{
+    ed.dataset.formula=raw.trim().startsWith('=')?raw.trim():'';
+  }
+  ed.dataset.empty=raw===''?'1':'0';
+  ed.classList.toggle('is-empty',raw==='');
+
+  kkSelectedCell={sheet:sh,displayRow,col};
+  kkSelectedRow={sheet:sh,displayRow};
+  kkUpdateActiveCellNote();
+
+  // Terapkan ke state tanpa rebuild DOM.
+  if(entry.kind==='insert')kkSetInsertCellValue(entry.insert,col,raw);
+  else kkSetBaseCellValue(sh,kkNumToCol(col)+entry.baseRow,raw);
+
+  kkScheduleSave();
+  kkScheduleFormulaRefresh(sh);
+});
+document.addEventListener('blur',e=>{
+  const ed=e.target.closest('.kk-cell-editor');
+  if(!ed)return;
+  const raw=kkGetEditorValue(ed);
+  if(raw.trim()===''){
+    ed.innerHTML='<span class="kk-empty-hint">Klik untuk isi</span>';
+    ed.dataset.empty='1';
+    ed.classList.add('is-empty');
+  }
+},{capture:true});
 document.addEventListener('click',e=>{
   const add=e.target.closest('.kk-add-sheet-row');
-  if(add){const sel=add.parentElement.querySelector('.kk-row-insert-position')?.value||'end';kkAddRow(add.dataset.sheet,sel);return;}
-  const del=e.target.closest('.kk-delete-sheet-row');if(del){kkDeleteSelectedRow(del.dataset.sheet);return;}
-  const res=e.target.closest('.kk-restore-sheet-row');if(res){kkRestoreLast(res.dataset.sheet);return;}
-  const row=e.target.closest('.kk-excel-table tr[data-display-row]');if(row){
+  if(add){
+    const sel=add.parentElement.querySelector('.kk-row-insert-position')?.value||'end';
+    kkAddRow(add.dataset.sheet,sel);return;
+  }
+  const del=e.target.closest('.kk-delete-sheet-row');
+  if(del){kkDeleteSelectedRow(del.dataset.sheet);return;}
+  const res=e.target.closest('.kk-restore-sheet-row');
+  if(res){kkRestoreLast(res.dataset.sheet);return;}
+  const rf=e.target.closest('.kk-restore-formula');
+  if(rf){kkRestoreSelectedFormula();return;}
+
+  const row=e.target.closest('.kk-excel-table tr[data-display-row]');
+  if(row){
     const sheet=row.dataset.sheet,displayRow=+row.dataset.displayRow;
     kkSelectedRow={sheet,displayRow};
-    row.parentElement.querySelectorAll('tr.kk-row-selected').forEach(r=>r.classList.remove('kk-row-selected'));
+    const ed=e.target.closest('.kk-cell-editor');
+    if(ed){
+      kkSelectedCell={sheet,displayRow,col:+ed.dataset.col};
+    }
+    row.parentElement.querySelectorAll('tr.kk-row-selected')
+      .forEach(r=>r.classList.remove('kk-row-selected'));
     row.classList.add('kk-row-selected');
+    kkUpdateActiveCellNote();
   }
 });
 
-/* ---------- modal / tab / save ---------- */
+/* ---------- modal / tabs / save ---------- */
 function openKkModal(id){
-  const row=rows.find(r=>r.id===id);if(!row)return;
-  kkEditingRowId=id;kkData=row.kkData&&typeof row.kkData==='object'?row.kkData:{};
-  kkGetOverrides();kkGetInsertedRows();kkGetHiddenRows();kkSelectedRow=null;
+  const row=rows.find(r=>r.id===id);
+  if(!row)return;
+  kkEditingRowId=id;
+  kkData=row.kkData&&typeof row.kkData==='object'?row.kkData:{};
+
+  // Backward compatibility untuk kkData lama.
+  kkGetOverrides();kkGetFormulaBackups();kkGetInsertedRows();kkGetHiddenRows();
+  Object.keys(kkGetInsertedRows()).forEach(sh=>{
+    (kkGetInsertedRows()[sh]||[]).forEach(ins=>ins._sheet=sh);
+  });
+
+  kkSelectedRow=null;kkSelectedCell=null;
+  kkLastCommitted.clear();
+
   document.getElementById('kkOpdName').textContent=row.opd||'Tanpa Nama';
   document.getElementById('kkModal').classList.add('active');
   showKkTab('kktab1');
 }
 function showKkTab(tabId){
   document.querySelectorAll('.kk-tab-content').forEach(el=>el.classList.add('hidden'));
-  const el=document.getElementById(tabId);if(el)el.classList.remove('hidden');
-  document.querySelectorAll('.kk-tab-btn').forEach(btn=>btn.classList.toggle('active',btn.getAttribute('data-tab')===tabId));
-  kkActiveTab=tabId;kkSelectedRow=null;kkRenderSheet(tabId);kkRefreshSummary();
+  const el=document.getElementById(tabId);
+  if(el)el.classList.remove('hidden');
+  document.querySelectorAll('.kk-tab-btn')
+    .forEach(btn=>btn.classList.toggle('active',btn.getAttribute('data-tab')===tabId));
+
+  kkActiveTab=tabId;
+  kkSelectedRow=null;kkSelectedCell=null;
+  kkRenderSheet(tabId);kkRefreshSummary();
 }
 document.getElementById('kkSave').addEventListener('click',async function(){
-  const row=rows.find(r=>r.id===kkEditingRowId);if(!row)return;
-  row.kkData=kkData;const status=document.getElementById('kkSaveStatus');
-  try{
-    status.className='kk-save-status';status.style.display='block';status.textContent='⏳ Menyimpan Kertas Kerja...';
-    await callServer('saveKkData',{opdId:kkEditingRowId,kkData:JSON.stringify(kkData),year:currentYear});
-    status.className='kk-save-status success';status.textContent='✅ Kertas Kerja berhasil disimpan.';
-    setTimeout(()=>{status.textContent='';status.style.display='none';},2500);
-  }catch(err){status.className='kk-save-status error';status.textContent='❌ Gagal menyimpan: '+err.message;}
+  await kkPersistKkData();
 });
 document.getElementById('kkClose').addEventListener('click',closeKkModal);
 document.getElementById('kkCancel').addEventListener('click',closeKkModal);
-function closeKkModal(){document.getElementById('kkModal').classList.remove('active');kkEditingRowId=null;kkSelectedRow=null;}
-document.querySelectorAll('.kk-tab-btn').forEach(btn=>btn.addEventListener('click',()=>showKkTab(btn.getAttribute('data-tab'))));
+function closeKkModal(){
+  clearTimeout(kkSaveTimer);
+  // Pastikan edit terakhir tetap tersimpan sebelum modal ditutup.
+  if(kkSaveQueued&&!kkSaveInFlight)kkPersistKkData();
+  document.getElementById('kkModal').classList.remove('active');
+  kkEditingRowId=null;kkSelectedRow=null;kkSelectedCell=null;
+}
+document.querySelectorAll('.kk-tab-btn')
+  .forEach(btn=>btn.addEventListener('click',()=>showKkTab(btn.getAttribute('data-tab'))));
 
+// Simpan sebelum halaman ditutup/reload. fetch biasa tidak menjamin beacon,
+// jadi lakukan save sinkron secara best-effort dengan beforeunload hanya jika ada antrean.
+window.addEventListener('beforeunload',()=>{
+  clearTimeout(kkSaveTimer);
+  if(kkSaveQueued&&!kkSaveInFlight)kkPersistKkData();
+});
 </script>
 </body>
 </html>
