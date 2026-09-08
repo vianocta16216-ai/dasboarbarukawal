@@ -226,10 +226,59 @@ export const onRequest = async ({ request, env }) => {
       case 'saveKkData': {
         const { opdId, kkData } = params;
         const yearValue = params.year || '2026';
-        await env.DB.prepare("UPDATE opd_data SET kk_data = ? WHERE id = ? AND year = ?")
-          .bind(JSON.stringify(kkData), opdId, yearValue)
-          .run();
-        return new Response(JSON.stringify({ status: 'success', message: 'Kertas kerja tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
+        if (!opdId) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: 'ID OPD tidak ditemukan'
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        // Frontend mengirim JSON.stringify(kkData), jadi backend harus
+        // menyimpan object JSON-nya, bukan melakukan stringify dua kali.
+        let parsedKkData;
+        try {
+          parsedKkData = (typeof kkData === 'string') ? JSON.parse(kkData) : (kkData || {});
+        } catch (e) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: 'Format Kertas Kerja tidak valid: JSON rusak'
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        if (!parsedKkData || typeof parsedKkData !== 'object' || Array.isArray(parsedKkData)) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: 'Format Kertas Kerja harus berupa object JSON'
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        const serializedKkData = JSON.stringify(parsedKkData);
+
+        // Batas aman payload untuk mencegah request penyimpanan berlebihan.
+        if (serializedKkData.length > 5 * 1024 * 1024) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: 'Data Kertas Kerja terlalu besar (maksimal 5 MB)'
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        const result = await env.DB.prepare(
+          "UPDATE opd_data SET kk_data = ? WHERE id = ? AND year = ?"
+        ).bind(serializedKkData, opdId, yearValue).run();
+
+        if (result?.meta?.changes === 0) {
+          return new Response(JSON.stringify({
+            status: 'error',
+            message: 'Data OPD tidak ditemukan untuk tahun yang dipilih'
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        return new Response(JSON.stringify({
+          status: 'success',
+          message: 'Kertas kerja tersimpan',
+          bytes: serializedKkData.length
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
       case 'deleteOpd': {
