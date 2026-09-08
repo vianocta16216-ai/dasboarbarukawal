@@ -117,7 +117,6 @@ async function uploadToGoogleDrive(env, filePath, fileName, bytes, rootFolderId)
   return result.id;
 }
 
-// ====== TAMBAHAN: HAPUS FILE DI GOOGLE DRIVE ======
 async function deleteGoogleDriveFile(env, fileId) {
   const accessToken = await getGoogleAccessToken(env);
   const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
@@ -177,10 +176,13 @@ export const onRequest = async ({ request, env }) => {
     switch (action) {
       case 'getSubunsurData':
         return new Response(JSON.stringify(SUBUNSUR_DATA), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
       case 'verifyAccess':
         return new Response(JSON.stringify({ status: params.password === ACCESS_PASSWORD ? 'success' : 'error', message: params.password === ACCESS_PASSWORD ? 'Akses diterima' : 'Password salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
       case 'verifyDelete':
         return new Response(JSON.stringify({ status: params.password === DELETE_PASSWORD ? 'success' : 'error', message: params.password === DELETE_PASSWORD ? 'Password hapus benar' : 'Password hapus salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
       case 'getData': {
         const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ? ORDER BY CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
         const mapped = results.map(r => {
@@ -191,6 +193,7 @@ export const onRequest = async ({ request, env }) => {
         });
         return new Response(JSON.stringify(mapped), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+
       case 'addOpd': {
         const id = params.id || 'r' + Math.random().toString(36).slice(2,9);
         const opd = params.opd || 'OPD Baru';
@@ -200,52 +203,60 @@ export const onRequest = async ({ request, env }) => {
           .bind(id, opd, sa, params.evidence||'Belum', params.qaApip||'Belum', parseFloat(params.mri)||0, parseFloat(params.iepk)||0, params.rtp||'Belum', params.status||'Belum', JSON.stringify(subunsurs), year, params.kkData || '{}').run();
         return new Response(JSON.stringify({ status: 'success', message: 'OPD berhasil ditambahkan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+
       case 'saveData': {
         const rows = JSON.parse(params.rows);
         for (const row of rows) {
           const subunsurs = row.subunsurs || {};
           const sa = calculateSAFromSubunsur(subunsurs);
+          const kkData = row.kkData || {};
           await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year, kk_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(row.id, row.opd||'', sa, row.evidence||'Belum', row.qaApip||'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year, row.kkData ? JSON.stringify(row.kkData) : '{}').run();
+            .bind(row.id, row.opd||'', sa, row.evidence||'Belum', row.qaApip||'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year, JSON.stringify(kkData)).run();
         }
         return new Response(JSON.stringify({ status: 'success', message: 'Data tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+
       case 'saveField': {
         const { opdId, field, value } = params;
         const dbField = FIELD_MAP[field] || field;
-        await env.DB.prepare(`UPDATE opd_data SET ${dbField} = ? WHERE id = ?`).bind(value, opdId).run();
+        await env.DB.prepare(`UPDATE opd_data SET ${dbField} = ? WHERE id = ? AND year = ?`).bind(value, opdId, year).run();
         return new Response(JSON.stringify({ status: 'success', message: 'Field tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+
       case 'saveKkData': {
         const { opdId, kkData } = params;
         const yearValue = params.year || '2026';
-        // Simpan kkData ke database - perlu kolom baru di tabel opd_data
         await env.DB.prepare("UPDATE opd_data SET kk_data = ? WHERE id = ? AND year = ?")
-          .bind(kkData, opdId, yearValue)
+          .bind(JSON.stringify(kkData), opdId, yearValue)
           .run();
         return new Response(JSON.stringify({ status: 'success', message: 'Kertas kerja tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+
       case 'deleteOpd': {
         if (params.opdId === 'all') await env.DB.prepare("DELETE FROM opd_data WHERE year = ?").bind(year).run();
         else await env.DB.prepare("DELETE FROM opd_data WHERE id = ?").bind(params.opdId).run();
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+
       case 'getYears': {
         const { results } = await env.DB.prepare("SELECT year FROM years").all();
         const years = results.map(x => x.year);
         if (!years.includes('2026')) years.push('2026');
         return new Response(JSON.stringify([...new Set(years)].sort()), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+
       case 'addYear': {
         await env.DB.prepare("INSERT OR IGNORE INTO years (year) VALUES (?)").bind(params.year).run();
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+
       case 'deleteYear': {
         await env.DB.prepare("DELETE FROM opd_data WHERE year = ?").bind(params.year).run();
         await env.DB.prepare("DELETE FROM years WHERE year = ?").bind(params.year).run();
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
-            case 'uploadFile': {
+
+      case 'uploadFile': {
         const { filePath, bytes, fileType, fileName } = getFolderStructure(params);
         await env.EVIDENCE_BUCKET.put(filePath, bytes, { httpMetadata: { contentType: fileType } });
 
@@ -262,7 +273,8 @@ export const onRequest = async ({ request, env }) => {
         const publicUrl = `https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
         return new Response(JSON.stringify({ url: publicUrl, fileName, googleDriveId: gdriveId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
-                             case 'deleteFile': {
+
+      case 'deleteFile': {
         const cleanUrl = params.fileUrl.split('?')[0];
         const marker = 'r2.dev/';
         const idx = cleanUrl.indexOf(marker);
@@ -276,7 +288,6 @@ export const onRequest = async ({ request, env }) => {
           try {
             await deleteGoogleDriveFile(env, params.gdriveId);
           } catch (err) {
-            // Kirim error ke client agar terlihat
             return new Response(JSON.stringify({ 
               status: 'error', 
               message: 'Gagal hapus di Google Drive: ' + err.message 
@@ -286,6 +297,7 @@ export const onRequest = async ({ request, env }) => {
 
         return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+
       case 'listBackups': {
         const prefix = `backup_${year}_`;
         let files;
@@ -307,6 +319,7 @@ export const onRequest = async ({ request, env }) => {
         const validBackups = backups.filter(b => b !== null);
         return new Response(JSON.stringify(validBackups), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+
       case 'createBackup': {
         const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ?").bind(year).all();
         if (results.length === 0) return new Response(JSON.stringify({ status: 'error', message: 'Tidak ada data OPD untuk tahun ini!' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -325,6 +338,7 @@ export const onRequest = async ({ request, env }) => {
         }
         return new Response(JSON.stringify({ status: 'success', message: 'Backup berhasil dibuat', fileName }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+
       case 'restoreBackup': {
         const { fileName } = params;
         const file = await env.EVIDENCE_BUCKET.get(fileName);
@@ -334,16 +348,19 @@ export const onRequest = async ({ request, env }) => {
         for (const row of data) {
           const subunsurs = row.subunsurs ? JSON.parse(row.subunsurs) : {};
           const sa = calculateSAFromSubunsur(subunsurs);
+          const kkData = row.kk_data || row.kkData || {};
           await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year, kk_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(row.id, row.opd||'', sa, row.evidence||'Belum', row.qa_apip || row.qaApip || 'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year, row.kk_data || row.kkData ? JSON.stringify(row.kk_data || row.kkData || {}) : '{}').run();
+            .bind(row.id, row.opd||'', sa, row.evidence||'Belum', row.qa_apip || row.qaApip || 'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year, JSON.stringify(kkData)).run();
         }
         return new Response(JSON.stringify({ status: 'success', message: 'Data berhasil dipulihkan dari backup' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+
       case 'deleteBackup': {
         const { fileName } = params;
         await env.EVIDENCE_BUCKET.delete(fileName);
         return new Response(JSON.stringify({ status: 'success', message: 'Backup dihapus' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
+
       default:
         return new Response(JSON.stringify({ status: 'error', message: 'Aksi tidak dikenal: ' + action }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
