@@ -2003,11 +2003,14 @@ input[type="file"]:hover {
     <div class="sheet-links-body">
       <div class="sheet-links-info">
         Satu OPD memiliki <b>satu Google Spreadsheet Kertas Kerja</b> untuk setiap tahun.
-        Di dalam file tersebut tetap terdapat seluruh sheet KK sesuai workbook Excel template.
-        Website hanya menyimpan linknya sehingga halaman tetap ringan.
+        Di dalam satu file tersebut tetap terdapat seluruh sheet KK sesuai workbook template.
+        Website hanya menyimpan ID dan link spreadsheet, sehingga workbook tidak lagi dimuat/dirender di halaman ini.
       </div>
       <div class="sheet-links-status" id="sheetLinksStatus"></div>
       <div id="sheetLinksList"></div>
+      <div style="margin-top:10px;font-size:11px;color:#64748b;line-height:1.45;">
+        Template workbook dikendalikan oleh backend. Setiap OPD dibuat sebagai salinan <b>satu file</b> Google Spreadsheet, bukan satu file per sheet.
+      </div>
     </div>
     <div class="sheet-links-footer">
       <button id="sheetLinksRefresh">↻ Muat Link</button>
