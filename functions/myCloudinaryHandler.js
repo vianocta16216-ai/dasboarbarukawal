@@ -14,201 +14,147 @@ const FIELD_MAP = {
 
 const DB_FILE_NAME = 'SAKIP_DB.json';
 
-// ============ GOOGLE SHEETS KERTAS KERJA ============
+// ============ GOOGLE SHEETS KERTAS KERJA — 1 WORKBOOK / OPD ============
+// Setiap OPD + Tahun memiliki SATU Google Spreadsheet.
+// Spreadsheet tersebut merupakan salinan utuh dari workbook template,
+// sehingga semua sheet KK, merge, formula, format, dan referensi antar-sheet
+// tetap berada dalam satu file seperti Excel sumber.
 const DEFAULT_KK_TEMPLATE_SPREADSHEET_ID = '1mvkH9PFMoJWrtk2ShSWB1n6kzCwCq5cP';
-const KK_SHEET_DEFS = [
-  { name: 'KKLEAD_SPIP', label: 'KKLEAD_SPIP' },
-  { name: 'KKLEAD I_PEMDA', label: 'KKLEAD I' },
-  { name: 'KKLEAD II', label: 'KKLEAD II' },
-  { name: 'KKLEAD III', label: 'KKLEAD III' },
-  { name: 'KKE 1.1 SASTRA PEMDA (BP4D)', label: 'KKE 1.1' },
-  { name: 'KKE 1.2 SASTRA OPD', label: 'KKE 1.2' },
-  { name: 'KKE 2.1 PROGRAM (OPD)', label: 'KKE 2.1' },
-  { name: 'KKE 2.2 KEGIATAN (OPD)', label: 'KKE 2.2' },
-  { name: 'KKE 2.3 SUB KEGIATAN (OPD)', label: 'KKE 2.3' },
-  { name: 'KK3.1 (OPD)', label: 'KK 3.1' },
-  { name: 'KK3.2 BPKAD Akun', label: 'KK 3.2' },
-  { name: 'KK3.3 BPKAD Aset', label: 'KK 3.3' },
-  { name: 'KK3.4 (inspektorat)', label: 'KK 3.4' },
-  { name: 'KK 5.1A Lakip RPJMD', label: 'KK 5.1A' },
-  { name: 'KK 5.1B OPD', label: 'KK 5.1B' },
-  { name: 'KK 5.2 OPD', label: 'KK 5.2' },
-  { name: 'KK 6 INSP', label: 'KK 6' },
-  { name: 'KK 7 INSP', label: 'KK 7' },
-  { name: 'KK 8 INSP', label: 'KK 8' }
+const KK_TEMPLATE_SHEET_NAMES = [
+  'KKLEAD_SPIP',
+  'KKLEAD I_PEMDA',
+  'KKLEAD II',
+  'KKLEAD III',
+  'KKE 1.1 SASTRA PEMDA (BP4D)',
+  'KKE 1.2 SASTRA OPD',
+  'KKE 2.1 PROGRAM (OPD)',
+  'KKE 2.2 KEGIATAN (OPD)',
+  'KKE 2.3 SUB KEGIATAN (OPD)',
+  'KK3.1 (OPD)',
+  'KK3.2 BPKAD Akun',
+  'KK3.3 BPKAD Aset',
+  'KK3.4 (inspektorat)',
+  'KK 5.1A Lakip RPJMD',
+  'KK 5.1B OPD',
+  'KK 5.2 OPD',
+  'KK 6 INSP',
+  'KK 7 INSP',
+  'KK 8 INSP'
 ];
 
 function safeDriveName(v, fallback='OPD') {
-  return String(v || fallback).replace(/[\\/:*?"<>|#%{}]/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 150) || fallback;
+  return String(v || fallback)
+    .replace(/[\\/:*?"<>|#%{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 150) || fallback;
 }
 
-async function sheetsApi(accessToken, path, options = {}) {
-  const response = await fetch(`https://sheets.googleapis.com/v4${path}`, {
-    ...options,
+async function copyDriveFile(accessToken, sourceFileId, name, parentFolderId) {
+  const q = new URLSearchParams({
+    supportsAllDrives: 'true',
+    fields: 'id,name,mimeType,parents,webViewLink'
+  });
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(sourceFileId)}/copy?${q.toString()}`, {
+    method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      ...(options.headers || {})
-    }
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      name,
+      parents: [parentFolderId]
+    })
   });
-  const text = await response.text();
-  let data = {};
-  try { data = text ? JSON.parse(text) : {}; } catch { data = { raw: text }; }
+  const data = await response.json();
   if (!response.ok) {
-    throw new Error(`Google Sheets API ${response.status}: ${JSON.stringify(data)}`);
+    throw new Error('Gagal menyalin template Google Spreadsheet: ' + JSON.stringify(data));
   }
   return data;
 }
 
-async function getTemplateSheetFormulaData(accessToken, templateId) {
-  const params = new URLSearchParams();
-  params.set('includeGridData', 'true');
-  params.set('ranges', 'KKLEAD_SPIP');
-  for (const def of KK_SHEET_DEFS.slice(1)) params.append('ranges', def.name);
-  const data = await sheetsApi(accessToken, `/spreadsheets/${encodeURIComponent(templateId)}?${params.toString()}`);
-  const result = {};
-  for (const sh of (data.sheets || [])) {
-    const title = sh.properties?.title;
-    if (!title) continue;
-    const formulas = [];
-    let rowBase = 1;
-    for (const block of (sh.data || [])) {
-      const startRow = Number(block.startRow || 0) + 1;
-      const startCol = Number(block.startColumn || 0) + 1;
-      const rowData = block.rowData || [];
-      rowData.forEach((row, rIdx) => {
-        const values = row.values || [];
-        values.forEach((cell, cIdx) => {
-          const f = cell.userEnteredValue?.formulaValue;
-          if (typeof f === 'string' && f.startsWith('=')) {
-            const colNum = startCol + cIdx;
-            let col = ''; let n = colNum;
-            while (n) { const rem = (n - 1) % 26; col = String.fromCharCode(65 + rem) + col; n = Math.floor((n - 1) / 26); }
-            formulas.push({ row: startRow + rIdx, col: colNum, a1: `${col}${startRow + rIdx}`, formula: f });
-          }
-        });
-      });
-      rowBase = Math.max(rowBase, startRow + rowData.length);
-    }
-    result[title] = formulas;
-  }
-  return result;
-}
-
-function rewriteFormulaToExternalSheets(formula, currentSheet, idMap) {
-  if (!formula || !idMap) return formula;
-  return String(formula).replace(/('(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_. ]*)!([A-Z]{1,3}\$?\d+(?::[A-Z]{1,3}\$?\d+)?)/g, (match, sheetPart, a1) => {
-    let name = sheetPart;
-    if (name.startsWith("'") && name.endsWith("'")) name = name.slice(1, -1).replace(/''/g, "'");
-    if (name === currentSheet) return match;
-    const targetId = idMap[name];
-    if (!targetId) return match;
-    const escapedRange = `'${name.replace(/'/g, "''")}'!${a1}`;
-    return `IMPORTRANGE("https://docs.google.com/spreadsheets/d/${targetId}","${escapedRange}")`;
+async function getDriveFile(accessToken, fileId) {
+  const q = new URLSearchParams({
+    supportsAllDrives: 'true',
+    fields: 'id,name,mimeType,parents,webViewLink,trashed'
   });
-}
-
-async function createGoogleSpreadsheet(accessToken, title) {
-  return await sheetsApi(accessToken, '/spreadsheets', { method: 'POST', body: JSON.stringify({ properties: { title } }) });
-}
-
-async function copySheetToSpreadsheet(accessToken, sourceSpreadsheetId, sourceSheetId, destinationSpreadsheetId) {
-  return await sheetsApi(accessToken, `/spreadsheets/${encodeURIComponent(sourceSpreadsheetId)}/sheets/${encodeURIComponent(sourceSheetId)}:copyTo`, {
-    method: 'POST', body: JSON.stringify({ destinationSpreadsheetId })
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${q.toString()}`, {
+    headers: { Authorization: `Bearer ${accessToken}` }
   });
-}
-
-async function deleteSheetsAndRewrite(accessToken, spreadsheetId, keepSheetId, keepSheetTitle, formulaList, idMap) {
-  const meta = await sheetsApi(accessToken, `/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=sheets(properties(sheetId,title,index))`);
-  const requests = [];
-  for (const sh of (meta.sheets || [])) {
-    const sid = sh.properties?.sheetId;
-    if (sid != null && String(sid) !== String(keepSheetId)) requests.push({ deleteSheet: { sheetId: sid } });
-  }
-  if (requests.length) await sheetsApi(accessToken, `/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`, { method: 'POST', body: JSON.stringify({ requests }) });
-
-  const cellRequests = [];
-  for (const item of formulaList || []) {
-    const rewritten = rewriteFormulaToExternalSheets(item.formula, keepSheetTitle, idMap);
-    if (rewritten !== item.formula) {
-      cellRequests.push({
-        updateCells: {
-          rows: [{ values: [{ userEnteredValue: { formulaValue: rewritten } }] }],
-          fields: 'userEnteredValue',
-          start: { sheetId: keepSheetId, rowIndex: item.row - 1, columnIndex: item.col - 1 }
-        }
-      });
-    }
-  }
-  if (cellRequests.length) await sheetsApi(accessToken, `/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`, { method: 'POST', body: JSON.stringify({ requests: cellRequests }) });
-}
-
-async function moveFileToFolder(accessToken, fileId, folderId) {
-  const metaResponse = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=parents`, { headers: { Authorization: `Bearer ${accessToken}` } });
-  const meta = await metaResponse.json();
-  const oldParents = Array.isArray(meta.parents) ? meta.parents.join(',') : '';
-  const q = new URLSearchParams({ addParents: folderId, fields: 'id,parents' });
-  if (oldParents) q.set('removeParents', oldParents);
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${q.toString()}`, { method: 'PATCH', headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!response.ok) throw new Error('Gagal memindahkan spreadsheet ke folder Google Drive: ' + await response.text());
-  return response.json();
+  if (response.status === 404) return null;
+  const data = await response.json();
+  if (!response.ok) throw new Error('Gagal membaca Google Spreadsheet: ' + JSON.stringify(data));
+  return data;
 }
 
 function normalizeKkData(raw) {
-  if (!raw) return { version: 2, sheets: {} };
+  if (!raw) return { version: 3, workbookSpreadsheetId: null, workbookUrl: null, workbookName: null, sheets: KK_TEMPLATE_SHEET_NAMES };
   let data = raw;
   if (typeof data === 'string') {
-    try { data = JSON.parse(data); } catch { return { version: 2, sheets: {} }; }
+    try { data = JSON.parse(data); } catch { return { version: 3, workbookSpreadsheetId: null, workbookUrl: null, workbookName: null, sheets: KK_TEMPLATE_SHEET_NAMES }; }
   }
-  if (data && typeof data === 'object' && data.sheets && typeof data.sheets === 'object') return { version: 2, sheets: data.sheets, templateSpreadsheetId: data.templateSpreadsheetId || null };
-  // Legacy embedded KK data is intentionally ignored by the browser layer.
-  return { version: 2, sheets: {} };
+  if (!data || typeof data !== 'object') return { version: 3, workbookSpreadsheetId: null, workbookUrl: null, workbookName: null, sheets: KK_TEMPLATE_SHEET_NAMES };
+  if (data.workbookSpreadsheetId) {
+    return {
+      version: 3,
+      workbookSpreadsheetId: String(data.workbookSpreadsheetId),
+      workbookUrl: data.workbookUrl || `https://docs.google.com/spreadsheets/d/${encodeURIComponent(data.workbookSpreadsheetId)}/edit`,
+      workbookName: data.workbookName || null,
+      templateSpreadsheetId: data.templateSpreadsheetId || null,
+      sheets: Array.isArray(data.sheets) ? data.sheets : KK_TEMPLATE_SHEET_NAMES
+    };
+  }
+  // Legacy structure (19 spreadsheet/file links) is intentionally not reused.
+  // A new single workbook will be created for the OPD.
+  return { version: 3, workbookSpreadsheetId: null, workbookUrl: null, workbookName: null, sheets: KK_TEMPLATE_SHEET_NAMES };
 }
 
-async function ensureKkSpreadsheets(env, params) {
-  if (!env.GOOGLE_DRIVE_CLIENT_ID || !env.GOOGLE_DRIVE_CLIENT_SECRET || !env.GOOGLE_DRIVE_REFRESH_TOKEN) throw new Error('Google OAuth untuk Spreadsheet belum dikonfigurasi');
+async function ensureKkSpreadsheet(env, params) {
+  if (!env.GOOGLE_DRIVE_CLIENT_ID || !env.GOOGLE_DRIVE_CLIENT_SECRET || !env.GOOGLE_DRIVE_REFRESH_TOKEN) {
+    throw new Error('Google OAuth untuk Spreadsheet belum dikonfigurasi');
+  }
   if (!env.GOOGLE_DRIVE_FOLDER_ID) throw new Error('GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi');
+
   const accessToken = await getGoogleAccessToken(env);
   const templateId = env.GOOGLE_SHEETS_TEMPLATE_ID || DEFAULT_KK_TEMPLATE_SPREADSHEET_ID;
-  const formulaData = await getTemplateSheetFormulaData(accessToken, templateId);
-
   const yearValue = params.year || '2026';
   const opdName = safeDriveName(params.opd || 'OPD Baru');
   const root = await getOrCreateFolder(accessToken, env.GOOGLE_DRIVE_FOLDER_ID, 'Kertas Kerja Spreadsheet');
   const yearFolder = await getOrCreateFolder(accessToken, root, String(yearValue));
   const opdFolder = await getOrCreateFolder(accessToken, yearFolder, opdName);
 
-  let existing = normalizeKkData(params.currentKkData);
-  const byName = { ...(existing.sheets || {}) };
-
-  // First pass: create only missing spreadsheets so formulas can reference the final IDs.
-  for (const def of KK_SHEET_DEFS) {
-    const current = byName[def.name];
-    if (current?.spreadsheetId && current?.url) continue;
-    const sourceSheetMeta = await sheetsApi(accessToken, `/spreadsheets/${encodeURIComponent(templateId)}?fields=sheets(properties(sheetId,title))`);
-    const sourceSheet = (sourceSheetMeta.sheets || []).find(s => s.properties?.title === def.name);
-    if (!sourceSheet) throw new Error(`Sheet template tidak ditemukan: ${def.name}`);
-
-    const created = await createGoogleSpreadsheet(accessToken, `${def.label} - ${opdName} - ${yearValue}`);
-    const copied = await copySheetToSpreadsheet(accessToken, templateId, sourceSheet.properties.sheetId, created.spreadsheetId);
-    await deleteSheetsAndRewrite(accessToken, created.spreadsheetId, copied.sheetId, def.name, [], {});
-    await moveFileToFolder(accessToken, created.spreadsheetId, opdFolder);
-    byName[def.name] = { spreadsheetId: created.spreadsheetId, sheetId: copied.sheetId, url: `https://docs.google.com/spreadsheets/d/${created.spreadsheetId}/edit`, label: def.label };
+  const current = normalizeKkData(params.currentKkData);
+  if (current.workbookSpreadsheetId) {
+    const existing = await getDriveFile(accessToken, current.workbookSpreadsheetId);
+    if (existing && !existing.trashed) {
+      const url = current.workbookUrl || existing.webViewLink || `https://docs.google.com/spreadsheets/d/${encodeURIComponent(current.workbookSpreadsheetId)}/edit`;
+      return {
+        version: 3,
+        templateSpreadsheetId: templateId,
+        workbookSpreadsheetId: current.workbookSpreadsheetId,
+        workbookUrl: url,
+        workbookName: current.workbookName || existing.name || `${opdName} - Kertas Kerja SPIP - ${yearValue}`,
+        sheets: current.sheets || KK_TEMPLATE_SHEET_NAMES
+      };
+    }
   }
 
-  const idMap = {};
-  Object.entries(byName).forEach(([name, meta]) => { if (meta?.spreadsheetId) idMap[name] = meta.spreadsheetId; });
+  const workbookName = `${opdName} - Kertas Kerja SPIP - ${yearValue}`;
+  // Drive files.copy menyalin seluruh file Google Sheets sekaligus.
+  // Karena template sudah berisi semua tab KK, tidak perlu copy sheet satu per satu.
+  const copied = await copyDriveFile(accessToken, templateId, workbookName, opdFolder);
+  const workbookUrl = copied.webViewLink || `https://docs.google.com/spreadsheets/d/${encodeURIComponent(copied.id)}/edit`;
 
-  // Second pass: rewrite formulas in each target sheet to IMPORTRANGE where they refer to another KK sheet.
-  for (const def of KK_SHEET_DEFS) {
-    const dest = byName[def.name];
-    if (!dest?.spreadsheetId) continue;
-    await deleteSheetsAndRewrite(accessToken, dest.spreadsheetId, dest.sheetId, def.name, formulaData[def.name] || [], idMap);
-  }
-
-  return { version: 2, templateSpreadsheetId: templateId, sheets: byName };
+  return {
+    version: 3,
+    templateSpreadsheetId: templateId,
+    workbookSpreadsheetId: copied.id,
+    workbookUrl,
+    workbookName: copied.name || workbookName,
+    sheets: KK_TEMPLATE_SHEET_NAMES
+  };
 }
-// ============ END GOOGLE SHEETS KERTAS KERJA ============
+// ============ END GOOGLE SHEETS KERTAS KERJA — 1 WORKBOOK / OPD ============
 
 function calculateSAFromSubunsur(subunsurs) {
   if (!subunsurs) return 0;
@@ -423,21 +369,21 @@ export const onRequest = async ({ request, env }) => {
         const { results } = await env.DB.prepare("SELECT kk_data, opd FROM opd_data WHERE id = ? AND year = ? LIMIT 1").bind(params.opdId, year).all();
         if (!results.length) return new Response(JSON.stringify({ status: 'error', message: 'OPD tidak ditemukan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         const kkData = normalizeKkData(results[0].kk_data);
-        return new Response(JSON.stringify({ status: 'success', kkData, sheets: kkData.sheets || {} }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ status: 'success', kkData }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
       case 'createKkSheets': {
         const { results } = await env.DB.prepare("SELECT kk_data, opd FROM opd_data WHERE id = ? AND year = ? LIMIT 1").bind(params.opdId, year).all();
         if (!results.length) return new Response(JSON.stringify({ status: 'error', message: 'OPD tidak ditemukan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         const currentKkData = normalizeKkData(results[0].kk_data);
-        const kkData = await ensureKkSpreadsheets(env, { ...params, opd: params.opd || results[0].opd, currentKkData });
+        const kkData = await ensureKkSpreadsheet(env, { ...params, opd: params.opd || results[0].opd, currentKkData });
         await env.DB.prepare("UPDATE opd_data SET kk_data = ? WHERE id = ? AND year = ?").bind(JSON.stringify(kkData), params.opdId, year).run();
-        return new Response(JSON.stringify({ status: 'success', message: 'Google Spreadsheet Kertas Kerja berhasil dibuat/disinkronkan', kkData, sheets: kkData.sheets }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ status: 'success', message: 'Google Spreadsheet Kertas Kerja OPD berhasil dibuat/disinkronkan', kkData, spreadsheet: { id: kkData.workbookSpreadsheetId, url: kkData.workbookUrl, name: kkData.workbookName } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
       case 'saveKkData': {
         const { opdId, kkData } = params;
-        const yearValue = params.year || '2026';
+        const yearValue = params.year || year;
         const normalized = normalizeKkData(kkData);
         await env.DB.prepare("UPDATE opd_data SET kk_data = ? WHERE id = ? AND year = ?")
           .bind(JSON.stringify(normalized), opdId, yearValue)
