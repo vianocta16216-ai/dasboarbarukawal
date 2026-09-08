@@ -3500,7 +3500,7 @@ async function uploadFile(row, subCode, paramId, level, file) {
             fileType: file.type || 'application/octet-stream'
           });
           success = true;
-          resolve({ url: result.url, fileName: result.fileName });
+          resolve({ url: result.url, fileName: result.fileName, gdriveId: result.googleDriveId || null });
         } catch (err) {
           lastError = err.message;
           attempts++;
