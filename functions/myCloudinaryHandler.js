@@ -185,8 +185,9 @@ export const onRequest = async ({ request, env }) => {
         const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ? ORDER BY CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
         const mapped = results.map(r => {
           const subunsurs = r.subunsurs ? JSON.parse(r.subunsurs) : {};
+          const kkData = r.kk_data ? JSON.parse(r.kk_data) : {};
           const sa = calculateSAFromSubunsur(subunsurs);
-          return { ...r, subunsurs, qaApip: r.qa_apip || 'Belum', sa: sa };
+          return { ...r, subunsurs, kkData, qaApip: r.qa_apip || 'Belum', sa: sa };
         });
         return new Response(JSON.stringify(mapped), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
@@ -195,8 +196,8 @@ export const onRequest = async ({ request, env }) => {
         const opd = params.opd || 'OPD Baru';
         const subunsurs = params.subunsurs || {};
         const sa = calculateSAFromSubunsur(subunsurs);
-        await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .bind(id, opd, sa, params.evidence||'Belum', params.qaApip||'Belum', parseFloat(params.mri)||0, parseFloat(params.iepk)||0, params.rtp||'Belum', params.status||'Belum', JSON.stringify(subunsurs), year).run();
+        await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year, kk_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(id, opd, sa, params.evidence||'Belum', params.qaApip||'Belum', parseFloat(params.mri)||0, parseFloat(params.iepk)||0, params.rtp||'Belum', params.status||'Belum', JSON.stringify(subunsurs), year, params.kkData || '{}').run();
         return new Response(JSON.stringify({ status: 'success', message: 'OPD berhasil ditambahkan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       case 'saveData': {
@@ -204,8 +205,8 @@ export const onRequest = async ({ request, env }) => {
         for (const row of rows) {
           const subunsurs = row.subunsurs || {};
           const sa = calculateSAFromSubunsur(subunsurs);
-          await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(row.id, row.opd||'', sa, row.evidence||'Belum', row.qaApip||'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year).run();
+          await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year, kk_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(row.id, row.opd||'', sa, row.evidence||'Belum', row.qaApip||'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year, row.kkData ? JSON.stringify(row.kkData) : '{}').run();
         }
         return new Response(JSON.stringify({ status: 'success', message: 'Data tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
@@ -214,6 +215,15 @@ export const onRequest = async ({ request, env }) => {
         const dbField = FIELD_MAP[field] || field;
         await env.DB.prepare(`UPDATE opd_data SET ${dbField} = ? WHERE id = ?`).bind(value, opdId).run();
         return new Response(JSON.stringify({ status: 'success', message: 'Field tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      case 'saveKkData': {
+        const { opdId, kkData } = params;
+        const yearValue = params.year || '2026';
+        // Simpan kkData ke database - perlu kolom baru di tabel opd_data
+        await env.DB.prepare("UPDATE opd_data SET kk_data = ? WHERE id = ? AND year = ?")
+          .bind(kkData, opdId, yearValue)
+          .run();
+        return new Response(JSON.stringify({ status: 'success', message: 'Kertas kerja tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
       case 'deleteOpd': {
         if (params.opdId === 'all') await env.DB.prepare("DELETE FROM opd_data WHERE year = ?").bind(year).run();
@@ -324,8 +334,8 @@ export const onRequest = async ({ request, env }) => {
         for (const row of data) {
           const subunsurs = row.subunsurs ? JSON.parse(row.subunsurs) : {};
           const sa = calculateSAFromSubunsur(subunsurs);
-          await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(row.id, row.opd||'', sa, row.evidence||'Belum', row.qa_apip || row.qaApip || 'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year).run();
+          await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year, kk_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(row.id, row.opd||'', sa, row.evidence||'Belum', row.qa_apip || row.qaApip || 'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year, row.kk_data || row.kkData ? JSON.stringify(row.kk_data || row.kkData || {}) : '{}').run();
         }
         return new Response(JSON.stringify({ status: 'success', message: 'Data berhasil dipulihkan dari backup' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
