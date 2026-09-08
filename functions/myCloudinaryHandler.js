@@ -87,6 +87,12 @@ async function getDriveFile(accessToken, fileId) {
   return data;
 }
 
+function extractSpreadsheetId(value) {
+  const raw = String(value || '').trim();
+  const m = raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : raw;
+}
+
 function normalizeKkData(raw) {
   if (!raw) return { version: 3, workbookSpreadsheetId: null, workbookUrl: null, workbookName: null, sheets: KK_TEMPLATE_SHEET_NAMES };
   let data = raw;
@@ -116,7 +122,20 @@ async function ensureKkSpreadsheet(env, params) {
   if (!env.GOOGLE_DRIVE_FOLDER_ID) throw new Error('GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi');
 
   const accessToken = await getGoogleAccessToken(env);
-  const templateId = env.GOOGLE_SHEETS_TEMPLATE_ID || DEFAULT_KK_TEMPLATE_SPREADSHEET_ID;
+  const templateId = extractSpreadsheetId(env.GOOGLE_SHEETS_TEMPLATE_ID || DEFAULT_KK_TEMPLATE_SPREADSHEET_ID);
+  if (!templateId) throw new Error('ID template Google Spreadsheet belum dikonfigurasi');
+
+  const templateFile = await getDriveFile(accessToken, templateId);
+  if (!templateFile || templateFile.trashed) {
+    throw new Error(
+      `Template Google Spreadsheet tidak dapat diakses oleh akun Google pada GOOGLE_DRIVE_REFRESH_TOKEN. ` +
+      `Periksa ID template (${templateId}) dan pastikan akun OAuth tersebut memiliki akses Editor/Viewer.`
+    );
+  }
+  if (templateFile.mimeType !== 'application/vnd.google-apps.spreadsheet') {
+    throw new Error(`ID template ${templateId} bukan Google Spreadsheet (mimeType: ${templateFile.mimeType || 'unknown'}).`);
+  }
+
   const yearValue = params.year || '2026';
   const opdName = safeDriveName(params.opd || 'OPD Baru');
   const root = await getOrCreateFolder(accessToken, env.GOOGLE_DRIVE_FOLDER_ID, 'Kertas Kerja Spreadsheet');
@@ -196,7 +215,7 @@ async function getGoogleAccessToken(env) {
 }
 
 async function createFolder(accessToken, parentId, folderName) {
-  const response = await fetch('https://www.googleapis.com/drive/v3/files', {
+  const response = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -214,11 +233,20 @@ async function createFolder(accessToken, parentId, folderName) {
 }
 
 async function getOrCreateFolder(accessToken, parentId, folderName) {
-  const query = `name='${folderName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`;
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)`, {
+  const safeName = String(folderName || '').replace(/'/g, "\\'");
+  const query = `name='${safeName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`;
+  const params = new URLSearchParams({
+    q: query,
+    fields: 'files(id,name)',
+    spaces: 'drive',
+    includeItemsFromAllDrives: 'true',
+    supportsAllDrives: 'true'
+  });
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
   const data = await response.json();
+  if (!response.ok) throw new Error('Gagal mencari folder Google Drive: ' + JSON.stringify(data));
   if (data.files && data.files.length > 0) return data.files[0].id;
   return await createFolder(accessToken, parentId, folderName);
 }
