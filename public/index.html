@@ -1993,25 +1993,25 @@ input[type="file"]:hover {
   </div>
 </div>
 
-<!-- ===== MODAL LINK GOOGLE SPREADSHEET ===== -->
+<!-- ===== GOOGLE SPREADSHEET KERTAS KERJA OPD ===== -->
 <div class="sheet-links-overlay" id="sheetLinksModal">
-  <div class="sheet-links-modal">
+  <div class="sheet-links-modal" style="max-width:640px;">
     <div class="sheet-links-header">
       <h3>📊 SPREADSHEET KERTAS KERJA - <span id="sheetLinksOpdName"></span></h3>
       <button class="sheet-links-close" id="sheetLinksClose" aria-label="Tutup">&times;</button>
     </div>
     <div class="sheet-links-body">
       <div class="sheet-links-info">
-        Setiap sheet Kertas Kerja dibuat sebagai <b>Google Spreadsheet terpisah</b> di Google Drive.
-        File menggunakan format dari spreadsheet template yang dikonfigurasi pada backend.
-        Website hanya memuat daftar link sehingga jauh lebih ringan daripada merender seluruh workbook di browser.
+        Satu OPD memiliki <b>satu Google Spreadsheet Kertas Kerja</b> untuk setiap tahun.
+        Di dalam file tersebut tetap terdapat seluruh sheet KK sesuai workbook Excel template.
+        Website hanya menyimpan linknya sehingga halaman tetap ringan.
       </div>
       <div class="sheet-links-status" id="sheetLinksStatus"></div>
-      <div class="sheet-links-grid" id="sheetLinksList"></div>
+      <div id="sheetLinksList"></div>
     </div>
     <div class="sheet-links-footer">
       <button id="sheetLinksRefresh">↻ Muat Link</button>
-      <button class="primary" id="sheetLinksCreate">＋ Buat/Sinkronkan Spreadsheet</button>
+      <button class="primary" id="sheetLinksCreate">＋ Buat/Sinkronkan Spreadsheet OPD</button>
       <button id="sheetLinksCancel">Tutup</button>
     </div>
   </div>
@@ -2416,7 +2416,7 @@ function render() {
         <td>${selectHtml(r.id,'status',r.status,['Selesai','Proses','Belum'])}</td>
         <td><span class="badge ${kelengkapanClass}">${kelengkapanLabel}</span></td>
         <td><button class="btn-detail" data-id="${r.id}" title="Edit 25 subunsur">✎</button></td>
-        <td><button class="btn-kk" data-id="${r.id}" title="Buka Google Spreadsheet Kertas Kerja">📊</button></td>
+        <td><button class="btn-kk" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja OPD">📊</button></td>
         <td><button class="del-btn" data-id="${r.id}" title="Hapus">&times;</button></td>
       </tr>`;
     }).join('');
@@ -3641,68 +3641,55 @@ setInterval(async function() {
 }, 20000);
 
 // ============================================================
-// GOOGLE SPREADSHEET LINKS — LIGHTWEIGHT KERTAS KERJA
+// GOOGLE SPREADSHEET KERTAS KERJA — 1 FILE PER OPD
 // ============================================================
-const KK_SPREADSHEET_DEFS = [
-  ['KKLEAD_SPIP','KKLEAD_SPIP'],
-  ['KKLEAD I_PEMDA','KKLEAD I'],
-  ['KKLEAD II','KKLEAD II'],
-  ['KKLEAD III','KKLEAD III'],
-  ['KKE 1.1 SASTRA PEMDA (BP4D)','KKE 1.1'],
-  ['KKE 1.2 SASTRA OPD','KKE 1.2'],
-  ['KKE 2.1 PROGRAM (OPD)','KKE 2.1'],
-  ['KKE 2.2 KEGIATAN (OPD)','KKE 2.2'],
-  ['KKE 2.3 SUB KEGIATAN (OPD)','KKE 2.3'],
-  ['KK3.1 (OPD)','KK 3.1'],
-  ['KK3.2 BPKAD Akun','KK 3.2'],
-  ['KK3.3 BPKAD Aset','KK 3.3'],
-  ['KK3.4 (inspektorat)','KK 3.4'],
-  ['KK 5.1A Lakip RPJMD','KK 5.1A'],
-  ['KK 5.1B OPD','KK 5.1B'],
-  ['KK 5.2 OPD','KK 5.2'],
-  ['KK 6 INSP','KK 6'],
-  ['KK 7 INSP','KK 7'],
-  ['KK 8 INSP','KK 8']
-];
 let sheetLinksEditingRowId = null;
-
 function sheetLinksEsc(v){
   return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-function sheetLinksGetSaved(row){
-  const d = row && row.kkData;
+function sheetLinksGetWorkbook(row){
+  const d=row&&row.kkData;
   if(!d || typeof d!=='object') return null;
-  if(d.sheets && typeof d.sheets==='object') return d.sheets;
+  if(d.workbookSpreadsheetId) return d;
   return null;
 }
 function sheetLinksSetStatus(msg,type=''){
   const el=document.getElementById('sheetLinksStatus');
   if(!el)return;
-  el.textContent=msg||'';el.className='sheet-links-status'+(type?' '+type:'');el.style.display=msg?'block':'none';
+  el.textContent=msg||'';
+  el.className='sheet-links-status'+(type?' '+type:'');
+  el.style.display=msg?'block':'none';
 }
 function renderSheetLinks(row){
   const list=document.getElementById('sheetLinksList');
   if(!list)return;
-  const saved=sheetLinksGetSaved(row)||{};
-  list.innerHTML=KK_SPREADSHEET_DEFS.map(([sheet,label])=>{
-    const item=saved[sheet]||{};
-    const url=item.url || (item.spreadsheetId ? `https://docs.google.com/spreadsheets/d/${encodeURIComponent(item.spreadsheetId)}/edit` : '');
-    return `<div class="sheet-link-card">
-      <div class="sheet-link-name">${sheetLinksEsc(label)}<div style="font-weight:500;color:#64748b;font-size:11px;margin-top:3px">${sheetLinksEsc(sheet)}</div></div>
-      ${url?`<a class="sheet-link-open" href="${sheetLinksEsc(url)}" target="_blank" rel="noopener noreferrer">Buka ↗</a>`:`<span class="sheet-link-missing">Belum dibuat</span>`}
+  const wb=sheetLinksGetWorkbook(row);
+  if(wb){
+    const url=wb.workbookUrl || `https://docs.google.com/spreadsheets/d/${encodeURIComponent(wb.workbookSpreadsheetId)}/edit`;
+    list.innerHTML=`<div class="sheet-link-card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px;border:1px solid #dbe2ea;border-radius:12px;background:#fff;">
+      <div class="sheet-link-name">
+        <div style="font-size:15px;font-weight:800;color:#0f172a;">📊 ${sheetLinksEsc(wb.workbookName||'Kertas Kerja SPIP')}</div>
+        <div style="font-size:12px;color:#64748b;margin-top:5px;">${sheetLinksEsc(row.opd||'OPD')} · ${sheetLinksEsc(currentYear)} · seluruh sheet KK berada di dalam satu file</div>
+      </div>
+      <a class="sheet-link-open" style="white-space:nowrap;" href="${sheetLinksEsc(url)}" target="_blank" rel="noopener noreferrer">Buka Spreadsheet ↗</a>
     </div>`;
-  }).join('');
+  }else{
+    list.innerHTML=`<div class="sheet-link-card" style="padding:16px;border:1px dashed #cbd5e1;border-radius:12px;background:#f8fafc;color:#64748b;">
+      Spreadsheet Kertas Kerja untuk OPD ini belum dibuat pada tahun ${sheetLinksEsc(currentYear)}.
+    </div>`;
+  }
 }
 async function loadSheetLinksForRow(row){
   if(!row)return;
   renderSheetLinks(row);
   try{
     const data=await callServer('getKkSheets',{opdId:row.id,year:currentYear});
-    if(data && data.kkData) row.kkData=data.kkData;
+    if(data&&data.kkData)row.kkData=data.kkData;
     renderSheetLinks(row);
     return data;
   }catch(err){
     sheetLinksSetStatus('Gagal memuat link spreadsheet: '+err.message,'error');
+    return null;
   }
 }
 function openSpreadsheetModal(id){
@@ -3712,11 +3699,10 @@ function openSpreadsheetModal(id){
   document.getElementById('sheetLinksModal').classList.add('active');
   sheetLinksSetStatus('Memuat link spreadsheet...');
   loadSheetLinksForRow(row).then(data=>{
-    const hasAll=KK_SPREADSHEET_DEFS.every(([name])=>data?.kkData?.sheets?.[name]?.url || row.kkData?.sheets?.[name]?.url);
-    if(!hasAll && document.getElementById('sheetLinksModal').classList.contains('active')){
+    if(!data?.kkData?.workbookSpreadsheetId && document.getElementById('sheetLinksModal').classList.contains('active')){
       createSheetLinksForCurrentRow(true);
     }else{
-      sheetLinksSetStatus('Link Google Spreadsheet siap dibuka.','success');
+      sheetLinksSetStatus('Spreadsheet OPD siap dibuka.','success');
     }
   });
 }
@@ -3724,12 +3710,12 @@ async function createSheetLinksForCurrentRow(auto=false){
   const row=rows.find(r=>r.id===sheetLinksEditingRowId);if(!row)return;
   const btn=document.getElementById('sheetLinksCreate'),refresh=document.getElementById('sheetLinksRefresh');
   if(btn)btn.disabled=true;if(refresh)refresh.disabled=true;
-  sheetLinksSetStatus(auto?'Membuat spreadsheet Google secara otomatis…':'Membuat/sinkronkan spreadsheet Google…');
+  sheetLinksSetStatus(auto?'Membuat satu Google Spreadsheet untuk OPD ini…':'Membuat/sinkronkan Google Spreadsheet OPD…');
   try{
     const result=await callServer('createKkSheets',{opdId:row.id,opd:row.opd||'OPD',year:currentYear});
-    row.kkData=result.kkData||{sheets:result.sheets||{}};
+    row.kkData=result.kkData||{};
     renderSheetLinks(row);
-    sheetLinksSetStatus(`Selesai. ${Object.keys(result.sheets||{}).length} spreadsheet tersedia di Google Drive.`,'success');
+    sheetLinksSetStatus('Selesai. Satu spreadsheet berisi seluruh sheet KK sudah tersedia di Google Drive.','success');
   }catch(err){
     sheetLinksSetStatus('Gagal membuat spreadsheet: '+err.message,'error');
   }finally{
