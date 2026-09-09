@@ -182,24 +182,8 @@ async function loadData() {
     const data = await callServer('getData', { year });
     rows = [];
     if (Array.isArray(data)) {
-      rows = data.map(r => ({
-        ...r,
-        rtp: r.rtp || 'Belum',
-        status: r.status || 'Belum',
-        evidence: r.evidence || 'Belum',
-        qaApip: r.qaApip || 'Belum',
-        mri: r.mri || 0,
-        iepk: r.iepk || 0,
-        kkData: r.kkData || {}
-      }));
-      rows.sort((a, b) => {
-        let mriA = parseFloat(a.mri) || 0;
-        let mriB = parseFloat(b.mri) || 0;
-        if (mriB !== mriA) return mriB - mriA;
-        let iepkA = parseFloat(a.iepk) || 0;
-        let iepkB = parseFloat(b.iepk) || 0;
-        return iepkB - iepkA;
-      });
+      rows = data.map(r => ({ ...r, nilaiStrukturProses:r.nilaiStrukturProses ?? r.nilai_struktur_proses ?? r.sa ?? 0, nilaiMaturitas:r.nilaiMaturitas ?? r.nilai_maturitas ?? 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[] }));
+      rows.sort((a,b)=>{ const x=(parseFloat(b.nilaiMaturitas)||0)-(parseFloat(a.nilaiMaturitas)||0); return x || (parseFloat(b.nilaiStrukturProses)||0)-(parseFloat(a.nilaiStrukturProses)||0); });
     } else {
       console.warn('Data bukan array, rows diset kosong', data);
     }
@@ -237,133 +221,35 @@ function calculateSA(row) {
 }
 
 // ====== HITUNG KPI LOKAL ======
-function updateKpisLocal() {
-  const total = rows.length;
-  let totalAvg = 0, selesaiLevel = 0, rendahLevel = 0, qaApipSelesai = 0;
-  let statusSelesai = 0, evidenceLengkap = 0, rtpSelesai = 0;
-  let mriValues = [], iepkValues = [];
-
-  rows.forEach(r => {
-    let avg = parseFloat(r.sa) || 0;
-    totalAvg += avg;
-    if (avg >= 3) selesaiLevel++;
-    if (avg <= 2) rendahLevel++;
-    if (r.qaApip === 'Selesai') qaApipSelesai++;
-    if (r.status === 'Selesai') statusSelesai++;
-    if (r.evidence === 'Lengkap') evidenceLengkap++;
-    if (r.rtp === 'Selesai') rtpSelesai++;
-    let mri = parseFloat(r.mri);
-    if (mri > 0) mriValues.push(mri);
-    let iepk = parseFloat(r.iepk);
-    if (iepk > 0) iepkValues.push(iepk);
-  });
-
-  const pct = (n, d) => d ? Math.round((n / d) * 100) : 0;
-  const avgMRI = mriValues.length ? (mriValues.reduce((a,b) => a+b, 0) / mriValues.length) : 0;
-  const avgIEPK = iepkValues.length ? (iepkValues.reduce((a,b) => a+b, 0) / iepkValues.length) : 0;
-  const round2 = (num) => Math.round(num * 100) / 100;
-
-  const kpi = {
-    rataRata: total ? round2(totalAvg / total) : 0,
-    opdLevel3: pct(selesaiLevel, total),
-    qaApip: pct(qaApipSelesai, total),
-    level2: pct(rendahLevel, total),
-    statusSelesai: pct(statusSelesai, total),
-    evidenceLengkap: pct(evidenceLengkap, total),
-    rataMRI: round2(avgMRI),
-    rtpSelesai: pct(rtpSelesai, total),
-    rataIEPK: round2(avgIEPK),
-    total: total,
-    opdLevel3Count: selesaiLevel,
-    qaApipCount: qaApipSelesai,
-    level2Count: rendahLevel,
-    statusSelesaiCount: statusSelesai,
-    evidenceLengkapCount: evidenceLengkap,
-    rtpSelesaiCount: rtpSelesai,
-    mriCount: mriValues.length,
-    iepkCount: iepkValues.length
-  };
-  applyKpis(kpi);
-}
-
-function applyKpis(kpi) {
-  if (!kpi) return;
-  const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  const setBar = (id, val) => { const el = document.getElementById(id); if (el) el.style.width = val + '%'; };
-  setText('kpiRata', kpi.rataRata.toFixed(2));
-  setBar('kpiRataBar', Math.min(100, (kpi.rataRata / 5) * 100));
-  setText('kpiRataNote', kpi.total + ' OPD');
-  setText('kpiSelesai', kpi.opdLevel3 + '%');
-  setBar('kpiSelesaiBar', kpi.opdLevel3);
-  setText('kpiSelesaiNote', kpi.opdLevel3Count + ' dari ' + kpi.total + ' OPD');
-  setText('kpiQaApip', kpi.qaApip + '%');
-  setBar('kpiQaApipBar', kpi.qaApip);
-  setText('kpiQaApipNote', kpi.qaApipCount + ' dari ' + kpi.total + ' OPD');
-  setText('kpiRendah', kpi.level2 + '%');
-  setBar('kpiRendahBar', kpi.level2);
-  setText('kpiRendahNote', kpi.level2Count + ' OPD');
-  setText('kpiStatusSelesai', kpi.statusSelesai + '%');
-  setBar('kpiStatusSelesaiBar', kpi.statusSelesai);
-  setText('kpiStatusSelesaiNote', kpi.statusSelesaiCount + ' dari ' + kpi.total + ' OPD');
-  setText('kpiEvidenceLengkap', kpi.evidenceLengkap + '%');
-  setBar('kpiEvidenceLengkapBar', kpi.evidenceLengkap);
-  setText('kpiEvidenceLengkapNote', kpi.evidenceLengkapCount + ' dari ' + kpi.total + ' OPD');
-  setText('kpiRtpSelesai', kpi.rtpSelesai + '%');
-  setBar('kpiRtpSelesaiBar', kpi.rtpSelesai);
-  setText('kpiRtpSelesaiNote', kpi.rtpSelesaiCount + ' dari ' + kpi.total + ' OPD');
-  setText('kpiMRI', kpi.rataMRI.toFixed(2));
-  setBar('kpiMRIBar', Math.min(100, (kpi.rataMRI / 5) * 100));
-  setText('kpiMRINote', kpi.mriCount + ' OPD terisi');
-  setText('kpiIEPK', kpi.rataIEPK.toFixed(2));
-  setBar('kpiIEPKBar', Math.min(100, (kpi.rataIEPK / 5) * 100));
-  setText('kpiIEPKNote', kpi.iepkCount + ' OPD terisi');
-}
+function updateKpisLocal(){const total=rows.length, vals=f=>rows.map(r=>parseFloat(r[f])).filter(v=>Number.isFinite(v)&&v>0), avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0, pct=(n,d)=>d?Math.round(n/d*100):0;const struktur=vals('nilaiStrukturProses'),maturitas=vals('nilaiMaturitas'),mri=vals('mri'),iepk=vals('iepk'),kap=vals('nilaiKapabilitasApip');const qa=rows.filter(r=>r.qaApip==='Selesai').length,status=rows.filter(r=>r.status==='Selesai').length,rtp=rows.filter(r=>r.rtp==='Selesai').length,ev=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length).length;applyKpis({rataStrukturProses:avg(struktur),rataMaturitas:avg(maturitas),rataMRI:avg(mri),rataIEPK:avg(iepk),rataKapabilitasApip:avg(kap),qaApip:pct(qa,total),statusSelesai:pct(status,total),rtpSelesai:pct(rtp,total),evidenceRtp:pct(ev,total),total,strukturCount:struktur.length,maturitasCount:maturitas.length,mriCount:mri.length,iepkCount:iepk.length,kapabilitasCount:kap.length,qaApipCount:qa,statusSelesaiCount:status,rtpSelesaiCount:rtp,evidenceRtpCount:ev});}
+function applyKpis(k){const t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;},b=(id,v)=>{const e=document.getElementById(id);if(e)e.style.width=Math.max(0,Math.min(100,v))+'%';};t('kpiStrukturProses',k.rataStrukturProses.toFixed(2));b('kpiStrukturProsesBar',k.rataStrukturProses/5*100);t('kpiStrukturProsesNote',k.strukturCount+' OPD terisi');t('kpiMaturitas',k.rataMaturitas.toFixed(2));b('kpiMaturitasBar',k.rataMaturitas/5*100);t('kpiMaturitasNote',k.maturitasCount+' OPD terisi');t('kpiMRI',k.rataMRI.toFixed(2));b('kpiMRIBar',k.rataMRI/5*100);t('kpiMRINote',k.mriCount+' OPD terisi');t('kpiIEPK',k.rataIEPK.toFixed(2));b('kpiIEPKBar',k.rataIEPK/5*100);t('kpiIEPKNote',k.iepkCount+' OPD terisi');t('kpiKapabilitasApip',k.rataKapabilitasApip.toFixed(2));b('kpiKapabilitasApipBar',k.rataKapabilitasApip/5*100);t('kpiKapabilitasApipNote',k.kapabilitasCount+' OPD terisi');t('kpiQaApip',k.qaApip+'%');b('kpiQaApipBar',k.qaApip);t('kpiQaApipNote',k.qaApipCount+' dari '+k.total+' OPD');t('kpiStatusSelesai',k.statusSelesai+'%');b('kpiStatusSelesaiBar',k.statusSelesai);t('kpiStatusSelesaiNote',k.statusSelesaiCount+' dari '+k.total+' OPD');t('kpiRtpSelesai',k.rtpSelesai+'%');b('kpiRtpSelesaiBar',k.rtpSelesai);t('kpiRtpSelesaiNote',k.rtpSelesaiCount+' dari '+k.total+' OPD');t('kpiEvidenceRtp',k.evidenceRtp+'%');b('kpiEvidenceRtpBar',k.evidenceRtp);t('kpiEvidenceRtpNote',k.evidenceRtpCount+' dari '+k.total+' OPD');}
 
 // ====== SAVE DATA ======
 function debounceSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveData, 800);
 }
-
-function syncData() {
-  debounceSave();
-}
-
+function syncData() { debounceSave(); }
 async function saveData() {
-  if (isSaving) {
-    pendingSave = true;
-    return;
-  }
+  if (isSaving) { pendingSave = true; return; }
   isSaving = true;
   const status = document.getElementById('saveStatus');
-  status.textContent = '⏳ Menyimpan...';
+  if (status) status.textContent = '⏳ Menyimpan...';
   const year = currentYear;
-
   try {
-    if (!Array.isArray(rows)) {
-      console.error('rows bukan array, diset kosong', rows);
-      rows = [];
-    }
-    rows.forEach(row => {
-        row.sa = calculateSA(row);
-    });
+    if (!Array.isArray(rows)) rows = [];
     const result = await callServer('saveData', { rows: JSON.stringify(rows), year });
-    if (result.status === 'error') {
-      status.textContent = '⚠️ ' + result.message;
-      throw new Error(result.message);
-    }
-    status.textContent = '✅ Data tersimpan';
+    if (result.status === 'error') throw new Error(result.message);
+    if (status) status.textContent = '✅ Data tersimpan';
     originalRows = JSON.parse(JSON.stringify(rows));
     updateKpisLocal();
-    setTimeout(() => { if (status.textContent.startsWith('✅')) status.textContent = ''; }, 2000);
+    setTimeout(() => { if (status && status.textContent.startsWith('✅')) status.textContent = ''; }, 2000);
   } catch (err) {
-    status.textContent = '⚠️ ' + err.message;
+    if (status) status.textContent = '⚠️ ' + err.message;
+    throw err;
   } finally {
     isSaving = false;
-    if (pendingSave) {
-      pendingSave = false;
-      saveData();
-    }
+    if (pendingSave) { pendingSave = false; saveData(); }
   }
 }
 
@@ -412,16 +298,19 @@ function render() {
             <button class="btn-edit-name" data-id="${r.id}" title="Ubah Nama" style="background:none; border:none; cursor:pointer; font-size:18px; padding:0;">✏️</button>
           </div>
         </td>
-        <td><input type="number" step="0.1" min="0" max="5" value="${avg.toFixed(1)}" data-id="${r.id}" data-field="sa" readonly style="background:#e2e8f0;color:#64748b;"></td>
-        <td>${selectHtml(r.id,'evidence',r.evidence,['Lengkap','Sebagian','Belum'])}</td>
+        <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.nilaiStrukturProses||0).toFixed(2)}" data-id="${r.id}" data-field="nilaiStrukturProses"></td>
+        <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.nilaiMaturitas||0).toFixed(2)}" data-id="${r.id}" data-field="nilaiMaturitas"></td>
+        <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.mri||0).toFixed(2)}" data-id="${r.id}" data-field="mri"></td>
+        <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.iepk||0).toFixed(2)}" data-id="${r.id}" data-field="iepk"></td>
+        <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.nilaiKapabilitasApip||0).toFixed(2)}" data-id="${r.id}" data-field="nilaiKapabilitasApip"></td>
         <td>${selectHtml(r.id,'qaApip',r.qaApip,['Selesai','Proses','Belum'])}</td>
-        <td><input type="number" step="0.1" min="0" max="5" value="${r.mri}" data-id="${r.id}" data-field="mri"></td>
-        <td><input type="number" step="0.1" min="0" max="5" value="${r.iepk}" data-id="${r.id}" data-field="iepk"></td>
-        <td>${selectHtml(r.id,'rtp',r.rtp,['Selesai','Belum'])}</td>
         <td>${selectHtml(r.id,'status',r.status,['Selesai','Proses','Belum'])}</td>
-        <td><span class="badge ${kelengkapanClass}">${kelengkapanLabel}</span></td>
-        <td><button class="btn-detail" data-id="${r.id}" title="Edit 25 subunsur">✎</button></td>
-        <td><button class="btn-kk" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja OPD">📊</button></td>
+        <td>${selectHtml(r.id,'rtp',r.rtp,['Selesai','Belum'])}</td>
+        <td>${selectHtml(r.id,'evidence',r.evidence,['Lengkap','Sebagian','Belum'])}</td>
+        <td><button class="btn-detail" data-id="${r.id}" title="Evidence Struktur dan Proses">📁</button></td>
+        <td><button class="btn-kk" data-id="${r.id}" title="Buka KK SPIP">📊</button></td>
+        <td><button class="btn-kk-rtp" data-id="${r.id}" title="Buka KK RTP">📋</button></td>
+        <td><button class="btn-rtp-evidence" data-id="${r.id}" title="Upload Evidence RTP">📤</button><div class="rtp-evidence-count">${Array.isArray(r.rtpEvidence)?r.rtpEvidence.length:0}</div></td>
         <td><button class="del-btn" data-id="${r.id}" title="Hapus">&times;</button></td>
       </tr>`;
     }).join('');
@@ -452,14 +341,14 @@ function attachHandlers() {
   }
 
   document.querySelectorAll('input[data-id]').forEach(el => {
-    if (el.dataset.field === 'sa') return;
+    if (!['nilaiStrukturProses','nilaiMaturitas','mri','iepk','nilaiKapabilitasApip'].includes(el.dataset.field)) return;
     el.onchange = (e) => {
       const id = e.target.dataset.id;
       const field = e.target.dataset.field;
       const row = rows.find(r => r.id === id);
       if (!row) return;
       let val = e.target.value;
-      if (field === 'mri' || field === 'iepk') val = parseFloat(val) || 0;
+      if (['nilaiStrukturProses','nilaiMaturitas','mri','iepk','nilaiKapabilitasApip'].includes(field)) val = Math.max(0, Math.min(5, parseFloat(val) || 0));
       else val = e.target.value;
       row[field] = val;
 
@@ -512,17 +401,7 @@ function attachHandlers() {
 
 // ====== GRAFIK KPI (FINAL - 400x400 ANTI GEPENG) ======
 function showChart(type) {
-  const titles = {
-    rataRata: 'Rata-rata Level per OPD',
-    opdLevel3: 'Persentase OPD Level ≥ 3',
-    qaApip: 'Persentase QA APIP Selesai',
-    level2: 'Persentase OPD Level ≤ 2',
-    statusSelesai: 'Persentase OPD Selesai (Status)',
-    evidenceLengkap: 'Persentase Evidence Lengkap',
-    rataMRI: 'Rata-rata MRI per OPD',
-    rtpSelesai: 'Persentase RTP Selesai',
-    rataIEPK: 'Rata-rata IEPK per OPD'
-  };
+  const titles={nilaiStrukturProses:'Nilai Struktur dan Proses per OPD',nilaiMaturitas:'Nilai Maturitas Penyelenggaraan SPIP Terintegrasi per OPD',rataMRI:'Nilai MRI per OPD',rataIEPK:'Nilai IEPK per OPD',nilaiKapabilitasApip:'Nilai Kapabilitas APIP per OPD',qaApip:'Persentase QA APIP Selesai',statusSelesai:'Persentase OPD Selesai (Status)',rtpSelesai:'Persentase RTP Selesai',evidenceRtp:'Persentase OPD dengan Evidence RTP'};
   
   let labels = [];
   let data = [];
@@ -538,22 +417,14 @@ function showChart(type) {
     return;
   }
 
-  const isLineChart = (type === 'rataRata' || type === 'rataMRI' || type === 'rataIEPK');
+  const isLineChart=['nilaiStrukturProses','nilaiMaturitas','rataMRI','rataIEPK','nilaiKapabilitasApip'].includes(type);
   
   if (isLineChart) {
     let chartData = [...rows];
-    if (type === 'rataMRI') {
-        chartData.sort((a, b) => (parseFloat(a.mri) || 0) - (parseFloat(b.mri) || 0));
-    } else if (type === 'rataIEPK') {
-        chartData.sort((a, b) => (parseFloat(a.iepk) || 0) - (parseFloat(b.iepk) || 0));
-    }
+    const field=type==='nilaiStrukturProses'?'nilaiStrukturProses':type==='nilaiMaturitas'?'nilaiMaturitas':type==='rataMRI'?'mri':type==='rataIEPK'?'iepk':'nilaiKapabilitasApip'; chartData.sort((a,b)=>(parseFloat(a[field])||0)-(parseFloat(b[field])||0));
     
     labels = chartData.map(r => r.opd);
-    data = chartData.map(r => {
-      if (type === 'rataRata') return parseFloat(r.sa) || 0;
-      if (type === 'rataMRI') return parseFloat(r.mri) || 0;
-      if (type === 'rataIEPK') return parseFloat(r.iepk) || 0;
-    });
+    data=chartData.map(r=>parseFloat(r[field])||0);
     typeChart = 'line';
   } 
   else if (type === 'opdLevel3') {
@@ -574,16 +445,7 @@ function showChart(type) {
     backgroundColor = ['#f59e0b', '#e2e8f0'];
     borderColor = ['#ffffff', '#ffffff'];
     typeChart = 'pie';
-  } else if (type === 'level2') {
-    totalCount = rows.length;
-    countTrue = rows.filter(r => (parseFloat(r.sa) || 0) <= 2).length;
-    countFalse = totalCount - countTrue;
-    labels = ['Level <= 2', 'Level > 2'];
-    data = [countTrue, countFalse];
-    backgroundColor = ['#ef4444', '#e2e8f0'];
-    borderColor = ['#ffffff', '#ffffff'];
-    typeChart = 'pie';
-  } else if (type === 'statusSelesai') {
+    } else if (type === 'statusSelesai') {
     totalCount = rows.length;
     countTrue = rows.filter(r => r.status === 'Selesai').length;
     countFalse = totalCount - countTrue;
@@ -592,25 +454,7 @@ function showChart(type) {
     backgroundColor = ['#6366f1', '#e2e8f0'];
     borderColor = ['#ffffff', '#ffffff'];
     typeChart = 'pie';
-  } else if (type === 'evidenceLengkap') {
-    totalCount = rows.length;
-    countTrue = rows.filter(r => r.evidence === 'Lengkap').length;
-    countFalse = totalCount - countTrue;
-    labels = ['Lengkap', 'Sebagian/Belum'];
-    data = [countTrue, countFalse];
-    backgroundColor = ['#ec4899', '#e2e8f0'];
-    borderColor = ['#ffffff', '#ffffff'];
-    typeChart = 'pie';
-  } else if (type === 'rtpSelesai') {
-    totalCount = rows.length;
-    countTrue = rows.filter(r => r.rtp === 'Selesai').length;
-    countFalse = totalCount - countTrue;
-    labels = ['Selesai', 'Belum'];
-    data = [countTrue, countFalse];
-    backgroundColor = ['#f97316', '#e2e8f0'];
-    borderColor = ['#ffffff', '#ffffff'];
-    typeChart = 'pie';
-  }
+    } else if (type === 'rtpSelesai') { totalCount=rows.length; countTrue=rows.filter(r=>r.rtp==='Selesai').length; countFalse=totalCount-countTrue; labels=['Selesai','Belum']; data=[countTrue,countFalse]; backgroundColor=['#f97316','#e2e8f0']; borderColor=['#ffffff','#ffffff']; typeChart='pie'; } else if (type === 'evidenceRtp') { totalCount=rows.length; countTrue=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length>0).length; countFalse=totalCount-countTrue; labels=['Terisi','Belum']; data=[countTrue,countFalse]; backgroundColor=['#10b981','#e2e8f0']; borderColor=['#ffffff','#ffffff']; typeChart='pie'; }
 
   document.getElementById('kpiChartTitle').textContent = titles[type] || 'Grafik';
   document.getElementById('kpiChartModal').classList.add('active');
@@ -1212,7 +1056,6 @@ document.getElementById('modalSave').addEventListener('click', async function() 
   selects.forEach(el => {
     const subCode = el.dataset.sub, paramId = el.dataset.param;
     row.subunsurs[subCode][paramId].level = parseInt(el.value) || 0;
-    row.sa = calculateSA(row);
   });
   textareas.forEach(el => {
     const subCode = el.dataset.sub, paramId = el.dataset.param, field = el.dataset.field;
@@ -1247,7 +1090,7 @@ document.getElementById('addOpdOk').addEventListener('click', async function() {
   btnOk.disabled = true;
   btnOk.textContent = '⏳ Menambahkan...';
   try {
-    const newOpd = { id: 'r' + Math.random().toString(36).slice(2,9), opd: 'OPD Baru', sa: 0, evidence: 'Belum', qaApip: 'Belum', mri: 0, iepk: 0, rtp: 'Belum', status: 'Belum', subunsurs: {}, kkData: {} };
+    const newOpd = { id:'r'+Math.random().toString(36).slice(2,9), opd:'OPD Baru', sa:0, nilaiStrukturProses:0, nilaiMaturitas:0, nilaiKapabilitasApip:0, evidence:'Belum', qaApip:'Belum', mri:0, iepk:0, rtp:'Belum', status:'Belum', subunsurs:{}, kkData:{}, kkRtpData:{}, rtpEvidence:[] };
     Object.keys(SUBUNSUR_DATA).forEach(subCode => {
       newOpd.subunsurs[subCode] = {};
       SUBUNSUR_DATA[subCode].params.forEach(param => { newOpd.subunsurs[subCode][param.id] = { level: 0 }; });
@@ -1700,16 +1543,28 @@ async function loadSheetLinksForRow(row){
 }
 function openSpreadsheetModal(id){
   const row=rows.find(r=>r.id===id);if(!row)return;
+  const modal=document.getElementById('sheetLinksModal');
+  modal.dataset.mode='spip';
   sheetLinksEditingRowId=id;
+  modal.querySelector('.sheet-links-header h3').innerHTML='📊 SPREADSHEET KERTAS KERJA - <span id="sheetLinksOpdName"></span>';
+  modal.querySelector('.sheet-links-body').innerHTML=`
+    <div class="sheet-links-info">
+      Satu OPD memiliki <b>satu Google Spreadsheet Kertas Kerja</b> untuk setiap tahun.
+      Di dalam satu file tersebut tetap terdapat seluruh sheet KK sesuai workbook template.
+      Website hanya menyimpan ID dan link spreadsheet, sehingga workbook tidak lagi dimuat/dirender di halaman ini.
+    </div>
+    <div class="sheet-links-status" id="sheetLinksStatus"></div>
+    <div id="sheetLinksList"></div>
+    <div style="margin-top:10px;font-size:11px;color:#64748b;line-height:1.45;">
+      Template workbook dikendalikan oleh backend. Setiap OPD dibuat sebagai salinan <b>satu file</b> Google Spreadsheet, bukan satu file per sheet.
+    </div>`;
+  modal.querySelector('.sheet-links-footer').innerHTML='<button id="sheetLinksRefresh">↻ Muat Link</button><button class="primary" id="sheetLinksCreate">＋ Buat/Sinkronkan Spreadsheet OPD</button><button id="sheetLinksCancel">Tutup</button>';
   document.getElementById('sheetLinksOpdName').textContent=row.opd||'Tanpa Nama';
-  document.getElementById('sheetLinksModal').classList.add('active');
+  modal.classList.add('active');
   sheetLinksSetStatus('Memuat link spreadsheet...');
   loadSheetLinksForRow(row).then(data=>{
-    if(!data?.kkData?.workbookSpreadsheetId && document.getElementById('sheetLinksModal').classList.contains('active')){
-      createSheetLinksForCurrentRow(true);
-    }else{
-      sheetLinksSetStatus('Spreadsheet OPD siap dibuka.','success');
-    }
+    if(!data?.kkData?.workbookSpreadsheetId && modal.classList.contains('active')) createSheetLinksForCurrentRow(true);
+    else if(data) sheetLinksSetStatus('Spreadsheet OPD siap dibuka.','success');
   });
 }
 async function createSheetLinksForCurrentRow(auto=false){
@@ -1732,17 +1587,33 @@ function closeSpreadsheetModal(){
   document.getElementById('sheetLinksModal')?.classList.remove('active');
   sheetLinksEditingRowId=null;
 }
+
+
+// ===== KK RTP =====
+async function openKkRtp(id){const row=rows.find(r=>r.id===id);if(!row)return;const modal=document.getElementById('sheetLinksModal');modal.dataset.mode='rtp';document.querySelector('#sheetLinksModal .sheet-links-header h3').innerHTML=`📋 SPREADSHEET KERTAS KERJA RTP - <span id="sheetLinksOpdName">${sheetLinksEsc(row.opd||'Tanpa Nama')}</span>`;document.querySelector('#sheetLinksModal .sheet-links-body').innerHTML='<div class="sheet-links-info">Satu OPD memiliki satu Google Spreadsheet <b>Kertas Kerja RTP</b> per tahun. Workbook dibuat dari template RTP dan ditempatkan pada folder OPD/tahun yang sama.</div><div class="sheet-links-status" id="sheetLinksStatus"></div><div id="sheetLinksList"></div>';document.querySelector('#sheetLinksModal .sheet-links-footer').innerHTML='<button id="sheetLinksRefresh">↻ Muat Link</button><button class="primary" id="sheetLinksCreate">＋ Buat/Sinkronkan KK RTP</button><button id="sheetLinksCancel">Tutup</button>';sheetLinksEditingRowId=id;modal.classList.add('active');sheetLinksSetStatus('Memuat KK RTP...');try{const d=await callServer('getRtpKkSheets',{opdId:id,year:currentYear});row.kkRtpData=d.kkRtpData||{};renderRtpSheetLinks(row);if(!row.kkRtpData.workbookSpreadsheetId)await createRtpSheetLinksForCurrentRow(true);else sheetLinksSetStatus('KK RTP siap dibuka.','success');}catch(err){sheetLinksSetStatus('Gagal memuat KK RTP: '+err.message,'error');}}
+function renderRtpSheetLinks(row){const l=document.getElementById('sheetLinksList');if(!l)return;const w=row.kkRtpData;if(w&&w.workbookSpreadsheetId){const u=w.workbookUrl||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(w.workbookSpreadsheetId)}/edit`;l.innerHTML=`<div class="sheet-link-card"><div class="sheet-link-name"><div style="font-size:15px;font-weight:800;color:#0f172a;">📋 ${sheetLinksEsc(w.workbookName||'Kertas Kerja RTP')}</div><div style="font-size:12px;color:#64748b;margin-top:5px;">${sheetLinksEsc(row.opd||'OPD')} · ${sheetLinksEsc(currentYear)} · workbook RTP</div></div><a class="sheet-link-open" href="${sheetLinksEsc(u)}" target="_blank" rel="noopener noreferrer">Buka Spreadsheet ↗</a></div>`;}else l.innerHTML=`<div class="sheet-link-card">KK RTP belum dibuat pada tahun ${sheetLinksEsc(currentYear)}.</div>`;}
+async function createRtpSheetLinksForCurrentRow(auto=false){const row=rows.find(r=>r.id===sheetLinksEditingRowId);if(!row)return;const b=document.getElementById('sheetLinksCreate'),rf=document.getElementById('sheetLinksRefresh');if(b)b.disabled=true;if(rf)rf.disabled=true;sheetLinksSetStatus(auto?'Membuat KK RTP…':'Membuat/sinkronkan KK RTP…');try{const d=await callServer('createRtpKkSheets',{opdId:row.id,opd:row.opd||'OPD',year:currentYear});row.kkRtpData=d.kkRtpData||{};renderRtpSheetLinks(row);sheetLinksSetStatus('KK RTP berhasil tersedia.','success');}catch(err){sheetLinksSetStatus('Gagal membuat KK RTP: '+err.message,'error');}finally{if(b)b.disabled=false;if(rf)rf.disabled=false;}}
+
+// ===== EVIDENCE RTP =====
+let rtpEvidenceEditingRowId=null;function rtpEvidenceSetStatus(msg,type=''){const e=document.getElementById('rtpEvidenceStatus');if(!e)return;e.textContent=msg||'';e.className='sheet-links-status'+(type?' '+type:'');e.style.display=msg?'block':'none';}
+function renderRtpEvidenceList(row){const e=document.getElementById('rtpEvidenceList');if(!e)return;const a=Array.isArray(row.rtpEvidence)?row.rtpEvidence:[];if(!a.length){e.innerHTML='<div class="sheet-link-card">Belum ada evidence RTP.</div>';return;}e.innerHTML='<div class="rtp-file-list">'+a.map((f,i)=>`<div class="rtp-file-item"><div><div class="rtp-file-name">📄 ${sheetLinksEsc(f.fileName||'File')}</div><div class="rtp-file-meta">${f.gdriveId?'Google Drive + R2':'R2'}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions"><a href="${sheetLinksEsc(f.url||'#')}" target="_blank" rel="noopener noreferrer">Buka</a><button class="rtp-delete-btn" data-index="${i}">Hapus</button></div></div>`).join('')+'</div>';}
+async function openRtpEvidenceModal(id){const row=rows.find(r=>r.id===id);if(!row)return;rtpEvidenceEditingRowId=id;document.getElementById('rtpEvidenceOpdName').textContent=row.opd||'Tanpa Nama';document.getElementById('rtpEvidenceModal').classList.add('active');rtpEvidenceSetStatus('Memuat daftar evidence RTP...');try{const d=await callServer('getRtpEvidence',{opdId:id,year:currentYear});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];renderRtpEvidenceList(row);rtpEvidenceSetStatus('Folder Evidence RTP siap digunakan.','success');}catch(err){rtpEvidenceSetStatus('Gagal memuat: '+err.message,'error');}}
+async function uploadRtpEvidence(file){const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row||!file)return;if(file.size>10*1024*1024)throw new Error('File melebihi 10 MB');const rd=new FileReader();const b64=await new Promise((res,rej)=>{rd.onload=()=>res(rd.result.split(',')[1]);rd.onerror=rej;rd.readAsDataURL(file);});rtpEvidenceSetStatus('Mengunggah '+file.name+' ke R2 dan Google Drive...');const d=await callServer('uploadRtpEvidence',{opdId:row.id,opdName:row.opd,year:currentYear,fileName:file.name,fileData:b64,fileType:file.type||'application/octet-stream'});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];renderRtpEvidenceList(row);render();rtpEvidenceSetStatus('Upload berhasil.','success');}
+document.getElementById('rtpEvidenceChoose')?.addEventListener('click',()=>document.getElementById('rtpEvidenceInput')?.click());document.getElementById('rtpEvidenceInput')?.addEventListener('change',async e=>{for(const f of Array.from(e.target.files||[])){try{await uploadRtpEvidence(f);}catch(err){rtpEvidenceSetStatus('Gagal upload: '+err.message,'error');}}e.target.value='';});document.getElementById('rtpEvidenceList')?.addEventListener('click',async e=>{const b=e.target.closest('.rtp-delete-btn');if(!b)return;const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[])[Number(b.dataset.index)];if(!f)return;try{rtpEvidenceSetStatus('Menghapus...');const d=await callServer('deleteRtpEvidence',{opdId:row.id,year:currentYear,fileUrl:f.url,gdriveId:f.gdriveId||null});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];renderRtpEvidenceList(row);render();rtpEvidenceSetStatus('File dihapus.','success');}catch(err){rtpEvidenceSetStatus('Gagal hapus: '+err.message,'error');}});document.getElementById('rtpEvidenceRefresh')?.addEventListener('click',()=>{if(rtpEvidenceEditingRowId)openRtpEvidenceModal(rtpEvidenceEditingRowId);});function closeRtpEvidenceModal(){document.getElementById('rtpEvidenceModal')?.classList.remove('active');rtpEvidenceEditingRowId=null;}document.getElementById('rtpEvidenceClose')?.addEventListener('click',closeRtpEvidenceModal);document.getElementById('rtpEvidenceCloseFooter')?.addEventListener('click',closeRtpEvidenceModal);
+
 document.addEventListener('click',function(e){
   const close=e.target.closest('#sheetLinksClose,#sheetLinksCancel');
   if(close){closeSpreadsheetModal();return;}
   const refresh=e.target.closest('#sheetLinksRefresh');
   if(refresh){const row=rows.find(r=>r.id===sheetLinksEditingRowId);if(row){sheetLinksSetStatus('Memuat ulang link…');loadSheetLinksForRow(row).then(()=>sheetLinksSetStatus('Link diperbarui.','success'));}return;}
   const create=e.target.closest('#sheetLinksCreate');
-  if(create){createSheetLinksForCurrentRow(false);return;}
+  if(create){if(document.getElementById('sheetLinksModal')?.dataset.mode==='rtp')createRtpSheetLinksForCurrentRow(false);else createSheetLinksForCurrentRow(false);return;}
   const btn=e.target.closest('button');
   if(!btn)return;
   if(btn.classList.contains('btn-edit-name')) openEditNameModal(btn.getAttribute('data-id'));
   else if(btn.classList.contains('btn-detail')) openEditModal(btn.getAttribute('data-id'));
   else if(btn.classList.contains('btn-kk')) openSpreadsheetModal(btn.getAttribute('data-id'));
+  else if(btn.classList.contains('btn-kk-rtp')) openKkRtp(btn.getAttribute('data-id'));
+  else if(btn.classList.contains('btn-rtp-evidence')) openRtpEvidenceModal(btn.getAttribute('data-id'));
   else if(btn.classList.contains('del-btn')) openConfirmModal(btn.getAttribute('data-id'));
 });
