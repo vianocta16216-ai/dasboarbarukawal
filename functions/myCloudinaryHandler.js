@@ -48,10 +48,7 @@ async function ensureOpdSchema(env){
     await env.DB.prepare("UPDATE opd_data SET struktur_proses_status = CASE WHEN CAST(COALESCE(nilai_struktur_proses,0) AS REAL) > 0 THEN 'Proses' ELSE 'Belum' END").run();
     await env.DB.prepare("UPDATE opd_data SET nilai_maturitas=CAST(COALESCE(nilai_struktur_proses,0) AS REAL)").run();
   }
-  // Sinkronkan maturity otomatis untuk data lama; nilai tampil di dashboard selalu berasal dari 43 parameter.
-  if(cols.has('nilai_struktur_proses') && cols.has('nilai_maturitas')) {
-    await env.DB.prepare("UPDATE opd_data SET nilai_maturitas=CAST(COALESCE(nilai_struktur_proses,0) AS REAL)").run();
-  }
+  // Nilai maturitas sekarang disimpan manual dan tidak lagi disinkronkan dengan nilai struktur/proses.
   schemaReady=true;
 }
 
@@ -472,7 +469,7 @@ export const onRequest = async ({ request, env }) => {
 
       case 'getData': {
         const {results}=await env.DB.prepare("SELECT * FROM opd_data WHERE year=? ORDER BY CAST(nilai_maturitas AS REAL) DESC, CAST(nilai_struktur_proses AS REAL) DESC, CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
-        const mapped=results.map(r=>{const subunsurs=r.subunsurs?JSON.parse(r.subunsurs):{};const kkData=normalizeKkData(r.kk_data);const kkRtpData=normalizeWorkbookData(r.kk_rtp_data,[]);let rtpEvidence=[];try{rtpEvidence=r.rtp_evidence?JSON.parse(r.rtp_evidence):[]}catch{}const strukturNilai=calculateSAFromSubunsur(subunsurs); const strukturEvidenceCount=countParameterEvidence(subunsurs); const totalParams=countTotalParameters(); const strukturStatus=strukturEvidenceCount===totalParams?'Selesai':(strukturEvidenceCount>0?'Proses':'Belum'); return{...r,subunsurs,kkData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',qaApip:r.qa_apip||'Belum',nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,nilaiMaturitas:strukturNilai,nilaiKapabilitasApip:Number(r.nilai_kapabilitas_apip||0)};});
+        const mapped=results.map(r=>{const subunsurs=r.subunsurs?JSON.parse(r.subunsurs):{};const kkData=normalizeKkData(r.kk_data);const kkRtpData=normalizeWorkbookData(r.kk_rtp_data,[]);let rtpEvidence=[];try{rtpEvidence=r.rtp_evidence?JSON.parse(r.rtp_evidence):[]}catch{}const strukturNilai=calculateSAFromSubunsur(subunsurs); const strukturEvidenceCount=countParameterEvidence(subunsurs); const totalParams=countTotalParameters(); const strukturStatus=strukturEvidenceCount===totalParams?'Selesai':(strukturEvidenceCount>0?'Proses':'Belum'); return{...r,subunsurs,kkData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',qaApip:r.qa_apip||'Belum',nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,nilaiMaturitas:Number(r.nilai_maturitas||0),nilaiKapabilitasApip:Number(r.nilai_kapabilitas_apip||0)};});
         return new Response(JSON.stringify(mapped),{status:200,headers:{'Content-Type':'application/json'}});
       }
 
@@ -481,7 +478,7 @@ export const onRequest = async ({ request, env }) => {
         const opd = sanitizeString(params.opd || 'OPD Baru');
         const subunsurs = params.subunsurs || {};
         const sa = calculateSAFromSubunsur(subunsurs);
-        const nilaiStrukturProses=sa,nilaiMaturitas=sa,nilaiKapabilitasApip=Number(params.nilaiKapabilitasApip??params.nilai_kapabilitas_apip??0)||0;
+        const nilaiStrukturProses=sa,nilaiMaturitas=Math.max(0,Math.min(5,Number(params.nilaiMaturitas??params.nilai_maturitas??0)||0)),nilaiKapabilitasApip=Number(params.nilaiKapabilitasApip??params.nilai_kapabilitas_apip??0)||0;
         await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id,opd,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,evidence,qa_apip,mri,iepk,rtp,status,struktur_proses_status,subunsurs,year,kk_data,kk_rtp_data,rtp_evidence,rtp_evidence_folder) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,opd,sa,nilaiStrukturProses,nilaiMaturitas,nilaiKapabilitasApip,params.evidence||'Belum',params.qaApip||'Belum',parseFloat(params.mri)||0,parseFloat(params.iepk)||0,params.rtp||'Belum',params.status||'Belum','Belum',JSON.stringify(subunsurs),year,params.kkData||'{}',params.kkRtpData||'{}',JSON.stringify(params.rtpEvidence||[]),params.rtpEvidenceFolder||'Evidence RTP').run();
         return new Response(JSON.stringify({ status: 'success', message: 'OPD berhasil ditambahkan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
@@ -490,7 +487,7 @@ export const onRequest = async ({ request, env }) => {
         const rows = JSON.parse(params.rows);
         for (const row of rows) {
           const subunsurs=row.subunsurs||{},sa=calculateSAFromSubunsur(subunsurs),kkData=row.kkData||{},kkRtpData=row.kkRtpData||{},rtpEvidence=Array.isArray(row.rtpEvidence)?row.rtpEvidence:[];
-          await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id,opd,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,evidence,qa_apip,mri,iepk,rtp,status,struktur_proses_status,subunsurs,year,kk_data,kk_rtp_data,rtp_evidence,rtp_evidence_folder) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(row.id,sanitizeString(row.opd||''),sa,sa,sa,Number(row.nilaiKapabilitasApip??row.nilai_kapabilitas_apip??0)||0,row.evidence||'Belum',row.qaApip||'Belum',parseFloat(row.mri)||0,parseFloat(row.iepk)||0,row.rtp||'Belum',row.status||'Belum', (countParameterEvidence(subunsurs)===countTotalParameters() ? 'Selesai' : (countParameterEvidence(subunsurs)>0 ? 'Proses' : 'Belum')), JSON.stringify(subunsurs),year,JSON.stringify(kkData),JSON.stringify(kkRtpData),JSON.stringify(rtpEvidence),row.rtpEvidenceFolder||'Evidence RTP').run();
+          await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id,opd,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,evidence,qa_apip,mri,iepk,rtp,status,struktur_proses_status,subunsurs,year,kk_data,kk_rtp_data,rtp_evidence,rtp_evidence_folder) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(row.id,sanitizeString(row.opd||''),sa,sa,Math.max(0,Math.min(5,Number(row.nilaiMaturitas??row.nilai_maturitas??0)||0)),Number(row.nilaiKapabilitasApip??row.nilai_kapabilitas_apip??0)||0,row.evidence||'Belum',row.qaApip||'Belum',parseFloat(row.mri)||0,parseFloat(row.iepk)||0,row.rtp||'Belum',row.status||'Belum', (countParameterEvidence(subunsurs)===countTotalParameters() ? 'Selesai' : (countParameterEvidence(subunsurs)>0 ? 'Proses' : 'Belum')), JSON.stringify(subunsurs),year,JSON.stringify(kkData),JSON.stringify(kkRtpData),JSON.stringify(rtpEvidence),row.rtpEvidenceFolder||'Evidence RTP').run();
         }
         return new Response(JSON.stringify({ status: 'success', message: 'Data tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
