@@ -456,6 +456,10 @@ table {
   min-width: 2350px;
 }
 
+
+.auto-structure-value{background:#e2e8f0!important;color:#475569!important;font-weight:800;cursor:not-allowed;border-color:#cbd5e1!important}
+.auto-structure-value:focus{outline:none;box-shadow:none!important}
+
 thead th {
   text-align: left;
   font-size: 12px;
@@ -1713,3 +1717,11 @@ input[type="file"]:hover {
 
 
 .rtp-folder-preview{margin-top:9px;padding:9px 11px;border-radius:8px;background:#eef6ff;border:1px solid #d7e8ff;color:#1e3a5f;font-size:12px}.rtp-folder-preview b{color:#0f766e;word-break:break-word}.rtp-folder-row input{min-height:40px}.rtp-folder-row button{white-space:nowrap}.rtp-folder-box{box-shadow:0 2px 8px rgba(15,23,42,.03)}
+
+/* ===== TABEL: OPD + NILAI STRUKTUR DAN PROSES TETAP TERLIHAT ===== */
+.table-wrap{position:relative}
+thead th:nth-child(1), tbody td:nth-child(1){position:sticky;left:0;z-index:12;background:#f8fbff}
+thead th:nth-child(2), tbody td:nth-child(2){position:sticky;left:48px;z-index:11;background:inherit}
+thead th:nth-child(1), thead th:nth-child(2){background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%)}
+tbody td:nth-child(2){box-shadow:2px 0 8px rgba(15,23,42,.05)}
+@media (max-width:900px){thead th:nth-child(2), tbody td:nth-child(2){left:40px}}
