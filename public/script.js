@@ -185,7 +185,7 @@ async function loadData() {
     rows = [];
     if (Array.isArray(data)) {
       rows = data.map(r => {
-        const row = { ...r, nilaiMaturitas:Number(r.nilaiMaturitas ?? r.nilai_maturitas ?? 0) || 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
+        const row = { ...r, nilaiMaturitas:Number(r.nilaiMaturitas ?? r.nilai_maturitas ?? 0) || 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, kkPmData:r.kkPmData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
         row.nilaiStrukturProses = calculateSA(row);
         row.sa = row.nilaiStrukturProses;
         return row;
@@ -334,6 +334,7 @@ function render() {
         <td><span class="badge ${badgeClass}" title="Jumlah parameter dengan evidence pada 43 parameter">${badgeLabel}</span></td>
         <td><button class="btn-detail" data-id="${r.id}" title="Evidence Struktur dan Proses">📁</button></td>
         <td><button class="btn-kk" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja SPIP">📊</button></td>
+        <td><button class="btn-kk-pm" data-id="${r.id}" title="Buka Kertas Kerja PM DISPARPORA">🗂️</button></td>
         <td><button class="btn-kk-rtp" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja RTP">📋</button></td>
         <td><button class="btn-rtp-evidence" data-id="${r.id}" title="Upload Evidence RTP">📤</button><div class="rtp-evidence-count">${Array.isArray(r.rtpEvidence)?r.rtpEvidence.length:0}</div></td>
         <td><button class="del-btn" data-id="${r.id}" title="Hapus">&times;</button></td>
@@ -1511,7 +1512,7 @@ if (urlParams.get('access') === 'portal') {
 }
 // ====== SINKRONISASI OTOMATIS ======
 setInterval(async function() {
-  if (!isSaving && !pendingSave) {
+  if (!isSaving && !pendingSave && !kkPmDirty) {
     const activeElement = document.activeElement;
     if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'SELECT')) {
       return;
@@ -1678,7 +1679,143 @@ document.addEventListener('click',function(e){
   if(btn.classList.contains('btn-edit-name')) openEditNameModal(btn.getAttribute('data-id'));
   else if(btn.classList.contains('btn-detail')) openEditModal(btn.getAttribute('data-id'));
   else if(btn.classList.contains('btn-kk')) openSpreadsheetModal(btn.getAttribute('data-id'));
+  else if(btn.classList.contains('btn-kk-pm')) openKkPmModal(btn.getAttribute('data-id'));
   else if(btn.classList.contains('btn-kk-rtp')) openKkRtp(btn.getAttribute('data-id'));
   else if(btn.classList.contains('btn-rtp-evidence')) openRtpEvidenceModal(btn.getAttribute('data-id'));
   else if(btn.classList.contains('del-btn')) openConfirmModal(btn.getAttribute('data-id'));
+});
+
+// ============================================================
+// KERTAS KERJA PM DISPARPORA — ADOPSI TEMPLATE EXCEL
+// ============================================================
+let kkPmTemplate = null;
+let kkPmEditingRowId = null;
+let kkPmActiveSheet = 0;
+let kkPmDirty = false;
+let kkPmDraft = {};
+
+function kkPmEsc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function kkPmSetStatus(msg,type=''){
+  const e=document.getElementById('kkPmStatus'); if(!e)return;
+  e.textContent=msg||''; e.className='kkpm-status'+(type?' '+type:''); e.style.display=msg?'block':'none';
+}
+function kkPmCellKey(r,c){return r+':'+c;}
+function kkPmGetOverride(sheetIndex,r,c){return kkPmDraft?.cells?.[String(sheetIndex)]?.[kkPmCellKey(r,c)];}
+function kkPmEnsureDraft(){ if(!kkPmDraft||typeof kkPmDraft!=='object') kkPmDraft={}; if(!kkPmDraft.cells||typeof kkPmDraft.cells!=='object') kkPmDraft.cells={}; }
+function kkPmSheetLabel(s,i){return (s?.name||`Sheet ${i+1}`).replace(/^KKLEAD_/,'');}
+
+async function loadKkPmTemplate(){
+  if(kkPmTemplate) return kkPmTemplate;
+  const resp=await fetch('/kk-pm-disparpora-2025.json',{cache:'no-store'});
+  if(!resp.ok) throw new Error('Template KK PM tidak dapat dimuat.');
+  kkPmTemplate=await resp.json();
+  return kkPmTemplate;
+}
+
+function kkPmApplyOverrides(sheetIndex, values){
+  const overrides=kkPmDraft?.cells?.[String(sheetIndex)]||{};
+  const copy=values.map(row=>Array.isArray(row)?row.slice():[]);
+  Object.keys(overrides).forEach(key=>{
+    const [rs,cs]=key.split(':'); const r=Number(rs), c=Number(cs);
+    if(Number.isInteger(r)&&Number.isInteger(c)){
+      while(copy.length<=r)copy.push([]);
+      while(copy[r].length<=c)copy[r].push(null);
+      copy[r][c]=overrides[key];
+    }
+  });
+  return copy;
+}
+
+function kkPmRenderTabs(){
+  const box=document.getElementById('kkPmTabs'); if(!box||!kkPmTemplate)return;
+  const q=(document.getElementById('kkPmSearch')?.value||'').trim().toLowerCase();
+  box.innerHTML=kkPmTemplate.sheets.map((s,i)=>{
+    const text=`${s.name} ${JSON.stringify(s.values||[]).slice(0,4000)}`.toLowerCase();
+    if(q && !text.includes(q)) return '';
+    return `<button type="button" class="kkpm-tab ${i===kkPmActiveSheet?'active':''}" data-index="${i}">${kkPmEsc(s.name)}</button>`;
+  }).join('');
+  if(!box.querySelector('.kkpm-tab.active')){
+    const first=box.querySelector('.kkpm-tab'); if(first){kkPmActiveSheet=Number(first.dataset.index); first.classList.add('active');}
+  }
+}
+
+function kkPmRenderSheet(){
+  if(!kkPmTemplate)return;
+  const sheet=kkPmTemplate.sheets[kkPmActiveSheet];
+  const values=kkPmApplyOverrides(kkPmActiveSheet,sheet.values||[]);
+  const head=document.getElementById('kkPmHead'), body=document.getElementById('kkPmBody'), meta=document.getElementById('kkPmSheetMeta');
+  if(!head||!body)return;
+  const cols=sheet.cols||Math.max(1,...values.map(r=>r.length||0));
+  const rowsCount=sheet.rows||values.length;
+  meta.innerHTML=`<b>${kkPmEsc(sheet.name)}</b><span>${rowsCount} baris × ${cols} kolom</span>`;
+  head.innerHTML='<tr><th class="kkpm-corner">#</th>'+Array.from({length:cols},(_,c)=>`<th>${c<26?String.fromCharCode(65+c):`C${c+1}`}</th>`).join('')+'</tr>';
+  body.innerHTML=values.map((row,r)=>{
+    const cells=[];
+    for(let c=0;c<cols;c++){
+      const v=row?.[c];
+      const override=kkPmGetOverride(kkPmActiveSheet,r,c);
+      const value=override!==undefined?override:v;
+      cells.push(`<td><input class="kkpm-cell" data-row="${r}" data-col="${c}" value="${kkPmEsc(value==null?'':value)}" aria-label="${kkPmEsc(sheet.name)} baris ${r+1} kolom ${c+1}"></td>`);
+    }
+    return `<tr><th class="kkpm-rownum">${r+1}</th>${cells.join('')}</tr>`;
+  }).join('');
+  document.getElementById('kkPmStats').textContent=`${kkPmTemplate.sheets.length} sheet · ${rowsCount}×${cols}`;
+}
+
+async function loadKkPmData(row){
+  try{
+    const d=await callServer('getKkPmData',{opdId:row.id,year:currentYear});
+    row.kkPmData=d?.kkPmData||{};
+  }catch(err){ row.kkPmData={}; throw err; }
+}
+
+async function saveKkPmData(){
+  const row=rows.find(r=>r.id===kkPmEditingRowId); if(!row)return;
+  kkPmEnsureDraft();
+  const saveBtn=document.getElementById('kkPmSave'); if(saveBtn)saveBtn.disabled=true;
+  kkPmSetStatus('Menyimpan perubahan Kertas Kerja PM...');
+  try{
+    const res=await callServer('saveKkPmData',{opdId:row.id,year:currentYear,kkPmData:kkPmDraft});
+    if(res.status==='error')throw new Error(res.message);
+    row.kkPmData=res.kkPmData||kkPmDraft; kkPmDraft=JSON.parse(JSON.stringify(row.kkPmData));
+    kkPmDirty=false; kkPmSetStatus('✅ Perubahan Kertas Kerja PM tersimpan.','success');
+    render();
+    setTimeout(()=>{ if(document.getElementById('kkPmModal')?.classList.contains('active')) kkPmSetStatus(''); },1800);
+  }catch(err){ kkPmSetStatus('❌ Gagal menyimpan: '+err.message,'error'); }
+  finally{ if(saveBtn)saveBtn.disabled=false; }
+}
+
+async function openKkPmModal(id){
+  const row=rows.find(r=>r.id===id); if(!row)return;
+  kkPmEditingRowId=id; kkPmActiveSheet=0; kkPmDirty=false; kkPmDraft={};
+  const modal=document.getElementById('kkPmModal'); if(!modal)return;
+  document.getElementById('kkPmOpdName').textContent=row.opd||'Tanpa Nama';
+  document.getElementById('kkPmSubtitle').textContent=`Tahun ${currentYear} · 21 sheet · template PM DISPARPORA 2025`;
+  document.getElementById('kkPmSearch').value='';
+  modal.classList.add('active'); kkPmSetStatus('Memuat Kertas Kerja PM...');
+  try{
+    await loadKkPmTemplate();
+    await loadKkPmData(row);
+    kkPmDraft=JSON.parse(JSON.stringify(row.kkPmData||{})); kkPmEnsureDraft();
+    kkPmRenderTabs(); kkPmRenderSheet(); kkPmSetStatus('Template siap diedit.','success');
+  }catch(err){kkPmSetStatus('Gagal memuat Kertas Kerja PM: '+err.message,'error');}
+}
+function closeKkPmModal(){
+  if(kkPmDirty && !confirm('Ada perubahan Kertas Kerja PM yang belum disimpan. Tutup tanpa menyimpan?')) return;
+  document.getElementById('kkPmModal')?.classList.remove('active'); kkPmEditingRowId=null; kkPmDirty=false; kkPmDraft={};
+}
+
+document.getElementById('kkPmClose')?.addEventListener('click',closeKkPmModal);
+document.getElementById('kkPmCloseFooter')?.addEventListener('click',closeKkPmModal);
+document.getElementById('kkPmSave')?.addEventListener('click',saveKkPmData);
+document.getElementById('kkPmSearch')?.addEventListener('input',()=>{kkPmRenderTabs();kkPmRenderSheet();});
+document.addEventListener('click',function(e){
+  const tab=e.target.closest('.kkpm-tab');
+  if(tab){kkPmActiveSheet=Number(tab.dataset.index);kkPmRenderTabs();kkPmRenderSheet();return;}
+});
+document.addEventListener('input',function(e){
+  const cell=e.target.closest('.kkpm-cell'); if(!cell||!kkPmEditingRowId)return;
+  kkPmEnsureDraft(); const si=String(kkPmActiveSheet); if(!kkPmDraft.cells[si])kkPmDraft.cells[si]={};
+  kkPmDraft.cells[si][kkPmCellKey(Number(cell.dataset.row),Number(cell.dataset.col))]=cell.value;
+  kkPmDirty=true; kkPmSetStatus('Ada perubahan yang belum disimpan.','dirty');
 });
