@@ -31,17 +31,12 @@ function escapeHtml(str) {
 // PERUBAHAN KEAMANAN: GANTI VERSI SEBELUMNYA DENGAN VERSI AMAN INI
 function callServer(action, params = {}) {
   const functionUrl = '/myCloudinaryHandler';
-  
-  // Daftar aksi sensitif yang TIDAK BOLEH lewat URL (Query String)
-  const sensitiveActions = [
-    'verifyAccess', 'verifyDelete', 'saveData', 'saveField', 
-    'addOpd', 'deleteOpd', 'uploadFile', 'deleteFile', 
-    'addYear', 'deleteYear', 'createBackup', 'restoreBackup', 'deleteBackup',
-    'createRtpKkSheets', 'saveRtpKkData', 'uploadRtpEvidence', 'deleteRtpEvidence'
-  ];
-  
-  // Aksi sensitif harus menggunakan POST
-  const method = (sensitiveActions.includes(action) || params.fileData || params.rows) ? 'POST' : 'GET';
+  // Semua aksi tulis dipaksa POST agar tidak pernah kembali ke GET/query-string.
+  const readOnlyActions = new Set([
+    'getYears', 'getData', 'getSubunsurData', 'getKkSheets',
+    'getRtpKkSheets', 'getRtpEvidence', 'listBackups'
+  ]);
+  const method = (params.fileData || params.rows || !readOnlyActions.has(action)) ? 'POST' : 'GET';
 
   if (method === 'POST') {
     return fetch(functionUrl, {
@@ -183,7 +178,12 @@ async function loadData() {
     const data = await callServer('getData', { year });
     rows = [];
     if (Array.isArray(data)) {
-      rows = data.map(r => ({ ...r, nilaiStrukturProses:r.nilaiStrukturProses ?? r.nilai_struktur_proses ?? r.sa ?? 0, nilaiMaturitas:r.nilaiMaturitas ?? r.nilai_maturitas ?? 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP' }));
+      rows = data.map(r => {
+        const row = { ...r, nilaiMaturitas:r.nilaiMaturitas ?? r.nilai_maturitas ?? 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP' };
+        row.nilaiStrukturProses = calculateSA(row);
+        row.sa = row.nilaiStrukturProses;
+        return row;
+      });
       rows.sort((a,b)=>{ const x=(parseFloat(b.nilaiMaturitas)||0)-(parseFloat(a.nilaiMaturitas)||0); return x || (parseFloat(b.nilaiStrukturProses)||0)-(parseFloat(a.nilaiStrukturProses)||0); });
     } else {
       console.warn('Data bukan array, rows diset kosong', data);
@@ -222,8 +222,29 @@ function calculateSA(row) {
 }
 
 // ====== HITUNG KPI LOKAL ======
-function updateKpisLocal(){const total=rows.length, vals=f=>rows.map(r=>parseFloat(r[f])).filter(v=>Number.isFinite(v)&&v>0), avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0, pct=(n,d)=>d?Math.round(n/d*100):0;const struktur=vals('nilaiStrukturProses'),maturitas=vals('nilaiMaturitas'),mri=vals('mri'),iepk=vals('iepk'),kap=vals('nilaiKapabilitasApip');const qa=rows.filter(r=>r.qaApip==='Selesai').length,status=rows.filter(r=>r.status==='Selesai').length,rtp=rows.filter(r=>r.rtp==='Selesai').length,ev=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length).length;applyKpis({rataStrukturProses:avg(struktur),rataMaturitas:avg(maturitas),rataMRI:avg(mri),rataIEPK:avg(iepk),rataKapabilitasApip:avg(kap),qaApip:pct(qa,total),statusSelesai:pct(status,total),rtpSelesai:pct(rtp,total),evidenceRtp:pct(ev,total),total,strukturCount:struktur.length,maturitasCount:maturitas.length,mriCount:mri.length,iepkCount:iepk.length,kapabilitasCount:kap.length,qaApipCount:qa,statusSelesaiCount:status,rtpSelesaiCount:rtp,evidenceRtpCount:ev});}
-function applyKpis(k){const t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;},b=(id,v)=>{const e=document.getElementById(id);if(e)e.style.width=Math.max(0,Math.min(100,v))+'%';};t('kpiStrukturProses',k.rataStrukturProses.toFixed(2));b('kpiStrukturProsesBar',k.rataStrukturProses/5*100);t('kpiStrukturProsesNote',k.strukturCount+' OPD terisi');t('kpiMaturitas',k.rataMaturitas.toFixed(2));b('kpiMaturitasBar',k.rataMaturitas/5*100);t('kpiMaturitasNote',k.maturitasCount+' OPD terisi');t('kpiMRI',k.rataMRI.toFixed(2));b('kpiMRIBar',k.rataMRI/5*100);t('kpiMRINote',k.mriCount+' OPD terisi');t('kpiIEPK',k.rataIEPK.toFixed(2));b('kpiIEPKBar',k.rataIEPK/5*100);t('kpiIEPKNote',k.iepkCount+' OPD terisi');t('kpiKapabilitasApip',k.rataKapabilitasApip.toFixed(2));b('kpiKapabilitasApipBar',k.rataKapabilitasApip/5*100);t('kpiKapabilitasApipNote',k.kapabilitasCount+' OPD terisi');t('kpiQaApip',k.qaApip+'%');b('kpiQaApipBar',k.qaApip);t('kpiQaApipNote',k.qaApipCount+' dari '+k.total+' OPD');t('kpiStatusSelesai',k.statusSelesai+'%');b('kpiStatusSelesaiBar',k.statusSelesai);t('kpiStatusSelesaiNote',k.statusSelesaiCount+' dari '+k.total+' OPD');t('kpiRtpSelesai',k.rtpSelesai+'%');b('kpiRtpSelesaiBar',k.rtpSelesai);t('kpiRtpSelesaiNote',k.rtpSelesaiCount+' dari '+k.total+' OPD');t('kpiEvidenceRtp',k.evidenceRtp+'%');b('kpiEvidenceRtpBar',k.evidenceRtp);t('kpiEvidenceRtpNote',k.evidenceRtpCount+' dari '+k.total+' OPD');}
+function updateKpisLocal(){
+  const total = rows.length;
+  const avgAll = field => total ? rows.reduce((sum,r)=>sum + (Number(r[field]) || 0),0) / total : 0;
+  const avgFilled = field => { const a=rows.map(r=>Number(r[field])).filter(v=>Number.isFinite(v)&&v>0); return a.length?a.reduce((x,y)=>x+y,0)/a.length:0; };
+  const pct=(n,d)=>d?Math.round(n/d*100):0;
+  const struktur = rows.map(r=>Number(r.nilaiStrukturProses)||0);
+  const maturitas = rows.map(r=>Number(r.nilaiMaturitas)||0).filter(v=>v>0);
+  const mri = rows.map(r=>Number(r.mri)||0).filter(v=>v>0);
+  const iepk = rows.map(r=>Number(r.iepk)||0).filter(v=>v>0);
+  const kap = rows.map(r=>Number(r.nilaiKapabilitasApip)||0).filter(v=>v>0);
+  const qa=rows.filter(r=>r.qaApip==='Selesai').length, status=rows.filter(r=>r.status==='Selesai').length, rtp=rows.filter(r=>r.rtp==='Selesai').length, ev=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length).length;
+  applyKpis({
+    rataStrukturProses:avgAll('nilaiStrukturProses'),
+    rataMaturitas:avgFilled('nilaiMaturitas'),
+    rataMRI:avgFilled('mri'),
+    rataIEPK:avgFilled('iepk'),
+    rataKapabilitasApip:avgFilled('nilaiKapabilitasApip'),
+    qaApip:pct(qa,total), statusSelesai:pct(status,total), rtpSelesai:pct(rtp,total), evidenceRtp:pct(ev,total),
+    total, strukturCount:total, maturitasCount:maturitas.length, mriCount:mri.length, iepkCount:iepk.length, kapabilitasCount:kap.length,
+    qaApipCount:qa,statusSelesaiCount:status,rtpSelesaiCount:rtp,evidenceRtpCount:ev
+  });
+}
+function applyKpis(k){const t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;},b=(id,v)=>{const e=document.getElementById(id);if(e)e.style.width=Math.max(0,Math.min(100,v))+'%';};t('kpiStrukturProses',k.rataStrukturProses.toFixed(2));b('kpiStrukturProsesBar',k.rataStrukturProses/5*100);t('kpiStrukturProsesNote',k.total+' OPD');t('kpiMaturitas',k.rataMaturitas.toFixed(2));b('kpiMaturitasBar',k.rataMaturitas/5*100);t('kpiMaturitasNote',k.maturitasCount+' OPD terisi');t('kpiMRI',k.rataMRI.toFixed(2));b('kpiMRIBar',k.rataMRI/5*100);t('kpiMRINote',k.mriCount+' OPD terisi');t('kpiIEPK',k.rataIEPK.toFixed(2));b('kpiIEPKBar',k.rataIEPK/5*100);t('kpiIEPKNote',k.iepkCount+' OPD terisi');t('kpiKapabilitasApip',k.rataKapabilitasApip.toFixed(2));b('kpiKapabilitasApipBar',k.rataKapabilitasApip/5*100);t('kpiKapabilitasApipNote',k.kapabilitasCount+' OPD terisi');t('kpiQaApip',k.qaApip+'%');b('kpiQaApipBar',k.qaApip);t('kpiQaApipNote',k.qaApipCount+' dari '+k.total+' OPD');t('kpiStatusSelesai',k.statusSelesai+'%');b('kpiStatusSelesaiBar',k.statusSelesai);t('kpiStatusSelesaiNote',k.statusSelesaiCount+' dari '+k.total+' OPD');t('kpiRtpSelesai',k.rtpSelesai+'%');b('kpiRtpSelesaiBar',k.rtpSelesai);t('kpiRtpSelesaiNote',k.rtpSelesaiCount+' dari '+k.total+' OPD');t('kpiEvidenceRtp',k.evidenceRtp+'%');b('kpiEvidenceRtpBar',k.evidenceRtp);t('kpiEvidenceRtpNote',k.evidenceRtpCount+' dari '+k.total+' OPD');}
 
 // ====== SAVE DATA ======
 function debounceSave() {
@@ -299,7 +320,9 @@ function render() {
             <button class="btn-edit-name" data-id="${r.id}" title="Ubah Nama" style="background:none; border:none; cursor:pointer; font-size:18px; padding:0;">✏️</button>
           </div>
         </td>
-        <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.nilaiStrukturProses||0).toFixed(2)}" data-id="${r.id}" data-field="nilaiStrukturProses"></td>
+        <td><input class="auto-structure-value" type="number" value="${Number(r.nilaiStrukturProses||0).toFixed(2)}" readonly aria-label="Nilai Struktur dan Proses otomatis" title="Dihitung otomatis dari level yang dipilih pada 43 parameter"></td>
+        <td>${selectHtml(r.id,'evidence',r.evidence,['Lengkap','Sebagian','Belum'])}</td>
+        <td><span class="badge ${kelengkapanClass}" title="Jumlah parameter yang sudah memiliki evidence">${kelengkapanLabel}</span></td>
         <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.nilaiMaturitas||0).toFixed(2)}" data-id="${r.id}" data-field="nilaiMaturitas"></td>
         <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.mri||0).toFixed(2)}" data-id="${r.id}" data-field="mri"></td>
         <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.iepk||0).toFixed(2)}" data-id="${r.id}" data-field="iepk"></td>
@@ -307,7 +330,6 @@ function render() {
         <td>${selectHtml(r.id,'qaApip',r.qaApip,['Selesai','Proses','Belum'])}</td>
         <td>${selectHtml(r.id,'status',r.status,['Selesai','Proses','Belum'])}</td>
         <td>${selectHtml(r.id,'rtp',r.rtp,['Selesai','Belum'])}</td>
-        <td>${selectHtml(r.id,'evidence',r.evidence,['Lengkap','Sebagian','Belum'])}</td>
         <td><button class="btn-detail" data-id="${r.id}" title="Evidence Struktur dan Proses">📁</button></td>
         <td><button class="btn-kk" data-id="${r.id}" title="Buka KK SPIP">📊</button></td>
         <td><button class="btn-kk-rtp" data-id="${r.id}" title="Buka KK RTP">📋</button></td>
@@ -342,14 +364,14 @@ function attachHandlers() {
   }
 
   document.querySelectorAll('input[data-id]').forEach(el => {
-    if (!['nilaiStrukturProses','nilaiMaturitas','mri','iepk','nilaiKapabilitasApip'].includes(el.dataset.field)) return;
+    if (!['nilaiMaturitas','mri','iepk','nilaiKapabilitasApip'].includes(el.dataset.field)) return;
     el.onchange = (e) => {
       const id = e.target.dataset.id;
       const field = e.target.dataset.field;
       const row = rows.find(r => r.id === id);
       if (!row) return;
       let val = e.target.value;
-      if (['nilaiStrukturProses','nilaiMaturitas','mri','iepk','nilaiKapabilitasApip'].includes(field)) val = Math.max(0, Math.min(5, parseFloat(val) || 0));
+      if (['nilaiMaturitas','mri','iepk','nilaiKapabilitasApip'].includes(field)) val = Math.max(0, Math.min(5, parseFloat(val) || 0));
       else val = e.target.value;
       row[field] = val;
 
@@ -1058,10 +1080,15 @@ document.getElementById('modalSave').addEventListener('click', async function() 
     const subCode = el.dataset.sub, paramId = el.dataset.param;
     row.subunsurs[subCode][paramId].level = parseInt(el.value) || 0;
   });
+  row.nilaiStrukturProses = calculateSA(row);
+  row.sa = row.nilaiStrukturProses;
   textareas.forEach(el => {
     const subCode = el.dataset.sub, paramId = el.dataset.param, field = el.dataset.field;
     row.subunsurs[subCode][paramId][field] = el.value;
   });
+  // Nilai Struktur dan Proses selalu dihitung ulang dari 43 parameter. Tidak boleh diinput manual.
+  row.nilaiStrukturProses = calculateSA(row);
+  row.sa = row.nilaiStrukturProses;
   const modalStatus = document.getElementById('modalSaveStatus');
   modalStatus.style.display = 'block';
   modalStatus.style.color = '#1e40af';
