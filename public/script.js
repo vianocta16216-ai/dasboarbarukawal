@@ -30,39 +30,45 @@ function escapeHtml(str) {
 // ====== PANGGIL SERVER ======
 // PERUBAHAN KEAMANAN: GANTI VERSI SEBELUMNYA DENGAN VERSI AMAN INI
 function callServer(action, params = {}) {
-  const functionUrl = '/myCloudinaryHandler';
-  // Semua aksi tulis dipaksa POST agar tidak pernah kembali ke GET/query-string.
-  const readOnlyActions = new Set([
-    'getYears', 'getData', 'getSubunsurData', 'getKkSheets',
-    'getRtpKkSheets', 'getRtpEvidence', 'listBackups'
-  ]);
-  const method = (params.fileData || params.rows || !readOnlyActions.has(action)) ? 'POST' : 'GET';
-
-  if (method === 'POST') {
-    return fetch(functionUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ...params })
-    })
-    .then(response => response.text())
-    .then(text => {
-      let data;
-      try { data = JSON.parse(text); } catch (e) { throw new Error('Server error: ' + text.substring(0, 200)); }
-      if (data && data.status === 'error') throw new Error(data.message);
-      return data;
-    });
-  } else {
-    const query = new URLSearchParams({ action, ...params }).toString();
-    return fetch(`${functionUrl}?${query}`, { method: 'GET' })
-    .then(response => response.text())
-    .then(text => {
-      let data;
-      try { data = JSON.parse(text); } catch (e) { throw new Error('Server error: ' + text.substring(0, 200)); }
-      if (data && data.status === 'error') throw new Error(data.message);
-      return data;
-    });
-  }
+  const functionUrl='/myCloudinaryHandler';
+  const readOnlyActions=new Set(['getYears','getData','getSubunsurData','getKkSheets','getRtpKkSheets','getRtpEvidence','listBackups']);
+  const isForm=params instanceof FormData;
+  const isBinary=params && params.__binaryFile instanceof File;
+  const cleanParams=isBinary ? Object.fromEntries(Object.entries(params).filter(([k])=>k!=='__binaryFile')) : params;
+  const method=(isForm||isBinary)?'POST':((params.fileData||params.rows||!readOnlyActions.has(action))?'POST':'GET');
+  const makeRequest=()=>{
+    if(method==='POST'){
+      if(isBinary){
+        const query=new URLSearchParams({action,...cleanParams}).toString();
+        return fetch(`${functionUrl}?${query}`,{method:'POST',headers:{'Content-Type':params.__binaryFile.type||'application/octet-stream','X-Upload-Id':params.uploadId||'','X-File-Name':params.fileName||params.__binaryFile.name||'evidence'},body:params.__binaryFile});
+      }
+      return fetch(functionUrl,{method:'POST',headers:isForm?{}:{'Content-Type':'application/json'},body:isForm?params:JSON.stringify({action,...params})});
+    }
+    const query=new URLSearchParams({action,...params}).toString();
+    return fetch(`${functionUrl}?${query}`,{method:'GET'});
+  };
+  return makeRequest().then(async response=>{
+    const text=await response.text();
+    if(!response.ok){const err=new Error(`HTTP ${response.status}: ${text.slice(0,160)}`);err.status=response.status;err.transient=[429,500,502,503,504].includes(response.status);throw err;}
+    let data;try{data=JSON.parse(text);}catch{throw new Error('Server error: '+text.substring(0,200));}
+    if(data&&data.status==='error')throw new Error(data.message);
+    return data;
+  });
 }
+
+
+async function callServerWithRetry(action, params={}, retries=2){
+  let lastError;
+  for(let attempt=0;attempt<=retries;attempt++){
+    try{return await callServer(action,params);}catch(err){
+      lastError=err;
+      if(!err.transient || attempt===retries)throw err;
+      await new Promise(r=>setTimeout(r,500*Math.pow(2,attempt)+Math.floor(Math.random()*250)));
+    }
+  }
+  throw lastError;
+}
+
 
 // ====== VERIFIKASI PASSWORD ======
 async function verifyAccess(password) {
@@ -387,7 +393,6 @@ function attachHandlers() {
           console.error('Error saveField:', err);
         });
     };
-    el.onblur = syncData;
   });
 
   document.querySelectorAll('select[data-id]').forEach(el => {
@@ -414,7 +419,6 @@ function attachHandlers() {
           console.error('Error saveField:', err);
         });
     };
-    el.onblur = syncData;
   });
 }
 
@@ -831,9 +835,8 @@ async function openEditModal(id) {
       const fileList = Array.from(fileInput.files);
       if (fileList.length === 0) return;
 
-      const totalSize = fileList.reduce((sum, f) => sum + f.size, 0);
-      if (totalSize > 10 * 1024 * 1024) {
-        showWarning('Total ukuran file melebihi 10 MB! Silakan pilih lebih sedikit.');
+      if (fileList.length > 20) {
+        showWarning('Maksimal 20 file sekali pilih. File akan diunggah satu per satu agar stabil.');
         fileInput.value = '';
         return;
       }
@@ -844,8 +847,8 @@ async function openEditModal(id) {
 
       let completed = 0;
       for (const file of fileList) {
-        if (file.size > 20 * 1024 * 1024) {
-          showWarning(`File ${file.name} melebihi 20 MB! File dilewati.`);
+        if (file.size > 10 * 1024 * 1024) {
+          showWarning(`File ${file.name} melebihi 10 MB! File dilewati.`);
           continue;
         }
         const progressItem = document.createElement('div');
@@ -876,10 +879,13 @@ async function openEditModal(id) {
           text.textContent = '100%';
           if (!targetRow.subunsurs[subCode][paramId]['files' + level]) targetRow.subunsurs[subCode][paramId]['files' + level] = [];
           targetRow.subunsurs[subCode][paramId]['files' + level].push({
-  url: result.url,
-  fileName: result.fileName || file.name,
-  gdriveId: result.gdriveId  // <---- TAMBAHKAN INI
-});
+            url: result.url,
+            fileName: result.fileName || file.name,
+            gdriveId: result.gdriveId || null,
+            syncStatus: result.syncStatus || 'pending',
+            uploadId: result.uploadId || null,
+            uploadedAt: new Date().toISOString()
+          });
           renderFileList(targetRow, subCode, paramId, level);
           completed++;
           setTimeout(() => {
@@ -893,56 +899,21 @@ async function openEditModal(id) {
         }
       }
       fileInput.value = '';
-      await saveData();
     };
   });
 }
 
 // ====== UPLOAD FILE ======
 async function uploadFile(row, subCode, paramId, level, file) {
-  if (!file) return;
-  if (file.size > 10 * 1024 * 1024) throw new Error('File terlalu besar! Maks 10MB.');
-  
-  const reader = new FileReader();
-  return new Promise((resolve, reject) => {
-    reader.onload = async () => {
-      const base64 = reader.result.split(',')[1];
-      
-      let attempts = 0;
-      let success = false;
-      let lastError = '';
-
-      while (attempts < 3 && !success) {
-        try {
-          const result = await callServer('uploadFile', {
-            opdId: row.id,
-            opdName: row.opd,
-            subunsur: subCode,
-            paramId,
-            level,
-            year: currentYear,
-            fileName: file.name,
-            fileData: base64,
-            fileType: file.type || 'application/octet-stream'
-          });
-          success = true;
-          resolve({ url: result.url, fileName: result.fileName, gdriveId: result.googleDriveId || null });
-        } catch (err) {
-          lastError = err.message;
-          attempts++;
-          if (attempts < 3) {
-            await new Promise(r => setTimeout(r, 1500)); 
-          }
-        }
-      }
-      
-      if (!success) {
-        reject(new Error(lastError));
-      }
-    };
-    reader.readAsDataURL(file);
+  if(!file)return;
+  if(file.size>10*1024*1024)throw new Error('File terlalu besar! Maks 10MB.');
+  const result=await callServer('uploadFile',{
+    __binaryFile:file,opdId:row.id,opdName:row.opd||'OPD',subunsur:subCode,paramId,level:String(level),year:currentYear,
+    fileName:file.name,fileType:file.type||'application/octet-stream',uploadId:crypto.randomUUID()
   });
+  return {url:result.url,fileName:result.fileName,gdriveId:result.googleDriveId||result.gdriveId||null,syncStatus:result.syncStatus||'pending',uploadId:result.uploadId||null};
 }
+
 // Fungsi untuk membuat URL preview berdasarkan jenis file
 function getPreviewUrl(fileUrl, fileName) {
   const ext = fileName.split('.').pop().toLowerCase();
@@ -1042,7 +1013,7 @@ document.getElementById('fileDeleteOk').addEventListener('click', async function
   const row = rows.find(r => r.id === opdId);
   if (row) {
     try {
-      const result = await callServer('deleteFile', { fileUrl, gdriveId });  // <---- Kirim gdriveId
+      const result = await callServerWithRetry('deleteFile', { fileUrl, gdriveId, opdId, subunsur: subCode, paramId, level, year: currentYear });  // <---- Kirim gdriveId
       if (result.status === 'error') { 
         showWarning('❌ ' + result.message); 
         return; 
@@ -1052,7 +1023,6 @@ document.getElementById('fileDeleteOk').addEventListener('click', async function
       if (index > -1) {
         files.splice(index, 1);
         renderFileList(row, subCode, paramId, level);
-        await saveData();
       }
     } catch (err) {
       showWarning('❌ ' + err.message);
@@ -1091,9 +1061,10 @@ document.getElementById('modalSave').addEventListener('click', async function() 
   const modalStatus = document.getElementById('modalSaveStatus');
   modalStatus.style.display = 'block';
   modalStatus.style.color = '#1e40af';
-  modalStatus.textContent = '⏳ Menyimpan data ke Google Drive...';
+  modalStatus.textContent = '⏳ Menyimpan data...';
   try {
-    await saveData();
+    const saved=await callServerWithRetry('saveSubunsur',{opdId:row.id,year:currentYear,subunsurs:row.subunsurs});
+    if(saved?.nilaiStrukturProses!=null){row.nilaiStrukturProses=saved.nilaiStrukturProses;row.sa=saved.nilaiStrukturProses;row.strukturProsesStatus=saved.strukturProsesStatus||row.strukturProsesStatus;}
     modalStatus.style.color = '#16a34a';
     modalStatus.textContent = '✅ Data berhasil disimpan!';
     setTimeout(() => { closeEditModal(); render(); }, 800);
@@ -1124,7 +1095,7 @@ document.getElementById('addOpdOk').addEventListener('click', async function() {
     });
     rows.push(newOpd);
     render();
-    await saveData();
+    await callServerWithRetry('saveRow',{year:currentYear,row:newOpd});
     document.getElementById('addOpdModal').classList.remove('active');
   } finally {
     isAddingOpd = false;
@@ -1458,7 +1429,7 @@ document.getElementById('confirmNameOk').addEventListener('click', async functio
     if (row) {
       row.opd = window._pendingName.newName;
       render();
-      await saveData();
+      await callServerWithRetry('saveField',{opdId:row.id,field:'opd',value:row.opd,year:currentYear});
     }
     window._pendingName = null;
   }
@@ -1623,11 +1594,23 @@ async function createRtpSheetLinksForCurrentRow(auto=false){const row=rows.find(
 
 // ===== EVIDENCE RTP =====
 let rtpEvidenceEditingRowId=null;function rtpEvidenceSetStatus(msg,type=''){const e=document.getElementById('rtpEvidenceStatus');if(!e)return;e.textContent=msg||'';e.className='sheet-links-status'+(type?' '+type:'');e.style.display=msg?'block':'none';}
-function renderRtpEvidenceList(row){const e=document.getElementById('rtpEvidenceList');if(!e)return;const a=Array.isArray(row.rtpEvidence)?row.rtpEvidence:[];if(!a.length){e.innerHTML='<div class="sheet-link-card">Belum ada evidence RTP.</div>';return;}e.innerHTML='<div class="rtp-file-list">'+a.map((f,i)=>`<div class="rtp-file-item"><div><div class="rtp-file-name">📄 ${sheetLinksEsc(f.fileName||'File')}</div><div class="rtp-file-meta">${f.gdriveId?'Google Drive + R2':'R2'}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions"><a href="${sheetLinksEsc(f.url||'#')}" target="_blank" rel="noopener noreferrer">Buka</a><button class="rtp-delete-btn" data-index="${i}">Hapus</button></div></div>`).join('')+'</div>';}
+function renderRtpEvidenceList(row){const e=document.getElementById('rtpEvidenceList');if(!e)return;const a=Array.isArray(row.rtpEvidence)?row.rtpEvidence:[];if(!a.length){e.innerHTML='<div class="sheet-link-card">Belum ada evidence RTP.</div>';return;}e.innerHTML='<div class="rtp-file-list">'+a.map((f,i)=>`<div class="rtp-file-item"><div><div class="rtp-file-name">📄 ${sheetLinksEsc(f.fileName||'File')}</div><div class="rtp-file-meta">${f.syncStatus==='error'?'R2 · Drive gagal sinkron':(f.gdriveId?'Google Drive + R2':'R2 · sinkronisasi berjalan')}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions"><a href="${sheetLinksEsc(f.url||'#')}" target="_blank" rel="noopener noreferrer">Buka</a><button class="rtp-delete-btn" data-index="${i}">Hapus</button></div></div>`).join('')+'</div>';}
 async function openRtpEvidenceModal(id){const row=rows.find(r=>r.id===id);if(!row)return;rtpEvidenceEditingRowId=id;document.getElementById('rtpEvidenceOpdName').textContent=row.opd||'Tanpa Nama';const folderInput=document.getElementById('rtpEvidenceFolderName');const preview=document.getElementById('rtpEvidenceFolderPreview');const setPreview=()=>{if(preview)preview.textContent=(folderInput?.value||'').trim()||'Evidence RTP';};if(folderInput){folderInput.value=row.rtpEvidenceFolder||'Evidence RTP';folderInput.oninput=setPreview;}setPreview();document.getElementById('rtpEvidenceModal').classList.add('active');rtpEvidenceSetStatus('Memuat daftar evidence RTP...');try{const d=await callServer('getRtpEvidence',{opdId:id,year:currentYear});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];row.rtpEvidenceFolder=d.folderName||row.rtpEvidenceFolder||'Evidence RTP';if(folderInput)folderInput.value=row.rtpEvidenceFolder;setPreview();renderRtpEvidenceList(row);rtpEvidenceSetStatus('Silakan tulis nama folder, lalu upload file.','success');}catch(err){rtpEvidenceSetStatus('Gagal memuat: '+err.message,'error');}}
-async function uploadRtpEvidence(file){const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row||!file)return;if(file.size>10*1024*1024)throw new Error('File melebihi 10 MB');const folderInput=document.getElementById('rtpEvidenceFolderName');const folderName=(folderInput?.value||row.rtpEvidenceFolder||'Evidence RTP').trim()||'Evidence RTP';if(folderName.length>100)throw new Error('Nama folder maksimal 100 karakter');row.rtpEvidenceFolder=folderName;const rd=new FileReader();const b64=await new Promise((res,rej)=>{rd.onload=()=>res(rd.result.split(',')[1]);rd.onerror=rej;rd.readAsDataURL(file);});rtpEvidenceSetStatus('Mengunggah '+file.name+' ke R2 dan Google Drive...');const d=await callServer('uploadRtpEvidence',{opdId:row.id,opdName:row.opd,year:currentYear,fileName:file.name,folderName,fileData:b64,fileType:file.type||'application/octet-stream'});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];row.rtpEvidenceFolder=d.folderName||folderName;renderRtpEvidenceList(row);render();rtpEvidenceSetStatus('Upload berhasil ke R2 dan Google Drive.','success');}
-document.getElementById('rtpEvidenceFolderSave')?.addEventListener('click',async()=>{const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);const input=document.getElementById('rtpEvidenceFolderName');const preview=document.getElementById('rtpEvidenceFolderPreview');if(!row||!input)return;const folderName=(input.value||'').trim()||'Evidence RTP';if(folderName.length>100){rtpEvidenceSetStatus('Nama folder maksimal 100 karakter.','error');return;}try{rtpEvidenceSetStatus('Menyimpan nama folder...');const d=await callServer('saveRtpEvidenceFolder',{opdId:row.id,year:currentYear,folderName});row.rtpEvidenceFolder=d.folderName||folderName;input.value=row.rtpEvidenceFolder;if(preview)preview.textContent=row.rtpEvidenceFolder;rtpEvidenceSetStatus('Nama folder tersimpan. File berikutnya akan masuk ke folder ini.','success');}catch(err){rtpEvidenceSetStatus('Gagal menyimpan nama folder: '+err.message,'error');}});document.getElementById('rtpEvidenceChoose')?.addEventListener('click',()=>document.getElementById('rtpEvidenceInput')?.click());document.getElementById('rtpEvidenceInput')?.addEventListener('change',async e=>{for(const f of Array.from(e.target.files||[])){try{await uploadRtpEvidence(f);}catch(err){rtpEvidenceSetStatus('Gagal upload: '+err.message,'error');}}e.target.value='';});document.getElementById('rtpEvidenceList')?.addEventListener('click',async e=>{const b=e.target.closest('.rtp-delete-btn');if(!b)return;const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[])[Number(b.dataset.index)];if(!f)return;try{rtpEvidenceSetStatus('Menghapus...');const d=await callServer('deleteRtpEvidence',{opdId:row.id,year:currentYear,fileUrl:f.url,gdriveId:f.gdriveId||null});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];renderRtpEvidenceList(row);render();rtpEvidenceSetStatus('File dihapus.','success');}catch(err){rtpEvidenceSetStatus('Gagal hapus: '+err.message,'error');}});document.getElementById('rtpEvidenceRefresh')?.addEventListener('click',()=>{if(rtpEvidenceEditingRowId)openRtpEvidenceModal(rtpEvidenceEditingRowId);});function closeRtpEvidenceModal(){document.getElementById('rtpEvidenceModal')?.classList.remove('active');rtpEvidenceEditingRowId=null;}document.getElementById('rtpEvidenceClose')?.addEventListener('click',closeRtpEvidenceModal);document.getElementById('rtpEvidenceCloseFooter')?.addEventListener('click',closeRtpEvidenceModal);
+async function uploadRtpEvidence(file){
+  const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);
+  if(!row||!file)return;
+  if(file.size>10*1024*1024)throw new Error('File melebihi 10 MB');
+  const folderInput=document.getElementById('rtpEvidenceFolderName');
+  const folderName=(folderInput?.value||row.rtpEvidenceFolder||'Evidence RTP').trim()||'Evidence RTP';
+  if(folderName.length>100)throw new Error('Nama folder maksimal 100 karakter');
+  row.rtpEvidenceFolder=folderName;
+  rtpEvidenceSetStatus('Mengunggah ke R2...');
+  const d=await callServer('uploadRtpEvidence',{__binaryFile:file,opdId:row.id,opdName:row.opd||'OPD',year:currentYear,folderName,fileName:file.name,fileType:file.type||'application/octet-stream',uploadId:crypto.randomUUID()});
+  row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];row.rtpEvidenceFolder=d.folderName||folderName;renderRtpEvidenceList(row);render();
+  rtpEvidenceSetStatus('Upload R2 berhasil. Sinkronisasi Google Drive berjalan di belakang layar.','success');
+}
 
+document.getElementById('rtpEvidenceFolderSave')?.addEventListener('click',async()=>{const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);const input=document.getElementById('rtpEvidenceFolderName');const preview=document.getElementById('rtpEvidenceFolderPreview');if(!row||!input)return;const folderName=(input.value||'').trim()||'Evidence RTP';if(folderName.length>100){rtpEvidenceSetStatus('Nama folder maksimal 100 karakter.','error');return;}try{rtpEvidenceSetStatus('Menyimpan nama folder...');const d=await callServerWithRetry('saveRtpEvidenceFolder',{opdId:row.id,year:currentYear,folderName});row.rtpEvidenceFolder=d.folderName||folderName;input.value=row.rtpEvidenceFolder;if(preview)preview.textContent=row.rtpEvidenceFolder;rtpEvidenceSetStatus('Nama folder tersimpan. File berikutnya akan masuk ke folder ini.','success');}catch(err){rtpEvidenceSetStatus('Gagal menyimpan nama folder: '+err.message,'error');}});document.getElementById('rtpEvidenceChoose')?.addEventListener('click',()=>document.getElementById('rtpEvidenceInput')?.click());document.getElementById('rtpEvidenceInput')?.addEventListener('change',async e=>{for(const f of Array.from(e.target.files||[])){try{await uploadRtpEvidence(f);}catch(err){rtpEvidenceSetStatus('Gagal upload: '+err.message,'error');}}e.target.value='';});document.getElementById('rtpEvidenceList')?.addEventListener('click',async e=>{const b=e.target.closest('.rtp-delete-btn');if(!b)return;const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[])[Number(b.dataset.index)];if(!f)return;try{rtpEvidenceSetStatus('Menghapus...');const d=await callServerWithRetry('deleteRtpEvidence',{opdId:row.id,year:currentYear,fileUrl:f.url,gdriveId:f.gdriveId||null});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];renderRtpEvidenceList(row);render();rtpEvidenceSetStatus('File dihapus.','success');}catch(err){rtpEvidenceSetStatus('Gagal hapus: '+err.message,'error');}});document.getElementById('rtpEvidenceRefresh')?.addEventListener('click',()=>{if(rtpEvidenceEditingRowId)openRtpEvidenceModal(rtpEvidenceEditingRowId);});function closeRtpEvidenceModal(){document.getElementById('rtpEvidenceModal')?.classList.remove('active');rtpEvidenceEditingRowId=null;}document.getElementById('rtpEvidenceClose')?.addEventListener('click',closeRtpEvidenceModal);document.getElementById('rtpEvidenceCloseFooter')?.addEventListener('click',closeRtpEvidenceModal);
 document.addEventListener('click',function(e){
   const close=e.target.closest('#sheetLinksClose,#sheetLinksCancel');
   if(close){closeSpreadsheetModal();return;}
