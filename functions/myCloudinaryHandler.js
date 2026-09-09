@@ -11,7 +11,7 @@ const UNSUR_MAP = {
 const FIELD_MAP = { qaApip:'qa_apip', nilaiStrukturProses:'nilai_struktur_proses', nilaiMaturitas:'nilai_maturitas', nilaiKapabilitasApip:'nilai_kapabilitas_apip', mri:'mri', iepk:'iepk', evidence:'evidence', rtp:'rtp', status:'status', strukturProsesStatus:'struktur_proses_status' };
 
 const DB_FILE_NAME = 'SAKIP_DB.json';
-const DEFAULT_KK_TEMPLATE_SPREADSHEET_ID='1ozFUON9VcxDZdgZ-v4HvhP54ulPxkqoRvV2G3SNlolE';
+const DEFAULT_KK_TEMPLATE_SPREADSHEET_ID='1TbLaBuNtJ1XNZ9nOs9yuJJv1vq87b-X8OB4FGHpUWzA';
 const DEFAULT_RTP_TEMPLATE_SPREADSHEET_ID='1WO_caRMgUjTlUcf6SoLpG242vRTOhe1Euz9UI-AuyJY';
 const KK_TEMPLATE_SHEET_NAMES = [
   'KKLEAD_SPIP',
