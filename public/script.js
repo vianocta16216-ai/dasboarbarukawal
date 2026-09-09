@@ -1763,10 +1763,12 @@ function kkPmRenderSheet(){
 }
 
 async function loadKkPmData(row){
-  try{
-    const d=await callServer('getKkPmData',{opdId:row.id,year:currentYear});
-    row.kkPmData=d?.kkPmData||{};
-  }catch(err){ row.kkPmData={}; throw err; }
+  // Data KK PM sudah ikut dimuat melalui getData. Hindari endpoint khusus
+  // getKkPmData yang pada deployment tertentu dapat ter-resolve ke index.html.
+  row.kkPmData = (row && row.kkPmData && typeof row.kkPmData === 'object')
+    ? row.kkPmData
+    : {};
+  return row.kkPmData;
 }
 
 async function saveKkPmData(){
@@ -1775,11 +1777,14 @@ async function saveKkPmData(){
   const saveBtn=document.getElementById('kkPmSave'); if(saveBtn)saveBtn.disabled=true;
   kkPmSetStatus('Menyimpan perubahan Kertas Kerja PM...');
   try{
-    const res=await callServer('saveKkPmData',{opdId:row.id,year:currentYear,kkPmData:kkPmDraft});
-    if(res.status==='error')throw new Error(res.message);
-    row.kkPmData=res.kkPmData||kkPmDraft; kkPmDraft=JSON.parse(JSON.stringify(row.kkPmData));
-    kkPmDirty=false; kkPmSetStatus('✅ Perubahan Kertas Kerja PM tersimpan.','success');
-    render();
+    // Simpan menggunakan endpoint saveRow yang sudah kompatibel dengan modul utama.
+    row.kkPmData=JSON.parse(JSON.stringify(kkPmDraft));
+    const res=await callServer('saveRow',{row,year:currentYear});
+    if(res?.status!=='success') throw new Error(res?.message||'Server menolak penyimpanan.');
+    kkPmDraft=JSON.parse(JSON.stringify(row.kkPmData));
+    kkPmDirty=false;
+    kkPmSetStatus('✅ Perubahan Kertas Kerja PM tersimpan.','success');
+    originalRows=JSON.parse(JSON.stringify(rows));
     setTimeout(()=>{ if(document.getElementById('kkPmModal')?.classList.contains('active')) kkPmSetStatus(''); },1800);
   }catch(err){ kkPmSetStatus('❌ Gagal menyimpan: '+err.message,'error'); }
   finally{ if(saveBtn)saveBtn.disabled=false; }
