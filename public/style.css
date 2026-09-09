@@ -1728,7 +1728,7 @@ tbody td:nth-child(2){box-shadow:2px 0 8px rgba(15,23,42,.05)}
 
 .rtp-retry-btn{background:#dbeafe;color:#1d4ed8;border:none;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px}.rtp-retry-btn:hover{background:#bfdbfe}
 
-/* ===== KERTAS KERJA PM DISPARPORA ===== */
+/* ===== KERTAS KERJA PM TERINTEGRASI SPIP ===== */
 .btn-kk-pm{background:linear-gradient(135deg,#7c3aed,#9333ea)!important;color:#fff!important;box-shadow:0 2px 7px rgba(124,58,237,.25)!important}
 .btn-kk-pm:hover{background:linear-gradient(135deg,#6d28d9,#7e22ce)!important}
 .kkpm-modal{width:min(1500px,98vw);height:min(92vh,900px);background:#fff;border-radius:18px;box-shadow:0 24px 80px rgba(15,23,42,.35);display:flex;flex-direction:column;overflow:hidden}
@@ -1756,3 +1756,9 @@ tbody td:nth-child(2){box-shadow:2px 0 8px rgba(15,23,42,.05)}
 .kkpm-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 16px;border-top:1px solid #e2e8f0;background:#f8fafc;font-size:11px;color:#64748b}
 .kkpm-footer button{height:34px;padding:0 13px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;color:#334155;font-size:12px;font-weight:800;cursor:pointer}
 @media(max-width:800px){.kkpm-modal{width:99vw;height:95vh;border-radius:12px}.kkpm-footer{flex-direction:column;align-items:flex-start}.kkpm-cell{width:130px}.kkpm-toolbar-right{width:100%}.kkpm-download,.kkpm-save{flex:1}}
+
+.kkpm-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:10px 16px;background:#f8fafc;border-bottom:1px solid #eef2f7}
+.kkpm-overview-card{padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;display:flex;flex-direction:column;gap:3px;min-height:66px}
+.kkpm-overview-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#7c3aed;font-weight:900}
+.kkpm-overview-card b{font-size:13px;color:#0f172a}.kkpm-overview-card small{font-size:10px;line-height:1.35;color:#64748b}
+@media(max-width:800px){.kkpm-overview{grid-template-columns:1fr}}
