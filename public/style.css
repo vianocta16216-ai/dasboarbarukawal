@@ -1703,3 +1703,10 @@ input[type="file"]:hover {
   .sheet-links-grid{grid-template-columns:1fr}
   .sheet-links-modal{max-height:92vh}
 }
+.rtp-folder-box{border:1px solid #dbe3ee;border-radius:12px;padding:14px 15px;background:#f8fafc;margin-bottom:14px}
+.rtp-folder-box label{display:block;font-size:12px;font-weight:800;color:#334155;margin-bottom:7px}
+.rtp-folder-row{display:flex;gap:8px;align-items:center}
+.rtp-folder-row input{flex:1;min-width:0;height:38px;border:1px solid #cbd5e1;border-radius:8px;padding:0 11px;font:inherit;font-size:13px;color:#0f172a;background:#fff;outline:none}
+.rtp-folder-row input:focus{border-color:#0f766e;box-shadow:0 0 0 3px rgba(15,118,110,.10)}
+.rtp-folder-row button{height:38px;padding:0 13px;border-radius:8px;border:1px solid #0f766e;background:#0f766e;color:#fff;font-size:12px;font-weight:800;cursor:pointer}
+.rtp-folder-help{font-size:11px;color:#64748b;margin-top:7px;line-height:1.4}
