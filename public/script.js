@@ -179,10 +179,9 @@ async function loadData() {
     rows = [];
     if (Array.isArray(data)) {
       rows = data.map(r => {
-        const row = { ...r, nilaiMaturitas:0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
+        const row = { ...r, nilaiMaturitas:Number(r.nilaiMaturitas ?? r.nilai_maturitas ?? 0) || 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
         row.nilaiStrukturProses = calculateSA(row);
         row.sa = row.nilaiStrukturProses;
-        row.nilaiMaturitas = row.nilaiStrukturProses;
         return row;
       });
       rows.sort((a,b)=>{ const x=(parseFloat(b.nilaiMaturitas)||0)-(parseFloat(a.nilaiMaturitas)||0); return x || (parseFloat(b.nilaiStrukturProses)||0)-(parseFloat(a.nilaiStrukturProses)||0); });
@@ -316,7 +315,7 @@ function render() {
       return `<tr>
         <td style="text-align:center;">${index + 1}</td>
         <td><div style="display:flex; align-items:center; gap:8px;"><span style="font-weight:500;">${escapeHtml(r.opd || 'Tanpa Nama')}</span><button class="btn-edit-name" data-id="${r.id}" title="Ubah Nama" style="background:none;border:none;cursor:pointer;font-size:18px;padding:0;">✏️</button></div></td>
-        <td><input class="auto-maturity-value" type="number" value="${Number(struktur).toFixed(2)}" readonly aria-label="Nilai Maturitas otomatis" title="Otomatis dari level 43 parameter"></td>
+        <td><input class="manual-maturity-value" type="number" step="0.01" min="0" max="5" value="${Number(r.nilaiMaturitas||0).toFixed(2)}" data-id="${r.id}" data-field="nilaiMaturitas" aria-label="Nilai Maturitas manual" title="Isi manual nilai maturitas (0 sampai 5)"></td>
         <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.mri||0).toFixed(2)}" data-id="${r.id}" data-field="mri"></td>
         <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.iepk||0).toFixed(2)}" data-id="${r.id}" data-field="iepk"></td>
         <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.nilaiKapabilitasApip||0).toFixed(2)}" data-id="${r.id}" data-field="nilaiKapabilitasApip"></td>
@@ -1083,10 +1082,9 @@ document.getElementById('modalSave').addEventListener('click', async function() 
     const subCode = el.dataset.sub, paramId = el.dataset.param, field = el.dataset.field;
     row.subunsurs[subCode][paramId][field] = el.value;
   });
-  // Nilai Struktur dan Proses selalu dihitung ulang dari 43 parameter. Tidak boleh diinput manual.
+  // Nilai Struktur dan Proses tetap dihitung otomatis dari 43 parameter. Nilai Maturitas diisi manual dan tidak ditimpa.
   row.nilaiStrukturProses = calculateSA(row);
   row.sa = row.nilaiStrukturProses;
-  row.nilaiMaturitas = row.nilaiStrukturProses;
   let strukturEvidenceCount = 0;
   PARAM_LIST.forEach(param => { const sd=row.subunsurs?.[param.subCode]?.[param.paramId]; if(sd){ for(let lv=1;lv<=5;lv++){ if(Array.isArray(sd['files'+lv]) && sd['files'+lv].length){ strukturEvidenceCount++; break; } } } });
   row.strukturProsesStatus = strukturEvidenceCount === PARAM_LIST.length ? 'Selesai' : (strukturEvidenceCount > 0 ? 'Proses' : 'Belum');
