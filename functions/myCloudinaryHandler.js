@@ -8,10 +8,10 @@ const UNSUR_MAP = {
   '5': '5. EVALUASI DAN PEMANTAUAN'
 };
 
-const FIELD_MAP = { qaApip:'qa_apip', nilaiStrukturProses:'nilai_struktur_proses', nilaiMaturitas:'nilai_maturitas', nilaiKapabilitasApip:'nilai_kapabilitas_apip', mri:'mri', iepk:'iepk', evidence:'evidence', rtp:'rtp', status:'status', strukturProsesStatus:'struktur_proses_status' };
+const FIELD_MAP = { opd:'opd', qaApip:'qa_apip', nilaiStrukturProses:'nilai_struktur_proses', nilaiMaturitas:'nilai_maturitas', nilaiKapabilitasApip:'nilai_kapabilitas_apip', mri:'mri', iepk:'iepk', evidence:'evidence', rtp:'rtp', status:'status', strukturProsesStatus:'struktur_proses_status' };
 
 const DB_FILE_NAME = 'SAKIP_DB.json';
-const DEFAULT_KK_TEMPLATE_SPREADSHEET_ID='1TbLaBuNtJ1XNZ9nOs9yuJJv1vq87b-X8OB4FGHpUWzA';
+const DEFAULT_KK_TEMPLATE_SPREADSHEET_ID='1ozFUON9VcxDZdgZ-v4HvhP54ulPxkqoRvV2G3SNlolE';
 const DEFAULT_RTP_TEMPLATE_SPREADSHEET_ID='1WO_caRMgUjTlUcf6SoLpG242vRTOhe1Euz9UI-AuyJY';
 const KK_TEMPLATE_SHEET_NAMES = [
   'KKLEAD_SPIP',
@@ -36,20 +36,68 @@ const KK_TEMPLATE_SHEET_NAMES = [
 ];
 
 let schemaReady=false;
+let schemaReadyPromise=null;
+const DRIVE_TOKEN_CACHE={token:null,expiresAt:0};
+const DRIVE_TOKEN_PROMISE={value:null};
+const DRIVE_FOLDER_CACHE=new Map();
+const DRIVE_FOLDER_PROMISES=new Map();
+let GOOGLE_ACTIVE=0;
+const GOOGLE_QUEUE=[];
+
+async function withGoogleConcurrency(task, limit=3){
+  if(GOOGLE_ACTIVE>=limit){
+    await new Promise(resolve=>GOOGLE_QUEUE.push(resolve));
+  }
+  GOOGLE_ACTIVE++;
+  try{return await task();}
+  finally{
+    GOOGLE_ACTIVE=Math.max(0,GOOGLE_ACTIVE-1);
+    const next=GOOGLE_QUEUE.shift();
+    if(next)next();
+  }
+}
+
+async function fetchWithRetry(url, init={}, options={}){
+  const retries=Number.isFinite(options.retries)?options.retries:3;
+  const baseDelay=Number.isFinite(options.baseDelay)?options.baseDelay:400;
+  let lastError=null;
+  for(let attempt=0;attempt<=retries;attempt++){
+    try{
+      const response=await fetch(url,init);
+      if(response.ok || ![429,500,502,503,504].includes(response.status) || attempt===retries)return response;
+      const wait=Math.min(5000,baseDelay*Math.pow(2,attempt)+Math.floor(Math.random()*250));
+      await new Promise(r=>setTimeout(r,wait));
+    }catch(err){
+      lastError=err;
+      if(attempt===retries)throw err;
+      const wait=Math.min(5000,baseDelay*Math.pow(2,attempt)+Math.floor(Math.random()*250));
+      await new Promise(r=>setTimeout(r,wait));
+    }
+  }
+  throw lastError||new Error('Request gagal');
+}
+
+function jsonResponse(data,status=200,extraHeaders={}){
+  return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...extraHeaders}});
+}
+
 async function ensureOpdSchema(env){
   if(schemaReady)return;
-  const info=await env.DB.prepare("PRAGMA table_info(opd_data)").all();
-  const cols=new Set((info.results||[]).map(x=>x.name));
-  const hadStructureField=cols.has('nilai_struktur_proses');
-  const adds=[['nilai_struktur_proses','REAL NOT NULL DEFAULT 0'],['nilai_maturitas','REAL NOT NULL DEFAULT 0'],['nilai_kapabilitas_apip','REAL NOT NULL DEFAULT 0'],['kk_rtp_data',"TEXT NOT NULL DEFAULT '{}'"],['rtp_evidence',"TEXT NOT NULL DEFAULT '[]'"],['rtp_evidence_folder',"TEXT NOT NULL DEFAULT 'Evidence RTP'"],['struktur_proses_status',"TEXT NOT NULL DEFAULT 'Belum'"]];
-  for(const [name,type] of adds)if(!cols.has(name))await env.DB.prepare(`ALTER TABLE opd_data ADD COLUMN ${name} ${type}`).run();
-  if(cols.has('sa') && !hadStructureField) {
-    await env.DB.prepare("UPDATE opd_data SET nilai_struktur_proses=CAST(COALESCE(sa,0) AS REAL)").run();
-    await env.DB.prepare("UPDATE opd_data SET struktur_proses_status = CASE WHEN CAST(COALESCE(nilai_struktur_proses,0) AS REAL) > 0 THEN 'Proses' ELSE 'Belum' END").run();
-    await env.DB.prepare("UPDATE opd_data SET nilai_maturitas=CAST(COALESCE(nilai_struktur_proses,0) AS REAL)").run();
-  }
-  // Nilai maturitas sekarang disimpan manual dan tidak lagi disinkronkan dengan nilai struktur/proses.
-  schemaReady=true;
+  if(schemaReadyPromise)return schemaReadyPromise;
+  schemaReadyPromise=(async()=>{
+    const info=await env.DB.prepare("PRAGMA table_info(opd_data)").all();
+    const cols=new Set((info.results||[]).map(x=>x.name));
+    const hadStructureField=cols.has('nilai_struktur_proses');
+    const adds=[['nilai_struktur_proses','REAL NOT NULL DEFAULT 0'],['nilai_maturitas','REAL NOT NULL DEFAULT 0'],['nilai_kapabilitas_apip','REAL NOT NULL DEFAULT 0'],['kk_rtp_data',"TEXT NOT NULL DEFAULT '{}'"],['rtp_evidence',"TEXT NOT NULL DEFAULT '[]'"],['rtp_evidence_folder',"TEXT NOT NULL DEFAULT 'Evidence RTP'"],['struktur_proses_status',"TEXT NOT NULL DEFAULT 'Belum'"]];
+    for(const [name,type] of adds)if(!cols.has(name))await env.DB.prepare(`ALTER TABLE opd_data ADD COLUMN ${name} ${type}`).run();
+    if(cols.has('sa') && !hadStructureField) {
+      await env.DB.prepare("UPDATE opd_data SET nilai_struktur_proses=CAST(COALESCE(sa,0) AS REAL)").run();
+      await env.DB.prepare("UPDATE opd_data SET struktur_proses_status = CASE WHEN CAST(COALESCE(nilai_struktur_proses,0) AS REAL) > 0 THEN 'Proses' ELSE 'Belum' END").run();
+      await env.DB.prepare("UPDATE opd_data SET nilai_maturitas=CAST(COALESCE(nilai_struktur_proses,0) AS REAL)").run();
+    }
+    schemaReady=true;
+  })().catch(err=>{schemaReadyPromise=null;throw err;});
+  return schemaReadyPromise;
 }
 
 // ============ KEAMANAN: SANITASI & RATE LIMITING ============
@@ -274,58 +322,53 @@ async function getGoogleAccessToken(env) {
   if (!GOOGLE_DRIVE_CLIENT_ID || !GOOGLE_DRIVE_CLIENT_SECRET || !GOOGLE_DRIVE_REFRESH_TOKEN) {
     throw new Error('Google Drive credentials not configured');
   }
-  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: GOOGLE_DRIVE_CLIENT_ID,
-      client_secret: GOOGLE_DRIVE_CLIENT_SECRET,
-      refresh_token: GOOGLE_DRIVE_REFRESH_TOKEN,
-      grant_type: 'refresh_token'
-    })
-  });
-  const tokenData = await tokenResponse.json();
-  if (!tokenResponse.ok) {
-    throw new Error('Failed to get Google Drive access token: ' + JSON.stringify(tokenData));
-  }
-  return tokenData.access_token;
+  const now=Date.now();
+  if(DRIVE_TOKEN_CACHE.token && DRIVE_TOKEN_CACHE.expiresAt > now + 60_000) return DRIVE_TOKEN_CACHE.token;
+  if(DRIVE_TOKEN_PROMISE.value) return DRIVE_TOKEN_PROMISE.value;
+  DRIVE_TOKEN_PROMISE.value=(async()=>{
+    const tokenResponse=await fetchWithRetry('https://oauth2.googleapis.com/token',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams({client_id:GOOGLE_DRIVE_CLIENT_ID,client_secret:GOOGLE_DRIVE_CLIENT_SECRET,refresh_token:GOOGLE_DRIVE_REFRESH_TOKEN,grant_type:'refresh_token'})
+    },{retries:2,baseDelay:500});
+    const tokenData=await tokenResponse.json().catch(()=>({}));
+    if(!tokenResponse.ok)throw new Error('Failed to get Google Drive access token: '+JSON.stringify(tokenData));
+    DRIVE_TOKEN_CACHE.token=tokenData.access_token;
+    DRIVE_TOKEN_CACHE.expiresAt=now + Math.max(60_000,Number(tokenData.expires_in||3600)*1000);
+    return DRIVE_TOKEN_CACHE.token;
+  })().finally(()=>{DRIVE_TOKEN_PROMISE.value=null;});
+  return DRIVE_TOKEN_PROMISE.value;
 }
 
 async function createFolder(accessToken, parentId, folderName) {
-  const response = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      name: folderName,
-      mimeType: 'application/vnd.google-apps.folder',
-      parents: [parentId]
-    })
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error('Gagal membuat folder: ' + JSON.stringify(data));
+  const response=await fetchWithRetry('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true',{
+    method:'POST',headers:{Authorization:`Bearer ${accessToken}`,'Content-Type':'application/json'},
+    body:JSON.stringify({name:folderName,mimeType:'application/vnd.google-apps.folder',parents:[parentId]})
+  },{retries:3,baseDelay:500});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error('Gagal membuat folder: '+JSON.stringify(data));
   return data.id;
 }
 
-async function getOrCreateFolder(accessToken, parentId, folderName) {
-  const safeName = String(folderName || '').replace(/'/g, "\\'");
-  const query = `name='${safeName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`;
-  const params = new URLSearchParams({
-    q: query,
-    fields: 'files(id,name)',
-    spaces: 'drive',
-    includeItemsFromAllDrives: 'true',
-    supportsAllDrives: 'true'
-  });
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error('Gagal mencari folder Google Drive: ' + JSON.stringify(data));
-  if (data.files && data.files.length > 0) return data.files[0].id;
-  return await createFolder(accessToken, parentId, folderName);
+async function getOrCreateFolder(accessToken,parentId,folderName){
+  const safeName=String(folderName||'').replace(/'/g,"\\'");
+  const cacheKey=`${parentId}\u0000${safeName}`;
+  const cached=DRIVE_FOLDER_CACHE.get(cacheKey);
+  if(cached)return cached;
+  const inFlight=DRIVE_FOLDER_PROMISES.get(cacheKey);
+  if(inFlight)return inFlight;
+  const promise=(async()=>{
+    const query=`name='${safeName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`;
+    const params=new URLSearchParams({q:query,fields:'files(id,name)',spaces:'drive',includeItemsFromAllDrives:'true',supportsAllDrives:'true',pageSize:'10'});
+    const response=await fetchWithRetry(`https://www.googleapis.com/drive/v3/files?${params.toString()}`,{headers:{Authorization:`Bearer ${accessToken}`}}, {retries:3,baseDelay:500});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error('Gagal mencari folder Google Drive: '+JSON.stringify(data));
+    const id=data.files?.[0]?.id || await createFolder(accessToken,parentId,folderName);
+    DRIVE_FOLDER_CACHE.set(cacheKey,id);
+    return id;
+  })().catch(err=>{DRIVE_FOLDER_PROMISES.delete(cacheKey);throw err;}).finally(()=>DRIVE_FOLDER_PROMISES.delete(cacheKey));
+  DRIVE_FOLDER_PROMISES.set(cacheKey,promise);
+  return promise;
 }
 
 async function uploadBytesToGoogleDriveFolder(env, accessToken, parentFolderId, fileName, bytes, fileType='application/octet-stream') {
@@ -388,7 +431,7 @@ async function deleteGoogleDriveFile(env, fileId) {
   }
 }
 
-export const onRequest = async ({ request, env }) => {
+export const onRequest = async ({ request, env, ctx }) => {
   const ACCESS_PASSWORD = env.ACCESS_PASSWORD;
   const DELETE_PASSWORD = env.DELETE_PASSWORD;
   const url = new URL(request.url);
@@ -399,16 +442,33 @@ export const onRequest = async ({ request, env }) => {
   const SENSITIVE_ACTIONS = [
     'verifyAccess', 'verifyDelete', 'addOpd', 'saveData', 'saveField',
     'uploadFile', 'deleteFile', 'deleteOpd', 'addYear', 'deleteYear',
-    'createBackup', 'restoreBackup', 'deleteBackup', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence'
+    'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'saveKkData', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence'
   ];
 
   // KK RTP dan pengaturan folder Evidence RTP wajib melalui POST.
   if (request.method === 'POST') {
     try {
-      params = await request.json();
-      if (!action && params.action) action = params.action;
+      const contentType=request.headers.get('content-type')||'';
+      // Binary upload mode: metadata stays in the query string; the request body is the file stream.
+      if(action==='uploadFile' || action==='uploadRtpEvidence'){
+        url.searchParams.forEach((value,key)=>{params[key]=value;});
+        params.fileType=params.fileType||contentType||'application/octet-stream';
+        params.fileName=params.fileName||request.headers.get('X-File-Name')||'evidence';
+        params.uploadId=params.uploadId||request.headers.get('X-Upload-Id')||crypto.randomUUID();
+        params.fileSize=Number(request.headers.get('Content-Length')||0)||0;
+      }else if(contentType.includes('multipart/form-data')){
+        const form=await request.formData();
+        form.forEach((value,key)=>{
+          if(key!=='file' && typeof value==='string') params[key]=value;
+          else if(key==='file' && value instanceof File) params.file=value;
+        });
+        if(!action && params.action) action=params.action;
+      }else{
+        params=await request.json();
+        if(!action && params.action) action=params.action;
+      }
     } catch (e) {
-      return new Response(JSON.stringify({ status: 'error', message: 'Invalid JSON body' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return jsonResponse({ status: 'error', message: 'Invalid POST body' }, 400);
     }
   } else {
     if (SENSITIVE_ACTIONS.includes(action)) {
@@ -492,10 +552,26 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success', message: 'Data tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
+      case 'saveRow': {
+        const row=params.row||{};
+        if(!row.id)throw new Error('ID OPD wajib diisi');
+        const subunsurs=row.subunsurs||{};
+        const sa=calculateSAFromSubunsur(subunsurs);
+        const strukturStatus=countParameterEvidence(subunsurs)===countTotalParameters()?'Selesai':(countParameterEvidence(subunsurs)>0?'Proses':'Belum');
+        await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id,opd,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,evidence,qa_apip,mri,iepk,rtp,status,struktur_proses_status,subunsurs,year,kk_data,kk_rtp_data,rtp_evidence,rtp_evidence_folder) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(row.id,sanitizeString(row.opd||''),sa,sa,Math.max(0,Math.min(5,Number(row.nilaiMaturitas??row.nilai_maturitas??0)||0)),Number(row.nilaiKapabilitasApip??row.nilai_kapabilitas_apip??0)||0,row.evidence||'Belum',row.qaApip||'Belum',parseFloat(row.mri)||0,parseFloat(row.iepk)||0,row.rtp||'Belum',row.status||'Belum',strukturStatus,JSON.stringify(subunsurs),year,JSON.stringify(row.kkData||{}),JSON.stringify(row.kkRtpData||{}),JSON.stringify(Array.isArray(row.rtpEvidence)?row.rtpEvidence:[]),row.rtpEvidenceFolder||'Evidence RTP').run();
+        return jsonResponse({status:'success',message:'Data OPD tersimpan'});
+      }
+      case 'saveSubunsur': {
+        const subunsurs=params.subunsurs||{};
+        const sa=calculateSAFromSubunsur(subunsurs);
+        const strukturStatus=countParameterEvidence(subunsurs)===countTotalParameters()?'Selesai':(countParameterEvidence(subunsurs)>0?'Proses':'Belum');
+        await env.DB.prepare("UPDATE opd_data SET subunsurs=?, sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?").bind(JSON.stringify(subunsurs),sa,sa,strukturStatus,params.opdId,year).run();
+        return jsonResponse({status:'success',message:'Subunsur tersimpan',nilaiStrukturProses:sa,strukturProsesStatus:strukturStatus});
+      }
       case 'saveField': {
         const { opdId, field, value } = params;
         if (field === 'nilaiStrukturProses') throw new Error('Nilai Struktur dan Proses dihitung otomatis dari 43 parameter.');
-        const dbField=FIELD_MAP[field];if(!dbField)throw new Error('Field tidak diizinkan: '+field);const cleanValue=['nilaiMaturitas','nilaiKapabilitasApip','mri','iepk'].includes(field)?Math.max(0,Math.min(5,Number(value)||0)):String(value||'');await env.DB.prepare(`UPDATE opd_data SET ${dbField} = ? WHERE id = ? AND year = ?`).bind(cleanValue,opdId,year).run();
+        const dbField=FIELD_MAP[field];if(!dbField)throw new Error('Field tidak diizinkan: '+field);const cleanValue=['nilaiMaturitas','nilaiKapabilitasApip','mri','iepk'].includes(field)?Math.max(0,Math.min(5,Number(value)||0)):(field==='opd'?sanitizeString(value):String(value||''));await env.DB.prepare(`UPDATE opd_data SET ${dbField} = ? WHERE id = ? AND year = ?`).bind(cleanValue,opdId,year).run();
         return new Response(JSON.stringify({ status: 'success', message: 'Field tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
@@ -549,37 +625,70 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({status:'success',folderName,gdriveFolderId,r2Prefix,driveConfigured:driveReady}),{status:200,headers:{'Content-Type':'application/json'}});
       }
       case 'uploadRtpEvidence': {
-        const bytes=decodeBase64File(params.fileData,10);
+        const file=params.file;
+        const legacyData=params.fileData;
+        if(!file && !legacyData && !request.body)throw new Error('File tidak diterima');
+        let bytes=null;
+        let fileBody=null;
+        let safeFileName=sanitizeString(params.fileName||'evidence').substring(0,150)||'evidence';
+        const fileType=params.fileType||'application/octet-stream';
+        const fileSize=Number(params.fileSize)||0;
+        if(file){
+          safeFileName=sanitizeString(file.name||safeFileName).substring(0,150)||'evidence';
+          if((file.size||0)>10*1024*1024)throw new Error('File melebihi 10 MB');
+          bytes=new Uint8Array(await file.arrayBuffer());
+        }else if(legacyData){
+          bytes=decodeBase64File(legacyData,10);
+        }else{
+          if(fileSize>10*1024*1024)throw new Error('File melebihi 10 MB');
+          fileBody=request.body;
+        }
         const safeOpd=sanitizeString(params.opdName).substring(0,80)||'OPD';
-        const safeFileName=sanitizeString(params.fileName).substring(0,150)||'evidence';
         const folderName=safeDriveName(params.folderName||'Evidence RTP','Evidence RTP').substring(0,100)||'Evidence RTP';
         const filePath=`kawal_spip/${year}/${safeOpd}/Kertas Kerja RTP/${folderName}/${safeFileName}`;
-        const fileType=params.fileType||'application/octet-stream';
-        await env.EVIDENCE_BUCKET.put(filePath,bytes,{httpMetadata:{contentType:fileType}});
-        let gdriveId=null;
-        const driveReady=!!(env.GOOGLE_DRIVE_CLIENT_ID&&env.GOOGLE_DRIVE_CLIENT_SECRET&&env.GOOGLE_DRIVE_REFRESH_TOKEN&&env.GOOGLE_DRIVE_FOLDER_ID);
-        if(driveReady){
-          try{
-            const accessToken=await getGoogleAccessToken(env);
-            const root=await getOrCreateFolder(accessToken,env.GOOGLE_DRIVE_FOLDER_ID,'Kertas Kerja Spreadsheet');
-            const yearFolder=await getOrCreateFolder(accessToken,root,String(year));
-            const opdFolder=await getOrCreateFolder(accessToken,yearFolder,safeDriveName(params.opdName||'OPD'));
-            const rtpFolder=await getOrCreateFolder(accessToken,opdFolder,'Kertas Kerja RTP');
-            const evidenceFolder=await getOrCreateFolder(accessToken,rtpFolder,folderName);
-            gdriveId=await uploadBytesToGoogleDriveFolder(env,accessToken,evidenceFolder,safeFileName,bytes,fileType);
-          }catch(err){
-            try{await env.EVIDENCE_BUCKET.delete(filePath);}catch{}
-            throw new Error('Gagal upload Evidence RTP ke Google Drive: '+err.message);
-          }
-        }
+        await env.EVIDENCE_BUCKET.put(filePath,fileBody||bytes,{httpMetadata:{contentType:fileType}});
         const publicUrl=`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
+        const uploadId=String(params.uploadId||crypto.randomUUID());
+        const item={url:publicUrl,fileName:safeFileName,folderName,gdriveId:null,storage:'R2',syncStatus:'pending',uploadedAt:new Date().toISOString(),uploadId};
         const {results}=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
         if(!results.length)throw new Error('OPD tidak ditemukan');
         let list=[];try{list=results[0].rtp_evidence?JSON.parse(results[0].rtp_evidence):[]}catch{}
-        list.push({url:publicUrl,fileName:safeFileName,folderName,gdriveId,storage:gdriveId?'R2 + Google Drive':'R2',uploadedAt:new Date().toLocaleString('id-ID')});
+        list.push(item);
         await env.DB.prepare("UPDATE opd_data SET rtp_evidence=?, rtp_evidence_folder=? WHERE id=? AND year=?").bind(JSON.stringify(list),folderName,params.opdId,year).run();
-        return new Response(JSON.stringify({status:'success',url:publicUrl,fileName:safeFileName,folderName,gdriveId,rtpEvidence:list}),{status:200,headers:{'Content-Type':'application/json'}});
+
+        const doDriveSync=async()=>withGoogleConcurrency(async()=>{
+          if(!(env.GOOGLE_DRIVE_CLIENT_ID&&env.GOOGLE_DRIVE_CLIENT_SECRET&&env.GOOGLE_DRIVE_REFRESH_TOKEN&&env.GOOGLE_DRIVE_FOLDER_ID))return;
+          try{
+            const token=await getGoogleAccessToken(env);
+            const root=await getOrCreateFolder(token,env.GOOGLE_DRIVE_FOLDER_ID,'Kertas Kerja Spreadsheet');
+            const yearFolder=await getOrCreateFolder(token,root,String(year));
+            const opdFolder=await getOrCreateFolder(token,yearFolder,safeDriveName(params.opdName||'OPD'));
+            const rtpFolder=await getOrCreateFolder(token,opdFolder,'Kertas Kerja RTP');
+            const evidenceFolder=await getOrCreateFolder(token,rtpFolder,folderName);
+            const obj=await env.EVIDENCE_BUCKET.get(filePath);
+            if(!obj)throw new Error('File R2 tidak ditemukan saat sinkronisasi Google Drive');
+            const gbytes=new Uint8Array(await obj.arrayBuffer());
+            const gdriveId=await uploadBytesToGoogleDriveFolder(env,token,evidenceFolder,safeFileName,gbytes,fileType);
+            const latest=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+            let latestList=[];try{latestList=latest.results[0]?.rtp_evidence?JSON.parse(latest.results[0].rtp_evidence):[];}catch{}
+            const found=latestList.find(x=>x.uploadId===uploadId);
+            if(found){found.gdriveId=gdriveId;found.storage='R2 + Google Drive';found.syncStatus='done';}
+            await env.DB.prepare("UPDATE opd_data SET rtp_evidence=? WHERE id=? AND year=?").bind(JSON.stringify(latestList),params.opdId,year).run();
+          }catch(err){
+            console.error('Google Drive sync Evidence RTP gagal:',err.message);
+            try{
+              const latest=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+              let latestList=[];try{latestList=latest.results[0]?.rtp_evidence?JSON.parse(latest.results[0].rtp_evidence):[];}catch{}
+              const found=latestList.find(x=>x.uploadId===uploadId);
+              if(found){found.syncStatus='error';found.syncError=String(err.message||err);}
+              await env.DB.prepare("UPDATE opd_data SET rtp_evidence=? WHERE id=? AND year=?").bind(JSON.stringify(latestList),params.opdId,year).run();
+            }catch{}
+          }
+        },3);
+        if(typeof ctx?.waitUntil==='function')ctx.waitUntil(doDriveSync());
+        return jsonResponse({status:'success',url:publicUrl,fileName:safeFileName,folderName,gdriveId:null,rtpEvidence:list,syncStatus:'pending',uploadId});
       }
+
       case 'deleteRtpEvidence': { const cleanUrl=String(params.fileUrl||'').split('?')[0],marker='r2.dev/',idx=cleanUrl.indexOf(marker);if(idx!==-1)await env.EVIDENCE_BUCKET.delete(decodeURIComponent(cleanUrl.substring(idx+marker.length)));if(params.gdriveId){try{await deleteGoogleDriveFile(env,params.gdriveId)}catch(err){return new Response(JSON.stringify({status:'error',message:'Gagal hapus di Google Drive: '+err.message}),{status:200,headers:{'Content-Type':'application/json'}})}}const {results}=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();if(!results.length)throw new Error('OPD tidak ditemukan');let list=[];try{list=results[0].rtp_evidence?JSON.parse(results[0].rtp_evidence):[]}catch{}list=list.filter(x=>x.url!==params.fileUrl);await env.DB.prepare("UPDATE opd_data SET rtp_evidence=? WHERE id=? AND year=?").bind(JSON.stringify(list),params.opdId,year).run();return new Response(JSON.stringify({status:'success',rtpEvidence:list}),{status:200,headers:{'Content-Type':'application/json'}}); }
       case 'deleteOpd': {
         if (params.opdId === 'all') await env.DB.prepare("DELETE FROM opd_data WHERE year = ?").bind(year).run();
@@ -606,20 +715,74 @@ export const onRequest = async ({ request, env }) => {
       }
 
       case 'uploadFile': {
-        const { filePath, bytes, fileType, fileName } = getFolderStructure(params);
-        await env.EVIDENCE_BUCKET.put(filePath, bytes, { httpMetadata: { contentType: fileType } });
-
-        let gdriveId = null;
-        if (env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_SECRET && env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_FOLDER_ID) {
-          try {
-            gdriveId = await uploadToGoogleDrive(env, filePath, fileName, bytes, env.GOOGLE_DRIVE_FOLDER_ID);
-          } catch (err) {
-            console.error('Gagal upload ke Google Drive:', err.message);
-          }
+        const file=params.file;
+        const legacyData=params.fileData;
+        if(!file && !legacyData && !request.body)throw new Error('File tidak diterima');
+        let bytes=null;
+        let fileBody=null;
+        let fileName=params.fileName||'evidence';
+        let fileType=params.fileType||'application/octet-stream';
+        let fileSize=Number(params.fileSize)||0;
+        if(file){
+          fileName=file.name||fileName; fileType=file.type||fileType; fileSize=file.size||0;
+          if(fileSize>10*1024*1024)throw new Error('File > 10MB, terlalu besar!');
+          bytes=await file.arrayBuffer();
+        }else if(legacyData){
+          bytes=decodeBase64File(legacyData,10); fileSize=bytes.byteLength;
+        }else{
+          if(fileSize>10*1024*1024)throw new Error('File > 10MB, terlalu besar!');
+          fileBody=request.body;
         }
+        const safeOpd=sanitizeString(params.opdName).substring(0,80)||'OPD';
+        const subCode=String(params.subunsur||'');
+        const paramId=String(params.paramId||'');
+        const level=String(params.level||'1');
+        const {filePath}=getFolderStructure({fileData:legacyData||'',fileName,opdName:params.opdName,subunsur:subCode,paramId,level,fileType});
+        await env.EVIDENCE_BUCKET.put(filePath,fileBody||bytes,{httpMetadata:{contentType:fileType}});
+        const publicUrl=`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
+        const uploadMeta={url:publicUrl,fileName:sanitizeString(fileName).substring(0,150),gdriveId:null,storage:'R2',syncStatus:'pending',uploadedAt:new Date().toISOString(),uploadId:String(params.uploadId||crypto.randomUUID())};
+        // Update only this OPD's evidence JSON; never send the whole table back from the browser.
+        const rec=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+        if(!rec.results.length)throw new Error('OPD tidak ditemukan');
+        let subunsurs={};try{subunsurs=rec.results[0].subunsurs?JSON.parse(rec.results[0].subunsurs):{};}catch{}
+        subunsurs[subCode]=subunsurs[subCode]||{};
+        subunsurs[subCode][paramId]=subunsurs[subCode][paramId]||{level:0};
+        const key='files'+level;
+        subunsurs[subCode][paramId][key]=Array.isArray(subunsurs[subCode][paramId][key])?subunsurs[subCode][paramId][key]:[];
+        subunsurs[subCode][paramId][key].push(uploadMeta);
+        const strukturNilai=calculateSAFromSubunsur(subunsurs);
+        const strukturCount=countParameterEvidence(subunsurs);
+        const strukturStatus=strukturCount===countTotalParameters()?'Selesai':(strukturCount>0?'Proses':'Belum');
+        await env.DB.prepare("UPDATE opd_data SET subunsurs=?, sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?").bind(JSON.stringify(subunsurs),strukturNilai,strukturNilai,strukturStatus,params.opdId,year).run();
 
-        const publicUrl = `https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
-        return new Response(JSON.stringify({ url: publicUrl, fileName, googleDriveId: gdriveId, gdriveId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        const doDriveSync=async()=>withGoogleConcurrency(async()=>{
+          if(!(env.GOOGLE_DRIVE_CLIENT_ID&&env.GOOGLE_DRIVE_CLIENT_SECRET&&env.GOOGLE_DRIVE_REFRESH_TOKEN&&env.GOOGLE_DRIVE_FOLDER_ID))return;
+          try{
+            const token=await getGoogleAccessToken(env);
+            const obj=await env.EVIDENCE_BUCKET.get(filePath);
+            if(!obj)throw new Error('File R2 tidak ditemukan saat sinkronisasi Google Drive');
+            const gbytes=new Uint8Array(await obj.arrayBuffer());
+            const gdriveId=await uploadToGoogleDrive(env,filePath,uploadMeta.fileName,gbytes,env.GOOGLE_DRIVE_FOLDER_ID);
+            const latest=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+            let latestObj={};try{latestObj=latest.results[0]?.subunsurs?JSON.parse(latest.results[0].subunsurs):{};}catch{}
+            const arr=latestObj?.[subCode]?.[paramId]?.[key];
+            if(Array.isArray(arr)){
+              const item=arr.find(x=>x.uploadId===uploadMeta.uploadId);
+              if(item){item.gdriveId=gdriveId;item.storage='R2 + Google Drive';item.syncStatus='done';}
+              await env.DB.prepare("UPDATE opd_data SET subunsurs=? WHERE id=? AND year=?").bind(JSON.stringify(latestObj),params.opdId,year).run();
+            }
+          }catch(err){
+            try{
+              const latest=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+              let latestObj={};try{latestObj=latest.results[0]?.subunsurs?JSON.parse(latest.results[0].subunsurs):{};}catch{}
+              const arr=latestObj?.[subCode]?.[paramId]?.[key];
+              if(Array.isArray(arr)){const item=arr.find(x=>x.uploadId===uploadMeta.uploadId);if(item){item.syncStatus='error';item.syncError=String(err.message||err);}await env.DB.prepare("UPDATE opd_data SET subunsurs=? WHERE id=? AND year=?").bind(JSON.stringify(latestObj),params.opdId,year).run();}
+            }catch{}
+            console.error('Google Drive sync gagal:',err.message);
+          }
+        },3);
+        if(typeof ctx?.waitUntil==='function')ctx.waitUntil(doDriveSync());
+        return jsonResponse({status:'success',url:publicUrl,fileName:uploadMeta.fileName,googleDriveId:null,gdriveId:null,syncStatus:'pending',uploadId:uploadMeta.uploadId});
       }
 
       case 'deleteFile': {
@@ -635,11 +798,21 @@ export const onRequest = async ({ request, env }) => {
           try {
             await deleteGoogleDriveFile(env, params.gdriveId);
           } catch (err) {
-            return new Response(JSON.stringify({ status: 'error', message: 'Gagal hapus di Google Drive: ' + err.message }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            console.warn('Gagal hapus Google Drive; R2 tetap dihapus:', err.message);
           }
         }
-
-        return new Response(JSON.stringify({ status: 'success' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        if(params.opdId && params.subunsur && params.paramId && params.level && params.fileUrl){
+          try{
+            const rec=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+            if(rec.results.length){
+              let obj={};try{obj=rec.results[0].subunsurs?JSON.parse(rec.results[0].subunsurs):{};}catch{}
+              const key='files'+String(params.level);
+              const arr=obj?.[params.subunsur]?.[params.paramId]?.[key];
+              if(Array.isArray(arr)){obj[params.subunsur][params.paramId][key]=arr.filter(x=>x.url!==params.fileUrl);const sa=calculateSAFromSubunsur(obj);const sc=countParameterEvidence(obj);const st=sc===countTotalParameters()?'Selesai':(sc>0?'Proses':'Belum');await env.DB.prepare("UPDATE opd_data SET subunsurs=?, sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?").bind(JSON.stringify(obj),sa,sa,st,params.opdId,year).run();}
+            }
+          }catch(err){console.warn('Metadata evidence gagal diperbarui:',err.message);}
+        }
+        return jsonResponse({ status: 'success' });
       }
 
       case 'listBackups': {
