@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -52,60 +53,15 @@
 <!-- ===== VIEW: DASHBOARD (KPI) ===== -->
 <div id="dashboardView" class="view-section hidden">
   <div class="kpi-grid">
-    <div class="kpi" id="kpi-card-1" onclick="showChart('rataRata')">
-      <div class="kpi-header"><span class="kpi-label">Rata‑rata Level</span></div>
-      <div class="kpi-value" id="kpiRata">0.0</div>
-      <div class="kpi-bar"><div class="kpi-fill" id="kpiRataBar" style="width:0%"></div></div>
-      <div class="kpi-note" id="kpiRataNote">0 OPD</div>
-    </div>
-    <div class="kpi" id="kpi-card-2" onclick="showChart('opdLevel3')">
-      <div class="kpi-header"><span class="kpi-label">OPD Level ≥3</span></div>
-      <div class="kpi-value" id="kpiSelesai">0%</div>
-      <div class="kpi-bar"><div class="kpi-fill" id="kpiSelesaiBar" style="width:0%"></div></div>
-      <div class="kpi-note" id="kpiSelesaiNote">0 dari 0 OPD</div>
-    </div>
-    <div class="kpi" id="kpi-card-3" onclick="showChart('qaApip')">
-      <div class="kpi-header"><span class="kpi-label">QA APIP Selesai</span><span class="kpi-icon">✅</span></div>
-      <div class="kpi-value" id="kpiQaApip">0%</div>
-      <div class="kpi-bar"><div class="kpi-fill" id="kpiQaApipBar" style="width:0%"></div></div>
-      <div class="kpi-note" id="kpiQaApipNote">0 dari 0 OPD</div>
-    </div>
-    <div class="kpi" id="kpi-card-4" onclick="showChart('level2')">
-      <div class="kpi-header"><span class="kpi-label">Level ≤2</span></div>
-      <div class="kpi-value" id="kpiRendah">0%</div>
-      <div class="kpi-bar"><div class="kpi-fill" id="kpiRendahBar" style="width:0%"></div></div>
-      <div class="kpi-note" id="kpiRendahNote">0 OPD</div>
-    </div>
-    <div class="kpi" id="kpi-card-5" onclick="showChart('statusSelesai')">
-      <div class="kpi-header"><span class="kpi-label">OPD Selesai (Status)</span></div>
-      <div class="kpi-value" id="kpiStatusSelesai">0%</div>
-      <div class="kpi-bar"><div class="kpi-fill" id="kpiStatusSelesaiBar" style="width:0%"></div></div>
-      <div class="kpi-note" id="kpiStatusSelesaiNote">0 dari 0 OPD</div>
-    </div>
-    <div class="kpi" id="kpi-card-6" onclick="showChart('evidenceLengkap')">
-      <div class="kpi-header"><span class="kpi-label">Evidence Lengkap</span></div>
-      <div class="kpi-value" id="kpiEvidenceLengkap">0%</div>
-      <div class="kpi-bar"><div class="kpi-fill" id="kpiEvidenceLengkapBar" style="width:0%"></div></div>
-      <div class="kpi-note" id="kpiEvidenceLengkapNote">0 dari 0 OPD</div>
-    </div>
-    <div class="kpi" id="kpi-card-7" onclick="showChart('rataMRI')">
-      <div class="kpi-header"><span class="kpi-label">Rata‑rata MRI</span><span class="kpi-icon">📈</span></div>
-      <div class="kpi-value" id="kpiMRI">0.0</div>
-      <div class="kpi-bar"><div class="kpi-fill" id="kpiMRIBar" style="width:0%"></div></div>
-      <div class="kpi-note" id="kpiMRINote">0 OPD terisi</div>
-    </div>
-    <div class="kpi" id="kpi-card-8" onclick="showChart('rtpSelesai')">
-      <div class="kpi-header"><span class="kpi-label">RTP Selesai</span></div>
-      <div class="kpi-value" id="kpiRtpSelesai">0%</div>
-      <div class="kpi-bar"><div class="kpi-fill" id="kpiRtpSelesaiBar" style="width:0%"></div></div>
-      <div class="kpi-note" id="kpiRtpSelesaiNote">0 dari 0 OPD</div>
-    </div>
-    <div class="kpi" id="kpi-card-9" onclick="showChart('rataIEPK')">
-      <div class="kpi-header"><span class="kpi-label">Rata‑rata IEPK</span><span class="kpi-icon">📈</span></div>
-      <div class="kpi-value" id="kpiIEPK">0.0</div>
-      <div class="kpi-bar"><div class="kpi-fill" id="kpiIEPKBar" style="width:0%"></div></div>
-      <div class="kpi-note" id="kpiIEPKNote">0 OPD terisi</div>
-    </div>
+    <div class="kpi" id="kpi-card-1" onclick="showChart('nilaiStrukturProses')"><div class="kpi-header"><span class="kpi-label">Rata-rata Nilai Struktur dan Proses</span></div><div class="kpi-value" id="kpiStrukturProses">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiStrukturProsesBar" style="width:0%"></div></div><div class="kpi-note" id="kpiStrukturProsesNote">0 OPD terisi</div></div>
+    <div class="kpi" id="kpi-card-2" onclick="showChart('nilaiMaturitas')"><div class="kpi-header"><span class="kpi-label">Rata-rata Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</span></div><div class="kpi-value" id="kpiMaturitas">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiMaturitasBar" style="width:0%"></div></div><div class="kpi-note" id="kpiMaturitasNote">0 OPD terisi</div></div>
+    <div class="kpi" id="kpi-card-3" onclick="showChart('rataMRI')"><div class="kpi-header"><span class="kpi-label">Rata-rata MRI</span><span class="kpi-icon">📈</span></div><div class="kpi-value" id="kpiMRI">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiMRIBar" style="width:0%"></div></div><div class="kpi-note" id="kpiMRINote">0 OPD terisi</div></div>
+    <div class="kpi" id="kpi-card-4" onclick="showChart('rataIEPK')"><div class="kpi-header"><span class="kpi-label">Rata-rata IEPK</span><span class="kpi-icon">📈</span></div><div class="kpi-value" id="kpiIEPK">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiIEPKBar" style="width:0%"></div></div><div class="kpi-note" id="kpiIEPKNote">0 OPD terisi</div></div>
+    <div class="kpi" id="kpi-card-5" onclick="showChart('nilaiKapabilitasApip')"><div class="kpi-header"><span class="kpi-label">Rata-rata Nilai Kapabilitas APIP</span></div><div class="kpi-value" id="kpiKapabilitasApip">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiKapabilitasApipBar" style="width:0%"></div></div><div class="kpi-note" id="kpiKapabilitasApipNote">0 OPD terisi</div></div>
+    <div class="kpi" id="kpi-card-6" onclick="showChart('qaApip')"><div class="kpi-header"><span class="kpi-label">QA APIP Selesai</span><span class="kpi-icon">✅</span></div><div class="kpi-value" id="kpiQaApip">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiQaApipBar" style="width:0%"></div></div><div class="kpi-note" id="kpiQaApipNote">0 dari 0 OPD</div></div>
+    <div class="kpi" id="kpi-card-7" onclick="showChart('statusSelesai')"><div class="kpi-header"><span class="kpi-label">OPD Selesai (Status)</span></div><div class="kpi-value" id="kpiStatusSelesai">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiStatusSelesaiBar" style="width:0%"></div></div><div class="kpi-note" id="kpiStatusSelesaiNote">0 dari 0 OPD</div></div>
+    <div class="kpi" id="kpi-card-8" onclick="showChart('rtpSelesai')"><div class="kpi-header"><span class="kpi-label">RTP Selesai</span></div><div class="kpi-value" id="kpiRtpSelesai">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiRtpSelesaiBar" style="width:0%"></div></div><div class="kpi-note" id="kpiRtpSelesaiNote">0 dari 0 OPD</div></div>
+    <div class="kpi" id="kpi-card-9" onclick="showChart('evidenceRtp')"><div class="kpi-header"><span class="kpi-label">Evidence RTP Terisi</span></div><div class="kpi-value" id="kpiEvidenceRtp">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiEvidenceRtpBar" style="width:0%"></div></div><div class="kpi-note" id="kpiEvidenceRtpNote">0 dari 0 OPD</div></div>
   </div>
 </div>
 
@@ -113,8 +69,8 @@
 <div id="opdListView" class="view-section hidden">
   <div class="panel">
     <div class="panel-head"><h2>🏢 Daftar OPD - Tahun <span id="currentYearLabel">2026</span></h2><p class="status-msg" id="saveStatus"></p></div>
-    <p class="desc">Isi data langsung pada tabel. Klik tombol ✎ untuk mengedit 25 subunsur, evidence, dan upload file untuk masing‑masing level.</p>
-    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:160px;">OPD</th><th style="width:80px;">SA</th><th style="min-width:130px;">Evidence</th><th style="min-width:130px;">QA APIP</th><th style="width:110px;">MRI</th><th style="width:110px;">IEPK</th><th style="min-width:120px;">RTP</th><th style="min-width:120px;">Status</th><th style="min-width:150px;">Kelengkapan</th><th style="width:60px;">Detail</th><th style="width:60px;">KK</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
+    <p class="desc">Isi nilai manual langsung pada tabel. Tombol “Evidence Struktur dan Proses” membuka detail 25 subunsur dan upload evidence per level.</p>
+     <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:160px;">OPD</th><th style="min-width:150px;">Nilai Struktur dan Proses</th><th style="min-width:220px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">QA APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">RTP</th><th style="min-width:140px;">Evidence</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="width:78px;">KK SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
     <div class="empty-state" id="emptyState" style="display:none;">Belum ada OPD. Klik <strong>"Tambah OPD"</strong> untuk memulai.</div>
   </div>
 </div>
@@ -332,6 +288,9 @@
     </div>
   </div>
 </div>
+
+<!-- ===== EVIDENCE RTP ===== -->
+<div class="sheet-links-overlay" id="rtpEvidenceModal"><div class="sheet-links-modal" style="max-width:760px;"><div class="sheet-links-header"><h3>📁 EVIDENCE RTP - <span id="rtpEvidenceOpdName"></span></h3><button class="sheet-links-close" id="rtpEvidenceClose" aria-label="Tutup">&times;</button></div><div class="sheet-links-body"><div class="sheet-links-info">File disimpan otomatis pada folder <b>Kertas Kerja RTP / Evidence RTP</b> untuk OPD dan tahun aktif, lalu dicadangkan ke R2 dan Google Drive.</div><div class="sheet-links-status" id="rtpEvidenceStatus"></div><div class="rtp-upload-box"><input id="rtpEvidenceInput" type="file" multiple hidden><button class="rtp-upload-button" id="rtpEvidenceChoose">📤 Pilih File Evidence RTP</button><div class="rtp-upload-help">Maks. 10 MB per file.</div></div><div id="rtpEvidenceList"></div></div><div class="sheet-links-footer"><button id="rtpEvidenceRefresh">↻ Muat Ulang</button><button id="rtpEvidenceCloseFooter">Tutup</button></div></div></div>
 
 <!-- ===== JavaScript Eksternal ===== -->
 <script src="/script.js"></script>
