@@ -179,9 +179,10 @@ async function loadData() {
     rows = [];
     if (Array.isArray(data)) {
       rows = data.map(r => {
-        const row = { ...r, nilaiMaturitas:r.nilaiMaturitas ?? r.nilai_maturitas ?? 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP' };
+        const row = { ...r, nilaiMaturitas:0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
         row.nilaiStrukturProses = calculateSA(row);
         row.sa = row.nilaiStrukturProses;
+        row.nilaiMaturitas = row.nilaiStrukturProses;
         return row;
       });
       rows.sort((a,b)=>{ const x=(parseFloat(b.nilaiMaturitas)||0)-(parseFloat(a.nilaiMaturitas)||0); return x || (parseFloat(b.nilaiStrukturProses)||0)-(parseFloat(a.nilaiStrukturProses)||0); });
@@ -288,51 +289,47 @@ function render() {
   else {
     empty.style.display = 'none';
     tbody.innerHTML = rows.map((r, index) => {
-      const avg = r.sa || 0;
-      let countLengkap = 0;
-      const totalParams = PARAM_LIST.length;
-      if (totalParams > 0) {
+      const struktur = calculateSA(r);
+      r.nilaiStrukturProses = struktur;
+      r.sa = struktur;
+      const totalParams = PARAM_LIST.length || 43;
+      let countEvidence = 0;
+      if (PARAM_LIST.length) {
         PARAM_LIST.forEach(param => {
           const subData = r.subunsurs && r.subunsurs[param.subCode] && r.subunsurs[param.subCode][param.paramId];
           if (subData) {
             let hasFile = false;
             for (let lv = 1; lv <= 5; lv++) {
-              if (subData['files' + lv] && subData['files' + lv].length > 0) { hasFile = true; break; }
+              const files = subData['files' + lv];
+              if (Array.isArray(files) && files.length > 0) { hasFile = true; break; }
             }
-            if (hasFile) countLengkap++;
+            if (hasFile) countEvidence++;
           }
         });
       }
-      let kelengkapanClass, kelengkapanLabel;
-      if (totalParams > 0) {
-        if (countLengkap === totalParams) { kelengkapanClass = 'badge-lengkap'; kelengkapanLabel = `Lengkap (${countLengkap}/${totalParams})`; }
-        else if (countLengkap === 0) { kelengkapanClass = 'badge-kosong'; kelengkapanLabel = `Belum (0/${totalParams})`; }
-        else { kelengkapanClass = 'badge-sebagian'; kelengkapanLabel = `Sebagian (${countLengkap}/${totalParams})`; }
-      } else {
-        kelengkapanClass = 'badge-kosong'; kelengkapanLabel = 'Belum';
-      }
-      // PERUBAHAN KEAMANAN: gunakan escapeHtml untuk nama OPD
+      const strukturStatus = countEvidence === totalParams ? 'Selesai' : (countEvidence > 0 ? 'Proses' : 'Belum');
+      r.strukturProsesStatus = strukturStatus;
+      let badgeClass = 'badge-kosong';
+      let badgeLabel = `Belum (${countEvidence}/${totalParams})`;
+      if (countEvidence === totalParams) { badgeClass = 'badge-lengkap'; badgeLabel = `Lengkap (${countEvidence}/${totalParams})`; }
+      else if (countEvidence > 0) { badgeClass = 'badge-sebagian'; badgeLabel = `Sebagian (${countEvidence}/${totalParams})`; }
       return `<tr>
         <td style="text-align:center;">${index + 1}</td>
-        <td>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-weight:500;">${escapeHtml(r.opd || 'Tanpa Nama')}</span>
-            <button class="btn-edit-name" data-id="${r.id}" title="Ubah Nama" style="background:none; border:none; cursor:pointer; font-size:18px; padding:0;">✏️</button>
-          </div>
-        </td>
-        <td><input class="auto-structure-value" type="number" value="${Number(r.nilaiStrukturProses||0).toFixed(2)}" readonly aria-label="Nilai Struktur dan Proses otomatis" title="Dihitung otomatis dari level yang dipilih pada 43 parameter"></td>
-        <td>${selectHtml(r.id,'evidence',r.evidence,['Lengkap','Sebagian','Belum'])}</td>
-        <td><span class="badge ${kelengkapanClass}" title="Jumlah parameter yang sudah memiliki evidence">${kelengkapanLabel}</span></td>
-        <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.nilaiMaturitas||0).toFixed(2)}" data-id="${r.id}" data-field="nilaiMaturitas"></td>
+        <td><div style="display:flex; align-items:center; gap:8px;"><span style="font-weight:500;">${escapeHtml(r.opd || 'Tanpa Nama')}</span><button class="btn-edit-name" data-id="${r.id}" title="Ubah Nama" style="background:none;border:none;cursor:pointer;font-size:18px;padding:0;">✏️</button></div></td>
+        <td><input class="auto-maturity-value" type="number" value="${Number(struktur).toFixed(2)}" readonly aria-label="Nilai Maturitas otomatis" title="Otomatis dari level 43 parameter"></td>
         <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.mri||0).toFixed(2)}" data-id="${r.id}" data-field="mri"></td>
         <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.iepk||0).toFixed(2)}" data-id="${r.id}" data-field="iepk"></td>
         <td><input type="number" step="0.01" min="0" max="5" value="${Number(r.nilaiKapabilitasApip||0).toFixed(2)}" data-id="${r.id}" data-field="nilaiKapabilitasApip"></td>
         <td>${selectHtml(r.id,'qaApip',r.qaApip,['Selesai','Proses','Belum'])}</td>
         <td>${selectHtml(r.id,'status',r.status,['Selesai','Proses','Belum'])}</td>
+        <td>${selectHtml(r.id,'evidence',r.evidence,['Lengkap','Sebagian','Belum'])}</td>
         <td>${selectHtml(r.id,'rtp',r.rtp,['Selesai','Belum'])}</td>
+        <td><input class="auto-structure-value" type="number" value="${Number(struktur).toFixed(2)}" readonly aria-label="Nilai Struktur dan Proses otomatis" title="Otomatis dari 43 parameter"></td>
+        <td><span class="badge ${strukturStatus==='Selesai'?'badge-lengkap':(strukturStatus==='Proses'?'badge-sebagian':'badge-kosong')}">${strukturStatus}</span></td>
+        <td><span class="badge ${badgeClass}" title="Jumlah parameter dengan evidence pada 43 parameter">${badgeLabel}</span></td>
         <td><button class="btn-detail" data-id="${r.id}" title="Evidence Struktur dan Proses">📁</button></td>
-        <td><button class="btn-kk" data-id="${r.id}" title="Buka KK SPIP">📊</button></td>
-        <td><button class="btn-kk-rtp" data-id="${r.id}" title="Buka KK RTP">📋</button></td>
+        <td><button class="btn-kk" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja SPIP">📊</button></td>
+        <td><button class="btn-kk-rtp" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja RTP">📋</button></td>
         <td><button class="btn-rtp-evidence" data-id="${r.id}" title="Upload Evidence RTP">📤</button><div class="rtp-evidence-count">${Array.isArray(r.rtpEvidence)?r.rtpEvidence.length:0}</div></td>
         <td><button class="del-btn" data-id="${r.id}" title="Hapus">&times;</button></td>
       </tr>`;
@@ -1089,6 +1086,10 @@ document.getElementById('modalSave').addEventListener('click', async function() 
   // Nilai Struktur dan Proses selalu dihitung ulang dari 43 parameter. Tidak boleh diinput manual.
   row.nilaiStrukturProses = calculateSA(row);
   row.sa = row.nilaiStrukturProses;
+  row.nilaiMaturitas = row.nilaiStrukturProses;
+  let strukturEvidenceCount = 0;
+  PARAM_LIST.forEach(param => { const sd=row.subunsurs?.[param.subCode]?.[param.paramId]; if(sd){ for(let lv=1;lv<=5;lv++){ if(Array.isArray(sd['files'+lv]) && sd['files'+lv].length){ strukturEvidenceCount++; break; } } } });
+  row.strukturProsesStatus = strukturEvidenceCount === PARAM_LIST.length ? 'Selesai' : (strukturEvidenceCount > 0 ? 'Proses' : 'Belum');
   const modalStatus = document.getElementById('modalSaveStatus');
   modalStatus.style.display = 'block';
   modalStatus.style.color = '#1e40af';
@@ -1118,7 +1119,7 @@ document.getElementById('addOpdOk').addEventListener('click', async function() {
   btnOk.disabled = true;
   btnOk.textContent = '⏳ Menambahkan...';
   try {
-    const newOpd = { id:'r'+Math.random().toString(36).slice(2,9), opd:'OPD Baru', sa:0, nilaiStrukturProses:0, nilaiMaturitas:0, nilaiKapabilitasApip:0, evidence:'Belum', qaApip:'Belum', mri:0, iepk:0, rtp:'Belum', status:'Belum', subunsurs:{}, kkData:{}, kkRtpData:{}, rtpEvidence:[] };
+    const newOpd = { id:'r'+Math.random().toString(36).slice(2,9), opd:'OPD Baru', sa:0, nilaiStrukturProses:0, nilaiMaturitas:0, nilaiKapabilitasApip:0, evidence:'Belum', qaApip:'Belum', mri:0, iepk:0, rtp:'Belum', status:'Belum', strukturProsesStatus:'Belum', subunsurs:{}, kkData:{}, kkRtpData:{}, rtpEvidence:[] };
     Object.keys(SUBUNSUR_DATA).forEach(subCode => {
       newOpd.subunsurs[subCode] = {};
       SUBUNSUR_DATA[subCode].params.forEach(param => { newOpd.subunsurs[subCode][param.id] = { level: 0 }; });
