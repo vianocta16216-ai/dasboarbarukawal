@@ -8,12 +8,11 @@ const UNSUR_MAP = {
   '5': '5. EVALUASI DAN PEMANTAUAN'
 };
 
-const FIELD_MAP = {
-  qaApip: 'qa_apip'
-};
+const FIELD_MAP = { qaApip:'qa_apip', nilaiStrukturProses:'nilai_struktur_proses', nilaiMaturitas:'nilai_maturitas', nilaiKapabilitasApip:'nilai_kapabilitas_apip', mri:'mri', iepk:'iepk', evidence:'evidence', rtp:'rtp', status:'status' };
 
 const DB_FILE_NAME = 'SAKIP_DB.json';
-const DEFAULT_KK_TEMPLATE_SPREADSHEET_ID = '1ozFUON9VcxDZdgZ-v4HvhP54ulPxkqoRvV2G3SNlolE';
+const DEFAULT_KK_TEMPLATE_SPREADSHEET_ID='1ozFUON9VcxDZdgZ-v4HvhP54ulPxkqoRvV2G3SNlolE';
+const DEFAULT_RTP_TEMPLATE_SPREADSHEET_ID='1WO_caRMgUjTlUcf6SoLpG242vRTOhe1Euz9UI-AuyJY';
 const KK_TEMPLATE_SHEET_NAMES = [
   'KKLEAD_SPIP',
   'KKLEAD I_PEMDA',
@@ -35,6 +34,17 @@ const KK_TEMPLATE_SHEET_NAMES = [
   'KK 7 INSP',
   'KK 8 INSP'
 ];
+
+let schemaReady=false;
+async function ensureOpdSchema(env){
+  if(schemaReady)return;
+  const info=await env.DB.prepare("PRAGMA table_info(opd_data)").all();
+  const cols=new Set((info.results||[]).map(x=>x.name));
+  const adds=[['nilai_struktur_proses','REAL NOT NULL DEFAULT 0'],['nilai_maturitas','REAL NOT NULL DEFAULT 0'],['nilai_kapabilitas_apip','REAL NOT NULL DEFAULT 0'],['kk_rtp_data',"TEXT NOT NULL DEFAULT '{}'"],['rtp_evidence',"TEXT NOT NULL DEFAULT '[]'"]];
+  for(const [name,type] of adds)if(!cols.has(name))await env.DB.prepare(`ALTER TABLE opd_data ADD COLUMN ${name} ${type}`).run();
+  if(cols.has('sa')&&!cols.has('nilai_struktur_proses'))await env.DB.prepare("UPDATE opd_data SET nilai_struktur_proses=CAST(COALESCE(sa,0) AS REAL) WHERE CAST(COALESCE(sa,0) AS REAL)>0").run();
+  schemaReady=true;
+}
 
 // ============ KEAMANAN: SANITASI & RATE LIMITING ============
 function sanitizeString(str) {
@@ -116,6 +126,13 @@ function extractSpreadsheetId(value) {
   return m ? m[1] : raw;
 }
 
+function normalizeWorkbookData(raw,fallbackSheets=[]){
+  if(!raw)return{version:1,workbookSpreadsheetId:null,workbookUrl:null,workbookName:null,templateSpreadsheetId:null,sheets:fallbackSheets};
+  let d=raw;if(typeof d==='string'){try{d=JSON.parse(d)}catch{return{version:1,workbookSpreadsheetId:null,workbookUrl:null,workbookName:null,templateSpreadsheetId:null,sheets:fallbackSheets}}}
+  if(!d||typeof d!=='object'||!d.workbookSpreadsheetId)return{version:1,workbookSpreadsheetId:null,workbookUrl:null,workbookName:null,templateSpreadsheetId:d?.templateSpreadsheetId||null,sheets:Array.isArray(d?.sheets)?d.sheets:fallbackSheets};
+  return{version:d.version||1,workbookSpreadsheetId:String(d.workbookSpreadsheetId),workbookUrl:d.workbookUrl||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(d.workbookSpreadsheetId)}/edit`,workbookName:d.workbookName||null,templateSpreadsheetId:d.templateSpreadsheetId||null,sheets:Array.isArray(d.sheets)?d.sheets:fallbackSheets};
+}
+
 function normalizeKkData(raw) {
   if (!raw) return { version: 3, workbookSpreadsheetId: null, workbookUrl: null, workbookName: null, sheets: KK_TEMPLATE_SHEET_NAMES };
   let data = raw;
@@ -192,6 +209,26 @@ async function ensureKkSpreadsheet(env, params) {
     sheets: KK_TEMPLATE_SHEET_NAMES
   };
 }
+
+async function ensureRtpSpreadsheet(env,params){
+  if(!env.GOOGLE_DRIVE_CLIENT_ID||!env.GOOGLE_DRIVE_CLIENT_SECRET||!env.GOOGLE_DRIVE_REFRESH_TOKEN)throw new Error('Google OAuth untuk KK RTP belum dikonfigurasi');
+  if(!env.GOOGLE_DRIVE_FOLDER_ID)throw new Error('GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi');
+  const accessToken=await getGoogleAccessToken(env);
+  const templateId=extractSpreadsheetId(env.GOOGLE_SHEETS_RTP_TEMPLATE_ID||DEFAULT_RTP_TEMPLATE_SPREADSHEET_ID);
+  const tf=await getDriveFile(accessToken,templateId);
+  if(!tf||tf.trashed)throw new Error(`Template KK RTP tidak dapat diakses. Periksa ID template (${templateId}).`);
+  if(tf.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error(`ID template KK RTP ${templateId} bukan Google Spreadsheet.`);
+  const yearValue=params.year||'2026',opdName=safeDriveName(params.opd||'OPD Baru');
+  const root=await getOrCreateFolder(accessToken,env.GOOGLE_DRIVE_FOLDER_ID,'Kertas Kerja Spreadsheet');
+  const yearFolder=await getOrCreateFolder(accessToken,root,String(yearValue));
+  const opdFolder=await getOrCreateFolder(accessToken,yearFolder,opdName);
+  const rtpFolder=await getOrCreateFolder(accessToken,opdFolder,'Kertas Kerja RTP');
+  const cur=normalizeWorkbookData(params.currentKkRtpData,[]);
+  if(cur.workbookSpreadsheetId){const ex=await getDriveFile(accessToken,cur.workbookSpreadsheetId);if(ex&&!ex.trashed)return{...cur,version:1,templateSpreadsheetId:templateId,workbookUrl:cur.workbookUrl||ex.webViewLink,workbookName:cur.workbookName||ex.name};}
+  const workbookName=`${opdName} - Kertas Kerja RTP - ${yearValue}`,copied=await copyDriveFile(accessToken,templateId,workbookName,rtpFolder);
+  return{version:1,templateSpreadsheetId:templateId,workbookSpreadsheetId:copied.id,workbookUrl:copied.webViewLink||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(copied.id)}/edit`,workbookName:copied.name||workbookName,sheets:[]};
+}
+function decodeBase64File(data,maxMb=10){const b=atob(data||''),bytes=new Uint8Array(b.length);for(let i=0;i<b.length;i++)bytes[i]=b.charCodeAt(i);if(bytes.length/1024/1024>maxMb)throw new Error(`File > ${maxMb}MB, terlalu besar!`);return bytes;}
 
 function calculateSAFromSubunsur(subunsurs) {
   if (!subunsurs) return 0;
@@ -327,7 +364,7 @@ export const onRequest = async ({ request, env }) => {
   const SENSITIVE_ACTIONS = [
     'verifyAccess', 'verifyDelete', 'addOpd', 'saveData', 'saveField',
     'uploadFile', 'deleteFile', 'deleteOpd', 'addYear', 'deleteYear',
-    'createBackup', 'restoreBackup', 'deleteBackup'
+    'createBackup', 'restoreBackup', 'deleteBackup', 'createRtpKkSheets', 'saveRtpKkData', 'uploadRtpEvidence', 'deleteRtpEvidence'
   ];
 
   if (request.method === 'POST') {
@@ -345,6 +382,7 @@ export const onRequest = async ({ request, env }) => {
   }
 
   const year = params.year || '2026';
+  await ensureOpdSchema(env);
 
   // Rate limiting untuk aksi login
   if (action === 'verifyAccess' || action === 'verifyDelete') {
@@ -394,14 +432,9 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: params.password === DELETE_PASSWORD ? 'success' : 'error', message: params.password === DELETE_PASSWORD ? 'Password hapus benar' : 'Password hapus salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
       case 'getData': {
-        const { results } = await env.DB.prepare("SELECT * FROM opd_data WHERE year = ? ORDER BY CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
-        const mapped = results.map(r => {
-          const subunsurs = r.subunsurs ? JSON.parse(r.subunsurs) : {};
-          const kkData = normalizeKkData(r.kk_data);
-          const sa = calculateSAFromSubunsur(subunsurs);
-          return { ...r, subunsurs, kkData, qaApip: r.qa_apip || 'Belum', sa: sa };
-        });
-        return new Response(JSON.stringify(mapped), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        const {results}=await env.DB.prepare("SELECT * FROM opd_data WHERE year=? ORDER BY CAST(nilai_maturitas AS REAL) DESC, CAST(nilai_struktur_proses AS REAL) DESC, CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
+        const mapped=results.map(r=>{const subunsurs=r.subunsurs?JSON.parse(r.subunsurs):{};const kkData=normalizeKkData(r.kk_data);const kkRtpData=normalizeWorkbookData(r.kk_rtp_data,[]);let rtpEvidence=[];try{rtpEvidence=r.rtp_evidence?JSON.parse(r.rtp_evidence):[]}catch{}return{...r,subunsurs,kkData,kkRtpData,rtpEvidence,qaApip:r.qa_apip||'Belum',nilaiStrukturProses:Number(r.nilai_struktur_proses||r.sa||0),nilaiMaturitas:Number(r.nilai_maturitas||0),nilaiKapabilitasApip:Number(r.nilai_kapabilitas_apip||0)};});
+        return new Response(JSON.stringify(mapped),{status:200,headers:{'Content-Type':'application/json'}});
       }
 
       case 'addOpd': {
@@ -409,27 +442,23 @@ export const onRequest = async ({ request, env }) => {
         const opd = sanitizeString(params.opd || 'OPD Baru');
         const subunsurs = params.subunsurs || {};
         const sa = calculateSAFromSubunsur(subunsurs);
-        await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year, kk_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .bind(id, opd, sa, params.evidence||'Belum', params.qaApip||'Belum', parseFloat(params.mri)||0, parseFloat(params.iepk)||0, params.rtp||'Belum', params.status||'Belum', JSON.stringify(subunsurs), year, params.kkData || '{}').run();
+        const nilaiStrukturProses=Number(params.nilaiStrukturProses??params.nilai_struktur_proses??sa)||0,nilaiMaturitas=Number(params.nilaiMaturitas??params.nilai_maturitas??0)||0,nilaiKapabilitasApip=Number(params.nilaiKapabilitasApip??params.nilai_kapabilitas_apip??0)||0;
+        await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id,opd,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,evidence,qa_apip,mri,iepk,rtp,status,subunsurs,year,kk_data,kk_rtp_data,rtp_evidence) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,opd,sa,nilaiStrukturProses,nilaiMaturitas,nilaiKapabilitasApip,params.evidence||'Belum',params.qaApip||'Belum',parseFloat(params.mri)||0,parseFloat(params.iepk)||0,params.rtp||'Belum',params.status||'Belum',JSON.stringify(subunsurs),year,params.kkData||'{}',params.kkRtpData||'{}',JSON.stringify(params.rtpEvidence||[])).run();
         return new Response(JSON.stringify({ status: 'success', message: 'OPD berhasil ditambahkan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
       case 'saveData': {
         const rows = JSON.parse(params.rows);
         for (const row of rows) {
-          const subunsurs = row.subunsurs || {};
-          const sa = calculateSAFromSubunsur(subunsurs);
-          const kkData = row.kkData || {};
-          await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, evidence, qa_apip, mri, iepk, rtp, status, subunsurs, year, kk_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(row.id, sanitizeString(row.opd||''), sa, row.evidence||'Belum', row.qaApip||'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', JSON.stringify(subunsurs), year, JSON.stringify(kkData)).run();
+          const subunsurs=row.subunsurs||{},sa=calculateSAFromSubunsur(subunsurs),kkData=row.kkData||{},kkRtpData=row.kkRtpData||{},rtpEvidence=Array.isArray(row.rtpEvidence)?row.rtpEvidence:[];
+          await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id,opd,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,evidence,qa_apip,mri,iepk,rtp,status,subunsurs,year,kk_data,kk_rtp_data,rtp_evidence) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(row.id,sanitizeString(row.opd||''),sa,Number(row.nilaiStrukturProses??row.nilai_struktur_proses??sa)||0,Number(row.nilaiMaturitas??row.nilai_maturitas??0)||0,Number(row.nilaiKapabilitasApip??row.nilai_kapabilitas_apip??0)||0,row.evidence||'Belum',row.qaApip||'Belum',parseFloat(row.mri)||0,parseFloat(row.iepk)||0,row.rtp||'Belum',row.status||'Belum',JSON.stringify(subunsurs),year,JSON.stringify(kkData),JSON.stringify(kkRtpData),JSON.stringify(rtpEvidence)).run();
         }
         return new Response(JSON.stringify({ status: 'success', message: 'Data tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
       case 'saveField': {
         const { opdId, field, value } = params;
-        const dbField = FIELD_MAP[field] || field;
-        await env.DB.prepare(`UPDATE opd_data SET ${dbField} = ? WHERE id = ? AND year = ?`).bind(value, opdId, year).run();
+        const dbField=FIELD_MAP[field];if(!dbField)throw new Error('Field tidak diizinkan: '+field);const cleanValue=['nilaiStrukturProses','nilaiMaturitas','nilaiKapabilitasApip','mri','iepk'].includes(field)?Math.max(0,Math.min(5,Number(value)||0)):String(value||'');await env.DB.prepare(`UPDATE opd_data SET ${dbField} = ? WHERE id = ? AND year = ?`).bind(cleanValue,opdId,year).run();
         return new Response(JSON.stringify({ status: 'success', message: 'Field tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
@@ -459,6 +488,12 @@ export const onRequest = async ({ request, env }) => {
         return new Response(JSON.stringify({ status: 'success', message: 'Link spreadsheet tersimpan', kkData: normalized }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
+      case 'getRtpKkSheets': { const {results}=await env.DB.prepare("SELECT kk_rtp_data FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();if(!results.length)throw new Error('OPD tidak ditemukan');return new Response(JSON.stringify({status:'success',kkRtpData:normalizeWorkbookData(results[0].kk_rtp_data,[])}),{status:200,headers:{'Content-Type':'application/json'}}); }
+      case 'createRtpKkSheets': { const {results}=await env.DB.prepare("SELECT kk_rtp_data,opd FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();if(!results.length)throw new Error('OPD tidak ditemukan');const cur=normalizeWorkbookData(results[0].kk_rtp_data,[]);const kkRtpData=await ensureRtpSpreadsheet(env,{...params,opd:params.opd||results[0].opd,currentKkRtpData:cur});await env.DB.prepare("UPDATE opd_data SET kk_rtp_data=? WHERE id=? AND year=?").bind(JSON.stringify(kkRtpData),params.opdId,year).run();return new Response(JSON.stringify({status:'success',kkRtpData}),{status:200,headers:{'Content-Type':'application/json'}}); }
+      case 'saveRtpKkData': { const kkRtpData=normalizeWorkbookData(params.kkRtpData,[]);await env.DB.prepare("UPDATE opd_data SET kk_rtp_data=? WHERE id=? AND year=?").bind(JSON.stringify(kkRtpData),params.opdId,year).run();return new Response(JSON.stringify({status:'success',kkRtpData}),{status:200,headers:{'Content-Type':'application/json'}}); }
+      case 'getRtpEvidence': { const {results}=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();if(!results.length)throw new Error('OPD tidak ditemukan');let list=[];try{list=results[0].rtp_evidence?JSON.parse(results[0].rtp_evidence):[]}catch{}return new Response(JSON.stringify({status:'success',rtpEvidence:list}),{status:200,headers:{'Content-Type':'application/json'}}); }
+      case 'uploadRtpEvidence': { const bytes=decodeBase64File(params.fileData,10),safeOpd=sanitizeString(params.opdName).substring(0,80)||'OPD',safeFileName=sanitizeString(params.fileName).substring(0,150)||'evidence',filePath=`kawal_spip/${year}/${safeOpd}/Kertas Kerja RTP/Evidence RTP/${safeFileName}`,fileType=params.fileType||'application/octet-stream';await env.EVIDENCE_BUCKET.put(filePath,bytes,{httpMetadata:{contentType:fileType}});let gdriveId=null;if(env.GOOGLE_DRIVE_CLIENT_ID&&env.GOOGLE_DRIVE_CLIENT_SECRET&&env.GOOGLE_DRIVE_REFRESH_TOKEN&&env.GOOGLE_DRIVE_FOLDER_ID){try{gdriveId=await uploadToGoogleDrive(env,filePath,safeFileName,bytes,env.GOOGLE_DRIVE_FOLDER_ID)}catch(err){console.error('Gagal upload Evidence RTP:',err.message);}}const publicUrl=`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;const {results}=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();if(!results.length)throw new Error('OPD tidak ditemukan');let list=[];try{list=results[0].rtp_evidence?JSON.parse(results[0].rtp_evidence):[]}catch{}list.push({url:publicUrl,fileName:safeFileName,gdriveId,uploadedAt:new Date().toLocaleString('id-ID')});await env.DB.prepare("UPDATE opd_data SET rtp_evidence=? WHERE id=? AND year=?").bind(JSON.stringify(list),params.opdId,year).run();return new Response(JSON.stringify({status:'success',url:publicUrl,fileName:safeFileName,gdriveId,rtpEvidence:list}),{status:200,headers:{'Content-Type':'application/json'}}); }
+      case 'deleteRtpEvidence': { const cleanUrl=String(params.fileUrl||'').split('?')[0],marker='r2.dev/',idx=cleanUrl.indexOf(marker);if(idx!==-1)await env.EVIDENCE_BUCKET.delete(decodeURIComponent(cleanUrl.substring(idx+marker.length)));if(params.gdriveId){try{await deleteGoogleDriveFile(env,params.gdriveId)}catch(err){return new Response(JSON.stringify({status:'error',message:'Gagal hapus di Google Drive: '+err.message}),{status:200,headers:{'Content-Type':'application/json'}})}}const {results}=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();if(!results.length)throw new Error('OPD tidak ditemukan');let list=[];try{list=results[0].rtp_evidence?JSON.parse(results[0].rtp_evidence):[]}catch{}list=list.filter(x=>x.url!==params.fileUrl);await env.DB.prepare("UPDATE opd_data SET rtp_evidence=? WHERE id=? AND year=?").bind(JSON.stringify(list),params.opdId,year).run();return new Response(JSON.stringify({status:'success',rtpEvidence:list}),{status:200,headers:{'Content-Type':'application/json'}}); }
       case 'deleteOpd': {
         if (params.opdId === 'all') await env.DB.prepare("DELETE FROM opd_data WHERE year = ?").bind(year).run();
         else await env.DB.prepare("DELETE FROM opd_data WHERE id = ?").bind(params.opdId).run();
@@ -497,7 +532,7 @@ export const onRequest = async ({ request, env }) => {
         }
 
         const publicUrl = `https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
-        return new Response(JSON.stringify({ url: publicUrl, fileName, googleDriveId: gdriveId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ url: publicUrl, fileName, googleDriveId: gdriveId, gdriveId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
       case 'deleteFile': {
