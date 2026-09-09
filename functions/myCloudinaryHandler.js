@@ -601,10 +601,11 @@ export const onRequest = async ({ request, env, ctx }) => {
 
   function getFolderStructure(params) {
     const { fileData, fileName, opdName, subunsur, paramId, level, fileType } = params;
+    let bytes = null;
     if (fileData) {
       const binaryString = atob(fileData);
       const len = binaryString.length;
-      const bytes = new Uint8Array(len);
+      bytes = new Uint8Array(len);
       for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
       if (bytes.length / 1024 / 1024 > 10) throw new Error('File > 10MB, terlalu besar!');
     }
