@@ -1762,3 +1762,54 @@ tbody td:nth-child(2){box-shadow:2px 0 8px rgba(15,23,42,.05)}
 .kkpm-overview-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#7c3aed;font-weight:900}
 .kkpm-overview-card b{font-size:13px;color:#0f172a}.kkpm-overview-card small{font-size:10px;line-height:1.35;color:#64748b}
 @media(max-width:800px){.kkpm-overview{grid-template-columns:1fr}}
+
+
+/* ===== PM SPIP TERINTEGRASI — COMPACT SPREADSHEET UI ===== */
+.kkpm-modal{width:min(1380px,97vw);height:min(90vh,820px);border-radius:14px}
+.kkpm-toolbar{padding:7px 12px;gap:8px}
+#kkPmSearch{width:min(320px,60vw);height:32px;font-size:12px}
+.kkpm-download,.kkpm-save{height:32px;padding:0 10px;font-size:11px;border-radius:8px}
+.kkpm-status{margin:7px 12px 0;padding:7px 9px;font-size:11px}
+.kkpm-tabs{gap:4px;padding:6px 10px}
+.kkpm-tab{padding:5px 8px;font-size:10px;border-radius:8px}
+.kkpm-tab small{display:block;font-size:8px;opacity:.7;margin-top:1px}
+.kkpm-sheet-meta{padding:5px 10px;font-size:10px;gap:9px}
+.kkpm-formula-count{color:#7c3aed;font-weight:800}
+.kkpm-formula-bar{height:34px;display:flex;align-items:center;gap:7px;padding:4px 10px;border-bottom:1px solid #e5e7eb;background:#fff}
+.kkpm-formula-bar span{width:48px;text-align:center;font:700 10px ui-monospace,monospace;color:#475569;background:#f1f5f9;border:1px solid #dbe2ea;border-radius:5px;padding:5px 3px}
+#kkPmFormulaBar{flex:1;height:26px;border:1px solid #dbe2ea;border-radius:6px;padding:0 8px;font:10px ui-monospace,monospace;color:#334155;background:#f8fafc;outline:none}
+.kkpm-grid{font-size:10px}
+.kkpm-grid th,.kkpm-grid td{border-right:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb}
+.kkpm-grid thead th{height:24px;min-width:72px;font-size:9px}
+.kkpm-grid .kkpm-corner,.kkpm-grid .kkpm-rownum{min-width:34px;width:34px}
+.kkpm-grid .kkpm-rownum{font-size:9px;padding:4px}
+.kkpm-cell{width:110px;min-height:24px;height:24px;padding:3px 5px;font-size:10px;line-height:1.15}
+.kkpm-input-cell .kkpm-cell{background:#fff}
+.kkpm-formula-cell .kkpm-cell{background:#f5f3ff;color:#4c1d95;font-weight:700;cursor:default}
+.kkpm-formula-cell .kkpm-cell[readonly]{box-shadow:none}
+.kkpm-footer{padding:7px 10px;font-size:10px}
+@media(max-width:800px){.kkpm-modal{width:99vw;height:94vh}.kkpm-cell{width:92px}.kkpm-toolbar-left,.kkpm-toolbar-right{gap:6px}.kkpm-footer{flex-direction:row;align-items:center}}
+
+/* ===== PM SPIP TERINTEGRASI — COMPACT SPREADSHEET UI V2 ===== */
+.kkpm-modal{width:min(1380px,97vw);height:min(90vh,820px);border-radius:14px}
+.kkpm-toolbar{padding:7px 12px;gap:8px}
+#kkPmSearch{width:min(320px,60vw);height:32px;font-size:12px}
+.kkpm-download,.kkpm-save{height:32px;padding:0 10px;font-size:11px;border-radius:8px}
+.kkpm-status{margin:7px 12px 0;padding:7px 9px;font-size:11px}
+.kkpm-tabs{gap:4px;padding:6px 10px}
+.kkpm-tab{padding:5px 8px;font-size:10px;border-radius:8px}
+.kkpm-tab small{display:block;font-size:8px;opacity:.7;margin-top:1px}
+.kkpm-sheet-meta{padding:5px 10px;font-size:10px;gap:9px}
+.kkpm-formula-count{color:#7c3aed;font-weight:800}
+.kkpm-formula-bar{height:34px;display:flex;align-items:center;gap:7px;padding:4px 10px;border-bottom:1px solid #e5e7eb;background:#fff}
+.kkpm-formula-bar span{width:48px;text-align:center;font:700 10px ui-monospace,monospace;color:#475569;background:#f1f5f9;border:1px solid #dbe2ea;border-radius:5px;padding:5px 3px}
+#kkPmFormulaBar{flex:1;height:26px;border:1px solid #dbe2ea;border-radius:6px;padding:0 8px;font:10px ui-monospace,monospace;color:#334155;background:#f8fafc;outline:none}
+.kkpm-grid{font-size:10px}
+.kkpm-grid thead th{height:24px;min-width:72px;font-size:9px}
+.kkpm-grid .kkpm-corner,.kkpm-grid .kkpm-rownum{min-width:34px;width:34px}
+.kkpm-grid .kkpm-rownum{font-size:9px;padding:4px}
+.kkpm-cell{width:110px;min-height:24px;height:24px;padding:3px 5px;font-size:10px;line-height:1.15}
+.kkpm-formula-cell .kkpm-cell{background:#f5f3ff;color:#4c1d95;font-weight:700;cursor:default}
+.kkpm-formula-cell .kkpm-cell[readonly]{box-shadow:none}
+.kkpm-footer{padding:7px 10px;font-size:10px}
+@media(max-width:800px){.kkpm-modal{width:99vw;height:94vh}.kkpm-cell{width:92px}}
