@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kawal-spip-google-drive-backup",
+  "main": "google-drive-backup-worker.js",
+  "compatibility_date": "2026-09-10",
+  "workers_dev": true,
+
+  "queues": {
+    "consumers": [
+      {
+        "queue": "kawal-spip-drive-backup",
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        "max_retries": 20,
+        "retry_delay": 60,
+        "max_concurrency": 3,
+        "dead_letter_queue": "kawal-spip-drive-backup-dlq"
+      }
+    ]
+  },
+
+  "r2_buckets": [
+    {
+      "binding": "EVIDENCE_BUCKET",
+      "bucket_name": "GANTI_NAMA_BUCKET_R2_ANDA"
+    }
+  ],
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "GANTI_NAMA_D1_ANDA",
+      "database_id": "GANTI_DATABASE_ID_D1_ANDA"
+    }
+  ]
+}
