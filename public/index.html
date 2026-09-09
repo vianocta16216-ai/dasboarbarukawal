@@ -70,7 +70,7 @@
   <div class="panel">
     <div class="panel-head"><h2>🏢 Daftar OPD - Tahun <span id="currentYearLabel">2026</span></h2><p class="status-msg" id="saveStatus"></p></div>
     <p class="desc">Nilai Maturitas diinput manual. Nilai Struktur dan Proses dihitung otomatis dari level 43 parameter. Status Struktur dan Proses serta Kelengkapannya mengikuti progres evidence 43 parameter.</p>
-    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">QA APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="width:78px;">KK SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">QA APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="width:78px;">KK SPIP</th><th style="width:96px;">KK PM</th><th style="width:78px;">KK RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
     <div class="empty-state" id="emptyState" style="display:none;">Belum ada OPD. Klik <strong>"Tambah OPD"</strong> untuk memulai.</div>
   </div>
 </div>
@@ -289,10 +289,41 @@
   </div>
 </div>
 
+<!-- ===== KERTAS KERJA PM DISPARPORA ===== -->
+<div class="sheet-links-overlay" id="kkPmModal">
+  <div class="kkpm-modal">
+    <div class="sheet-links-header">
+      <div>
+        <h3>🗂️ KERTAS KERJA PM DISPARPORA - <span id="kkPmOpdName"></span></h3>
+        <div id="kkPmSubtitle" class="kkpm-subtitle"></div>
+      </div>
+      <button class="sheet-links-close" id="kkPmClose" aria-label="Tutup">&times;</button>
+    </div>
+    <div class="kkpm-toolbar">
+      <div class="kkpm-toolbar-left">
+        <input id="kkPmSearch" type="search" placeholder="Cari nama sheet atau isi sel...">
+        <span id="kkPmStats" class="kkpm-stats"></span>
+      </div>
+      <div class="kkpm-toolbar-right">
+        <a class="kkpm-download" href="/Kertas-Kerja-PM-DISPARPORA-2025.xlsx" download>⬇️ Unduh template Excel</a>
+        <button type="button" id="kkPmSave" class="kkpm-save">💾 Simpan Perubahan</button>
+      </div>
+    </div>
+    <div id="kkPmStatus" class="kkpm-status"></div>
+    <div class="kkpm-tabs" id="kkPmTabs"></div>
+    <div class="kkpm-sheet-meta" id="kkPmSheetMeta"></div>
+    <div class="kkpm-grid-wrap"><table class="kkpm-grid"><thead id="kkPmHead"></thead><tbody id="kkPmBody"></tbody></table></div>
+    <div class="kkpm-footer">
+      <span>Template diadopsi dari <b>KK PM DISPARPORA 2025</b>. Perubahan disimpan khusus untuk OPD + tahun aktif.</span>
+      <button type="button" id="kkPmCloseFooter">Tutup</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== EVIDENCE RTP ===== -->
 <div class="sheet-links-overlay" id="rtpEvidenceModal"><div class="sheet-links-modal" style="max-width:760px;"><div class="sheet-links-header"><h3>📁 EVIDENCE RTP - <span id="rtpEvidenceOpdName"></span></h3><button class="sheet-links-close" id="rtpEvidenceClose" aria-label="Tutup">&times;</button></div><div class="sheet-links-body"><div class="sheet-links-info">Tentukan sendiri nama folder Evidence RTP terlebih dahulu. Saat file diunggah, folder dengan nama tersebut otomatis dibuat/dituju di R2 dan Google Drive pada OPD dan tahun aktif.</div><div class="sheet-links-status" id="rtpEvidenceStatus"></div><div class="rtp-folder-box"><label for="rtpEvidenceFolderName">Tulis Nama Folder Evidence RTP</label><div class="rtp-folder-row"><input id="rtpEvidenceFolderName" type="text" maxlength="100" value="Evidence RTP" placeholder="Contoh: RTP Inspektorat 2026"><button type="button" id="rtpEvidenceFolderSave">Simpan Nama Folder</button></div><div class="rtp-folder-preview">Folder tujuan: <b id="rtpEvidenceFolderPreview">Evidence RTP</b></div><div class="rtp-folder-help">Anda boleh mengetik nama folder sendiri. Tidak perlu membuat folder manual. Sistem akan memakai nama ini ketika upload dan membuat folder yang sama di R2 + Google Drive.</div></div><div class="rtp-upload-box"><input id="rtpEvidenceInput" type="file" multiple hidden><button class="rtp-upload-button" id="rtpEvidenceChoose">📤 Pilih File Evidence RTP</button><div class="rtp-upload-help">Maks. 10 MB per file • total pilihan maks. 10 MB • bisa pilih banyak file sekaligus dengan Ctrl/Shift; sistem mengunggah maksimal 3 file bersamaan agar stabil.</div></div><div id="rtpEvidenceList"></div></div><div class="sheet-links-footer"><button id="rtpEvidenceRefresh">↻ Muat Ulang</button><button id="rtpEvidenceCloseFooter">Tutup</button></div></div></div>
 
 <!-- ===== JavaScript Eksternal ===== -->
-<script src="/script.js?v=20260910-r9-drive-direct-retry-10mb-batch"></script>
+<script src="/script.js?v=20260910-r10-kkpm"></script>
 </body>
 </html>
