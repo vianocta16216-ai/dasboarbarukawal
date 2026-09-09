@@ -803,8 +803,9 @@ async function openEditModal(id) {
   <label>Level ${lv} (${levelInfo.grade})</label>
   <div class="guide-box"><strong>📖 Kriteria:</strong><p>${levelInfo.desc}</p><strong>📎 Evidence yang Disarankan:</strong><p>${levelInfo.evidence}</p><strong>📝 Tahapan Grade:</strong><p>${levelInfo.note}</p></div>
   <textarea data-sub="${subCode}" data-param="${param.id}" data-field="evid${lv}" placeholder="Uraian evidence...">${evid}</textarea>
-  <div style="display:flex; gap:8px; align-items:center;">
+  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
     <input type="file" multiple data-sub="${subCode}" data-param="${param.id}" data-level="${lv}" accept=".pdf,.doc,.docx,.jpg,.png,.mp4,.webm,.mov,.avi,.mkv,.xlsx,.pptx">
+    <small style="color:#64748b;">Maks. 10 MB/file • total pilihan maks. 10 MB • bisa pilih banyak file dengan Ctrl/Shift</small>
   </div>
   <div class="evid-upload-progress" data-sub="${subCode}" data-param="${param.id}" data-level="${lv}"></div>
   <div class="file-list" style="margin-top:8px; display:flex; flex-direction:column; gap:6px;"></div>
@@ -834,9 +835,10 @@ async function openEditModal(id) {
       if (!targetRow) return;
       const fileList = Array.from(fileInput.files);
       if (fileList.length === 0) return;
-
-      if (fileList.length > 20) {
-        showWarning('Maksimal 20 file sekali pilih. File akan diunggah satu per satu agar stabil.');
+      try {
+        validateSelectedUploadFiles(fileList, 'file');
+      } catch (err) {
+        showWarning('❌ ' + err.message);
         fileInput.value = '';
         return;
       }
@@ -847,10 +849,6 @@ async function openEditModal(id) {
 
       let completed = 0;
       for (const file of fileList) {
-        if (file.size > 10 * 1024 * 1024) {
-          showWarning(`File ${file.name} melebihi 10 MB! File dilewati.`);
-          continue;
-        }
         const progressItem = document.createElement('div');
         progressItem.className = 'progress-item';
         progressItem.innerHTML = `
@@ -862,27 +860,22 @@ async function openEditModal(id) {
         const fill = progressItem.querySelector('.progress-bar-fill');
         const text = progressItem.querySelector('.progress-text');
 
-        let progress = 0;
-        const interval = setInterval(() => {
-          progress = Math.min(100, progress + Math.random() * 15 + 5);
-          fill.style.width = progress + '%';
-          text.textContent = Math.round(progress) + '%';
-          if (progress >= 100) {
-            clearInterval(interval);
-          }
-        }, 100);
+        fill.style.width = '15%';
+        text.textContent = 'Mengirim…';
 
         try {
           const result = await uploadFile(targetRow, subCode, paramId, level, file);
-          clearInterval(interval);
           fill.style.width = '100%';
-          text.textContent = '100%';
+          text.textContent = result.syncStatus === 'done' ? '100% • Drive OK' : '100% • Retry Drive';
           if (!targetRow.subunsurs[subCode][paramId]['files' + level]) targetRow.subunsurs[subCode][paramId]['files' + level] = [];
           targetRow.subunsurs[subCode][paramId]['files' + level].push({
             url: result.url,
             fileName: result.fileName || file.name,
             gdriveId: result.gdriveId || null,
             syncStatus: result.syncStatus || 'pending',
+            syncError: result.driveError || null,
+            r2Key: result.r2Key || null,
+            fileType: file.type || 'application/octet-stream',
             uploadId: result.uploadId || null,
             uploadedAt: new Date().toISOString()
           });
@@ -904,14 +897,32 @@ async function openEditModal(id) {
 }
 
 // ====== UPLOAD FILE ======
+// Batas upload: setiap file maksimal 10 MB DAN total seluruh file yang dipilih dalam satu aksi maksimal 10 MB.
+// Tidak ada batas jumlah file; jumlah file mengikuti kapasitas total 10 MB per aksi pilih file.
+const MAX_FILE_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_BATCH_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+function validateSelectedUploadFiles(files, label='file') {
+  const list = Array.from(files || []);
+  if (!list.length) return;
+  const tooBig = list.filter(f => f.size > MAX_FILE_UPLOAD_BYTES);
+  if (tooBig.length) {
+    throw new Error(`${tooBig.length} ${label} melebihi 10 MB per file: ${tooBig[0].name}`);
+  }
+  const total = list.reduce((sum, f) => sum + (Number(f.size) || 0), 0);
+  if (total > MAX_BATCH_UPLOAD_BYTES) {
+    const totalMb = (total / 1024 / 1024).toFixed(2);
+    throw new Error(`Total ${label} yang dipilih ${totalMb} MB. Maksimal total 10 MB per sekali pilih/upload.`);
+  }
+}
+
 async function uploadFile(row, subCode, paramId, level, file) {
   if(!file)return;
-  if(file.size>10*1024*1024)throw new Error('File terlalu besar! Maks 10MB.');
-  const result=await callServer('uploadFile',{
-    __binaryFile:file,opdId:row.id,opdName:row.opd||'OPD',subunsur:subCode,paramId,level:String(level),year:currentYear,
-    fileName:file.name,fileType:file.type||'application/octet-stream',uploadId:crypto.randomUUID()
-  });
-  return {url:result.url,fileName:result.fileName,gdriveId:result.googleDriveId||result.gdriveId||null,syncStatus:result.syncStatus||'pending',uploadId:result.uploadId||null};
+  if(file.size>MAX_FILE_UPLOAD_BYTES)throw new Error('File terlalu besar! Maks 10 MB per file.');
+  const uploadId=crypto.randomUUID();
+  const payload={__binaryFile:file,opdId:row.id,opdName:row.opd||'OPD',subunsur:subCode,paramId,level:String(level),year:currentYear,fileName:file.name,fileType:file.type||'application/octet-stream',uploadId};
+  const result=await callServer('uploadFile',payload);
+  return {url:result.url,fileName:result.fileName,gdriveId:result.googleDriveId||result.gdriveId||null,syncStatus:result.syncStatus||'pending',uploadId:result.uploadId||uploadId,r2Key:result.r2Key||null,driveError:result.driveError||null};
 }
 
 // Fungsi untuk membuat URL preview berdasarkan jenis file
@@ -973,15 +984,38 @@ function renderFileList(row, subCode, paramId, level) {
     }
 
     const div = document.createElement('div');
-    div.style.cssText = 'display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px; border-radius:6px; margin-top:6px;';
-    // PERUBAHAN KEAMANAN: gunakan escapeHtml untuk fileName
+    div.style.cssText = 'display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px; border-radius:6px; margin-top:6px; flex-wrap:wrap;';
+    const status = typeof fileObj === 'object' ? (fileObj.syncStatus || (fileObj.gdriveId ? 'done' : 'pending')) : 'pending';
+    const statusLabel = status === 'done' ? '✅ Google Drive' : (status === 'queued' || status === 'retrying' || status === 'queue_error' ? '🔄 Retry Google Drive' : '⏳ Google Drive');
+    const retryButton = (status !== 'done') && typeof fileObj === 'object' && fileObj.uploadId ? `<button type="button" onclick="retryUploadedFile('${row.id}','${subCode}','${paramId}',${level},'${fileObj.uploadId}')" style="background:#dbeafe;color:#1d4ed8;border:none;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;">↻ Retry</button>` : '';
     div.innerHTML = `
-      <a href="${displayUrl}" target="_blank" rel="noopener" class="file-link" style="flex-grow:1; margin:0;">📎 ${escapeHtml(fileName)}</a>
+      <a href="${displayUrl}" target="_blank" rel="noopener" class="file-link" style="flex-grow:1; min-width:220px; margin:0;">📎 ${escapeHtml(fileName)}</a>
+      <span style="font-size:11px;color:#475569;">${statusLabel}</span>
+      ${retryButton}
       <button type="button" onclick="removeUploadedFile('${row.id}', '${subCode}', '${paramId}', ${level}, '${fileUrl}')" style="background:#fee2e2; color:#dc2626; border:none; border-radius:6px; padding:4px 8px; cursor:pointer; font-size:12px;">🗑️ Hapus</button>
     `;
     fileListEl.appendChild(div);
   });
 }
+async function retryUploadedFile(opdId, subCode, paramId, level, uploadId) {
+  const row = rows.find(r => r.id === opdId); if(!row) return;
+  const files = row.subunsurs?.[subCode]?.[paramId]?.['files'+level] || [];
+  const item = files.find(f => typeof f === 'object' && f.uploadId === uploadId); if(!item) return;
+  try {
+    item.syncStatus='retrying'; renderFileList(row,subCode,paramId,level);
+    const r = await callServerWithRetry('retryDriveBackup',{opdId,year:currentYear,uploadId,type:'evidence',subunsur:subCode,paramId,level},2);
+    item.gdriveId=r.gdriveId||item.gdriveId||null;
+    item.syncStatus=r.syncStatus||'retrying';
+    item.syncError=r.driveError||null;
+    if(item.gdriveId) item.storage='R2 + Google Drive';
+    renderFileList(row,subCode,paramId,level); render();
+    showWarning(item.gdriveId ? '✅ Backup Google Drive berhasil.' : '🔄 File masuk antrean retry Google Drive.');
+  } catch(err) {
+    item.syncStatus='retrying'; item.syncError=err.message; renderFileList(row,subCode,paramId,level);
+    showWarning('❌ Retry Google Drive gagal: '+err.message);
+  }
+}
+
 function removeUploadedFile(opdId, subCode, paramId, level, fileUrl) {
   const row = rows.find(r => r.id === opdId);
   if (!row) return;
@@ -1594,23 +1628,45 @@ async function createRtpSheetLinksForCurrentRow(auto=false){const row=rows.find(
 
 // ===== EVIDENCE RTP =====
 let rtpEvidenceEditingRowId=null;function rtpEvidenceSetStatus(msg,type=''){const e=document.getElementById('rtpEvidenceStatus');if(!e)return;e.textContent=msg||'';e.className='sheet-links-status'+(type?' '+type:'');e.style.display=msg?'block':'none';}
-function renderRtpEvidenceList(row){const e=document.getElementById('rtpEvidenceList');if(!e)return;const a=Array.isArray(row.rtpEvidence)?row.rtpEvidence:[];if(!a.length){e.innerHTML='<div class="sheet-link-card">Belum ada evidence RTP.</div>';return;}e.innerHTML='<div class="rtp-file-list">'+a.map((f,i)=>`<div class="rtp-file-item"><div><div class="rtp-file-name">📄 ${sheetLinksEsc(f.fileName||'File')}</div><div class="rtp-file-meta">${f.syncStatus==='error'?'R2 · Drive gagal sinkron':(f.gdriveId?'Google Drive + R2':'R2 · sinkronisasi berjalan')}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions"><a href="${sheetLinksEsc(f.url||'#')}" target="_blank" rel="noopener noreferrer">Buka</a><button class="rtp-delete-btn" data-index="${i}">Hapus</button></div></div>`).join('')+'</div>';}
+function renderRtpEvidenceList(row){const e=document.getElementById('rtpEvidenceList');if(!e)return;const a=Array.isArray(row.rtpEvidence)?row.rtpEvidence:[];if(!a.length){e.innerHTML='<div class="sheet-link-card">Belum ada evidence RTP.</div>';return;}e.innerHTML='<div class="rtp-file-list">'+a.map((f,i)=>{const status=f.gdriveId?'✅ Google Drive + R2':((f.syncStatus==='queued'||f.syncStatus==='retrying'||f.syncStatus==='queue_error')?'🔄 Retry Google Drive':'⏳ Google Drive');const retry=(f.gdriveId||!f.uploadId)?'':`<button class="rtp-retry-btn" data-upload-id="${sheetLinksEsc(f.uploadId)}">↻ Retry</button>`;return `<div class="rtp-file-item"><div><div class="rtp-file-name">📄 ${sheetLinksEsc(f.fileName||'File')}</div><div class="rtp-file-meta">${status}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions"><a href="${sheetLinksEsc(f.url||'#')}" target="_blank" rel="noopener noreferrer">Buka</a>${retry}<button class="rtp-delete-btn" data-index="${i}">Hapus</button></div></div>`;}).join('')+'</div>';}
 async function openRtpEvidenceModal(id){const row=rows.find(r=>r.id===id);if(!row)return;rtpEvidenceEditingRowId=id;document.getElementById('rtpEvidenceOpdName').textContent=row.opd||'Tanpa Nama';const folderInput=document.getElementById('rtpEvidenceFolderName');const preview=document.getElementById('rtpEvidenceFolderPreview');const setPreview=()=>{if(preview)preview.textContent=(folderInput?.value||'').trim()||'Evidence RTP';};if(folderInput){folderInput.value=row.rtpEvidenceFolder||'Evidence RTP';folderInput.oninput=setPreview;}setPreview();document.getElementById('rtpEvidenceModal').classList.add('active');rtpEvidenceSetStatus('Memuat daftar evidence RTP...');try{const d=await callServer('getRtpEvidence',{opdId:id,year:currentYear});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];row.rtpEvidenceFolder=d.folderName||row.rtpEvidenceFolder||'Evidence RTP';if(folderInput)folderInput.value=row.rtpEvidenceFolder;setPreview();renderRtpEvidenceList(row);rtpEvidenceSetStatus('Silakan tulis nama folder, lalu upload file.','success');}catch(err){rtpEvidenceSetStatus('Gagal memuat: '+err.message,'error');}}
 async function uploadRtpEvidence(file){
   const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);
   if(!row||!file)return;
-  if(file.size>10*1024*1024)throw new Error('File melebihi 10 MB');
+  if(file.size>MAX_FILE_UPLOAD_BYTES)throw new Error('File melebihi 10 MB per file');
   const folderInput=document.getElementById('rtpEvidenceFolderName');
   const folderName=(folderInput?.value||row.rtpEvidenceFolder||'Evidence RTP').trim()||'Evidence RTP';
   if(folderName.length>100)throw new Error('Nama folder maksimal 100 karakter');
   row.rtpEvidenceFolder=folderName;
   rtpEvidenceSetStatus('Mengunggah ke R2...');
-  const d=await callServer('uploadRtpEvidence',{__binaryFile:file,opdId:row.id,opdName:row.opd||'OPD',year:currentYear,folderName,fileName:file.name,fileType:file.type||'application/octet-stream',uploadId:crypto.randomUUID()});
+  const uploadId=crypto.randomUUID();
+  const d=await callServer('uploadRtpEvidence',{__binaryFile:file,opdId:row.id,opdName:row.opd||'OPD',year:currentYear,folderName,fileName:file.name,fileType:file.type||'application/octet-stream',uploadId});
   row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];row.rtpEvidenceFolder=d.folderName||folderName;renderRtpEvidenceList(row);render();
-  rtpEvidenceSetStatus('Upload R2 berhasil. Sinkronisasi Google Drive berjalan di belakang layar.','success');
+  rtpEvidenceSetStatus(d.syncStatus==='done'?'✅ File masuk Google Drive + R2.':(d.backupQueued?'🔄 File aman di R2 dan masuk antrean retry Google Drive.':'⚠️ File aman di R2; retry Google Drive tersedia.'),'success');
 }
 
-document.getElementById('rtpEvidenceFolderSave')?.addEventListener('click',async()=>{const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);const input=document.getElementById('rtpEvidenceFolderName');const preview=document.getElementById('rtpEvidenceFolderPreview');if(!row||!input)return;const folderName=(input.value||'').trim()||'Evidence RTP';if(folderName.length>100){rtpEvidenceSetStatus('Nama folder maksimal 100 karakter.','error');return;}try{rtpEvidenceSetStatus('Menyimpan nama folder...');const d=await callServerWithRetry('saveRtpEvidenceFolder',{opdId:row.id,year:currentYear,folderName});row.rtpEvidenceFolder=d.folderName||folderName;input.value=row.rtpEvidenceFolder;if(preview)preview.textContent=row.rtpEvidenceFolder;rtpEvidenceSetStatus('Nama folder tersimpan. File berikutnya akan masuk ke folder ini.','success');}catch(err){rtpEvidenceSetStatus('Gagal menyimpan nama folder: '+err.message,'error');}});document.getElementById('rtpEvidenceChoose')?.addEventListener('click',()=>document.getElementById('rtpEvidenceInput')?.click());document.getElementById('rtpEvidenceInput')?.addEventListener('change',async e=>{for(const f of Array.from(e.target.files||[])){try{await uploadRtpEvidence(f);}catch(err){rtpEvidenceSetStatus('Gagal upload: '+err.message,'error');}}e.target.value='';});document.getElementById('rtpEvidenceList')?.addEventListener('click',async e=>{const b=e.target.closest('.rtp-delete-btn');if(!b)return;const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[])[Number(b.dataset.index)];if(!f)return;try{rtpEvidenceSetStatus('Menghapus...');const d=await callServerWithRetry('deleteRtpEvidence',{opdId:row.id,year:currentYear,fileUrl:f.url,gdriveId:f.gdriveId||null});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];renderRtpEvidenceList(row);render();rtpEvidenceSetStatus('File dihapus.','success');}catch(err){rtpEvidenceSetStatus('Gagal hapus: '+err.message,'error');}});document.getElementById('rtpEvidenceRefresh')?.addEventListener('click',()=>{if(rtpEvidenceEditingRowId)openRtpEvidenceModal(rtpEvidenceEditingRowId);});function closeRtpEvidenceModal(){document.getElementById('rtpEvidenceModal')?.classList.remove('active');rtpEvidenceEditingRowId=null;}document.getElementById('rtpEvidenceClose')?.addEventListener('click',closeRtpEvidenceModal);document.getElementById('rtpEvidenceCloseFooter')?.addEventListener('click',closeRtpEvidenceModal);
+document.getElementById('rtpEvidenceFolderSave')?.addEventListener('click',async()=>{const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);const input=document.getElementById('rtpEvidenceFolderName');const preview=document.getElementById('rtpEvidenceFolderPreview');if(!row||!input)return;const folderName=(input.value||'').trim()||'Evidence RTP';if(folderName.length>100){rtpEvidenceSetStatus('Nama folder maksimal 100 karakter.','error');return;}try{rtpEvidenceSetStatus('Menyimpan nama folder...');const d=await callServerWithRetry('saveRtpEvidenceFolder',{opdId:row.id,year:currentYear,folderName});row.rtpEvidenceFolder=d.folderName||folderName;input.value=row.rtpEvidenceFolder;if(preview)preview.textContent=row.rtpEvidenceFolder;rtpEvidenceSetStatus('Nama folder tersimpan. File berikutnya akan masuk ke folder ini.','success');}catch(err){rtpEvidenceSetStatus('Gagal menyimpan nama folder: '+err.message,'error');}});document.getElementById('rtpEvidenceChoose')?.addEventListener('click',()=>document.getElementById('rtpEvidenceInput')?.click());document.getElementById('rtpEvidenceInput')?.addEventListener('change',async e=>{
+  const files=Array.from(e.target.files||[]);
+  try {
+    validateSelectedUploadFiles(files, 'file Evidence RTP');
+  } catch(err) {
+    rtpEvidenceSetStatus('❌ ' + err.message, 'error');
+    e.target.value='';
+    return;
+  }
+  let cursor=0, failed=0, done=0;
+  const worker=async()=>{
+    while(cursor<files.length){
+      const f=files[cursor++];
+      try{await uploadRtpEvidence(f);done++;}
+      catch(err){failed++;rtpEvidenceSetStatus(`Upload ${done+failed}/${files.length} — gagal: ${err.message}`,'error');}
+    }
+  };
+  const workers=Array.from({length:Math.min(3,Math.max(1,files.length))},()=>worker());
+  await Promise.all(workers);
+  rtpEvidenceSetStatus(failed?`Selesai: ${done} berhasil, ${failed} gagal.`:`✅ ${done} file masuk R2 + antrean backup Google Drive.` ,failed?'error':'success');
+  e.target.value='';
+});document.getElementById('rtpEvidenceList')?.addEventListener('click',async e=>{const rb=e.target.closest('.rtp-retry-btn');if(rb){const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[]).find(x=>x.uploadId===rb.dataset.uploadId);if(!f)return;try{f.syncStatus='retrying';renderRtpEvidenceList(row);rtpEvidenceSetStatus('Mencoba ulang backup Google Drive...');const d=await callServerWithRetry('retryDriveBackup',{opdId:row.id,year:currentYear,type:'rtp',uploadId:f.uploadId},2);f.gdriveId=d.gdriveId||f.gdriveId||null;f.syncStatus=d.syncStatus||'retrying';f.syncError=d.driveError||null;renderRtpEvidenceList(row);render();rtpEvidenceSetStatus(f.gdriveId?'✅ Backup Google Drive berhasil.':'🔄 File masuk antrean retry Google Drive.',f.gdriveId?'success':'');}catch(err){f.syncStatus='retrying';f.syncError=err.message;renderRtpEvidenceList(row);rtpEvidenceSetStatus('Retry gagal: '+err.message,'error');}return;}const b=e.target.closest('.rtp-delete-btn');if(!b)return;const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[])[Number(b.dataset.index)];if(!f)return;try{rtpEvidenceSetStatus('Menghapus...');const d=await callServerWithRetry('deleteRtpEvidence',{opdId:row.id,year:currentYear,fileUrl:f.url,gdriveId:f.gdriveId||null});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];renderRtpEvidenceList(row);render();rtpEvidenceSetStatus('File dihapus.','success');}catch(err){rtpEvidenceSetStatus('Gagal hapus: '+err.message,'error');}});document.getElementById('rtpEvidenceRefresh')?.addEventListener('click',()=>{if(rtpEvidenceEditingRowId)openRtpEvidenceModal(rtpEvidenceEditingRowId);});function closeRtpEvidenceModal(){document.getElementById('rtpEvidenceModal')?.classList.remove('active');rtpEvidenceEditingRowId=null;}document.getElementById('rtpEvidenceClose')?.addEventListener('click',closeRtpEvidenceModal);document.getElementById('rtpEvidenceCloseFooter')?.addEventListener('click',closeRtpEvidenceModal);
 document.addEventListener('click',function(e){
   const close=e.target.closest('#sheetLinksClose,#sheetLinksCancel');
   if(close){closeSpreadsheetModal();return;}
