@@ -453,7 +453,7 @@ table {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;
-  min-width: 1300px;
+  min-width: 2350px;
 }
 
 thead th {
@@ -527,7 +527,10 @@ tbody td:nth-child(10) {
 
 tbody td:nth-child(11),
 tbody td:nth-child(12),
-tbody td:nth-child(13) {
+tbody td:nth-child(13),
+tbody td:nth-child(14),
+tbody td:nth-child(15),
+tbody td:nth-child(16) {
   background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
   text-align: center;
 }
@@ -1642,6 +1645,25 @@ input[type="file"]:hover {
 .save-indicator.error {
   color: #ef4444;
 }
+
+
+/* ===== KOLOM TAMBAHAN: KK RTP & EVIDENCE RTP ===== */
+.btn-kk-rtp{background:linear-gradient(135deg,#2563eb,#4f46e5)!important;color:#fff!important;box-shadow:0 2px 6px rgba(37,99,235,.25)!important}
+.btn-kk-rtp:hover{background:linear-gradient(135deg,#1d4ed8,#4338ca)!important}
+.btn-rtp-evidence{background:linear-gradient(135deg,#d97706,#f59e0b)!important;color:#fff!important;box-shadow:0 2px 6px rgba(217,119,6,.25)!important}
+.btn-rtp-evidence:hover{background:linear-gradient(135deg,#b45309,#d97706)!important}
+.rtp-evidence-count{font-size:10px;font-weight:800;color:#64748b;margin-top:3px}
+.rtp-upload-box{border:2px dashed #cbd5e1;border-radius:14px;padding:24px;text-align:center;background:#f8fafc;margin-bottom:16px}
+.rtp-upload-button{background:linear-gradient(135deg,#f59e0b,#ea580c)!important;color:#fff!important;border:0!important;padding:12px 18px;border-radius:10px;cursor:pointer;font-weight:800}
+.rtp-upload-help{font-size:12px;color:#64748b;margin-top:8px}
+.rtp-file-list{display:flex;flex-direction:column;gap:8px}
+.rtp-file-item{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #dbe3ee;border-radius:10px;padding:11px 13px;background:#fff}
+.rtp-file-name{font-size:13px;font-weight:700;color:#1e293b;word-break:break-word}
+.rtp-file-meta{font-size:11px;color:#64748b;margin-top:3px}
+.rtp-file-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.rtp-file-actions a,.rtp-delete-btn{border:0;border-radius:7px;padding:7px 10px;font-size:12px;font-weight:700;text-decoration:none;cursor:pointer}
+.rtp-file-actions a{background:#ecfeff;color:#0f766e}
+.rtp-delete-btn{background:#fee2e2;color:#b91c1c}
 
 /* ===== GOOGLE SHEETS LINK MODAL ===== */
 .sheet-links-overlay{
