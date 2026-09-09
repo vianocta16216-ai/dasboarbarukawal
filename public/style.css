@@ -1727,3 +1727,32 @@ tbody td:nth-child(2){box-shadow:2px 0 8px rgba(15,23,42,.05)}
 @media (max-width:900px){thead th:nth-child(2), tbody td:nth-child(2){left:40px}}
 
 .rtp-retry-btn{background:#dbeafe;color:#1d4ed8;border:none;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px}.rtp-retry-btn:hover{background:#bfdbfe}
+
+/* ===== KERTAS KERJA PM DISPARPORA ===== */
+.btn-kk-pm{background:linear-gradient(135deg,#7c3aed,#9333ea)!important;color:#fff!important;box-shadow:0 2px 7px rgba(124,58,237,.25)!important}
+.btn-kk-pm:hover{background:linear-gradient(135deg,#6d28d9,#7e22ce)!important}
+.kkpm-modal{width:min(1500px,98vw);height:min(92vh,900px);background:#fff;border-radius:18px;box-shadow:0 24px 80px rgba(15,23,42,.35);display:flex;flex-direction:column;overflow:hidden}
+.kkpm-subtitle{font-size:12px;color:rgba(255,255,255,.78);margin-top:4px}
+.kkpm-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;flex-wrap:wrap}
+.kkpm-toolbar-left,.kkpm-toolbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#kkPmSearch{width:min(380px,74vw);height:38px;border:1px solid #cbd5e1;border-radius:9px;padding:0 12px;font:inherit;font-size:13px;color:#0f172a;background:#fff;outline:none}
+#kkPmSearch:focus{border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.10)}
+.kkpm-stats{font-size:12px;color:#64748b;font-weight:700}
+.kkpm-download,.kkpm-save{height:38px;border-radius:9px;padding:0 13px;border:1px solid #cbd5e1;text-decoration:none;font-size:12px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.kkpm-download{background:#fff;color:#334155}.kkpm-download:hover{background:#f1f5f9}.kkpm-save{background:#7c3aed;color:#fff;border-color:#7c3aed}.kkpm-save:hover{background:#6d28d9}.kkpm-save:disabled{opacity:.55;cursor:not-allowed}
+.kkpm-status{display:none;margin:10px 16px 0;padding:10px 12px;border-radius:9px;background:#eff6ff;color:#1d4ed8;font-size:12px;font-weight:700}.kkpm-status.success{background:#ecfdf5;color:#047857}.kkpm-status.error{background:#fef2f2;color:#b91c1c}.kkpm-status.dirty{background:#fff7ed;color:#c2410c}
+.kkpm-tabs{display:flex;gap:7px;overflow-x:auto;padding:10px 16px;border-bottom:1px solid #e2e8f0;background:#fff;scrollbar-width:thin}
+.kkpm-tab{border:1px solid #dbe2ea;background:#f8fafc;color:#475569;border-radius:999px;padding:7px 11px;font-size:11px;font-weight:800;white-space:nowrap;cursor:pointer}
+.kkpm-tab:hover{background:#f1f5f9;color:#1e293b}.kkpm-tab.active{background:#ede9fe;border-color:#8b5cf6;color:#6d28d9}
+.kkpm-sheet-meta{display:flex;gap:12px;align-items:center;padding:8px 16px;font-size:12px;color:#64748b;background:#fafafa;border-bottom:1px solid #eef2f7}.kkpm-sheet-meta b{color:#0f172a}
+.kkpm-grid-wrap{flex:1;overflow:auto;background:#f8fafc}
+.kkpm-grid{border-collapse:separate;border-spacing:0;min-width:max-content;width:100%;font-size:11px}
+.kkpm-grid th,.kkpm-grid td{border-right:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;padding:0;background:#fff;vertical-align:top}
+.kkpm-grid thead th{position:sticky;top:0;z-index:5;background:#f1f5f9;color:#475569;font-weight:800;text-align:center;height:30px;min-width:92px}
+.kkpm-grid .kkpm-corner{left:0;z-index:7;min-width:44px;width:44px}
+.kkpm-grid .kkpm-rownum{position:sticky;left:0;z-index:4;background:#f8fafc;color:#64748b;font-weight:800;text-align:center;min-width:44px;width:44px;padding:6px}
+.kkpm-cell{display:block;box-sizing:border-box;width:160px;min-height:34px;border:0;outline:none;background:transparent;padding:7px 8px;font:inherit;font-size:11px;color:#1e293b;resize:none}
+.kkpm-cell:focus{background:#faf5ff;box-shadow:inset 0 0 0 2px #8b5cf6}
+.kkpm-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 16px;border-top:1px solid #e2e8f0;background:#f8fafc;font-size:11px;color:#64748b}
+.kkpm-footer button{height:34px;padding:0 13px;border:1px solid #cbd5e1;background:#fff;border-radius:8px;color:#334155;font-size:12px;font-weight:800;cursor:pointer}
+@media(max-width:800px){.kkpm-modal{width:99vw;height:95vh;border-radius:12px}.kkpm-footer{flex-direction:column;align-items:flex-start}.kkpm-cell{width:130px}.kkpm-toolbar-right{width:100%}.kkpm-download,.kkpm-save{flex:1}}
