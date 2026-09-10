@@ -1078,7 +1078,7 @@ export const onRequest = async ({ request, env, ctx }) => {
           }
         }
         await env.EVIDENCE_BUCKET.put(filePath,fileBody||bytes,{httpMetadata:{contentType:fileType}});
-        const uploadMeta={url:publicUrl,fileName:sanitizeString(fileName).substring(0,150),gdriveId:null,storage:'R2',syncStatus:'pending',uploadedAt:new Date().toISOString(),uploadId,r2Key:null,fileType};
+        const uploadMeta={url:publicUrl,fileName:sanitizeString(fileName).substring(0,150),gdriveId:null,storage:'R2',syncStatus:'pending',uploadedAt:new Date().toISOString(),uploadId,r2Key:filePath,fileType};
         // Update only this OPD's evidence JSON; never send the whole table back from the browser.
         const rec=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
         if(!rec.results.length)throw new Error('OPD tidak ditemukan');
@@ -1129,8 +1129,19 @@ export const onRequest = async ({ request, env, ctx }) => {
           if(!rec.results.length) throw new Error('OPD tidak ditemukan');
           let obj={};try{obj=rec.results[0]?.subunsurs?JSON.parse(rec.results[0].subunsurs):{}}catch{}
           const arr=obj?.[subunsur]?.[paramId]?.['files'+level]; const item=Array.isArray(arr)?arr.find(x=>x.uploadId===uploadId):null;
-          if(!item) throw new Error('Evidence tidak ditemukan');
-          job={type:'evidence',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||(()=>{const u=String(item.url||'');const mark='r2.dev/';const i=u.indexOf(mark);return i>=0?decodeURIComponent(u.slice(i+mark.length)):'';})(),fileName:item.fileName||'evidence',fileType:item.fileType||'application/octet-stream',subunsur:String(subunsur),paramId:String(paramId),level:String(level)};
+          const suppliedR2Key=String(params.r2Key||'');
+          if(!item && !suppliedR2Key) throw new Error('Evidence tidak ditemukan');
+          const r2Key=item?.r2Key||suppliedR2Key||'';
+          const fileName=item?.fileName||params.fileName||'evidence';
+          const fileType=item?.fileType||params.fileType||'application/octet-stream';
+          if(!r2Key) throw new Error('Lokasi file R2 tidak ditemukan');
+          if(!item){
+            obj[subunsur]=obj[subunsur]||{}; obj[subunsur][paramId]=obj[subunsur][paramId]||{level:0};
+            const k='files'+level; obj[subunsur][paramId][k]=Array.isArray(obj[subunsur][paramId][k])?obj[subunsur][paramId][k]:[];
+            obj[subunsur][paramId][k].push({url:params.url||`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${r2Key}`,fileName,gdriveId:null,storage:'R2',syncStatus:'retrying',syncError:null,uploadedAt:new Date().toISOString(),uploadId,r2Key,fileType});
+            await env.DB.prepare("UPDATE opd_data SET subunsurs=? WHERE id=? AND year=?").bind(JSON.stringify(obj),opdId,targetYear).run();
+          }
+          job={type:'evidence',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key,fileName,fileType,subunsur:String(subunsur),paramId:String(paramId),level:String(level)};
         }
         if(!job.r2Key) throw new Error('Lokasi file R2 tidak ditemukan');
         try{
