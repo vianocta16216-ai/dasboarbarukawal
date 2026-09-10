@@ -218,6 +218,7 @@ let isSaving = false;
 let pendingSave = false;
 let chartInstance = null;
 let originalRows = [];
+const pendingUploadFiles = new Map();
 
 // ===== TEMPLATE KERTAS KERJA PM TERINTEGRASI (embedded, no network fetch) =====
 
@@ -255,9 +256,23 @@ function callServer(action, params = {}) {
   };
   return makeRequest().then(async response=>{
     const text=await response.text();
-    if(!response.ok){const err=new Error(`HTTP ${response.status}: ${text.slice(0,160)}`);err.status=response.status;err.transient=[429,500,502,503,504].includes(response.status);throw err;}
-    let data;try{data=JSON.parse(text);}catch{throw new Error('Server error: '+text.substring(0,200));}
-    if(data&&data.status==='error')throw new Error(data.message);
+    let data=null;
+    try{data=JSON.parse(text);}catch{}
+    if(!response.ok){
+      const msg=(data&&data.message)||text.slice(0,200)||`HTTP ${response.status}`;
+      const err=new Error(`HTTP ${response.status}: ${msg}`);
+      err.status=response.status;
+      err.transient=[408,425,429,500,502,503,504].includes(response.status);
+      err.data=data;
+      throw err;
+    }
+    if(!data)throw new Error('Server error: '+text.substring(0,200));
+    if(data&&data.status==='error'){
+      const err=new Error(data.message||'Server error');
+      err.status=response.status;
+      err.data=data;
+      throw err;
+    }
     return data;
   });
 }
@@ -1129,9 +1144,10 @@ async function openEditModal(id) {
 
         fill.style.width = '15%';
         text.textContent = 'Mengirim…';
+        const sessionUploadId=crypto.randomUUID();
 
         try {
-          const result = await uploadFile(targetRow, subCode, paramId, level, file);
+          const result = await uploadFile(targetRow, subCode, paramId, level, file, sessionUploadId);
           fill.style.width = '100%';
           text.textContent = result.syncStatus === 'done' ? '100% • Drive OK' : '100% • Retry Drive';
           if (!targetRow.subunsurs[subCode][paramId]['files' + level]) targetRow.subunsurs[subCode][paramId]['files' + level] = [];
@@ -1153,9 +1169,35 @@ async function openEditModal(id) {
             if (progressContainer.children.length === 0) progressContainer.classList.remove('active');
           }, 1000);
         } catch (err) {
-          text.textContent = 'Gagal: ' + err.message;
-          showWarning('❌ Upload gagal: ' + err.message);
+          // Retry otomatis dengan uploadId yang SAMA. Ini aman terhadap response 500
+          // yang sebenarnya sudah sempat menyimpan file di R2/D1/Drive.
+          let recovered=false;
+          for(let retry=1; retry<=2; retry++) {
+            if(!err?.transient) break;
+            text.textContent=`Retry ${retry}/2…`;
+            try {
+              await new Promise(r=>setTimeout(r,700*retry));
+              const result=await uploadFile(targetRow,subCode,paramId,level,file,sessionUploadId);
+              if (!targetRow.subunsurs[subCode][paramId]['files'+level]) targetRow.subunsurs[subCode][paramId]['files'+level]=[];
+              targetRow.subunsurs[subCode][paramId]['files'+level].push({url:result.url,fileName:result.fileName||file.name,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'pending',syncError:result.driveError||null,r2Key:result.r2Key||null,fileType:file.type||'application/octet-stream',uploadId:result.uploadId||sessionUploadId,uploadedAt:new Date().toISOString()});
+              renderFileList(targetRow,subCode,paramId,level);
+              fill.style.width='100%'; text.textContent=result.syncStatus==='done'?'100% • Drive OK':'100% • Retry Drive';
+              pendingUploadFiles.delete(sessionUploadId); recovered=true; completed++; break;
+            } catch(e) { err=e; }
+          }
+          if(!recovered){
+            // Simpan File asli selama halaman masih terbuka agar tombol Retry dapat
+            // mengulang upload dengan uploadId yang sama.
+            pendingUploadFiles.set(sessionUploadId,file);
+            if (!targetRow.subunsurs[subCode][paramId]['files' + level]) targetRow.subunsurs[subCode][paramId]['files' + level] = [];
+            const list=targetRow.subunsurs[subCode][paramId]['files'+level];
+            list.push({url:'',fileName:file.name,gdriveId:null,syncStatus:'retrying',syncError:err.message,r2Key:null,fileType:file.type||'application/octet-stream',uploadId:sessionUploadId,localPending:true,uploadedAt:new Date().toISOString()});
+            renderFileList(targetRow,subCode,paramId,level);
+            fill.style.width='100%'; text.textContent='100% • Retry tersedia';
+            showWarning('⚠️ Upload gagal sementara. File tidak dibuang. Tombol Retry tersedia.');
+          }
         }
+
       }
       fileInput.value = '';
     };
@@ -1182,10 +1224,10 @@ function validateSelectedUploadFiles(files, label='file') {
   }
 }
 
-async function uploadFile(row, subCode, paramId, level, file) {
+async function uploadFile(row, subCode, paramId, level, file, existingUploadId=null) {
   if(!file)return;
   if(file.size>MAX_FILE_UPLOAD_BYTES)throw new Error('File terlalu besar! Maks 10 MB per file.');
-  const uploadId=crypto.randomUUID();
+  const uploadId=existingUploadId||crypto.randomUUID();
   const payload={__binaryFile:file,opdId:row.id,opdName:row.opd||'OPD',subunsur:subCode,paramId,level:String(level),year:currentYear,fileName:file.name,fileType:file.type||'application/octet-stream',uploadId};
   const result=await callServerWithRetry('uploadFile',payload,2);
   return {url:result.url,fileName:result.fileName,gdriveId:result.googleDriveId||result.gdriveId||null,syncStatus:result.syncStatus||'pending',uploadId:result.uploadId||uploadId,r2Key:result.r2Key||null,driveError:result.driveError||null};
@@ -1269,7 +1311,17 @@ async function retryUploadedFile(opdId, subCode, paramId, level, uploadId) {
   const item = files.find(f => typeof f === 'object' && f.uploadId === uploadId); if(!item) return;
   try {
     item.syncStatus='retrying'; renderFileList(row,subCode,paramId,level);
-    const r = await callServerWithRetry('retryDriveBackup',{opdId,year:currentYear,uploadId,type:'evidence',subunsur:subCode,paramId,level},2);
+    if(item.localPending){
+      const localFile=pendingUploadFiles.get(uploadId);
+      if(!localFile) throw new Error('File lokal untuk retry sudah tidak tersedia. Silakan pilih file kembali.');
+      const r=await uploadFile(row,subCode,paramId,level,localFile,uploadId);
+      Object.assign(item,{url:r.url||item.url,fileName:r.fileName||item.fileName,gdriveId:r.gdriveId||null,syncStatus:r.syncStatus||'pending',syncError:r.driveError||null,r2Key:r.r2Key||null,localPending:false});
+      pendingUploadFiles.delete(uploadId);
+      renderFileList(row,subCode,paramId,level); render();
+      showWarning(item.gdriveId?'✅ R2 + Google Drive tersimpan.':'🔄 Google Drive belum berhasil. Silakan Retry.');
+      return;
+    }
+    const r = await callServerWithRetry('retryDriveBackup',{opdId,year:currentYear,uploadId,type:'evidence',subunsur:subCode,paramId,level,r2Key:item.r2Key,url:item.url,fileName:item.fileName,fileType:item.fileType},2);
     item.gdriveId=r.gdriveId||item.gdriveId||null;
     item.syncStatus=r.syncStatus||'retrying';
     item.syncError=r.driveError||null;
