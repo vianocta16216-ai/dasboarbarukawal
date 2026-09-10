@@ -332,6 +332,94 @@ async function callServerWithRetry(action, params={}, retries=2){
   throw lastError;
 }
 
+// ====== REALTIME MULTI-USER SYNC ======
+let realtimeSocket = null;
+let realtimeReconnectTimer = null;
+let realtimeReconnectAttempt = 0;
+let realtimeStarted = false;
+let realtimeServerActive = false;
+
+function websocketUrlForYear(year){
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${location.host}/realtime?year=${encodeURIComponent(year)}`;
+}
+
+function scheduleRealtimeReconnect(){
+  clearTimeout(realtimeReconnectTimer);
+  if(!navigator.onLine || !realtimeStarted) return;
+  const delay=Math.min(15000,1000*Math.pow(2,Math.min(realtimeReconnectAttempt,4)));
+  realtimeReconnectAttempt++;
+  realtimeReconnectTimer=setTimeout(connectRealtime,delay);
+}
+
+async function applyRealtimeOpdUpdate(opdId, hint={}){
+  if(!opdId || !navigator.onLine) return;
+  try{
+    const result=await callServer('getOpd',{opdId,year:currentYear});
+    if(result?.status!=='success' || !result.row) return;
+    const idx=rows.findIndex(r=>String(r.id)===String(opdId));
+    if(idx>=0) rows[idx]=result.row;
+    else rows.push(result.row);
+
+    // Never overwrite a user's in-progress form just because another operator
+    // updated the same OPD. Refresh the visible file list when it is safe.
+    if(editingRowId===opdId && hint.subunsur && hint.paramId && hint.level!=null){
+      try{ renderFileList(result.row,hint.subunsur,hint.paramId,String(hint.level)); }catch{}
+    }
+    render();
+    updateKpisLocal();
+    const status=document.getElementById('saveStatus');
+    if(status && !offlineSaveQueue.length){
+      status.textContent='🔄 Data diperbarui operator lain';
+      status.dataset.statusType='realtime';
+      clearTimeout(window.__realtimeStatusTimer);
+      window.__realtimeStatusTimer=setTimeout(()=>{ if(status.dataset.statusType==='realtime') status.textContent=''; },1800);
+    }
+  }catch(err){
+    console.warn('Gagal menerapkan pembaruan realtime:',err);
+  }
+}
+
+function connectRealtime(){
+  clearTimeout(realtimeReconnectTimer);
+  if(!realtimeStarted || !navigator.onLine || !currentYear) return;
+  try{
+    if(realtimeSocket){ try{realtimeSocket.close();}catch{} }
+    const ws=new WebSocket(websocketUrlForYear(currentYear));
+    realtimeSocket=ws;
+    ws.onopen=()=>{
+      realtimeReconnectAttempt=0;
+      realtimeServerActive=true;
+      setConnectionStatus('🟢 Realtime aktif — perubahan operator lain diterima otomatis','success');
+      setTimeout(()=>{const el=document.getElementById('saveStatus'); if(el && el.dataset.statusType==='success' && el.textContent.includes('Realtime aktif')) el.textContent='';},1800);
+    };
+    ws.onmessage=(event)=>{
+      try{
+        const msg=JSON.parse(event.data||'{}');
+        if(msg.type==='connected') return;
+        const p=msg.payload||msg;
+        if(String(p.year||'')!==String(currentYear)) return;
+        if(p.opdId) applyRealtimeOpdUpdate(p.opdId,p);
+        else if(p.type==='opd-added') loadData();
+      }catch(err){ console.warn('Pesan realtime tidak valid:',err); }
+    };
+    ws.onclose=()=>{ realtimeServerActive=false; scheduleRealtimeReconnect(); };
+    ws.onerror=()=>{ realtimeServerActive=false; try{ws.close();}catch{} };
+  }catch(err){
+    realtimeServerActive=false;
+    scheduleRealtimeReconnect();
+  }
+}
+
+function initRealtimeSync(){
+  if(realtimeStarted) return;
+  realtimeStarted=true;
+  window.addEventListener('online',()=>{realtimeReconnectAttempt=0;connectRealtime();});
+  window.addEventListener('offline',()=>{realtimeServerActive=false;});
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden && (!realtimeSocket || realtimeSocket.readyState!==WebSocket.OPEN)) connectRealtime(); });
+  connectRealtime();
+}
+
 
 // ====== VERIFIKASI PASSWORD ======
 async function verifyAccess(password) {
@@ -971,6 +1059,7 @@ document.getElementById('kpiChartClose').addEventListener('click', function() {
   }, 10000);
 
   initOfflineAutosave();
+  initRealtimeSync();
 
   try {
     setProgress(10, 'Memuat data subunsur...');
@@ -1696,6 +1785,7 @@ document.getElementById('deleteYearOk').addEventListener('click', async function
 document.getElementById('yearSelect').addEventListener('change', function() {
   currentYear = this.value;
   document.getElementById('currentYearLabel').textContent = currentYear;
+  connectRealtime();
   loadData();
 });
 
