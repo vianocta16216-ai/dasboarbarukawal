@@ -4,6 +4,210 @@ let currentYear = new Date().getFullYear().toString();
 let SUBUNSUR_DATA = {};
 let PARAM_LIST = [];
 let saveTimer = null;
+
+// ====== AUTOSAVE OFFLINE / KONEKSI LAMBAT ======
+// Perubahan disimpan ke browser terlebih dahulu saat server tidak dapat dihubungi.
+// Antrian ini kemudian dikirim ulang otomatis ketika koneksi kembali normal.
+const OFFLINE_QUEUE_KEY = 'kawal-spip-offline-save-v1';
+let offlineSaveQueue = [];
+let offlineFlushTimer = null;
+let offlineFlushRunning = false;
+
+function isNetworkError(err) {
+  return !err || err.name === 'TypeError' || /failed to fetch|network|offline|load failed|fetch/i.test(String(err.message || err));
+}
+
+function setConnectionStatus(message, type='') {
+  const el = document.getElementById('saveStatus');
+  if (!el) return;
+  el.textContent = message;
+  el.dataset.statusType = type;
+}
+
+function loadOfflineQueue() {
+  try {
+    const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    offlineSaveQueue = Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.warn('Tidak dapat membaca autosave lokal:', e);
+    offlineSaveQueue = [];
+  }
+}
+
+function persistOfflineQueue() {
+  try {
+    if (offlineSaveQueue.length) {
+      localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(offlineSaveQueue));
+    } else {
+      localStorage.removeItem(OFFLINE_QUEUE_KEY);
+    }
+  } catch (e) {
+    console.warn('Autosave lokal gagal disimpan:', e);
+    setConnectionStatus('⚠️ Penyimpanan lokal browser penuh', 'error');
+  }
+}
+
+function queueOfflineSave(action, params, reason='Koneksi terputus') {
+  // Hanya aksi data yang aman untuk diputar ulang tanpa File object.
+  const allowed = new Set(['saveData','saveRow','saveSubunsur','saveField']);
+  if (!allowed.has(action)) return;
+
+  const item = {
+    action,
+    params,
+    year: params?.year || currentYear,
+    queuedAt: Date.now(),
+    reason
+  };
+
+  // Gabungkan perubahan yang identik agar antrian tidak membesar.
+  let key = `${action}:${item.year}`;
+  if (action === 'saveRow') key += `:${params?.row?.id || ''}`;
+  if (action === 'saveSubunsur') key += `:${params?.opdId || ''}`;
+  if (action === 'saveField') key += `:${params?.opdId || ''}:${params?.field || ''}`;
+  if (action === 'saveData') key += ':all';
+
+  item.key = key;
+  offlineSaveQueue = offlineSaveQueue.filter(x => x.key !== key);
+  offlineSaveQueue.push(item);
+  persistOfflineQueue();
+
+  setConnectionStatus(`📴 Offline — perubahan disimpan di perangkat (${offlineSaveQueue.length})`, 'offline');
+  if (navigator.onLine) scheduleOfflineFlush(1200);
+}
+
+function applyOfflineQueueToRows() {
+  if (!Array.isArray(rows) || !offlineSaveQueue.length) return;
+
+  // Urutan mengikuti waktu antrian.
+  [...offlineSaveQueue].sort((a,b) => a.queuedAt - b.queuedAt).forEach(item => {
+    const p = item.params || {};
+    if (item.action === 'saveData') {
+      try {
+        const savedRows = typeof p.rows === 'string' ? JSON.parse(p.rows) : p.rows;
+        if (Array.isArray(savedRows) && String(item.year) === String(currentYear)) rows = savedRows;
+      } catch {}
+      return;
+    }
+
+    if (String(item.year) !== String(currentYear)) return;
+
+    if (item.action === 'saveRow' && p.row?.id) {
+      const idx = rows.findIndex(r => r.id === p.row.id);
+      if (idx >= 0) rows[idx] = p.row;
+      else rows.push(p.row);
+    }
+
+    if (item.action === 'saveSubunsur' && p.opdId) {
+      const row = rows.find(r => r.id === p.opdId);
+      if (row && Array.isArray(p.changes)) {
+        p.changes.forEach(c => {
+          if (!c?.subCode || !c?.paramId || !c?.field) return;
+          row.subunsurs = row.subunsurs || {};
+          row.subunsurs[c.subCode] = row.subunsurs[c.subCode] || {};
+          row.subunsurs[c.subCode][c.paramId] = row.subunsurs[c.subCode][c.paramId] || {level:0};
+          row.subunsurs[c.subCode][c.paramId][c.field] = c.value;
+        });
+        row.nilaiStrukturProses = calculateSA(row);
+        row.sa = row.nilaiStrukturProses;
+      } else if (row && p.subunsurs) {
+        row.subunsurs = p.subunsurs;
+        row.nilaiStrukturProses = calculateSA(row);
+        row.sa = row.nilaiStrukturProses;
+      }
+    }
+
+    if (item.action === 'saveField' && p.opdId && p.field) {
+      const row = rows.find(r => r.id === p.opdId);
+      if (row) row[p.field] = p.value;
+    }
+  });
+}
+
+function scheduleOfflineFlush(delay=300) {
+  clearTimeout(offlineFlushTimer);
+  offlineFlushTimer = setTimeout(flushOfflineSaves, delay);
+}
+
+async function flushOfflineSaves() {
+  if (offlineFlushRunning || !offlineSaveQueue.length || !navigator.onLine) return;
+  offlineFlushRunning = true;
+  setConnectionStatus(`🔄 Mengirim ${offlineSaveQueue.length} perubahan tersimpan...`, 'syncing');
+
+  try {
+    while (offlineSaveQueue.length && navigator.onLine) {
+      const item = offlineSaveQueue[0];
+      try {
+        await callServerWithRetry(item.action, item.params, 2);
+        offlineSaveQueue.shift();
+        persistOfflineQueue();
+      } catch (err) {
+        // Jangan menghapus data lokal jika koneksi masih bermasalah.
+        if (isNetworkError(err) || err.transient || !navigator.onLine) {
+          setConnectionStatus(`📴 Menunggu koneksi — ${offlineSaveQueue.length} perubahan aman di perangkat`, 'offline');
+        } else {
+          // Error server non-network tetap ditahan untuk mencegah kehilangan perubahan.
+          setConnectionStatus(`⚠️ ${offlineSaveQueue.length} perubahan belum tersimpan ke server`, 'error');
+        }
+        break;
+      }
+    }
+
+    if (!offlineSaveQueue.length) {
+      setConnectionStatus('✅ Semua perubahan tersimpan', 'success');
+      setTimeout(() => {
+        const el = document.getElementById('saveStatus');
+        if (el && el.dataset.statusType === 'success') el.textContent = '';
+      }, 2500);
+      render();
+      updateKpisLocal();
+    }
+  } finally {
+    offlineFlushRunning = false;
+  }
+}
+
+function queueCurrentRowsForAutosave(reason='Koneksi terputus') {
+  if (!Array.isArray(rows)) return;
+  queueOfflineSave('saveData', { rows: JSON.stringify(rows), year: currentYear }, reason);
+}
+
+function initOfflineAutosave() {
+  loadOfflineQueue();
+
+  window.addEventListener('offline', () => {
+    setConnectionStatus('📴 Koneksi terputus — perubahan berikutnya akan disimpan otomatis di perangkat', 'offline');
+  });
+
+  window.addEventListener('online', () => {
+    setConnectionStatus('🌐 Koneksi kembali — menyinkronkan perubahan...', 'syncing');
+    scheduleOfflineFlush(150);
+  });
+
+  // Coba sinkronisasi saat tab kembali aktif.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) scheduleOfflineFlush(100);
+  });
+
+  if (offlineSaveQueue.length) {
+    applyOfflineQueueToRows();
+    setConnectionStatus(`📴 ${offlineSaveQueue.length} perubahan menunggu sinkronisasi`, 'offline');
+    scheduleOfflineFlush(500);
+  }
+
+  // Pengaman tambahan: jika server sempat 5xx/429 atau koneksi sangat lambat,
+  // antrian akan dicoba lagi berkala tanpa pengguna perlu menekan tombol apa pun.
+  setInterval(() => {
+    if (navigator.onLine && offlineSaveQueue.length) flushOfflineSaves();
+  }, 30000);
+
+  // Drive backup retry: only a few pending files per cycle to avoid creating
+  // another traffic spike when many OPD users are online at once.
+  setInterval(() => { autoRetryPendingDriveBackups(); }, 60000);
+  window.addEventListener('online', () => setTimeout(autoRetryPendingDriveBackups, 3000));
+}
+
 let isAddingOpd = false;
 let isAddingYear = false;
 let isDeletingYear = false;
@@ -193,6 +397,7 @@ async function loadData() {
         return row;
       });
       rows.sort((a,b)=>{ const x=(parseFloat(b.nilaiMaturitas)||0)-(parseFloat(a.nilaiMaturitas)||0); return x || (parseFloat(b.nilaiStrukturProses)||0)-(parseFloat(a.nilaiStrukturProses)||0); });
+      applyOfflineQueueToRows();
     } else {
       console.warn('Data bukan array, rows diset kosong', data);
     }
@@ -204,7 +409,9 @@ async function loadData() {
   } catch (e) {
     status.textContent = '⚠️ ' + e.message;
     console.error(e);
-    rows = [];
+    // Jangan buang perubahan pengguna ketika server sedang tidak dapat diakses.
+    applyOfflineQueueToRows();
+    if (!offlineSaveQueue.length) rows = [];
     render();
     updateKpisLocal();
   }
@@ -275,6 +482,11 @@ async function saveData() {
     updateKpisLocal();
     setTimeout(() => { if (status && status.textContent.startsWith('✅')) status.textContent = ''; }, 2000);
   } catch (err) {
+    if (isNetworkError(err) || !navigator.onLine || err.transient) {
+      queueCurrentRowsForAutosave(err.message || 'Koneksi bermasalah');
+      if (status) status.textContent = `📴 Tersimpan di perangkat — akan disinkronkan otomatis`;
+      return;
+    }
     if (status) status.textContent = '⚠️ ' + err.message;
     throw err;
   } finally {
@@ -391,7 +603,12 @@ function attachHandlers() {
           }
         })
         .catch(err => {
-          showIndicator(e.target, '✗ Gagal', 'error');
+          if (isNetworkError(err) || !navigator.onLine || err.transient) {
+            queueOfflineSave('saveField', { opdId: id, field: field, value: val, year: currentYear }, err.message);
+            showIndicator(e.target, '📴 Tersimpan lokal', 'saving');
+          } else {
+            showIndicator(e.target, '✗ Gagal', 'error');
+          }
           console.error('Error saveField:', err);
         });
     };
@@ -417,7 +634,12 @@ function attachHandlers() {
           }
         })
         .catch(err => {
-          showIndicator(e.target, '✗ Gagal', 'error');
+          if (isNetworkError(err) || !navigator.onLine || err.transient) {
+            queueOfflineSave('saveField', { opdId: id, field: field, value: e.target.value, year: currentYear }, err.message);
+            showIndicator(e.target, '📴 Tersimpan lokal', 'saving');
+          } else {
+            showIndicator(e.target, '✗ Gagal', 'error');
+          }
           console.error('Error saveField:', err);
         });
     };
@@ -691,6 +913,8 @@ document.getElementById('kpiChartClose').addEventListener('click', function() {
     loadingStatus.textContent = 'Gagal memuat...';
   }, 10000);
 
+  initOfflineAutosave();
+
   try {
     setProgress(10, 'Memuat data subunsur...');
     SUBUNSUR_DATA = await callServer('getSubunsurData');
@@ -801,6 +1025,7 @@ document.getElementById('confirmOk').addEventListener('click', async function() 
 
 // ====== MODAL EDIT SUBUNSUR ======
 let editingRowId = null;
+let editingSubunsurSnapshot = null;
 let fileToDelete = null;
 async function openEditModal(id) {
   const row = rows.find(r => r.id === id);
@@ -813,6 +1038,8 @@ async function openEditModal(id) {
     });
   });
   editingRowId = row.id;
+  // Snapshot dipakai untuk mengirim hanya field yang benar-benar berubah.
+  editingSubunsurSnapshot = JSON.parse(JSON.stringify(row.subunsurs));
   document.getElementById('modalOpdName').textContent = row.opd || 'Tanpa Nama';
   const container = document.getElementById('subunsurContainer');
   container.innerHTML = '';
@@ -1025,7 +1252,7 @@ function renderFileList(row, subCode, paramId, level) {
     const div = document.createElement('div');
     div.style.cssText = 'display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px; border-radius:6px; margin-top:6px; flex-wrap:wrap;';
     const status = typeof fileObj === 'object' ? (fileObj.syncStatus || (fileObj.gdriveId ? 'done' : 'pending')) : 'pending';
-    const statusLabel = status === 'done' ? '✅ Google Drive' : (status === 'retrying' ? '🔄 Perlu Retry Google Drive' : '⏳ Mengirim ke Google Drive');
+    const statusLabel = status === 'done' ? '✅ R2 + Google Drive' : (status === 'retrying' ? '🔄 Perlu Retry Google Drive' : '⏳ Menyimpan ke R2 + Google Drive');
     const retryButton = (status !== 'done') && typeof fileObj === 'object' && fileObj.uploadId ? `<button type="button" onclick="retryUploadedFile('${row.id}','${subCode}','${paramId}',${level},'${fileObj.uploadId}')" style="background:#dbeafe;color:#1d4ed8;border:none;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;">↻ Retry</button>` : '';
     div.innerHTML = `
       <a href="${displayUrl}" target="_blank" rel="noopener" class="file-link" style="flex-grow:1; min-width:220px; margin:0;">📎 ${escapeHtml(fileName)}</a>
@@ -1048,10 +1275,48 @@ async function retryUploadedFile(opdId, subCode, paramId, level, uploadId) {
     item.syncError=r.driveError||null;
     if(item.gdriveId) item.storage='R2 + Google Drive';
     renderFileList(row,subCode,paramId,level); render();
-    showWarning(item.gdriveId ? '✅ Backup Google Drive berhasil.' : '🔄 Google Drive belum berhasil. Silakan Retry.');
+    showWarning(item.gdriveId ? '✅ R2 + Google Drive tersimpan.' : '🔄 Google Drive belum berhasil. Silakan Retry.');
   } catch(err) {
     item.syncStatus='retrying'; item.syncError=err.message; renderFileList(row,subCode,paramId,level);
     showWarning('❌ Retry Google Drive gagal: '+err.message);
+  }
+}
+
+async function autoRetryPendingDriveBackups() {
+  if (!navigator.onLine || !Array.isArray(rows)) return;
+  let attempted = 0;
+  for (const row of rows) {
+    if (attempted >= 3) break; // cap background traffic per browser cycle
+    const subunsurs = row?.subunsurs || {};
+    for (const subCode of Object.keys(subunsurs)) {
+      if (attempted >= 3) break;
+      const params = subunsurs[subCode] || {};
+      for (const paramId of Object.keys(params)) {
+        if (attempted >= 3) break;
+        for (let level = 1; level <= 5; level++) {
+          const files = params[paramId]?.['files' + level];
+          if (!Array.isArray(files)) continue;
+          const pending = files.find(f => typeof f === 'object' && f.uploadId && f.syncStatus !== 'done');
+          if (!pending) continue;
+          try {
+            const r = await callServerWithRetry('retryDriveBackup', {opdId:row.id,year:currentYear,uploadId:pending.uploadId,type:'evidence',subunsur:subCode,paramId,level},1);
+            if (r?.gdriveId) {
+              pending.gdriveId = r.gdriveId;
+              pending.syncStatus = 'done';
+              pending.storage = 'R2 + Google Drive';
+              pending.syncError = null;
+            } else {
+              pending.syncStatus = 'retrying';
+              pending.syncError = r?.driveError || pending.syncError || 'Menunggu Google Drive';
+            }
+            renderFileList(row,subCode,paramId,level);
+            attempted++;
+          } catch (_) {
+            attempted++;
+          }
+        }
+      }
+    }
   }
 }
 
@@ -1113,37 +1378,61 @@ document.getElementById('modalSave').addEventListener('click', async function() 
   if (!editingRowId) return;
   const row = rows.find(r => r.id === editingRowId);
   if (!row) return;
+
   const selects = document.querySelectorAll('#subunsurContainer select[data-sub]');
   const textareas = document.querySelectorAll('#subunsurContainer textarea[data-sub]');
+  const changes = [];
+
   selects.forEach(el => {
     const subCode = el.dataset.sub, paramId = el.dataset.param;
-    row.subunsurs[subCode][paramId].level = parseInt(el.value) || 0;
+    if (!row.subunsurs[subCode]) row.subunsurs[subCode] = {};
+    if (!row.subunsurs[subCode][paramId]) row.subunsurs[subCode][paramId] = { level: 0 };
+    const value = parseInt(el.value) || 0;
+    const oldValue = Number(editingSubunsurSnapshot?.[subCode]?.[paramId]?.level || 0);
+    row.subunsurs[subCode][paramId].level = value;
+    if (value !== oldValue) changes.push({subCode, paramId, field:'level', value});
   });
-  row.nilaiStrukturProses = calculateSA(row);
-  row.sa = row.nilaiStrukturProses;
+
   textareas.forEach(el => {
     const subCode = el.dataset.sub, paramId = el.dataset.param, field = el.dataset.field;
-    row.subunsurs[subCode][paramId][field] = el.value;
+    if (!row.subunsurs[subCode]) row.subunsurs[subCode] = {};
+    if (!row.subunsurs[subCode][paramId]) row.subunsurs[subCode][paramId] = { level: 0 };
+    const value = el.value;
+    const oldValue = String(editingSubunsurSnapshot?.[subCode]?.[paramId]?.[field] || '');
+    row.subunsurs[subCode][paramId][field] = value;
+    if (value !== oldValue) changes.push({subCode, paramId, field, value});
   });
-  // Nilai Struktur dan Proses tetap dihitung otomatis dari 43 parameter. Nilai Maturitas diisi manual dan tidak ditimpa.
+
   row.nilaiStrukturProses = calculateSA(row);
   row.sa = row.nilaiStrukturProses;
-  let strukturEvidenceCount = 0;
-  PARAM_LIST.forEach(param => { const sd=row.subunsurs?.[param.subCode]?.[param.paramId]; if(sd){ for(let lv=1;lv<=5;lv++){ if(Array.isArray(sd['files'+lv]) && sd['files'+lv].length){ strukturEvidenceCount++; break; } } } });
-  row.strukturProsesStatus = strukturEvidenceCount === PARAM_LIST.length ? 'Selesai' : (strukturEvidenceCount > 0 ? 'Proses' : 'Belum');
   const modalStatus = document.getElementById('modalSaveStatus');
   modalStatus.style.display = 'block';
   modalStatus.style.color = '#1e40af';
-  modalStatus.textContent = '⏳ Menyimpan data...';
+
+  if (!changes.length) {
+    modalStatus.style.color = '#16a34a';
+    modalStatus.textContent = '✅ Tidak ada perubahan baru.';
+    setTimeout(() => { closeEditModal(); render(); }, 500);
+    return;
+  }
+
+  modalStatus.textContent = '⏳ Menyimpan perubahan...';
+  const saveParams = {opdId:row.id, year:currentYear, changes};
   try {
-    const saved=await callServerWithRetry('saveSubunsur',{opdId:row.id,year:currentYear,subunsurs:row.subunsurs});
+    const saved=await callServerWithRetry('saveSubunsur', saveParams);
     if(saved?.nilaiStrukturProses!=null){row.nilaiStrukturProses=saved.nilaiStrukturProses;row.sa=saved.nilaiStrukturProses;row.strukturProsesStatus=saved.strukturProsesStatus||row.strukturProsesStatus;}
     modalStatus.style.color = '#16a34a';
-    modalStatus.textContent = '✅ Data berhasil disimpan!';
-    setTimeout(() => { closeEditModal(); render(); }, 800);
+    modalStatus.textContent = '✅ Perubahan berhasil disimpan!';
+    setTimeout(() => { closeEditModal(); render(); }, 600);
   } catch (err) {
-    modalStatus.style.color = '#dc2626';
-    modalStatus.textContent = '❌ Gagal menyimpan! ' + err;
+    if (isNetworkError(err) || !navigator.onLine || err.transient) {
+      queueOfflineSave('saveSubunsur', saveParams, err.message);
+      modalStatus.style.color = '#b45309';
+      modalStatus.textContent = '📴 Koneksi bermasalah. Perubahan tersimpan di perangkat dan akan dikirim otomatis.';
+    } else {
+      modalStatus.style.color = '#dc2626';
+      modalStatus.textContent = '❌ Gagal menyimpan! ' + (err.message || err);
+    }
   }
 });
 
@@ -1168,7 +1457,15 @@ document.getElementById('addOpdOk').addEventListener('click', async function() {
     });
     rows.push(newOpd);
     render();
-    await callServerWithRetry('saveRow',{year:currentYear,row:newOpd});
+    try {
+      await callServerWithRetry('saveRow',{year:currentYear,row:newOpd});
+    } catch (err) {
+      if (isNetworkError(err) || !navigator.onLine || err.transient) {
+        queueOfflineSave('saveRow', { year: currentYear, row: newOpd }, err.message);
+      } else {
+        throw err;
+      }
+    }
     document.getElementById('addOpdModal').classList.remove('active');
   } finally {
     isAddingOpd = false;
@@ -1502,7 +1799,15 @@ document.getElementById('confirmNameOk').addEventListener('click', async functio
     if (row) {
       row.opd = window._pendingName.newName;
       render();
-      await callServerWithRetry('saveField',{opdId:row.id,field:'opd',value:row.opd,year:currentYear});
+      try {
+        await callServerWithRetry('saveField',{opdId:row.id,field:'opd',value:row.opd,year:currentYear});
+      } catch (err) {
+        if (isNetworkError(err) || !navigator.onLine || err.transient) {
+          queueOfflineSave('saveField',{opdId:row.id,field:'opd',value:row.opd,year:currentYear},err.message);
+        } else {
+          throw err;
+        }
+      }
     }
     window._pendingName = null;
   }
@@ -1526,6 +1831,7 @@ document.getElementById('modalCancel').addEventListener('click', closeEditModal)
 function closeEditModal() {
   document.getElementById('editModal').classList.remove('active');
   editingRowId = null;
+  editingSubunsurSnapshot = null;
 }
 
 // ====== AKSES LANGSUNG VIA PORTAL ======
@@ -1705,7 +2011,7 @@ document.getElementById('rtpEvidenceFolderSave')?.addEventListener('click',async
   await Promise.all(workers);
   rtpEvidenceSetStatus(failed?`Selesai: ${done} berhasil, ${failed} gagal.`:`✅ ${done} file diproses; yang belum masuk Google Drive dapat di-Retry.` ,failed?'error':'success');
   e.target.value='';
-});document.getElementById('rtpEvidenceList')?.addEventListener('click',async e=>{const rb=e.target.closest('.rtp-retry-btn');if(rb){const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[]).find(x=>x.uploadId===rb.dataset.uploadId);if(!f)return;try{f.syncStatus='retrying';renderRtpEvidenceList(row);rtpEvidenceSetStatus('Mencoba ulang backup Google Drive...');const d=await callServerWithRetry('retryDriveBackup',{opdId:row.id,year:currentYear,type:'rtp',uploadId:f.uploadId},2);f.gdriveId=d.gdriveId||f.gdriveId||null;f.syncStatus=d.syncStatus||'retrying';f.syncError=d.driveError||null;renderRtpEvidenceList(row);render();rtpEvidenceSetStatus(f.gdriveId?'✅ Backup Google Drive berhasil.':'🔄 Google Drive belum berhasil. Silakan Retry.',f.gdriveId?'success':'');}catch(err){f.syncStatus='retrying';f.syncError=err.message;renderRtpEvidenceList(row);rtpEvidenceSetStatus('Retry gagal: '+err.message,'error');}return;}const b=e.target.closest('.rtp-delete-btn');if(!b)return;const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[])[Number(b.dataset.index)];if(!f)return;try{rtpEvidenceSetStatus('Menghapus...');const d=await callServerWithRetry('deleteRtpEvidence',{opdId:row.id,year:currentYear,fileUrl:f.url,gdriveId:f.gdriveId||null});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];renderRtpEvidenceList(row);render();rtpEvidenceSetStatus('File dihapus.','success');}catch(err){rtpEvidenceSetStatus('Gagal hapus: '+err.message,'error');}});document.getElementById('rtpEvidenceRefresh')?.addEventListener('click',()=>{if(rtpEvidenceEditingRowId)openRtpEvidenceModal(rtpEvidenceEditingRowId);});function closeRtpEvidenceModal(){document.getElementById('rtpEvidenceModal')?.classList.remove('active');rtpEvidenceEditingRowId=null;}document.getElementById('rtpEvidenceClose')?.addEventListener('click',closeRtpEvidenceModal);document.getElementById('rtpEvidenceCloseFooter')?.addEventListener('click',closeRtpEvidenceModal);
+});document.getElementById('rtpEvidenceList')?.addEventListener('click',async e=>{const rb=e.target.closest('.rtp-retry-btn');if(rb){const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[]).find(x=>x.uploadId===rb.dataset.uploadId);if(!f)return;try{f.syncStatus='retrying';renderRtpEvidenceList(row);rtpEvidenceSetStatus('Mencoba ulang backup Google Drive...');const d=await callServerWithRetry('retryDriveBackup',{opdId:row.id,year:currentYear,type:'rtp',uploadId:f.uploadId},2);f.gdriveId=d.gdriveId||f.gdriveId||null;f.syncStatus=d.syncStatus||'retrying';f.syncError=d.driveError||null;renderRtpEvidenceList(row);render();rtpEvidenceSetStatus(f.gdriveId?'✅ R2 + Google Drive tersimpan.':'🔄 Google Drive belum berhasil. Silakan Retry.',f.gdriveId?'success':'');}catch(err){f.syncStatus='retrying';f.syncError=err.message;renderRtpEvidenceList(row);rtpEvidenceSetStatus('Retry gagal: '+err.message,'error');}return;}const b=e.target.closest('.rtp-delete-btn');if(!b)return;const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[])[Number(b.dataset.index)];if(!f)return;try{rtpEvidenceSetStatus('Menghapus...');const d=await callServerWithRetry('deleteRtpEvidence',{opdId:row.id,year:currentYear,fileUrl:f.url,gdriveId:f.gdriveId||null});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];renderRtpEvidenceList(row);render();rtpEvidenceSetStatus('File dihapus.','success');}catch(err){rtpEvidenceSetStatus('Gagal hapus: '+err.message,'error');}});document.getElementById('rtpEvidenceRefresh')?.addEventListener('click',()=>{if(rtpEvidenceEditingRowId)openRtpEvidenceModal(rtpEvidenceEditingRowId);});function closeRtpEvidenceModal(){document.getElementById('rtpEvidenceModal')?.classList.remove('active');rtpEvidenceEditingRowId=null;}document.getElementById('rtpEvidenceClose')?.addEventListener('click',closeRtpEvidenceModal);document.getElementById('rtpEvidenceCloseFooter')?.addEventListener('click',closeRtpEvidenceModal);
 document.addEventListener('click',function(e){
   const close=e.target.closest('#sheetLinksClose,#sheetLinksCancel');
   if(close){closeSpreadsheetModal();return;}
