@@ -1,6 +1,6 @@
 name = "kawal-spip-realtime"
 main = "realtime.js"
-compatibility_date = "2026-09-11"
+compatibility_date = "2026-09-10"
 
 [[durable_objects.bindings]]
 name = "REALTIME"
