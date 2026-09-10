@@ -1,0 +1,26 @@
+# kawal-spip-realtime
+
+Separate Cloudflare Worker for the `RealtimeHub` Durable Object used by the KAWAL SPIP Pages project.
+
+## Deployment
+
+Deploy this directory as a separate Worker named `kawal-spip-realtime`.
+
+Using Wrangler:
+
+```bash
+npx wrangler deploy
+```
+
+Using Cloudflare Git integration, connect the same GitHub repository to a Worker build and set the Worker root directory to:
+
+`realtime-worker`
+
+The Worker config is already in `realtime-worker/wrangler.toml`.
+
+## Durable Object
+
+Class: `RealtimeHub`
+Storage: SQLite
+
+The class uses the WebSocket Hibernation API so idle realtime connections can hibernate while clients remain connected.
