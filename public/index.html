@@ -289,6 +289,35 @@
   </div>
 </div>
 
+<!-- ===== EVIDENCE RTP ===== -->
+<div class="sheet-links-overlay" id="rtpEvidenceModal">
+  <div class="sheet-links-modal" style="max-width:760px;">
+    <div class="sheet-links-header">
+      <h3>📁 EVIDENCE RTP - <span id="rtpEvidenceOpdName"></span></h3>
+      <button class="sheet-links-close" id="rtpEvidenceClose" aria-label="Tutup">&times;</button>
+    </div>
+    <div class="sheet-links-body">
+      <div class="sheet-links-info">Tentukan nama folder Evidence RTP. Folder akan digunakan untuk penyimpanan file pada R2 dan Google Drive berdasarkan OPD dan tahun aktif.</div>
+      <div class="sheet-links-status" id="rtpEvidenceStatus"></div>
+      <div class="rtp-folder-box">
+        <label for="rtpEvidenceFolderName">Nama Folder Evidence RTP</label>
+        <div class="rtp-folder-row"><input id="rtpEvidenceFolderName" type="text" maxlength="100" value="Evidence RTP" placeholder="Contoh: Evidence RTP 2026"><button type="button" id="rtpEvidenceFolderSave">Simpan Nama Folder</button></div>
+        <div class="rtp-folder-preview">Folder tujuan: <b id="rtpEvidenceFolderPreview">Evidence RTP</b></div>
+      </div>
+      <div class="rtp-upload-box">
+        <input id="rtpEvidenceInput" type="file" multiple hidden>
+        <button class="rtp-upload-button" id="rtpEvidenceChoose" type="button">📤 Pilih File Evidence RTP</button>
+        <div class="rtp-upload-help">Maks. 10 MB per file • total pilihan maks. 10 MB.</div>
+      </div>
+      <div id="rtpEvidenceList"></div>
+    </div>
+    <div class="sheet-links-footer">
+      <button id="rtpEvidenceRefresh" type="button">↻ Muat Ulang</button>
+      <button id="rtpEvidenceCloseFooter" type="button">Tutup</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== PM SPIP TERINTEGRASI ===== -->
 <div class="sheet-links-overlay" id="kkPmModal">
   <div class="kkpm-modal">
@@ -332,5 +361,5 @@
   </div>
 </div>
 
-<script src="/pm_workbook.js" defer></script>
-<script src="/script.js?v=20260910-loginfix2" defer></script>
+<script src="/pm_workbook.js?v=20260910" defer></script>
+<script src="/script.js?v=20260910-r1" defer></script>
