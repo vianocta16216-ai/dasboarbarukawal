@@ -589,13 +589,21 @@ export const onRequest = async ({ request, env, ctx }) => {
   const year = params.year || '2026';
   await ensureOpdSchema(env);
 
-  // Rate limiting untuk aksi login
+  // Rate limiting untuk aksi login: hanya percobaan SALAH yang dihitung.
+  // Password yang benar selalu dapat masuk, sekaligus mereset penghitung percobaan.
+  let clientIp = 'unknown';
+  let loginRateLimited = false;
   if (action === 'verifyAccess' || action === 'verifyDelete') {
-    const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+    clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
     try {
-      await checkRateLimit(env, clientIp, action);
+      const now = Date.now();
+      const windowMs = 10 * 60 * 1000;
+      const { results } = await env.DB.prepare(
+        "SELECT COUNT(*) as count FROM login_attempts WHERE ip = ? AND action = ? AND timestamp > ?"
+      ).bind(clientIp, action, now - windowMs).all();
+      loginRateLimited = Number(results?.[0]?.count || 0) >= 5;
     } catch (err) {
-      return new Response(JSON.stringify({ status: 'error', message: err.message }), { status: 429, headers: { 'Content-Type': 'application/json' } });
+      console.warn('Rate-limit check dilewati:', err);
     }
   }
 
@@ -633,11 +641,35 @@ export const onRequest = async ({ request, env, ctx }) => {
       case 'getSubunsurData':
         return new Response(JSON.stringify(SUBUNSUR_DATA), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
-      case 'verifyAccess':
-        return new Response(JSON.stringify({ status: params.password === ACCESS_PASSWORD ? 'success' : 'error', message: params.password === ACCESS_PASSWORD ? 'Akses diterima' : 'Password salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      case 'verifyAccess': {
+        const ok = params.password === ACCESS_PASSWORD;
+        if (ok) {
+          try { await env.DB.prepare("DELETE FROM login_attempts WHERE ip = ? AND action = ?").bind(clientIp, action).run(); } catch {}
+          return new Response(JSON.stringify({ status: 'success', message: 'Akses diterima' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (loginRateLimited) {
+          return new Response(JSON.stringify({ status: 'error', message: 'Terlalu banyak percobaan salah. Coba lagi dalam 10 menit.' }), { status: 429, headers: { 'Content-Type': 'application/json' } });
+        }
+        try {
+          await env.DB.prepare("INSERT INTO login_attempts (ip, action, timestamp) VALUES (?, ?, ?)").bind(clientIp, action, Date.now()).run();
+        } catch {}
+        return new Response(JSON.stringify({ status: 'error', message: 'Password salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
 
-      case 'verifyDelete':
-        return new Response(JSON.stringify({ status: params.password === DELETE_PASSWORD ? 'success' : 'error', message: params.password === DELETE_PASSWORD ? 'Password hapus benar' : 'Password hapus salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      case 'verifyDelete': {
+        const ok = params.password === DELETE_PASSWORD;
+        if (ok) {
+          try { await env.DB.prepare("DELETE FROM login_attempts WHERE ip = ? AND action = ?").bind(clientIp, action).run(); } catch {}
+          return new Response(JSON.stringify({ status: 'success', message: 'Password hapus benar' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (loginRateLimited) {
+          return new Response(JSON.stringify({ status: 'error', message: 'Terlalu banyak percobaan salah. Coba lagi dalam 10 menit.' }), { status: 429, headers: { 'Content-Type': 'application/json' } });
+        }
+        try {
+          await env.DB.prepare("INSERT INTO login_attempts (ip, action, timestamp) VALUES (?, ?, ?)").bind(clientIp, action, Date.now()).run();
+        } catch {}
+        return new Response(JSON.stringify({ status: 'error', message: 'Password hapus salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
 
       case 'getData': {
         const {results}=await env.DB.prepare("SELECT * FROM opd_data WHERE year=? ORDER BY CAST(nilai_maturitas AS REAL) DESC, CAST(nilai_struktur_proses AS REAL) DESC, CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
