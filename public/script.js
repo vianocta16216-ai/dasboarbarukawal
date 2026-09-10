@@ -1830,7 +1830,31 @@ function kkPmFormulaEnter(){if(!kkPmSelected)return;kkPmEnsureDraft();const v=do
 
 function kkPmShiftOp(axis,delta){if(!kkPmSelected)return;const at=axis==='row'?kkPmSelected.r:kkPmSelected.c;const si=kkPmActiveSheet;kkPmEnsureDraft();kkPmDraft.structure.ops=kkPmDraft.structure.ops||[];kkPmDraft.structure.ops.push({si,axis,at,delta});kkPmDirty=true;kkPmLoadStructure();kkPmCalc=null;kkPmSelected={si,r:Math.min(kkPmSelected.r,Math.max(0,(kkPmTemplate.sheets[si].rows||1)+delta-1)),c:Math.min(kkPmSelected.c,Math.max(0,(kkPmTemplate.sheets[si].cols||1)+(axis==='col'?delta:0)-1))};kkPmRenderCells();kkPmSetStatus((delta>0?'✅ Menambah ':'🗑️ Menghapus ')+(axis==='row'?'baris':'kolom')+' pada posisi terpilih.','dirty')}
 
-async function loadKkPmTemplate(){if(kkPmBaseTemplate)return kkPmBaseTemplate;const res=await fetch(KKPM_TEMPLATE_URL,{cache:'force-cache'});const txt=await res.text();if(!res.ok||/^\s*<!doctype|^\s*</i.test(txt))throw new Error('Template PM SPIP tidak ditemukan. Pastikan file pm_workbook.json ikut di-deploy.');kkPmBaseTemplate=JSON.parse(txt);if(kkPmBaseTemplate.formulaCount!==220486)console.warn('Formula count berbeda dari sumber:',kkPmBaseTemplate.formulaCount);return kkPmBaseTemplate}
+async function loadKkPmTemplate(){
+  if(kkPmBaseTemplate)return kkPmBaseTemplate;
+  // 1) Primary source: bundled workbook, so Cloudflare/SPA rewrites cannot turn JSON into index.html.
+  if(window.PM_SPIP_WORKBOOK && Array.isArray(window.PM_SPIP_WORKBOOK.sheets)){
+    kkPmBaseTemplate=window.PM_SPIP_WORKBOOK;
+    if(kkPmBaseTemplate.formulaCount!==220486)console.warn('Formula count berbeda dari sumber:',kkPmBaseTemplate.formulaCount);
+    return kkPmBaseTemplate;
+  }
+  // 2) Fallback for local/manual deployments.
+  const urls=['/pm_workbook.json','./pm_workbook.json'];
+  let lastError=null;
+  for(const url of urls){
+    try{
+      const res=await fetch(url,{cache:'no-store'});
+      const txt=await res.text();
+      if(!res.ok||/^\s*<!doctype|^\s*</i.test(txt))throw new Error(`HTTP ${res.status||200} bukan JSON`);
+      const data=JSON.parse(txt);
+      if(!data||!Array.isArray(data.sheets)||!data.sheets.length)throw new Error('Workbook kosong/tidak valid');
+      kkPmBaseTemplate=data;
+      if(kkPmBaseTemplate.formulaCount!==220486)console.warn('Formula count berbeda dari sumber:',kkPmBaseTemplate.formulaCount);
+      return kkPmBaseTemplate;
+    }catch(e){lastError=e}
+  }
+  throw new Error('Template PM SPIP gagal dimuat. Workbook sudah dibundel; cek deployment/static assets. '+(lastError?.message||''));
+}
 async function saveKkPmData(){const row=rows.find(r=>r.id===kkPmEditingRowId);if(!row)return;kkPmEnsureDraft();const b=document.getElementById('kkPmSave');b.disabled=true;kkPmSetStatus('Menyimpan PM SPIP...');try{row.kkPmData=JSON.parse(JSON.stringify(kkPmDraft));const res=await callServer('saveRow',{row,year:currentYear});if(res?.status!=='success')throw Error(res?.message||'Server menolak penyimpanan.');kkPmDirty=false;kkPmSetStatus('✅ Tersimpan untuk OPD + tahun aktif.','success');}catch(e){kkPmSetStatus('❌ Gagal menyimpan: '+e.message,'error')}finally{b.disabled=false}}
 async function openKkPmModal(id){const row=rows.find(r=>r.id===id);if(!row)return;kkPmEditingRowId=id;kkPmActiveSheet=0;kkPmDirty=false;kkPmSelected={si:0,r:0,c:0};kkPmDraft=JSON.parse(JSON.stringify(row.kkPmData||{}));kkPmEnsureDraft();document.getElementById('kkPmOpdName').textContent=row.opd||'Tanpa Nama';document.getElementById('kkPmSubtitle').textContent=`Tahun ${currentYear} · PM SPIP Terintegrasi · workbook 28 sheet`;document.getElementById('kkPmSearch').value='';document.getElementById('kkPmModal').classList.add('active');try{await loadKkPmTemplate();kkPmTemplate=structuredClone(kkPmBaseTemplate);kkPmLoadStructure();kkPmRenderTabs();kkPmBuildUIOnce();kkPmRenderCells();kkPmUpdateFormulaBar();kkPmSetStatus('✅ Workbook asli termuat. Formula antar-sheet + shared formula aktif.','success')}catch(e){kkPmSetStatus('❌ Gagal memuat PM SPIP: '+e.message,'error')}}
 function closeKkPmModal(){if(kkPmDirty&&!confirm('Ada perubahan PM SPIP yang belum disimpan. Tutup tanpa menyimpan?'))return;document.getElementById('kkPmModal')?.classList.remove('active');kkPmEditingRowId=null;kkPmDirty=false;kkPmDraft={};kkPmCalc=null;kkPmSelected=null;kkPmTemplate=null}
