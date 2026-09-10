@@ -5,7 +5,7 @@ pages_build_output_dir = "public"
 [[d1_databases]]
 binding = "DB"
 database_name = "kawal-spip-db"
-database_id = "GANTI_DENGAN_UUID_D1_LENGKAP"
+database_id = "46bfc2a4-e13a-40b7-b21d-89642702a3a8"
 
 [[r2_buckets]]
 binding = "EVIDENCE_BUCKET"
