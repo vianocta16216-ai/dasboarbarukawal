@@ -780,38 +780,49 @@ export const onRequest = async ({ request, env, ctx }) => {
         const rows = JSON.parse(params.rows);
         if (!Array.isArray(rows)) throw new Error('Data rows tidak valid');
 
-        // Bulk save is batched so 50-100 OPD do not cause one network round-trip
-        // per row. Chunks keep the request comfortably below D1 batch limits.
+        // SAFETY / CONCURRENCY: this legacy bulk endpoint MUST NOT replace nested
+        // evidence, RTP evidence, or workbook JSON from a potentially stale browser.
+        // Those structures have dedicated atomic endpoints. Only top-level scalar
+        // fields are synchronized here, and only for OPDs that already exist.
         const statements = [];
         for (const row of rows) {
-          const subunsurs=row.subunsurs||{};
-          const sa=calculateSAFromSubunsur(subunsurs);
-          const kkData=row.kkData||{}, kkPmData=row.kkPmData||{}, kkRtpData=row.kkRtpData||{}, rtpEvidence=Array.isArray(row.rtpEvidence)?row.rtpEvidence:[];
-          statements.push(env.DB.prepare("INSERT OR REPLACE INTO opd_data (id,opd,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,evidence,qa_apip,mri,iepk,rtp,status,struktur_proses_status,subunsurs,year,kk_data,kk_pm_data,kk_rtp_data,rtp_evidence,rtp_evidence_folder) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(
-            row.id,sanitizeString(row.opd||''),sa,sa,
+          if (!row?.id) continue;
+          statements.push(env.DB.prepare("UPDATE opd_data SET opd=?, nilai_maturitas=?, nilai_kapabilitas_apip=?, evidence=?, qa_apip=?, mri=?, iepk=?, rtp=?, status=? WHERE id=? AND year=?").bind(
+            sanitizeString(row.opd||''),
             Math.max(0,Math.min(5,Number(row.nilaiMaturitas??row.nilai_maturitas??0)||0)),
             Number(row.nilaiKapabilitasApip??row.nilai_kapabilitas_apip??0)||0,
-            row.evidence||'Belum',row.qaApip||'Belum',parseFloat(row.mri)||0,parseFloat(row.iepk)||0,
-            row.rtp||'Belum',row.status||'Belum',
-            (countParameterEvidence(subunsurs)===countTotalParameters() ? 'Selesai' : (countParameterEvidence(subunsurs)>0 ? 'Proses' : 'Belum')),
-            JSON.stringify(subunsurs),year,JSON.stringify(kkData),JSON.stringify(kkPmData),
-            JSON.stringify(kkRtpData),JSON.stringify(rtpEvidence),row.rtpEvidenceFolder||'Evidence RTP'
+            row.evidence||'Belum', row.qaApip||'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0,
+            row.rtp||'Belum', row.status||'Belum', row.id, year
           ));
         }
         for (let i=0; i<statements.length; i+=50) {
           await env.DB.batch(statements.slice(i,i+50));
         }
         notifyRealtime(env, ctx, year, { action: 'saveData' });
-        return jsonResponse({status:'success',message:`${rows.length} data tersimpan`});
+        return jsonResponse({status:'success',message:`${statements.length} data tersimpan`});
       }
 
       case 'saveRow': {
         const row=params.row||{};
         if(!row.id)throw new Error('ID OPD wajib diisi');
-        const subunsurs=row.subunsurs||{};
-        const sa=calculateSAFromSubunsur(subunsurs);
-        const strukturStatus=countParameterEvidence(subunsurs)===countTotalParameters()?'Selesai':(countParameterEvidence(subunsurs)>0?'Proses':'Belum');
-        await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id,opd,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,evidence,qa_apip,mri,iepk,rtp,status,struktur_proses_status,subunsurs,year,kk_data,kk_pm_data,kk_rtp_data,rtp_evidence,rtp_evidence_folder) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(row.id,sanitizeString(row.opd||''),sa,sa,Math.max(0,Math.min(5,Number(row.nilaiMaturitas??row.nilai_maturitas??0)||0)),Number(row.nilaiKapabilitasApip??row.nilai_kapabilitas_apip??0)||0,row.evidence||'Belum',row.qaApip||'Belum',parseFloat(row.mri)||0,parseFloat(row.iepk)||0,row.rtp||'Belum',row.status||'Belum',strukturStatus,JSON.stringify(subunsurs),year,JSON.stringify(row.kkData||{}),JSON.stringify(row.kkPmData||{}),JSON.stringify(row.kkRtpData||{}),JSON.stringify(Array.isArray(row.rtpEvidence)?row.rtpEvidence:[]),row.rtpEvidenceFolder||'Evidence RTP').run();
+
+        // Existing OPD: update only scalar fields. Never replace nested evidence
+        // or workbook data from a stale browser snapshot.
+        const existing = await env.DB.prepare("SELECT id FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(row.id,year).all();
+        if (existing.results.length) {
+          await runD1WithRetry(() => env.DB.prepare("UPDATE opd_data SET opd=?, nilai_maturitas=?, nilai_kapabilitas_apip=?, evidence=?, qa_apip=?, mri=?, iepk=?, rtp=?, status=? WHERE id=? AND year=?").bind(
+            sanitizeString(row.opd||''),
+            Math.max(0,Math.min(5,Number(row.nilaiMaturitas??row.nilai_maturitas??0)||0)),
+            Number(row.nilaiKapabilitasApip??row.nilai_kapabilitas_apip??0)||0,
+            row.evidence||'Belum',row.qaApip||'Belum',parseFloat(row.mri)||0,parseFloat(row.iepk)||0,
+            row.rtp||'Belum',row.status||'Belum',row.id,year
+          ));
+        } else {
+          const subunsurs=row.subunsurs||{};
+          const sa=calculateSAFromSubunsur(subunsurs);
+          const strukturStatus=countParameterEvidence(subunsurs)===countTotalParameters()?'Selesai':(countParameterEvidence(subunsurs)>0?'Proses':'Belum');
+          await env.DB.prepare("INSERT INTO opd_data (id,opd,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,evidence,qa_apip,mri,iepk,rtp,status,struktur_proses_status,subunsurs,year,kk_data,kk_pm_data,kk_rtp_data,rtp_evidence,rtp_evidence_folder) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(row.id,sanitizeString(row.opd||''),sa,sa,Math.max(0,Math.min(5,Number(row.nilaiMaturitas??row.nilai_maturitas??0)||0)),Number(row.nilaiKapabilitasApip??row.nilai_kapabilitas_apip??0)||0,row.evidence||'Belum',row.qaApip||'Belum',parseFloat(row.mri)||0,parseFloat(row.iepk)||0,row.rtp||'Belum',row.status||'Belum',strukturStatus,JSON.stringify(subunsurs),year,JSON.stringify(row.kkData||{}),JSON.stringify(row.kkPmData||{}),JSON.stringify(row.kkRtpData||{}),JSON.stringify(Array.isArray(row.rtpEvidence)?row.rtpEvidence:[]),row.rtpEvidenceFolder||'Evidence RTP').run();
+        }
         notifyRealtime(env, ctx, year, { action: 'saveRow', opdId: row.id });
         return jsonResponse({status:'success',message:'Data OPD tersimpan'});
       }
@@ -1004,11 +1015,12 @@ export const onRequest = async ({ request, env, ctx }) => {
         await env.EVIDENCE_BUCKET.put(filePath,fileBody||bytes,{httpMetadata:{contentType:fileType}});
         const publicUrl=`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
         const item={url:publicUrl,fileName:safeFileName,folderName,gdriveId:null,storage:'R2',syncStatus:'pending',uploadedAt:new Date().toISOString(),uploadId,r2Key:filePath,fileType};
-        const {results}=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+        const {results}=await env.DB.prepare("SELECT id FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
         if(!results.length)throw new Error('OPD tidak ditemukan');
-        let list=[];try{list=results[0].rtp_evidence?JSON.parse(results[0].rtp_evidence):[]}catch{}
-        list.push(item);
-        await env.DB.prepare("UPDATE opd_data SET rtp_evidence=?, rtp_evidence_folder=? WHERE id=? AND year=?").bind(JSON.stringify(list),folderName,params.opdId,year).run();
+        // Atomic append so concurrent RTP uploads for the same OPD do not replace
+        // one another with a stale SELECT+UPDATE snapshot.
+        const itemJson=JSON.stringify(item);
+        await runD1WithRetry(() => env.DB.prepare("UPDATE opd_data SET rtp_evidence=json_insert(COALESCE(rtp_evidence,'[]'), '$[#]', json(?)), rtp_evidence_folder=? WHERE id=? AND year=?").bind(itemJson,folderName,params.opdId,year));
 
         const job={type:'rtp',uploadId,year,opdId:params.opdId,opdName:params.opdName||'OPD',r2Key:filePath,fileName:safeFileName,fileType,folderName};
         notifyRealtime(env, ctx, year, { action: 'uploadRtpEvidence', opdId: params.opdId, uploadId });
@@ -1188,10 +1200,10 @@ export const onRequest = async ({ request, env, ctx }) => {
           const fileType=item?.fileType||params.fileType||'application/octet-stream';
           if(!r2Key) throw new Error('Lokasi file R2 tidak ditemukan');
           if(!item){
-            obj[subunsur]=obj[subunsur]||{}; obj[subunsur][paramId]=obj[subunsur][paramId]||{level:0};
-            const k='files'+level; obj[subunsur][paramId][k]=Array.isArray(obj[subunsur][paramId][k])?obj[subunsur][paramId][k]:[];
-            obj[subunsur][paramId][k].push({url:params.url||`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${r2Key}`,fileName,gdriveId:null,storage:'R2',syncStatus:'retrying',syncError:null,uploadedAt:new Date().toISOString(),uploadId,r2Key,fileType});
-            await env.DB.prepare("UPDATE opd_data SET subunsurs=? WHERE id=? AND year=?").bind(JSON.stringify(obj),opdId,targetYear).run();
+            // SECURITY / DATA ISOLATION: never create an evidence record during a retry
+            // from client-supplied metadata. A retry must reference an existing upload
+            // that is already attached to THIS exact OPD + subunsur + parameter + level.
+            throw new Error('Evidence tidak ditemukan pada OPD/kolom tujuan. Retry dibatalkan agar file tidak masuk ke kolom OPD yang salah.');
           }
           job={type:'evidence',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key,fileName,fileType,subunsur:String(subunsur),paramId:String(paramId),level:String(level)};
         }
