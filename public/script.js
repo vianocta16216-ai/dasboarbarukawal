@@ -355,6 +355,7 @@ let isRestoringBackup = false;
 let isDeletingFile = false;
 let isSaving = false;
 let pendingSave = false;
+let kkPmDirty = false;
 let chartInstance = null;
 let originalRows = [];
 const pendingUploadFiles = new Map();
@@ -1443,9 +1444,19 @@ function renderFileList(row, subCode, paramId, level) {
   const fileListEl = rowEl.querySelector('.file-list');
   if (!fileListEl) return;
 
-  const files = (row.subunsurs[subCode] && row.subunsurs[subCode][paramId] && row.subunsurs[subCode][paramId]['files' + level]) || [];
+  const rawFiles = (row.subunsurs?.[subCode]?.[paramId]?.['files' + level]);
+  let files = [];
+  if (Array.isArray(rawFiles)) {
+    files = rawFiles;
+  } else if (typeof rawFiles === 'string') {
+    try { const parsed = JSON.parse(rawFiles); files = Array.isArray(parsed) ? parsed : []; } catch (_) { files = []; }
+  } else if (rawFiles && typeof rawFiles === 'object') {
+    // Legacy/terkunci: jangan pernah memanggil forEach pada object.
+    if (Array.isArray(rawFiles.files)) files = rawFiles.files;
+    else files = Object.values(rawFiles).filter(v => typeof v === 'string' || (v && typeof v === 'object'));
+  }
   fileListEl.innerHTML = '';
-  if (files.length === 0) {
+  if (!files.length) {
     fileListEl.innerHTML = '<span style="font-size:12px;color:#64748b;">Belum ada file.</span>';
     return;
   }
@@ -1490,7 +1501,8 @@ function renderFileList(row, subCode, paramId, level) {
 }
 async function retryUploadedFile(opdId, subCode, paramId, level, uploadId) {
   const row = rows.find(r => r.id === opdId); if(!row) return;
-  const files = row.subunsurs?.[subCode]?.[paramId]?.['files'+level] || [];
+  const rawFiles = row.subunsurs?.[subCode]?.[paramId]?.['files'+level];
+  const files = Array.isArray(rawFiles) ? rawFiles : [];
   const item = files.find(f => typeof f === 'object' && f.uploadId === uploadId); if(!item) return;
   try {
     item.syncStatus='retrying'; renderFileList(row,subCode,paramId,level);
