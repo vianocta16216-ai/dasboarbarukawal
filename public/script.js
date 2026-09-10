@@ -588,7 +588,19 @@ async function loadData() {
     rows = [];
     if (Array.isArray(data)) {
       rows = data.map(r => {
-        const row = { ...r, nilaiMaturitas:Number(r.nilaiMaturitas ?? r.nilai_maturitas ?? 0) || 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, kkPmData:r.kkPmData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
+        const row = { ...r,
+          subunsurs: r.subunsurs && typeof r.subunsurs === 'object' ? JSON.parse(JSON.stringify(r.subunsurs)) : {},
+          nilaiMaturitas:Number(r.nilaiMaturitas ?? r.nilai_maturitas ?? 0) || 0,
+          nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0,
+          rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum',
+          mri:r.mri||0, iepk:r.iepk||0,
+          kkData:r.kkData && typeof r.kkData==='object' ? JSON.parse(JSON.stringify(r.kkData)) : {},
+          kkRtpData:r.kkRtpData && typeof r.kkRtpData==='object' ? JSON.parse(JSON.stringify(r.kkRtpData)) : {},
+          kkPmData:r.kkPmData && typeof r.kkPmData==='object' ? JSON.parse(JSON.stringify(r.kkPmData)) : {},
+          rtpEvidence:Array.isArray(r.rtpEvidence)?JSON.parse(JSON.stringify(r.rtpEvidence)):[],
+          rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP',
+          strukturProsesStatus:r.strukturProsesStatus||'Belum'
+        };
         row.nilaiStrukturProses = calculateSA(row);
         row.sa = row.nilaiStrukturProses;
         return row;
@@ -1374,8 +1386,12 @@ async function openEditModal(id) {
             pendingUploadFiles.set(sessionUploadId,file);
             await savePendingUploadToIndexedDB({uploadId:sessionUploadId,opdId:targetRow.id,opdName:targetRow.opd||'OPD',subCode,paramId,level:String(level),year:currentYear,file,fileName:file.name,fileType:file.type||'application/octet-stream',createdAt:Date.now()});
             if (!targetRow.subunsurs[subCode][paramId]['files' + level]) targetRow.subunsurs[subCode][paramId]['files' + level] = [];
-            const list=targetRow.subunsurs[subCode][paramId]['files'+level];
-            list.push({url:'',fileName:file.name,gdriveId:null,syncStatus:'retrying',syncError:err.message,r2Key:null,fileType:file.type||'application/octet-stream',uploadId:sessionUploadId,localPending:true,uploadedAt:new Date().toISOString()});
+            const list = targetRow.subunsurs[subCode][paramId]['files'+level];
+            const safeFiles = Array.isArray(list) ? list : [];
+            if (!Array.isArray(targetRow.subunsurs[subCode][paramId]['files'+level])) targetRow.subunsurs[subCode][paramId]['files'+level] = safeFiles;
+            if (!safeFiles.some(x => x && typeof x === 'object' && x.uploadId === sessionUploadId)) {
+              safeFiles.push({url:'',fileName:file.name,gdriveId:null,syncStatus:'retrying',syncError:err.message,r2Key:null,fileType:file.type||'application/octet-stream',uploadId:sessionUploadId,localPending:true,uploadedAt:new Date().toISOString()});
+            }
             renderFileList(targetRow,subCode,paramId,level);
             fill.style.width='100%'; text.textContent='100% • Retry tersedia';
             showWarning('⚠️ Upload gagal sementara. File tidak dibuang. Tombol Retry tersedia.');
@@ -1451,9 +1467,16 @@ function renderFileList(row, subCode, paramId, level) {
   } else if (typeof rawFiles === 'string') {
     try { const parsed = JSON.parse(rawFiles); files = Array.isArray(parsed) ? parsed : []; } catch (_) { files = []; }
   } else if (rawFiles && typeof rawFiles === 'object') {
-    // Legacy/terkunci: jangan pernah memanggil forEach pada object.
-    if (Array.isArray(rawFiles.files)) files = rawFiles.files;
-    else files = Object.values(rawFiles).filter(v => typeof v === 'string' || (v && typeof v === 'object'));
+    // Legacy format: only accept an explicit files array or objects that actually
+    // look like evidence records. Never display arbitrary object values as files,
+    // otherwise metadata from another field can appear as a fake upload history.
+    if (Array.isArray(rawFiles.files)) {
+      files = rawFiles.files;
+    } else {
+      files = Object.values(rawFiles).filter(v =>
+        typeof v === 'string' || (v && typeof v === 'object' && (v.url || v.fileName || v.r2Key || v.uploadId))
+      );
+    }
   }
   fileListEl.innerHTML = '';
   if (!files.length) {
