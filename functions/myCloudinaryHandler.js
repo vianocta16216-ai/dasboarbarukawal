@@ -511,23 +511,27 @@ async function uploadToGoogleDrive(env, filePath, fileName, bytes, rootFolderId)
 
 async function updateEvidenceFileStatus(env, job, patch) {
   const rec = await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(job.opdId,job.year).all();
-  let obj={};
-  try{obj=rec.results[0]?.subunsurs?JSON.parse(rec.results[0].subunsurs):{};}catch{}
+  let obj={}; try{obj=rec.results[0]?.subunsurs?JSON.parse(rec.results[0].subunsurs):{}}catch{}
   const arr=obj?.[job.subunsur]?.[job.paramId]?.['files'+job.level];
-  if(Array.isArray(arr)){
-    const item=arr.find(x=>x.uploadId===job.uploadId);
-    if(item) Object.assign(item,patch);
-  }
-  await env.DB.prepare("UPDATE opd_data SET subunsurs=? WHERE id=? AND year=?").bind(JSON.stringify(obj),job.opdId,job.year).run();
+  const index=Array.isArray(arr)?arr.findIndex(x=>x&&x.uploadId===job.uploadId):-1;
+  if(index<0) return;
+  const esc=(v)=>String(v).replace(/\"/g,'\\\"'); const base=`$.\"${esc(job.subunsur)}\".\"${esc(job.paramId)}\".\"files${esc(job.level)}\"[${index}]`;
+  const sets=[]; const vals=[];
+  for(const [k,v] of Object.entries(patch||{})){ sets.push(`json_set(COALESCE(subunsurs,'{}'), ?, json(?))`); vals.push(`${base}.'${String(k).replace(/'/g,"''")}'`, JSON.stringify(v)); }
+  if(!sets.length) return;
+  let expr='COALESCE(subunsurs,\'{}\')'; const binds=[];
+  for(const [k,v] of Object.entries(patch||{})){ expr=`json_set(${expr}, ?, json(?))`; binds.push(`${base}.\"${String(k).replace(/\"/g,'\\\"')}\"`,JSON.stringify(v)); }
+  await runD1WithRetry(()=>env.DB.prepare(`UPDATE opd_data SET subunsurs=${expr} WHERE id=? AND year=?`).bind(...binds,job.opdId,job.year));
 }
 
 async function updateRtpFileStatus(env, job, patch) {
   const rec = await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(job.opdId,job.year).all();
-  let list=[];
-  try{list=rec.results[0]?.rtp_evidence?JSON.parse(rec.results[0].rtp_evidence):[];}catch{}
-  const item=list.find(x=>x.uploadId===job.uploadId);
-  if(item) Object.assign(item,patch);
-  await env.DB.prepare("UPDATE opd_data SET rtp_evidence=? WHERE id=? AND year=?").bind(JSON.stringify(list),job.opdId,job.year).run();
+  let list=[]; try{list=rec.results[0]?.rtp_evidence?JSON.parse(rec.results[0].rtp_evidence):[]}catch{}
+  const index=Array.isArray(list)?list.findIndex(x=>x&&x.uploadId===job.uploadId):-1;
+  if(index<0) return;
+  const base=`$[${index}]`; let expr='COALESCE(rtp_evidence,\'[]\')'; const binds=[];
+  for(const [k,v] of Object.entries(patch||{})){ expr=`json_set(${expr}, ?, json(?))`; binds.push(`${base}.\"${String(k).replace(/\"/g,'\\\"')}\"`,JSON.stringify(v)); }
+  await runD1WithRetry(()=>env.DB.prepare(`UPDATE opd_data SET rtp_evidence=${expr} WHERE id=? AND year=?`).bind(...binds,job.opdId,job.year));
 }
 
 async function directGoogleDriveBackup(env, job) {
@@ -941,8 +945,9 @@ export const onRequest = async ({ request, env, ctx }) => {
         }
         const safeOpd=sanitizeString(params.opdName).substring(0,80)||'OPD';
         const folderName=safeDriveName(params.folderName||'Evidence RTP','Evidence RTP').substring(0,100)||'Evidence RTP';
-        const filePath=`kawal_spip/${year}/${safeOpd}/Kertas Kerja RTP/${folderName}/${safeFileName}`;
+        const baseFilePath=`kawal_spip/${year}/${safeOpd}/Kertas Kerja RTP/${folderName}/${safeFileName}`;
         const uploadId=String(params.uploadId||crypto.randomUUID());
+        const filePath=baseFilePath.replace(/([^/]+)$/,(m)=>`${uploadId}-${m}`);
         const existingRec=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
         if(existingRec.results?.length){
           let existingList=[];try{existingList=existingRec.results[0]?.rtp_evidence?JSON.parse(existingRec.results[0].rtp_evidence):[]}catch{}
@@ -1052,8 +1057,9 @@ export const onRequest = async ({ request, env, ctx }) => {
         const subCode=String(params.subunsur||'');
         const paramId=String(params.paramId||'');
         const level=String(params.level||'1');
-        const {filePath}=getFolderStructure({fileData:legacyData||'',fileName,opdName:params.opdName,subunsur:subCode,paramId,level,fileType});
+        const {filePath:baseFilePath}=getFolderStructure({fileData:legacyData||'',fileName,opdName:params.opdName,subunsur:subCode,paramId,level,fileType});
         const uploadId=String(params.uploadId||crypto.randomUUID());
+        const filePath=baseFilePath.replace(/([^/]+)$/,(m)=>`${uploadId}-${m}`);
         const publicUrl=`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
         // Idempotency: retry request yang sama tidak boleh membuat evidence/Drive duplicate.
         const existingRec=await env.DB.prepare("SELECT opd,subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
@@ -1080,22 +1086,26 @@ export const onRequest = async ({ request, env, ctx }) => {
         await env.EVIDENCE_BUCKET.put(filePath,fileBody||bytes,{httpMetadata:{contentType:fileType}});
         const uploadMeta={url:publicUrl,fileName:sanitizeString(fileName).substring(0,150),gdriveId:null,storage:'R2',syncStatus:'pending',uploadedAt:new Date().toISOString(),uploadId,r2Key:filePath,fileType};
         // Update only this OPD's evidence JSON; never send the whole table back from the browser.
-        const rec=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
-        if(!rec.results.length)throw new Error('OPD tidak ditemukan');
-        let subunsurs={};try{subunsurs=rec.results[0].subunsurs?JSON.parse(rec.results[0].subunsurs):{};}catch{}
-        subunsurs[subCode]=subunsurs[subCode]||{};
-        subunsurs[subCode][paramId]=subunsurs[subCode][paramId]||{level:0};
-        const key='files'+level;
-        subunsurs[subCode][paramId][key]=Array.isArray(subunsurs[subCode][paramId][key])?subunsurs[subCode][paramId][key]:[];
-        subunsurs[subCode][paramId][key].push(uploadMeta);
-        const strukturNilai=calculateSAFromSubunsur(subunsurs);
-        const strukturCount=countParameterEvidence(subunsurs);
+        const exists=await env.DB.prepare("SELECT 1 FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+        if(!exists.results.length)throw new Error('OPD tidak ditemukan');
+        const jsonItem=JSON.stringify(uploadMeta);
+        const safeSubPath=String(subCode).replace(/\"/g,'\\\"');
+        const safeParamPath=String(paramId).replace(/\"/g,'\\\"');
+        const subPath=`$.\"${safeSubPath}\"`;
+        const paramPath=`$.\"${safeSubPath}\".\"${safeParamPath}\"`;
+        const filesPath=`$.\"${safeSubPath}\".\"${safeParamPath}\".\"files${String(level).replace(/\"/g,'\\\"')}\"`;
+        // Atomic append: nested objects/arrays are initialized inside the same UPDATE.
+        // Concurrent operators appending to different parameters therefore do not perform a stale whole-JSON overwrite.
+        await runD1WithRetry(() => env.DB.prepare(`UPDATE opd_data SET subunsurs=json_insert(
+          json_set(json_set(json_set(COALESCE(subunsurs,'{}'), ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), json('{}'))), ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), json('{}'))), ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), '[]')),
+          ? , json(?) )
+          WHERE id=? AND year=?`).bind(subPath,subPath,paramPath,paramPath,filesPath,filesPath,filesPath+'[#]',jsonItem,params.opdId,year));
+        const latest=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+        let subunsursLatest={};try{subunsursLatest=latest.results[0]?.subunsurs?JSON.parse(latest.results[0].subunsurs):{}}catch{}
+        const strukturNilai=calculateSAFromSubunsur(subunsursLatest);
+        const strukturCount=countParameterEvidence(subunsursLatest);
         const strukturStatus=strukturCount===countTotalParameters()?'Selesai':(strukturCount>0?'Proses':'Belum');
-        await env.DB.prepare("UPDATE opd_data SET subunsurs=?, sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?").bind(JSON.stringify(subunsurs),strukturNilai,strukturNilai,strukturStatus,params.opdId,year).run();
-
-        // Keep the R2 key in the stored evidence item for deterministic retry.
-        subunsurs[subCode][paramId][key]=subunsurs[subCode][paramId][key].map(x=>x.uploadId===uploadMeta.uploadId?{...x,r2Key:filePath,fileType}:x);
-        await env.DB.prepare("UPDATE opd_data SET subunsurs=? WHERE id=? AND year=?").bind(JSON.stringify(subunsurs),params.opdId,year).run();
+        await runD1WithRetry(() => env.DB.prepare("UPDATE opd_data SET sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?").bind(strukturNilai,strukturNilai,strukturStatus,params.opdId,year));
 
         const job={type:'evidence',uploadId:uploadMeta.uploadId,year,opdId:params.opdId,opdName:params.opdName||'OPD',r2Key:filePath,fileName:uploadMeta.fileName,fileType,subunsur:subCode,paramId,level};
         // MANDATORY GOOGLE DRIVE: report success only after Drive returns a real file ID.
