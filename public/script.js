@@ -424,205 +424,243 @@ function attachHandlers() {
   });
 }
 
-// ====== GRAFIK KPI (FINAL - 400x400 ANTI GEPENG) ======
-function showChart(type) {
-  const titles={nilaiStrukturProses:'Nilai Struktur dan Proses per OPD',nilaiMaturitas:'Nilai Maturitas Penyelenggaraan SPIP Terintegrasi per OPD',rataMRI:'Nilai MRI per OPD',rataIEPK:'Nilai IEPK per OPD',nilaiKapabilitasApip:'Nilai Kapabilitas APIP per OPD',qaApip:'Persentase QA APIP Selesai',statusSelesai:'Persentase OPD Selesai (Status)',rtpSelesai:'Persentase RTP Selesai',evidenceRtp:'Persentase OPD dengan Evidence RTP'};
-  
-  let labels = [];
-  let data = [];
-  let backgroundColor = [];
-  let borderColor = [];
-  let typeChart = 'bar';
-  let totalCount = 0;
-  let countTrue = 0;
-  let countFalse = 0;
+// ====== GRAFIK KPI – MODERN GRADIENT LINE CHART ======
+const kpiGlowPlugin = {
+  id: 'kpiGlow',
+  beforeDatasetsDraw(chart) {
+    if (!chart.config || chart.config.type !== 'line') return;
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.shadowColor = 'rgba(79, 70, 229, 0.22)';
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 3;
+  },
+  afterDatasetsDraw(chart) {
+    if (!chart.config || chart.config.type !== 'line') return;
+    chart.ctx.restore();
+  }
+};
 
-  if (!rows || rows.length === 0) {
+function showChart(type) {
+  const titles={
+    nilaiStrukturProses:'Nilai Struktur dan Proses per OPD',
+    nilaiMaturitas:'Nilai Maturitas Penyelenggaraan SPIP Terintegrasi per OPD',
+    rataMRI:'Nilai MRI per OPD',
+    rataIEPK:'Nilai IEPK per OPD',
+    nilaiKapabilitasApip:'Nilai Kapabilitas APIP per OPD',
+    qaApip:'Persentase QA APIP Selesai',
+    statusSelesai:'Persentase OPD Selesai (Status)',
+    rtpSelesai:'Persentase RTP Selesai',
+    evidenceRtp:'Persentase OPD dengan Evidence RTP'
+  };
+
+  let labels=[];
+  let data=[];
+  let backgroundColor=[];
+  let borderColor=[];
+  let typeChart='bar';
+  let totalCount=0;
+  let countTrue=0;
+  let countFalse=0;
+
+  if (!rows || rows.length===0) {
     alert('Data OPD belum tersedia!');
     return;
   }
 
   const isLineChart=['nilaiStrukturProses','nilaiMaturitas','rataMRI','rataIEPK','nilaiKapabilitasApip'].includes(type);
-  
-  if (isLineChart) {
-    let chartData = [...rows];
-    const field=type==='nilaiStrukturProses'?'nilaiStrukturProses':type==='nilaiMaturitas'?'nilaiMaturitas':type==='rataMRI'?'mri':type==='rataIEPK'?'iepk':'nilaiKapabilitasApip'; chartData.sort((a,b)=>(parseFloat(a[field])||0)-(parseFloat(b[field])||0));
-    
-    labels = chartData.map(r => r.opd);
-    data=chartData.map(r=>parseFloat(r[field])||0);
-    typeChart = 'line';
-  } 
-  else if (type === 'opdLevel3') {
-    totalCount = rows.length;
-    countTrue = rows.filter(r => (parseFloat(r.sa) || 0) >= 3).length;
-    countFalse = totalCount - countTrue;
-    labels = ['Level >= 3', 'Level < 3'];
-    data = [countTrue, countFalse];
-    backgroundColor = ['#10b981', '#e2e8f0'];
-    borderColor = ['#ffffff', '#ffffff'];
-    typeChart = 'pie';
-  } else if (type === 'qaApip') {
-    totalCount = rows.length;
-    countTrue = rows.filter(r => r.qaApip === 'Selesai').length;
-    countFalse = totalCount - countTrue;
-    labels = ['Selesai', 'Proses/Belum'];
-    data = [countTrue, countFalse];
-    backgroundColor = ['#f59e0b', '#e2e8f0'];
-    borderColor = ['#ffffff', '#ffffff'];
-    typeChart = 'pie';
-    } else if (type === 'statusSelesai') {
-    totalCount = rows.length;
-    countTrue = rows.filter(r => r.status === 'Selesai').length;
-    countFalse = totalCount - countTrue;
-    labels = ['Selesai', 'Proses/Belum'];
-    data = [countTrue, countFalse];
-    backgroundColor = ['#6366f1', '#e2e8f0'];
-    borderColor = ['#ffffff', '#ffffff'];
-    typeChart = 'pie';
-    } else if (type === 'rtpSelesai') { totalCount=rows.length; countTrue=rows.filter(r=>r.rtp==='Selesai').length; countFalse=totalCount-countTrue; labels=['Selesai','Belum']; data=[countTrue,countFalse]; backgroundColor=['#f97316','#e2e8f0']; borderColor=['#ffffff','#ffffff']; typeChart='pie'; } else if (type === 'evidenceRtp') { totalCount=rows.length; countTrue=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length>0).length; countFalse=totalCount-countTrue; labels=['Terisi','Belum']; data=[countTrue,countFalse]; backgroundColor=['#10b981','#e2e8f0']; borderColor=['#ffffff','#ffffff']; typeChart='pie'; }
 
-  document.getElementById('kpiChartTitle').textContent = titles[type] || 'Grafik';
+  if (isLineChart) {
+    let chartData=[...rows];
+    const field=type==='nilaiStrukturProses'?'nilaiStrukturProses':type==='nilaiMaturitas'?'nilaiMaturitas':type==='rataMRI'?'mri':type==='rataIEPK'?'iepk':'nilaiKapabilitasApip';
+    chartData.sort((a,b)=>(parseFloat(b[field])||0)-(parseFloat(a[field])||0));
+    labels=chartData.map(r=>r.opd||'OPD Tanpa Nama');
+    data=chartData.map(r=>Math.max(0,Math.min(5,parseFloat(r[field])||0)));
+    typeChart='line';
+  } else if (type==='opdLevel3') {
+    totalCount=rows.length;
+    countTrue=rows.filter(r=>(parseFloat(r.sa)||0)>=3).length;
+    countFalse=totalCount-countTrue;
+    labels=['Level >= 3','Level < 3']; data=[countTrue,countFalse];
+    backgroundColor=['#10b981','#e2e8f0']; borderColor=['#ffffff','#ffffff']; typeChart='pie';
+  } else if (type==='qaApip') {
+    totalCount=rows.length;
+    countTrue=rows.filter(r=>r.qaApip==='Selesai').length;
+    countFalse=totalCount-countTrue;
+    labels=['Selesai','Proses/Belum']; data=[countTrue,countFalse];
+    backgroundColor=['#f59e0b','#e2e8f0']; borderColor=['#ffffff','#ffffff']; typeChart='pie';
+  } else if (type==='statusSelesai') {
+    totalCount=rows.length;
+    countTrue=rows.filter(r=>r.status==='Selesai').length;
+    countFalse=totalCount-countTrue;
+    labels=['Selesai','Proses/Belum']; data=[countTrue,countFalse];
+    backgroundColor=['#6366f1','#e2e8f0']; borderColor=['#ffffff','#ffffff']; typeChart='pie';
+  } else if (type==='rtpSelesai') {
+    totalCount=rows.length; countTrue=rows.filter(r=>r.rtp==='Selesai').length; countFalse=totalCount-countTrue;
+    labels=['Selesai','Belum']; data=[countTrue,countFalse];
+    backgroundColor=['#f97316','#e2e8f0']; borderColor=['#ffffff','#ffffff']; typeChart='pie';
+  } else if (type==='evidenceRtp') {
+    totalCount=rows.length; countTrue=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length>0).length; countFalse=totalCount-countTrue;
+    labels=['Terisi','Belum']; data=[countTrue,countFalse];
+    backgroundColor=['#10b981','#e2e8f0']; borderColor=['#ffffff','#ffffff']; typeChart='pie';
+  }
+
+  document.getElementById('kpiChartTitle').textContent=titles[type]||'Grafik';
   document.getElementById('kpiChartModal').classList.add('active');
 
   if (chartInstance) {
     chartInstance.destroy();
-    chartInstance = null;
+    chartInstance=null;
   }
 
-  const canvas = document.getElementById('kpiChartCanvas');
-  const ctx = canvas.getContext('2d');
+  const canvas=document.getElementById('kpiChartCanvas');
+  const ctx=canvas.getContext('2d');
+  const container=canvas.parentElement;
 
   if (isLineChart) {
-      let chartWidth = canvas.parentElement.clientWidth; 
-      if (!chartWidth || chartWidth < 800) chartWidth = 800;
-      let chartHeight = 600; 
+    // Kanvas responsif: tidak lagi dipaksa 800x600 sehingga modal tetap proporsional.
+    const chartWidth=Math.max(320, container.clientWidth-2);
+    const chartHeight=430;
+    canvas.width=chartWidth;
+    canvas.height=chartHeight;
+    canvas.style.width='100%';
+    canvas.style.height=chartHeight+'px';
+    canvas.style.minWidth='0';
+    canvas.style.display='block';
+    canvas.style.margin='0';
+    container.style.overflow='hidden';
 
-      canvas.width = chartWidth;
-      canvas.height = chartHeight;
-      canvas.style.width = chartWidth + 'px';
-      canvas.style.height = chartHeight + 'px';
-      canvas.parentElement.style.overflowX = 'hidden';
+    // Gradient utama mengikuti identitas biru–ungu website.
+    const fillGradient=ctx.createLinearGradient(0,0,0,chartHeight);
+    fillGradient.addColorStop(0,'rgba(59,130,246,0.34)');
+    fillGradient.addColorStop(0.42,'rgba(99,102,241,0.18)');
+    fillGradient.addColorStop(1,'rgba(139,92,246,0.015)');
 
-      let lineGradient = ctx.createLinearGradient(0, 0, 0, 600);
-      lineGradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
-      lineGradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
+    const lineGradient=ctx.createLinearGradient(0,0,chartWidth,0);
+    lineGradient.addColorStop(0,'#2563eb');
+    lineGradient.addColorStop(0.45,'#4f46e5');
+    lineGradient.addColorStop(1,'#7c3aed');
 
-      chartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: titles[type],
-            data: data,
-            backgroundColor: lineGradient,
-            borderColor: 'rgba(37, 99, 235, 1)',
-            borderWidth: 3,
-            fill: true,
-            tension: 0.4,
-            pointBackgroundColor: 'rgba(37, 99, 235, 1)',
-            pointBorderColor: '#ffffff',
-            pointRadius: 4,
-            pointHoverRadius: 6
-          }]
-        },
-        options: {
-          responsive: false,
-          maintainAspectRatio: false,
-          indexAxis: 'x',
-          layout: { padding: { bottom: 60 } }, 
-          plugins: {
-            legend: { display: false },
-            tooltip: { backgroundColor: '#0f172a' }
-          },
-          scales: {
-            x: {
-              beginAtZero: true,
-              grid: { display: false },
-              ticks: {
-                autoSkip: false, 
-                maxRotation: 45,
-                minRotation: 45,
-                align: 'end',
-                font: { size: 11, weight: 'bold' },
-                padding: 5
-              }
-            },
-            y: {
-              beginAtZero: true,
-              grid: { color: 'rgba(226, 232, 240, 0.6)' },
-              ticks: { font: { size: 13 } }
+    chartInstance=new Chart(ctx,{
+      type:'line',
+      plugins:[kpiGlowPlugin],
+      data:{
+        labels,
+        datasets:[{
+          label:titles[type],
+          data,
+          fill:true,
+          backgroundColor:fillGradient,
+          borderColor:lineGradient,
+          borderWidth:3.5,
+          tension:0.42,
+          cubicInterpolationMode:'monotone',
+          pointRadius:3,
+          pointHoverRadius:7,
+          pointHitRadius:18,
+          pointBackgroundColor:'#ffffff',
+          pointBorderColor:'#4f46e5',
+          pointBorderWidth:2.5,
+          spanGaps:true
+        }]
+      },
+      options:{
+        responsive:false,
+        maintainAspectRatio:false,
+        interaction:{mode:'index',intersect:false},
+        layout:{padding:{top:18,right:20,bottom:8,left:10}},
+        plugins:{
+          legend:{display:false},
+          tooltip:{
+            enabled:true,
+            backgroundColor:'rgba(15,23,42,0.94)',
+            titleColor:'#ffffff',
+            bodyColor:'#e2e8f0',
+            borderColor:'rgba(129,140,248,0.55)',
+            borderWidth:1,
+            padding:12,
+            displayColors:false,
+            cornerRadius:10,
+            titleFont:{size:12,weight:'700'},
+            bodyFont:{size:13,weight:'600'},
+            callbacks:{
+              title:items=>items.length?labels[items[0].dataIndex]:'',
+              label:context=>`Nilai: ${Number(context.parsed.y||0).toFixed(2)}`
             }
-          },
-          animation: { duration: 800, easing: 'easeOutQuart' }
-        }
-      });
-
-   } else {
-      canvas.width = 380;
-      canvas.height = 380;
-      canvas.style.width = '380px';
-      canvas.style.height = '380px';
-      canvas.style.minWidth = '0';
-
-      canvas.style.display = 'block';
-      canvas.style.margin = '0 auto';
-
-      canvas.parentElement.style.overflowX = 'hidden';
-      canvas.parentElement.style.overflowY = 'hidden';
-
-      chartInstance = new Chart(ctx, {
-        type: 'pie',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: titles[type],
-            data: data,
-            backgroundColor: backgroundColor,
-            borderColor: borderColor,
-            borderWidth: 2
-          }]
+          }
         },
-        options: {
-          responsive: false, 
-          maintainAspectRatio: false,
-          layout: { padding: { bottom: 20 } }, 
-          plugins: {
-            legend: { 
-              display: true, 
-              position: 'bottom',
-              labels: {
-                color: '#1e293b',
-                usePointStyle: true,
-                pointStyle: 'circle',
-                padding: 15,
-                font: { size: 12, weight: 'bold' }
-              }
-            },
-            tooltip: { 
-              backgroundColor: '#0f172a',
-              position: 'nearest',
-              callbacks: {
-                label: function(context) {
-                  let val = context.parsed;
-                  let percent = totalCount > 0 ? Math.round((val / totalCount) * 100) : 0;
-                  return ` ${val} OPD (${percent}%)`;
-                }
+        scales:{
+          x:{
+            grid:{display:false,drawBorder:false},
+            border:{display:false},
+            ticks:{
+              color:'#64748b',
+              autoSkip:true,
+              maxTicksLimit:8,
+              maxRotation:0,
+              minRotation:0,
+              padding:10,
+              font:{size:10,weight:'600'},
+              callback:function(value,index){
+                const label=labels[index]||'';
+                return label.length>18?label.slice(0,16)+'…':label;
               }
             }
           },
-          scales: {
-            x: { display: false },
-            y: { display: false }
-          },
-          animation: { duration: 800, easing: 'easeOutQuart' }
+          y:{
+            min:0,
+            max:5,
+            border:{display:false},
+            grid:{color:'rgba(148,163,184,0.14)',drawBorder:false},
+            ticks:{
+              color:'#64748b',
+              stepSize:1,
+              padding:8,
+              font:{size:11,weight:'600'},
+              callback:value=>Number(value).toFixed(0)
+            }
+          }
+        },
+        animation:{
+          duration:1700,
+          easing:'easeOutQuart',
+          y:{duration:1500,from:0},
+          x:{duration:1200,from:0}
+        },
+        transitions:{
+          active:{animation:{duration:350}}
         }
-      });
+      }
+    });
+  } else {
+    canvas.width=380;
+    canvas.height=380;
+    canvas.style.width='380px';
+    canvas.style.height='380px';
+    canvas.style.minWidth='0';
+    canvas.style.display='block';
+    canvas.style.margin='0 auto';
+    container.style.overflow='hidden';
+
+    chartInstance=new Chart(ctx,{
+      type:'pie',
+      data:{labels,datasets:[{label:titles[type],data,backgroundColor,borderColor,borderWidth:2}]},
+      options:{
+        responsive:false,
+        maintainAspectRatio:false,
+        layout:{padding:{bottom:20}},
+        plugins:{
+          legend:{display:true,position:'bottom',labels:{color:'#1e293b',usePointStyle:true,pointStyle:'circle',padding:15,font:{size:12,weight:'bold'}}},
+          tooltip:{backgroundColor:'#0f172a',position:'nearest',callbacks:{label:function(context){let val=context.parsed;let percent=totalCount>0?Math.round((val/totalCount)*100):0;return ` ${val} OPD (${percent}%)`;}}}
+        },
+        scales:{x:{display:false},y:{display:false}},
+        animation:{duration:1000,easing:'easeOutQuart'}
+      }
+    });
   }
 
-  const chartContainer = document.querySelector('.chart-container.chart-scroll');
-  if (chartContainer) {
-    chartContainer.scrollTop = 0;
-  }
+  const chartContainer=document.querySelector('.chart-container.chart-scroll');
+  if(chartContainer){chartContainer.scrollTop=0;chartContainer.scrollLeft=0;}
 }
 
 document.getElementById('kpiChartClose').addEventListener('click', function() {
