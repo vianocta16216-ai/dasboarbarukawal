@@ -1,0 +1,11 @@
+name = "kawal-spip-realtime"
+main = "realtime.js"
+compatibility_date = "2026-09-11"
+
+[[durable_objects.bindings]]
+name = "REALTIME"
+class_name = "RealtimeHub"
+
+[exports.RealtimeHub]
+type = "durable-object"
+storage = "sqlite"
