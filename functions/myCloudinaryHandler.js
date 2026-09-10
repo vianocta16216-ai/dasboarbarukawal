@@ -121,10 +121,15 @@ async function ensureOpdSchema(env){
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_data_year ON opd_data(year)").run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_data_id_year ON opd_data(id, year)").run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_login_attempts_lookup ON login_attempts(ip, action, timestamp)").run();
+
+    // Evidence registry migration (IMPORTANT):
+    // Previous deployments may already have evidence_uploads with an older schema.
+    // CREATE TABLE IF NOT EXISTS does NOT add new columns to an existing table.
+    // Therefore inspect the live D1 schema and add every missing column explicitly.
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS evidence_uploads (
       upload_id TEXT PRIMARY KEY,
-      year TEXT NOT NULL,
-      opd_id TEXT NOT NULL,
+      year TEXT NOT NULL DEFAULT '2026',
+      opd_id TEXT NOT NULL DEFAULT '',
       subunsur TEXT NOT NULL DEFAULT '',
       param_id TEXT NOT NULL DEFAULT '',
       level TEXT NOT NULL DEFAULT '',
@@ -133,9 +138,37 @@ async function ensureOpdSchema(env){
       gdrive_id TEXT,
       sync_status TEXT NOT NULL DEFAULT 'pending',
       sync_error TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0
     )`).run();
+
+    const evidenceInfo = await env.DB.prepare("PRAGMA table_info(evidence_uploads)").all();
+    const evidenceCols = new Set((evidenceInfo.results || []).map(c => String(c.name)));
+
+    const missingEvidenceCols = [
+      ['year', "TEXT NOT NULL DEFAULT '2026'"],
+      ['opd_id', "TEXT NOT NULL DEFAULT ''"],
+      ['subunsur', "TEXT NOT NULL DEFAULT ''"],
+      ['param_id', "TEXT NOT NULL DEFAULT ''"],
+      ['level', "TEXT NOT NULL DEFAULT ''"],
+      ['type', "TEXT NOT NULL DEFAULT 'evidence'"],
+      ['r2_key', "TEXT"],
+      ['gdrive_id', "TEXT"],
+      ['sync_status', "TEXT NOT NULL DEFAULT 'pending'"],
+      ['sync_error', "TEXT"],
+      ['created_at', "INTEGER NOT NULL DEFAULT 0"],
+      ['updated_at', "INTEGER NOT NULL DEFAULT 0"]
+    ];
+    for (const [colName, colType] of missingEvidenceCols) {
+      if (!evidenceCols.has(colName)) {
+        await env.DB.prepare(`ALTER TABLE evidence_uploads ADD COLUMN ${colName} ${colType}`).run();
+      }
+    }
+
+    // Migrate legacy rows so later retry/status queries always have a valid type.
+    await env.DB.prepare("UPDATE evidence_uploads SET type=COALESCE(NULLIF(type,''),'evidence') WHERE type IS NULL OR type=''").run();
+    await env.DB.prepare("UPDATE evidence_uploads SET sync_status=COALESCE(NULLIF(sync_status,''),'pending') WHERE sync_status IS NULL OR sync_status=''").run();
+
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_evidence_uploads_location ON evidence_uploads(year, opd_id, subunsur, param_id, level)").run();
     schemaReady=true;
   })().catch(err=>{schemaReadyPromise=null;throw err;});
