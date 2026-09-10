@@ -1,11 +1,17 @@
-name = "kawal-spip-realtime"
-main = "realtime.js"
-compatibility_date = "2026-09-10"
+name = "kawal-spip"
+compatibility_date = "2026-09-11"
+pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kawal-spip-db"
+database_id = "46bfc2a4-e13a-40b7-b21d-89642702a3a8"
+
+[[r2_buckets]]
+binding = "EVIDENCE_BUCKET"
+bucket_name = "kawal-spip-files"
 
 [[durable_objects.bindings]]
 name = "REALTIME"
 class_name = "RealtimeHub"
-
-[exports.RealtimeHub]
-type = "durable-object"
-storage = "sqlite"
+script_name = "kawal-spip-realtime"
