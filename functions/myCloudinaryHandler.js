@@ -81,6 +81,25 @@ function jsonResponse(data,status=200,extraHeaders={}){
   return new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...extraHeaders}});
 }
 
+// ===== REALTIME MULTI-USER SYNC =====
+// Best-effort notification after D1 changes. The database remains the source of truth.
+async function notifyRealtime(env, payload){
+  try{
+    if(!env.REALTIME || !payload) return;
+    const year=String(payload.year ?? '');
+    if(!year) return;
+    const id=env.REALTIME.idFromName(`year:${year}`);
+    const stub=env.REALTIME.get(id);
+    await stub.fetch('https://realtime/broadcast',{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+  }catch(err){
+    console.warn('Realtime broadcast gagal:',err?.message||err);
+  }
+}
+
 // D1 is SQLite underneath: keep individual writes small and retry transient
 // contention/overload errors with jitter instead of immediately failing a user save.
 async function runD1WithRetry(makeStatement, options={}) {
@@ -743,6 +762,18 @@ export const onRequest = async ({ request, env, ctx }) => {
         return new Response(JSON.stringify(mapped),{status:200,headers:{'Content-Type':'application/json'}});
       }
 
+      case 'getOpd': {
+        if(!params.opdId) throw new Error('ID OPD wajib diisi');
+        const {results}=await env.DB.prepare("SELECT * FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+        if(!results.length) return jsonResponse({status:'error',message:'OPD tidak ditemukan'},404);
+        const r=results[0];
+        const subunsurs=r.subunsurs?JSON.parse(r.subunsurs):{};
+        let kkPmData={}; try{kkPmData=r.kk_pm_data?JSON.parse(r.kk_pm_data):{}}catch{}
+        let rtpEvidence=[]; try{rtpEvidence=r.rtp_evidence?JSON.parse(r.rtp_evidence):[]}catch{}
+        const mapped={...r,subunsurs,kkData:normalizeKkData(r.kk_data),kkPmData,kkRtpData:normalizeWorkbookData(r.kk_rtp_data,[]),rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',qaApip:r.qa_apip||'Belum',nilaiStrukturProses:calculateSAFromSubunsur(subunsurs),sa:calculateSAFromSubunsur(subunsurs),strukturProsesStatus:r.struktur_proses_status||'Belum',nilaiMaturitas:Number(r.nilai_maturitas||0),nilaiKapabilitasApip:Number(r.nilai_kapabilitas_apip||0)};
+        return jsonResponse({status:'success',row:mapped});
+      }
+
       case 'addOpd': {
         const id = params.id || 'r' + Math.random().toString(36).slice(2,9);
         const opd = sanitizeString(params.opd || 'OPD Baru');
@@ -750,6 +781,7 @@ export const onRequest = async ({ request, env, ctx }) => {
         const sa = calculateSAFromSubunsur(subunsurs);
         const nilaiStrukturProses=sa,nilaiMaturitas=Math.max(0,Math.min(5,Number(params.nilaiMaturitas??params.nilai_maturitas??0)||0)),nilaiKapabilitasApip=Number(params.nilaiKapabilitasApip??params.nilai_kapabilitas_apip??0)||0;
         await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id,opd,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,evidence,qa_apip,mri,iepk,rtp,status,struktur_proses_status,subunsurs,year,kk_data,kk_pm_data,kk_rtp_data,rtp_evidence,rtp_evidence_folder) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,opd,sa,nilaiStrukturProses,nilaiMaturitas,nilaiKapabilitasApip,params.evidence||'Belum',params.qaApip||'Belum',parseFloat(params.mri)||0,parseFloat(params.iepk)||0,params.rtp||'Belum',params.status||'Belum','Belum',JSON.stringify(subunsurs),year,params.kkData||'{}',params.kkPmData||'{}',params.kkRtpData||'{}',JSON.stringify(params.rtpEvidence||[]),params.rtpEvidenceFolder||'Evidence RTP').run();
+        await notifyRealtime(env,{type:'opd-added',year,opdId:id});
         return new Response(JSON.stringify({ status: 'success', message: 'OPD berhasil ditambahkan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
@@ -829,6 +861,7 @@ export const onRequest = async ({ request, env, ctx }) => {
           const rec = await env.DB.prepare("SELECT sa, nilai_struktur_proses, struktur_proses_status FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId, year).all();
           if (!rec.results.length) throw new Error('OPD tidak ditemukan');
           const current = rec.results[0];
+          await notifyRealtime(env,{type:'subunsur-updated',year,opdId:params.opdId,changes:valid});
           return jsonResponse({
             status:'success',
             message:'Perubahan subunsur tersimpan',
@@ -842,6 +875,7 @@ export const onRequest = async ({ request, env, ctx }) => {
         const sa=calculateSAFromSubunsur(subunsurs);
         const strukturStatus=countParameterEvidence(subunsurs)===countTotalParameters()?'Selesai':(countParameterEvidence(subunsurs)>0?'Proses':'Belum');
         await runD1WithRetry(() => env.DB.prepare("UPDATE opd_data SET subunsurs=?, sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?").bind(JSON.stringify(subunsurs),sa,sa,strukturStatus,params.opdId,year));
+        await notifyRealtime(env,{type:'subunsur-updated',year,opdId:params.opdId,full:true});
         return jsonResponse({status:'success',message:'Subunsur tersimpan',nilaiStrukturProses:sa,strukturProsesStatus:strukturStatus});
       }
 
@@ -849,6 +883,7 @@ export const onRequest = async ({ request, env, ctx }) => {
         const { opdId, field, value } = params;
         if (field === 'nilaiStrukturProses') throw new Error('Nilai Struktur dan Proses dihitung otomatis dari 43 parameter.');
         const dbField=FIELD_MAP[field];if(!dbField)throw new Error('Field tidak diizinkan: '+field);const cleanValue=['nilaiMaturitas','nilaiKapabilitasApip','mri','iepk'].includes(field)?Math.max(0,Math.min(5,Number(value)||0)):(field==='opd'?sanitizeString(value):String(value||''));await env.DB.prepare(`UPDATE opd_data SET ${dbField} = ? WHERE id = ? AND year = ?`).bind(cleanValue,opdId,year).run();
+        await notifyRealtime(env,{type:'field-updated',year,opdId,field,value:cleanValue});
         return new Response(JSON.stringify({ status: 'success', message: 'Field tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
@@ -1108,12 +1143,14 @@ export const onRequest = async ({ request, env, ctx }) => {
         await runD1WithRetry(() => env.DB.prepare("UPDATE opd_data SET sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?").bind(strukturNilai,strukturNilai,strukturStatus,params.opdId,year));
 
         const job={type:'evidence',uploadId:uploadMeta.uploadId,year,opdId:params.opdId,opdName:params.opdName||'OPD',r2Key:filePath,fileName:uploadMeta.fileName,fileType,subunsur:subCode,paramId,level};
+        await notifyRealtime(env,{type:'evidence-uploaded',year,opdId:params.opdId,subunsur:subCode,paramId,level,uploadId,syncStatus:'pending',fileName:uploadMeta.fileName});
         // MANDATORY GOOGLE DRIVE: report success only after Drive returns a real file ID.
         // DUAL STORAGE POLICY: keep the R2 copy permanently alongside Google Drive.
         // Never delete R2 automatically after Drive succeeds. Success requires Drive confirmation.
         try {
           const gdriveId=await directGoogleDriveBackup(env,job);
           await updateEvidenceFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
+          await notifyRealtime(env,{type:'evidence-drive-synced',year,opdId:params.opdId,subunsur:subCode,paramId,level,uploadId,syncStatus:'done',gdriveId});
           return jsonResponse({status:'success',url:publicUrl,fileName:uploadMeta.fileName,googleDriveId:gdriveId,gdriveId,syncStatus:'done',uploadId:uploadMeta.uploadId,backupQueued:false,r2Saved:true,r2Key:filePath});
         } catch (driveErr) {
           const message=String(driveErr?.message||driveErr);
@@ -1158,10 +1195,12 @@ export const onRequest = async ({ request, env, ctx }) => {
           const gdriveId=await directGoogleDriveBackup(env,job);
           if(job.type==='rtp') await updateRtpFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
           else await updateEvidenceFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
+          await notifyRealtime(env,{type:'drive-sync-retried',year:targetYear,opdId,subunsur,paramId,level,uploadId,syncStatus:'done',gdriveId});
           return jsonResponse({status:'success',gdriveId,syncStatus:'done',uploadId});
         }catch(err){
           if(job.type==='rtp') await updateRtpFileStatus(env,job,{syncStatus:'retrying',syncError:String(err.message||err)});
           else await updateEvidenceFileStatus(env,job,{syncStatus:'retrying',syncError:String(err.message||err)});
+          await notifyRealtime(env,{type:'drive-sync-retry-pending',year:targetYear,opdId,subunsur,paramId,level,uploadId,syncStatus:'retrying',driveError:String(err.message||err)});
           return jsonResponse({status:'pending',syncStatus:'retrying',uploadId,driveError:String(err.message||err),message:'R2 tetap tersimpan. Google Drive belum berhasil; retry tersedia.'});
         }
       }
@@ -1191,6 +1230,7 @@ export const onRequest = async ({ request, env, ctx }) => {
             }
           }catch(err){console.warn('Metadata evidence gagal diperbarui:',err.message);}
         }
+        await notifyRealtime(env,{type:'evidence-deleted',year,opdId:params.opdId,subunsur:params.subunsur,paramId:params.paramId,level:params.level,uploadId:params.uploadId||null});
         return jsonResponse({ status: 'success' });
       }
 
