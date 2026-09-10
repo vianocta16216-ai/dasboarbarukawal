@@ -204,8 +204,9 @@ function initOfflineAutosave() {
 
   // Drive backup retry: only a few pending files per cycle to avoid creating
   // another traffic spike when many OPD users are online at once.
-  setInterval(() => { autoRetryPendingDriveBackups(); }, 60000);
-  window.addEventListener('online', () => setTimeout(autoRetryPendingDriveBackups, 3000));
+  setInterval(() => { autoRetryPendingDriveBackups(); retryIndexedDbUploads(); }, 60000);
+  window.addEventListener('online', () => setTimeout(() => { autoRetryPendingDriveBackups(); retryIndexedDbUploads(); }, 3000));
+  setTimeout(retryIndexedDbUploads, 1500);
 }
 
 let isAddingOpd = false;
@@ -219,6 +220,47 @@ let pendingSave = false;
 let chartInstance = null;
 let originalRows = [];
 const pendingUploadFiles = new Map();
+
+// ====== OFFLINE FILE QUEUE (IndexedDB) ======
+const OFFLINE_FILE_DB = 'kawal-spip-offline-files-v1';
+const OFFLINE_FILE_STORE = 'uploads';
+let offlineFileDbPromise = null;
+function openOfflineFileDb(){
+  if(offlineFileDbPromise) return offlineFileDbPromise;
+  offlineFileDbPromise=new Promise((resolve,reject)=>{
+    if(!('indexedDB' in window)){ reject(new Error('IndexedDB tidak tersedia')); return; }
+    const req=indexedDB.open(OFFLINE_FILE_DB,1);
+    req.onupgradeneeded=()=>{ const db=req.result; if(!db.objectStoreNames.contains(OFFLINE_FILE_STORE)) db.createObjectStore(OFFLINE_FILE_STORE,{keyPath:'uploadId'}); };
+    req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error||new Error('IndexedDB gagal dibuka'));
+  });
+  return offlineFileDbPromise;
+}
+async function savePendingUploadToIndexedDB(record){
+  try{ const db=await openOfflineFileDb(); await new Promise((resolve,reject)=>{const tx=db.transaction(OFFLINE_FILE_STORE,'readwrite');tx.objectStore(OFFLINE_FILE_STORE).put(record);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);}); return true; }catch(e){ console.warn('Gagal menyimpan file offline:',e); return false; }
+}
+async function deletePendingUploadFromIndexedDB(uploadId){
+  try{ const db=await openOfflineFileDb(); await new Promise((resolve,reject)=>{const tx=db.transaction(OFFLINE_FILE_STORE,'readwrite');tx.objectStore(OFFLINE_FILE_STORE).delete(uploadId);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);}); }catch(e){ console.warn('Gagal menghapus file offline:',e); }
+}
+async function getPendingUploadsFromIndexedDB(){
+  try{ const db=await openOfflineFileDb(); return await new Promise((resolve,reject)=>{const tx=db.transaction(OFFLINE_FILE_STORE,'readonly');const req=tx.objectStore(OFFLINE_FILE_STORE).getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error);}); }catch(e){ console.warn('Gagal membaca file offline:',e); return []; }
+}
+async function retryIndexedDbUploads(){
+  if(!navigator.onLine || !Array.isArray(rows)) return;
+  const pending=await getPendingUploadsFromIndexedDB();
+  for(const rec of pending.slice(0,5)){
+    const row=rows.find(r=>r.id===rec.opdId); if(!row) continue;
+    try{
+      const result=await uploadFile(row,rec.subCode,rec.paramId,rec.level,rec.file,rec.uploadId);
+      const container=row.subunsurs=row.subunsurs||{}; container[rec.subCode]=container[rec.subCode]||{}; container[rec.subCode][rec.paramId]=container[rec.subCode][rec.paramId]||{level:0};
+      const key='files'+rec.level; container[rec.subCode][rec.paramId][key]=Array.isArray(container[rec.subCode][rec.paramId][key])?container[rec.subCode][rec.paramId][key]:[];
+      const existing=container[rec.subCode][rec.paramId][key].find(x=>typeof x==='object'&&x.uploadId===rec.uploadId);
+      const item={url:result.url||rec.url||'',fileName:result.fileName||rec.fileName,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'retrying',syncError:result.driveError||null,r2Key:result.r2Key||rec.r2Key||null,fileType:rec.fileType||rec.file.type||'application/octet-stream',uploadId:rec.uploadId,uploadedAt:rec.createdAt||new Date().toISOString()};
+      if(existing) Object.assign(existing,item); else container[rec.subCode][rec.paramId][key].push(item);
+      pendingUploadFiles.delete(rec.uploadId); await deletePendingUploadFromIndexedDB(rec.uploadId);
+      renderFileList(row,rec.subCode,rec.paramId,rec.level); render();
+    }catch(e){ console.warn('Retry offline file gagal:',rec.uploadId,e); }
+  }
+}
 
 // ===== TEMPLATE KERTAS KERJA PM TERINTEGRASI (embedded, no network fetch) =====
 
@@ -1148,6 +1190,7 @@ async function openEditModal(id) {
 
         try {
           const result = await uploadFile(targetRow, subCode, paramId, level, file, sessionUploadId);
+          await deletePendingUploadFromIndexedDB(sessionUploadId);
           fill.style.width = '100%';
           text.textContent = result.syncStatus === 'done' ? '100% • Drive OK' : '100% • Retry Drive';
           if (!targetRow.subunsurs[subCode][paramId]['files' + level]) targetRow.subunsurs[subCode][paramId]['files' + level] = [];
@@ -1182,13 +1225,14 @@ async function openEditModal(id) {
               targetRow.subunsurs[subCode][paramId]['files'+level].push({url:result.url,fileName:result.fileName||file.name,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'pending',syncError:result.driveError||null,r2Key:result.r2Key||null,fileType:file.type||'application/octet-stream',uploadId:result.uploadId||sessionUploadId,uploadedAt:new Date().toISOString()});
               renderFileList(targetRow,subCode,paramId,level);
               fill.style.width='100%'; text.textContent=result.syncStatus==='done'?'100% • Drive OK':'100% • Retry Drive';
-              pendingUploadFiles.delete(sessionUploadId); recovered=true; completed++; break;
+              pendingUploadFiles.delete(sessionUploadId); await deletePendingUploadFromIndexedDB(sessionUploadId); recovered=true; completed++; break;
             } catch(e) { err=e; }
           }
           if(!recovered){
             // Simpan File asli selama halaman masih terbuka agar tombol Retry dapat
             // mengulang upload dengan uploadId yang sama.
             pendingUploadFiles.set(sessionUploadId,file);
+            await savePendingUploadToIndexedDB({uploadId:sessionUploadId,opdId:targetRow.id,opdName:targetRow.opd||'OPD',subCode,paramId,level:String(level),year:currentYear,file,fileName:file.name,fileType:file.type||'application/octet-stream',createdAt:Date.now()});
             if (!targetRow.subunsurs[subCode][paramId]['files' + level]) targetRow.subunsurs[subCode][paramId]['files' + level] = [];
             const list=targetRow.subunsurs[subCode][paramId]['files'+level];
             list.push({url:'',fileName:file.name,gdriveId:null,syncStatus:'retrying',syncError:err.message,r2Key:null,fileType:file.type||'application/octet-stream',uploadId:sessionUploadId,localPending:true,uploadedAt:new Date().toISOString()});
@@ -1317,6 +1361,7 @@ async function retryUploadedFile(opdId, subCode, paramId, level, uploadId) {
       const r=await uploadFile(row,subCode,paramId,level,localFile,uploadId);
       Object.assign(item,{url:r.url||item.url,fileName:r.fileName||item.fileName,gdriveId:r.gdriveId||null,syncStatus:r.syncStatus||'pending',syncError:r.driveError||null,r2Key:r.r2Key||null,localPending:false});
       pendingUploadFiles.delete(uploadId);
+      await deletePendingUploadFromIndexedDB(uploadId);
       renderFileList(row,subCode,paramId,level); render();
       showWarning(item.gdriveId?'✅ R2 + Google Drive tersimpan.':'🔄 Google Drive belum berhasil. Silakan Retry.');
       return;
