@@ -455,8 +455,10 @@ async function getPendingUploadsFromIndexedDB(){
 }
 async function retryIndexedDbUploads(){
   if(!navigator.onLine || !Array.isArray(rows)) return;
+  const now=Date.now();
   const pending=await getPendingUploadsFromIndexedDB();
   for(const rec of pending){
+    if (Number(rec.nextRetryAt||0) > now) continue;
     const row=rows.find(r=>r.id===rec.opdId); if(!row) continue;
     try{
       const result=await uploadFile(row,rec.subCode,rec.paramId,rec.level,rec.file,rec.uploadId);
@@ -478,7 +480,13 @@ async function retryIndexedDbUploads(){
       }
       renderFileList(row,rec.subCode,rec.paramId,rec.level);
     }catch(e){
-      console.warn('Retry offline file gagal:',rec.uploadId,e);
+      const attempt=Number(rec.retryCount||0)+1;
+      rec.retryCount=attempt;
+      const delay=Math.min(300000,1500*Math.pow(2,Math.min(attempt,8))) + Math.floor(Math.random()*1000);
+      rec.nextRetryAt=Date.now()+delay;
+      rec.lastError=e?.message||String(e);
+      await savePendingUploadToIndexedDB(rec);
+      console.warn('Retry offline file gagal; akan mencoba lagi otomatis:',rec.uploadId,e);
     }
   }
 }
@@ -1679,11 +1687,17 @@ async function autoRetryPendingDriveBackups(){
       }else{
         pending.syncStatus='retrying';
         pending.syncError=r?.driveError||pending.syncError||'Menunggu Google Drive';
+        const attempt=Number(pending.retryCount||0)+1;
+        pending.retryCount=attempt;
+        pending.nextRetryAt=Date.now()+Math.min(300000,2000*Math.pow(2,Math.min(attempt,8)))+Math.floor(Math.random()*1500);
       }
       renderFileList(row,subCode,paramId,level);
     }catch(err){
       pending.syncStatus='retrying';
       pending.syncError=err?.message||String(err);
+      const attempt=Number(pending.retryCount||0)+1;
+      pending.retryCount=attempt;
+      pending.nextRetryAt=Date.now()+Math.min(300000,2000*Math.pow(2,Math.min(attempt,8)))+Math.floor(Math.random()*1500);
       renderFileList(row,subCode,paramId,level);
     }
   };
