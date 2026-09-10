@@ -127,7 +127,7 @@ function scheduleRealtimeReconnect() {
 }
 
 window.addEventListener('online', () => {
-  flushOfflineSaveQueue();
+  flushOfflineSaves();
   retryIndexedDbUploads();
   connectRealtime();
 });
@@ -280,9 +280,21 @@ function applyOfflineQueueToRows() {
   [...offlineSaveQueue].sort((a,b) => a.queuedAt - b.queuedAt).forEach(item => {
     const p = item.params || {};
     if (item.action === 'saveData') {
+      // Never replace the entire current `rows` array from an offline snapshot.
+      // Merge only scalar/top-level values by OPD id so nested evidence cannot jump
+      // between OPDs/columns when an old browser reconnects.
       try {
         const savedRows = typeof p.rows === 'string' ? JSON.parse(p.rows) : p.rows;
-        if (Array.isArray(savedRows) && String(item.year) === String(currentYear)) rows = savedRows;
+        if (Array.isArray(savedRows) && String(item.year) === String(currentYear)) {
+          savedRows.forEach(sr => {
+            if (!sr?.id) return;
+            const row = rows.find(r => r.id === sr.id);
+            if (!row) return;
+            for (const field of ['opd','nilaiMaturitas','nilaiKapabilitasApip','evidence','qaApip','mri','iepk','rtp','status']) {
+              if (Object.prototype.hasOwnProperty.call(sr, field)) row[field] = sr[field];
+            }
+          });
+        }
       } catch {}
       return;
     }
@@ -400,7 +412,7 @@ function initOfflineAutosave() {
 
   // Drive backup retry: only a few pending files per cycle to avoid creating
   // another traffic spike when many OPD users are online at once.
-  setInterval(() => { autoRetryPendingDriveBackups(); retryIndexedDbUploads(); }, 60000);
+  setInterval(() => { autoRetryPendingDriveBackups(); retryIndexedDbUploads(); }, 15000);
   window.addEventListener('online', () => setTimeout(() => { autoRetryPendingDriveBackups(); retryIndexedDbUploads(); }, 3000));
   setTimeout(retryIndexedDbUploads, 1500);
 }
@@ -444,18 +456,30 @@ async function getPendingUploadsFromIndexedDB(){
 async function retryIndexedDbUploads(){
   if(!navigator.onLine || !Array.isArray(rows)) return;
   const pending=await getPendingUploadsFromIndexedDB();
-  for(const rec of pending.slice(0,5)){
+  for(const rec of pending){
     const row=rows.find(r=>r.id===rec.opdId); if(!row) continue;
     try{
       const result=await uploadFile(row,rec.subCode,rec.paramId,rec.level,rec.file,rec.uploadId);
-      const container=row.subunsurs=row.subunsurs||{}; container[rec.subCode]=container[rec.subCode]||{}; container[rec.subCode][rec.paramId]=container[rec.subCode][rec.paramId]||{level:0};
-      const key='files'+rec.level; container[rec.subCode][rec.paramId][key]=Array.isArray(container[rec.subCode][rec.paramId][key])?container[rec.subCode][rec.paramId][key]:[];
+      const container=row.subunsurs=row.subunsurs||{};
+      container[rec.subCode]=container[rec.subCode]||{};
+      container[rec.subCode][rec.paramId]=container[rec.subCode][rec.paramId]||{level:0};
+      const key='files'+rec.level;
+      container[rec.subCode][rec.paramId][key]=Array.isArray(container[rec.subCode][rec.paramId][key])?container[rec.subCode][rec.paramId][key]:[];
       const existing=container[rec.subCode][rec.paramId][key].find(x=>typeof x==='object'&&x.uploadId===rec.uploadId);
       const item={url:result.url||rec.url||'',fileName:result.fileName||rec.fileName,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'retrying',syncError:result.driveError||null,r2Key:result.r2Key||rec.r2Key||null,fileType:rec.fileType||rec.file.type||'application/octet-stream',uploadId:rec.uploadId,uploadedAt:rec.createdAt||new Date().toISOString()};
       if(existing) Object.assign(existing,item); else container[rec.subCode][rec.paramId][key].push(item);
-      pendingUploadFiles.delete(rec.uploadId); await deletePendingUploadFromIndexedDB(rec.uploadId);
-      renderFileList(row,rec.subCode,rec.paramId,rec.level); render();
-    }catch(e){ console.warn('Retry offline file gagal:',rec.uploadId,e); }
+      if(result.gdriveId && result.syncStatus==='done'){
+        pendingUploadFiles.delete(rec.uploadId);
+        await deletePendingUploadFromIndexedDB(rec.uploadId);
+      }else{
+        // IMPORTANT: do not delete the local file while Drive is still pending.
+        rec.r2Key=item.r2Key; rec.url=item.url; rec.lastError=result.driveError||rec.lastError||'Menunggu Google Drive'; rec.nextRetryAt=Date.now()+15000;
+        await savePendingUploadToIndexedDB(rec);
+      }
+      renderFileList(row,rec.subCode,rec.paramId,rec.level);
+    }catch(e){
+      console.warn('Retry offline file gagal:',rec.uploadId,e);
+    }
   }
 }
 
@@ -1286,9 +1310,26 @@ let editingSubunsurSnapshot = null;
 let fileToDelete = null;
 let modalAutosaveTimer = null;
 let modalAutosaveRunning = false;
+async function fetchAuthoritativeRow(opdId){
+  try{
+    const data=await callServer('getData',{year:currentYear});
+    if(!Array.isArray(data)) return null;
+    const fresh=data.find(r=>String(r.id)===String(opdId));
+    if(!fresh) return null;
+    const idx=rows.findIndex(r=>String(r.id)===String(opdId));
+    if(idx>=0) rows[idx]=fresh;
+    return fresh;
+  }catch(err){
+    console.warn('Gagal memuat data OPD terbaru:',err);
+    return null;
+  }
+}
+
 async function openEditModal(id) {
-  const row = rows.find(r => r.id === id);
+  let row = rows.find(r => r.id === id);
   if (!row) return;
+  const freshRow = await fetchAuthoritativeRow(id);
+  if (freshRow) row = freshRow;
   if (!row.subunsurs) row.subunsurs = {};
   Object.keys(SUBUNSUR_DATA).forEach(subCode => {
     if (!row.subunsurs[subCode]) row.subunsurs[subCode] = {};
@@ -1376,6 +1417,11 @@ async function openEditModal(id) {
       }
 
       const progressContainer = document.querySelector(`.evid-upload-progress[data-sub="${subCode}"][data-param="${paramId}"][data-level="${level}"]`);
+      if (!progressContainer) {
+        showWarning('❌ Area progress upload tidak ditemukan. Silakan buka ulang detail subunsur.');
+        fileInput.value = '';
+        return;
+      }
       progressContainer.classList.add('active');
       progressContainer.innerHTML = '';
 
@@ -1482,7 +1528,7 @@ async function uploadFile(row, subCode, paramId, level, file, existingUploadId=n
   if(file.size>MAX_FILE_UPLOAD_BYTES)throw new Error('File terlalu besar! Maks 10 MB per file.');
   const uploadId=existingUploadId||crypto.randomUUID();
   const payload={__binaryFile:file,opdId:row.id,opdName:row.opd||'OPD',subunsur:subCode,paramId,level:String(level),year:currentYear,fileName:file.name,fileType:file.type||'application/octet-stream',uploadId};
-  const result=await callServerWithRetry('uploadFile',payload,2);
+  const result=await callServerWithRetry('uploadFile',payload,3);
   return {url:result.url,fileName:result.fileName,gdriveId:result.googleDriveId||result.gdriveId||null,syncStatus:result.syncStatus||'pending',uploadId:result.uploadId||uploadId,r2Key:result.r2Key||null,driveError:result.driveError||null};
 }
 
@@ -1599,44 +1645,57 @@ async function retryUploadedFile(opdId, subCode, paramId, level, uploadId) {
   }
 }
 
-async function autoRetryPendingDriveBackups() {
-  if (!navigator.onLine || !Array.isArray(rows)) return;
-  let attempted = 0;
-  for (const row of rows) {
-    if (attempted >= 3) break; // cap background traffic per browser cycle
-    const subunsurs = row?.subunsurs || {};
-    for (const subCode of Object.keys(subunsurs)) {
-      if (attempted >= 3) break;
-      const params = subunsurs[subCode] || {};
-      for (const paramId of Object.keys(params)) {
-        if (attempted >= 3) break;
-        for (let level = 1; level <= 5; level++) {
-          const files = params[paramId]?.['files' + level];
-          if (!Array.isArray(files)) continue;
-          const pending = files.find(f => typeof f === 'object' && f.uploadId && f.syncStatus !== 'done');
-          if (!pending) continue;
-          try {
-            const r = await callServerWithRetry('retryDriveBackup', {opdId:row.id,year:currentYear,uploadId:pending.uploadId,type:'evidence',subunsur:subCode,paramId,level},1);
-            if (r?.gdriveId) {
-              pending.gdriveId = r.gdriveId;
-              pending.syncStatus = 'done';
-              pending.storage = 'R2 + Google Drive';
-              pending.syncError = null;
-            } else {
-              pending.syncStatus = 'retrying';
-              pending.syncError = r?.driveError || pending.syncError || 'Menunggu Google Drive';
-            }
-            renderFileList(row,subCode,paramId,level);
-            attempted++;
-          } catch (_) {
-            attempted++;
+async function autoRetryPendingDriveBackups(){
+  if(!navigator.onLine || !Array.isArray(rows)) return;
+  const tasks=[];
+  for(const row of rows){
+    const subunsurs=row?.subunsurs||{};
+    for(const subCode of Object.keys(subunsurs)){
+      const params=subunsurs[subCode]||{};
+      for(const paramId of Object.keys(params)){
+        for(let level=1;level<=5;level++){
+          const files=params[paramId]?.['files'+level];
+          if(!Array.isArray(files)) continue;
+          for(const pending of files){
+            if(!pending || typeof pending!=='object' || !pending.uploadId || pending.syncStatus==='done') continue;
+            tasks.push({row,subCode,paramId,level,pending});
           }
         }
       }
     }
   }
+  // Drive retry is continuous, but concurrency is deliberately limited to 3 files at a time.
+  const worker=async(task)=>{
+    const {row,subCode,paramId,level,pending}=task;
+    try{
+      const r=await callServerWithRetry('retryDriveBackup',{
+        opdId:row.id,year:currentYear,uploadId:pending.uploadId,type:'evidence',subunsur:subCode,paramId,level
+      },1);
+      if(r?.gdriveId){
+        pending.gdriveId=r.gdriveId;
+        pending.syncStatus='done';
+        pending.storage='R2 + Google Drive';
+        pending.syncError=null;
+      }else{
+        pending.syncStatus='retrying';
+        pending.syncError=r?.driveError||pending.syncError||'Menunggu Google Drive';
+      }
+      renderFileList(row,subCode,paramId,level);
+    }catch(err){
+      pending.syncStatus='retrying';
+      pending.syncError=err?.message||String(err);
+      renderFileList(row,subCode,paramId,level);
+    }
+  };
+  let index=0;
+  const workers=Array.from({length:Math.min(3,tasks.length)},async()=>{
+    while(index<tasks.length){
+      const task=tasks[index++];
+      await worker(task);
+    }
+  });
+  await Promise.all(workers);
 }
-
 function removeUploadedFile(opdId, subCode, paramId, level, fileUrl) {
   const row = rows.find(r => r.id === opdId);
   if (!row) return;
@@ -1744,7 +1803,13 @@ function scheduleModalServerAutosave() {
 
 // ====== MODAL SAVE EDIT SUBUNSUR ======
 document.getElementById('modalSave').addEventListener('click', async function() {
-  if (!editingRowId || this.disabled || modalAutosaveRunning) return;
+  if (!editingRowId || this.disabled) return;
+  // If autosave is currently writing, wait for that write instead of silently
+  // ignoring the user's explicit Save click.
+  while (modalAutosaveRunning) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    if (!isEditModalOpen()) return;
+  }
   clearTimeout(modalAutosaveTimer);
   const saveBtn = this;
   saveBtn.disabled = true;
@@ -2198,6 +2263,7 @@ document.getElementById('confirmNameOk').addEventListener('click', async functio
 });
 
 window.addEventListener('beforeunload', () => { if (isEditModalOpen()) writeModalDraftNow(); });
+window.addEventListener('pagehide', () => { if (isEditModalOpen()) writeModalDraftNow(); });
 
 // ====== MODAL WARNING ======
 document.getElementById('warningOk').addEventListener('click', function() {
