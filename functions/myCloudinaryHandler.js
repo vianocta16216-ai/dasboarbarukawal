@@ -121,6 +121,22 @@ async function ensureOpdSchema(env){
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_data_year ON opd_data(year)").run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_data_id_year ON opd_data(id, year)").run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_login_attempts_lookup ON login_attempts(ip, action, timestamp)").run();
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS evidence_uploads (
+      upload_id TEXT PRIMARY KEY,
+      year TEXT NOT NULL,
+      opd_id TEXT NOT NULL,
+      subunsur TEXT NOT NULL DEFAULT '',
+      param_id TEXT NOT NULL DEFAULT '',
+      level TEXT NOT NULL DEFAULT '',
+      type TEXT NOT NULL DEFAULT 'evidence',
+      r2_key TEXT,
+      gdrive_id TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      sync_error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`).run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_evidence_uploads_location ON evidence_uploads(year, opd_id, subunsur, param_id, level)").run();
     schemaReady=true;
   })().catch(err=>{schemaReadyPromise=null;throw err;});
   return schemaReadyPromise;
@@ -1095,92 +1111,169 @@ export const onRequest = async ({ request, env, ctx }) => {
         assertGoogleDriveConfigured(env);
         const file=params.file;
         const legacyData=params.fileData;
-        if(!file && !legacyData && !request.body)throw new Error('File tidak diterima');
+        if(!file && !legacyData && !request.body) throw new Error('File tidak diterima');
+
         let bytes=null;
         let fileBody=null;
         let fileName=params.fileName||'evidence';
         let fileType=params.fileType||'application/octet-stream';
         let fileSize=Number(params.fileSize)||0;
         if(file){
-          fileName=file.name||fileName; fileType=file.type||fileType; fileSize=file.size||0;
-          if(fileSize>10*1024*1024)throw new Error('File > 10MB, terlalu besar!');
+          fileName=file.name||fileName;
+          fileType=file.type||fileType;
+          fileSize=file.size||0;
+          if(fileSize>10*1024*1024) throw new Error('File > 10MB, terlalu besar!');
           bytes=await file.arrayBuffer();
         }else if(legacyData){
-          bytes=decodeBase64File(legacyData,10); fileSize=bytes.byteLength;
+          bytes=decodeBase64File(legacyData,10);
+          fileSize=bytes.byteLength;
         }else{
-          if(fileSize>10*1024*1024)throw new Error('File > 10MB, terlalu besar!');
+          if(fileSize>10*1024*1024) throw new Error('File > 10MB, terlalu besar!');
           fileBody=request.body;
         }
-        const safeOpd=sanitizeString(params.opdName).substring(0,80)||'OPD';
+
         const subCode=String(params.subunsur||'');
         const paramId=String(params.paramId||'');
         const level=String(params.level||'1');
-        const {filePath:baseFilePath}=getFolderStructure({fileData:legacyData||'',fileName,opdName:params.opdName,subunsur:subCode,paramId,level,fileType});
+        const opdId=String(params.opdId||'');
         const uploadId=String(params.uploadId||crypto.randomUUID());
+        if(!opdId) throw new Error('OPD wajib diisi');
+        const {filePath:baseFilePath}=getFolderStructure({
+          fileData:legacyData||'',
+          fileName,
+          opdName:params.opdName,
+          subunsur:subCode,
+          paramId,
+          level,
+          fileType
+        });
         const filePath=baseFilePath.replace(/([^/]+)$/,(m)=>`${uploadId}-${m}`);
         const publicUrl=`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;
-        // Idempotency: retry request yang sama tidak boleh membuat evidence/Drive duplicate.
-        const existingRec=await env.DB.prepare("SELECT opd,subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
-        if(!existingRec.results.length)throw new Error('OPD tidak ditemukan');
-        let existingObj={};try{existingObj=existingRec.results[0]?.subunsurs?JSON.parse(existingRec.results[0].subunsurs):{}}catch{}
+
+        // Strong idempotency + location binding:
+        // one uploadId can belong to exactly one year/OPD/subunsur/parameter/level.
+        const now=Date.now();
+        const regCheck=await env.DB.prepare("SELECT * FROM evidence_uploads WHERE upload_id=? LIMIT 1").bind(uploadId).all();
+        if(regCheck.results?.length){
+          const reg=regCheck.results[0];
+          const sameLocation=String(reg.year)===String(year) &&
+            String(reg.opd_id)===opdId &&
+            String(reg.subunsur||'')===subCode &&
+            String(reg.param_id||'')===paramId &&
+            String(reg.level||'')===level &&
+            String(reg.type||'evidence')==='evidence';
+          if(!sameLocation) throw new Error('Upload ID sudah terikat ke OPD/kolom lain. Upload dibatalkan untuk mencegah salah penempatan data.');
+        }else{
+          await env.DB.prepare(`INSERT OR IGNORE INTO evidence_uploads
+            (upload_id,year,opd_id,subunsur,param_id,level,type,sync_status,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?)`)
+            .bind(uploadId,String(year),opdId,subCode,paramId,level,'evidence','pending',now,now).run();
+          const claim=await env.DB.prepare("SELECT * FROM evidence_uploads WHERE upload_id=? LIMIT 1").bind(uploadId).all();
+          const reg=claim.results?.[0];
+          if(!reg) throw new Error('Gagal mengunci identitas upload');
+          const sameLocation=String(reg.year)===String(year) &&
+            String(reg.opd_id)===opdId &&
+            String(reg.subunsur||'')===subCode &&
+            String(reg.param_id||'')===paramId &&
+            String(reg.level||'')===level &&
+            String(reg.type||'evidence')==='evidence';
+          if(!sameLocation) throw new Error('Upload ID dipakai oleh lokasi lain. Upload dibatalkan.');
+        }
+
+        const existingRec=await env.DB.prepare("SELECT opd,subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,year).all();
+        if(!existingRec.results.length) throw new Error('OPD tidak ditemukan');
+
+        let existingObj={};
+        try{ existingObj=existingRec.results[0]?.subunsurs?JSON.parse(existingRec.results[0].subunsurs):{}; }catch{}
         const existingArr=existingObj?.[subCode]?.[paramId]?.['files'+level];
         const existing=Array.isArray(existingArr)?existingArr.find(x=>x&&x.uploadId===uploadId):null;
-        if(existing){
-          if(existing.gdriveId){
-            return jsonResponse({status:'success',url:existing.url||publicUrl,fileName:existing.fileName||fileName,googleDriveId:existing.gdriveId,gdriveId:existing.gdriveId,syncStatus:'done',uploadId,backupQueued:false});
-          }
-          if(existing.r2Key){
-            const existingJob={type:'evidence',uploadId,year,opdId:params.opdId,opdName:params.opdName||'OPD',r2Key:existing.r2Key,fileName:existing.fileName||fileName,fileType:existing.fileType||fileType,subunsur:subCode,paramId,level};
-            try{
-              const existingGdriveId=await directGoogleDriveBackup(env,existingJob);
-              await updateEvidenceFileStatus(env,existingJob,{gdriveId:existingGdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
-              return jsonResponse({status:'success',url:existing.url||publicUrl,fileName:existing.fileName||fileName,googleDriveId:existingGdriveId,gdriveId:existingGdriveId,syncStatus:'done',uploadId,backupQueued:false});
-            }catch(existingErr){
-              await updateEvidenceFileStatus(env,existingJob,{syncStatus:'retrying',syncError:String(existingErr.message||existingErr)});
-              return jsonResponse({status:'pending',url:existing.url||publicUrl,fileName:existing.fileName||fileName,googleDriveId:null,gdriveId:null,syncStatus:'retrying',uploadId,backupQueued:false,driveError:String(existingErr.message||existingErr),r2Saved:true,r2Key:existing.r2Key});
-            }
-          }
-        }
-        await env.EVIDENCE_BUCKET.put(filePath,fileBody||bytes,{httpMetadata:{contentType:fileType}});
-        const uploadMeta={url:publicUrl,fileName:sanitizeString(fileName).substring(0,150),gdriveId:null,storage:'R2',syncStatus:'pending',uploadedAt:new Date().toISOString(),uploadId,r2Key:filePath,fileType};
-        // Update only this OPD's evidence JSON; never send the whole table back from the browser.
-        const exists=await env.DB.prepare("SELECT 1 FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
-        if(!exists.results.length)throw new Error('OPD tidak ditemukan');
-        const jsonItem=JSON.stringify(uploadMeta);
-        const safeSubPath=String(subCode).replace(/\"/g,'\\\"');
-        const safeParamPath=String(paramId).replace(/\"/g,'\\\"');
-        const subPath=`$.\"${safeSubPath}\"`;
-        const paramPath=`$.\"${safeSubPath}\".\"${safeParamPath}\"`;
-        const filesPath=`$.\"${safeSubPath}\".\"${safeParamPath}\".\"files${String(level).replace(/\"/g,'\\\"')}\"`;
-        // Atomic append: nested objects/arrays are initialized inside the same UPDATE.
-        // Concurrent operators appending to different parameters therefore do not perform a stale whole-JSON overwrite.
-        await runD1WithRetry(() => env.DB.prepare(`UPDATE opd_data SET subunsurs=json_insert(
-          json_set(json_set(json_set(COALESCE(subunsurs,'{}'), ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), json('{}'))), ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), json('{}'))), ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), '[]')),
-          ? , json(?) )
-          WHERE id=? AND year=?`).bind(subPath,subPath,paramPath,paramPath,filesPath,filesPath,filesPath+'[#]',jsonItem,params.opdId,year));
-        const latest=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
-        let subunsursLatest={};try{subunsursLatest=latest.results[0]?.subunsurs?JSON.parse(latest.results[0].subunsurs):{}}catch{}
-        const strukturNilai=calculateSAFromSubunsur(subunsursLatest);
-        const strukturCount=countParameterEvidence(subunsursLatest);
-        const strukturStatus=strukturCount===countTotalParameters()?'Selesai':(strukturCount>0?'Proses':'Belum');
-        await runD1WithRetry(() => env.DB.prepare("UPDATE opd_data SET sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?").bind(strukturNilai,strukturNilai,strukturStatus,params.opdId,year));
+        const regNow=(await env.DB.prepare("SELECT * FROM evidence_uploads WHERE upload_id=? LIMIT 1").bind(uploadId).all()).results?.[0];
 
-        const job={type:'evidence',uploadId:uploadMeta.uploadId,year,opdId:params.opdId,opdName:params.opdName||'OPD',r2Key:filePath,fileName:uploadMeta.fileName,fileType,subunsur:subCode,paramId,level};
-        notifyRealtime(env, ctx, year, { action: 'uploadFile', opdId: params.opdId, uploadId });
-        // MANDATORY GOOGLE DRIVE: report success only after Drive returns a real file ID.
-        // DUAL STORAGE POLICY: keep the R2 copy permanently alongside Google Drive.
-        // Never delete R2 automatically after Drive succeeds. Success requires Drive confirmation.
-        try {
+        if(existing?.gdriveId || regNow?.gdrive_id){
+          const gdriveId=existing?.gdriveId||regNow.gdrive_id;
+          return jsonResponse({
+            status:'success',
+            url:existing?.url||publicUrl,
+            fileName:existing?.fileName||fileName,
+            googleDriveId:gdriveId,
+            gdriveId,
+            syncStatus:'done',
+            uploadId,
+            backupQueued:false,
+            r2Saved:true,
+            r2Key:existing?.r2Key||regNow.r2_key||filePath
+          });
+        }
+
+        let r2Key=existing?.r2Key||regNow?.r2_key||filePath;
+        let r2ObjectExists=false;
+        if(r2Key){
+          try{ r2ObjectExists=!!(await env.EVIDENCE_BUCKET.head(r2Key)); }catch{}
+        }
+        if(!r2ObjectExists){
+          await env.EVIDENCE_BUCKET.put(r2Key,fileBody||bytes,{httpMetadata:{contentType:fileType}});
+        }
+        await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET r2_key=?,sync_status='pending',sync_error=NULL,updated_at=? WHERE upload_id=?")
+          .bind(r2Key,now,uploadId));
+
+        if(!existing){
+          const uploadMeta={
+            url:`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${r2Key}`,
+            fileName:sanitizeString(fileName).substring(0,150),
+            gdriveId:null,
+            storage:'R2',
+            syncStatus:'pending',
+            uploadedAt:new Date().toISOString(),
+            uploadId,
+            r2Key,
+            fileType
+          };
+          const jsonItem=JSON.stringify(uploadMeta);
+          const safeSubPath=subCode.replace(/"/g,'\\"');
+          const safeParamPath=paramId.replace(/"/g,'\\"');
+          const filesPath=`$.\"${safeSubPath}\".\"${safeParamPath}\".\"files${level.replace(/"/g,'\\"')}\"`;
+          await runD1WithRetry(()=>env.DB.prepare(`UPDATE opd_data SET subunsurs=json_insert(
+            json_set(json_set(json_set(COALESCE(subunsurs,'{}'), ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), json('{}'))), ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), json('{}'))), ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), '[]')),
+            ? , json(?) )
+            WHERE id=? AND year=?`)
+            .bind(`$.\"${safeSubPath}\"`,`$.\"${safeSubPath}\"`, `$.\"${safeSubPath}\".\"${safeParamPath}\"`,`$.\"${safeSubPath}\".\"${safeParamPath}\"`, filesPath, filesPath, filesPath+'[#]', jsonItem, opdId, year));
+          const latest=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,year).all();
+          let subunsursLatest={};try{subunsursLatest=latest.results[0]?.subunsurs?JSON.parse(latest.results[0].subunsurs):{}}catch{}
+          const strukturNilai=calculateSAFromSubunsur(subunsursLatest);
+          const strukturCount=countParameterEvidence(subunsursLatest);
+          const strukturStatus=strukturCount===countTotalParameters()?'Selesai':(strukturCount>0?'Proses':'Belum');
+          await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET sa=?,nilai_struktur_proses=?,struktur_proses_status=? WHERE id=? AND year=?").bind(strukturNilai,strukturNilai,strukturStatus,opdId,year));
+        }
+
+        await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET sync_status='pending',updated_at=? WHERE upload_id=?")
+          .bind(Date.now(),uploadId));
+
+        const job={type:'evidence',uploadId,year,opdId,opdName:params.opdName||existingRec.results[0].opd||'OPD',
+          r2Key,fileName:sanitizeString(fileName).substring(0,150),fileType,subunsur:subCode,paramId,level};
+
+        notifyRealtime(env,ctx,year,{action:'uploadFile',opdId,uploadId});
+
+        try{
           const gdriveId=await directGoogleDriveBackup(env,job);
           await updateEvidenceFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
-          notifyRealtime(env, ctx, year, { action: 'uploadFile', opdId: params.opdId, uploadId, storage: 'R2 + Google Drive' });
-          return jsonResponse({status:'success',url:publicUrl,fileName:uploadMeta.fileName,googleDriveId:gdriveId,gdriveId,syncStatus:'done',uploadId:uploadMeta.uploadId,backupQueued:false,r2Saved:true,r2Key:filePath});
-        } catch (driveErr) {
+          await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET gdrive_id=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=?")
+            .bind(gdriveId,Date.now(),uploadId));
+          notifyRealtime(env,ctx,year,{action:'uploadFile',opdId,uploadId,storage:'R2 + Google Drive'});
+          return jsonResponse({status:'success',url:`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${r2Key}`,
+            fileName:job.fileName,googleDriveId:gdriveId,gdriveId,syncStatus:'done',uploadId,backupQueued:false,r2Saved:true,r2Key});
+        }catch(driveErr){
           const message=String(driveErr?.message||driveErr);
           await updateEvidenceFileStatus(env,job,{syncStatus:'retrying',syncError:message,storage:'R2'});
-          notifyRealtime(env, ctx, year, { action: 'uploadFile', opdId: params.opdId, uploadId, storage: 'R2', syncStatus: 'retrying' });
-          // 503 makes the existing client retry logic treat this as transient.
-          return jsonResponse({status:'pending',message:'File sudah diamankan di R2 tetapi BELUM masuk Google Drive. Sistem akan mencoba lagi otomatis.',url:publicUrl,fileName:uploadMeta.fileName,googleDriveId:null,gdriveId:null,syncStatus:'retrying',uploadId:uploadMeta.uploadId,backupQueued:false,r2Saved:true,r2Key:filePath,driveError:message});
+          await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=?")
+            .bind(message,Date.now(),uploadId));
+          notifyRealtime(env,ctx,year,{action:'uploadFile',opdId,uploadId,storage:'R2',syncStatus:'retrying'});
+          return jsonResponse({
+            status:'pending',
+            message:'File sudah diamankan di R2 tetapi BELUM masuk Google Drive. Sistem akan mencoba lagi otomatis.',
+            url:`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${r2Key}`,
+            fileName:job.fileName,googleDriveId:null,gdriveId:null,syncStatus:'retrying',
+            uploadId,r2Saved:true,r2Key,driveError:message,backupQueued:false
+          });
         }
       }
 
@@ -1193,39 +1286,53 @@ export const onRequest = async ({ request, env, ctx }) => {
           const rec=await env.DB.prepare("SELECT opd,rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,targetYear).all();
           if(!rec.results.length) throw new Error('OPD tidak ditemukan');
           let list=[];try{list=rec.results[0]?.rtp_evidence?JSON.parse(rec.results[0].rtp_evidence):[]}catch{}
-          const item=list.find(x=>x.uploadId===uploadId); if(!item) throw new Error('Evidence RTP tidak ditemukan');
-          job={type:'rtp',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||(()=>{const u=String(item.url||'');const mark='r2.dev/';const i=u.indexOf(mark);return i>=0?decodeURIComponent(u.slice(i+mark.length)):'';})(),fileName:item.fileName||'evidence',fileType:item.fileType||'application/octet-stream',folderName:item.folderName||'Evidence RTP'};
+          const item=list.find(x=>x&&x.uploadId===uploadId); if(!item) throw new Error('Evidence RTP tidak ditemukan pada OPD/lokasi yang sama');
+          job={type:'rtp',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||'',fileName:item.fileName||'evidence',fileType:item.fileType||'application/octet-stream',folderName:item.folderName||'Evidence RTP'};
         } else {
           const rec=await env.DB.prepare("SELECT opd,subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,targetYear).all();
           if(!rec.results.length) throw new Error('OPD tidak ditemukan');
           let obj={};try{obj=rec.results[0]?.subunsurs?JSON.parse(rec.results[0].subunsurs):{}}catch{}
-          const arr=obj?.[subunsur]?.[paramId]?.['files'+level]; const item=Array.isArray(arr)?arr.find(x=>x.uploadId===uploadId):null;
-          const suppliedR2Key=String(params.r2Key||'');
-          if(!item && !suppliedR2Key) throw new Error('Evidence tidak ditemukan');
-          const r2Key=item?.r2Key||suppliedR2Key||'';
-          const fileName=item?.fileName||params.fileName||'evidence';
-          const fileType=item?.fileType||params.fileType||'application/octet-stream';
-          if(!r2Key) throw new Error('Lokasi file R2 tidak ditemukan');
-          if(!item){
-            obj[subunsur]=obj[subunsur]||{}; obj[subunsur][paramId]=obj[subunsur][paramId]||{level:0};
-            const k='files'+level; obj[subunsur][paramId][k]=Array.isArray(obj[subunsur][paramId][k])?obj[subunsur][paramId][k]:[];
-            obj[subunsur][paramId][k].push({url:params.url||`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${r2Key}`,fileName,gdriveId:null,storage:'R2',syncStatus:'retrying',syncError:null,uploadedAt:new Date().toISOString(),uploadId,r2Key,fileType});
-            await env.DB.prepare("UPDATE opd_data SET subunsurs=? WHERE id=? AND year=?").bind(JSON.stringify(obj),opdId,targetYear).run();
-          }
-          job={type:'evidence',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key,fileName,fileType,subunsur:String(subunsur),paramId:String(paramId),level:String(level)};
+          const arr=obj?.[subunsur]?.[paramId]?.['files'+level];
+          const item=Array.isArray(arr)?arr.find(x=>x&&x.uploadId===uploadId):null;
+          // NEVER create a new evidence record during a Drive retry.
+          // If the exact OPD/subunsur/parameter/level record is absent, stop.
+          if(!item) throw new Error('Evidence tidak ditemukan pada OPD/kolom yang sama. Retry dibatalkan untuk mencegah salah penempatan.');
+          const registry=await env.DB.prepare("SELECT * FROM evidence_uploads WHERE upload_id=? LIMIT 1").bind(uploadId).all();
+          const reg=registry.results?.[0];
+          if(!reg) throw new Error('Registri upload tidak ditemukan. Retry dibatalkan untuk keamanan.');
+          const sameLocation=String(reg.year)===targetYear &&
+            String(reg.opd_id)===String(opdId) &&
+            String(reg.subunsur||'')===String(subunsur||'') &&
+            String(reg.param_id||'')===String(paramId||'') &&
+            String(reg.level||'')===String(level||'') &&
+            String(reg.type||'evidence')==='evidence';
+          if(!sameLocation) throw new Error('Registri upload tidak cocok dengan OPD/kolom. Retry dibatalkan.');
+          job={type:'evidence',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',
+            r2Key:item.r2Key||reg.r2_key||'',fileName:item.fileName||'evidence',fileType:item.fileType||'application/octet-stream',
+            subunsur:String(subunsur),paramId:String(paramId),level:String(level)};
         }
         if(!job.r2Key) throw new Error('Lokasi file R2 tidak ditemukan');
         try{
+          const obj=await env.EVIDENCE_BUCKET.head(job.r2Key);
+          if(!obj) throw new Error('File sumber di R2 tidak ditemukan');
           const gdriveId=await directGoogleDriveBackup(env,job);
           if(job.type==='rtp') await updateRtpFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
-          else await updateEvidenceFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
-          notifyRealtime(env, ctx, targetYear, { action: 'retryDriveBackup', opdId, uploadId, storage: 'R2 + Google Drive' });
+          else{
+            await updateEvidenceFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
+            await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET gdrive_id=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=?")
+              .bind(gdriveId,Date.now(),uploadId));
+          }
+          notifyRealtime(env,ctx,targetYear,{action:'retryDriveBackup',opdId,uploadId,storage:'R2 + Google Drive'});
           return jsonResponse({status:'success',gdriveId,syncStatus:'done',uploadId});
         }catch(err){
           if(job.type==='rtp') await updateRtpFileStatus(env,job,{syncStatus:'retrying',syncError:String(err.message||err)});
-          else await updateEvidenceFileStatus(env,job,{syncStatus:'retrying',syncError:String(err.message||err)});
-          notifyRealtime(env, ctx, targetYear, { action: 'retryDriveBackup', opdId, uploadId, storage: 'R2', syncStatus: 'retrying' });
-          return jsonResponse({status:'pending',syncStatus:'retrying',uploadId,driveError:String(err.message||err),message:'R2 tetap tersimpan. Google Drive belum berhasil; retry tersedia.'});
+          else{
+            await updateEvidenceFileStatus(env,job,{syncStatus:'retrying',syncError:String(err.message||err)});
+            await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=?")
+              .bind(String(err.message||err),Date.now(),uploadId));
+          }
+          notifyRealtime(env,ctx,targetYear,{action:'retryDriveBackup',opdId,uploadId,storage:'R2',syncStatus:'retrying'});
+          return jsonResponse({status:'pending',syncStatus:'retrying',uploadId,driveError:String(err.message||err),message:'R2 tetap tersimpan. Google Drive belum berhasil; retry otomatis akan dilanjutkan.'});
         }
       }
       case 'deleteFile': {
