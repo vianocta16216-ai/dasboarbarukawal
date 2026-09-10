@@ -70,7 +70,7 @@
   <div class="panel">
     <div class="panel-head"><h2>🏢 Daftar OPD - Tahun <span id="currentYearLabel">2026</span></h2><p class="status-msg" id="saveStatus"></p></div>
     <p class="desc">Nilai Maturitas diinput manual. Nilai Struktur dan Proses dihitung otomatis dari level 43 parameter. Status Struktur dan Proses serta Kelengkapannya mengikuti progres evidence 43 parameter.</p>
-    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">QA APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="width:78px;">KK SPIP</th><th style="width:96px;">PM SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">QA APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="width:78px;">KK SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
     <div class="empty-state" id="emptyState" style="display:none;">Belum ada OPD. Klik <strong>"Tambah OPD"</strong> untuk memulai.</div>
   </div>
 </div>
@@ -318,48 +318,4 @@
   </div>
 </div>
 
-<!-- ===== PM SPIP TERINTEGRASI ===== -->
-<div class="sheet-links-overlay" id="kkPmModal">
-  <div class="kkpm-modal">
-    <div class="sheet-links-header">
-      <div>
-        <h3>🧮 PM SPIP TERINTEGRASI · <span id="kkPmOpdName"></span></h3>
-        <div id="kkPmSubtitle" class="kkpm-subtitle"></div>
-      </div>
-      <button class="sheet-links-close" id="kkPmClose" aria-label="Tutup">&times;</button>
-    </div>
-    <div class="kkpm-toolbar">
-      <div class="kkpm-toolbar-left">
-        <input id="kkPmSearch" type="search" placeholder="Cari nama lembar...">
-        <input id="kkPmGo" class="kkpm-go" type="text" placeholder="Lompat ke A1">
-        <span id="kkPmStats" class="kkpm-stats"></span>
-      </div>
-      <div class="kkpm-toolbar-right">
-        <button type="button" id="kkPmToggleHidden" class="kkpm-tool">👁️ Tampilkan tersembunyi</button>
-        <button type="button" id="kkPmAddRow" class="kkpm-tool">＋ Baris</button>
-        <button type="button" id="kkPmDelRow" class="kkpm-tool danger">− Baris</button>
-        <button type="button" id="kkPmAddCol" class="kkpm-tool">＋ Kolom</button>
-        <button type="button" id="kkPmDelCol" class="kkpm-tool danger">− Kolom</button>
-        <a class="kkpm-download" href="/PM-SPIP-Terintegrasi-Template.xlsx" download>⬇️ Excel</a>
-        <button type="button" id="kkPmSave" class="kkpm-save">💾 Simpan</button>
-      </div>
-    </div>
-    <div id="kkPmStatus" class="kkpm-status"></div>
-    <div class="kkpm-tabs" id="kkPmTabs"></div>
-    <div class="kkpm-sheet-meta" id="kkPmSheetMeta"></div>
-    <div class="kkpm-formula-bar"><span id="kkPmCellRef">—</span><em id="kkPmCellType"></em><input id="kkPmFormulaBar" placeholder="Pilih sel · formula akan tampil di sini · Enter untuk menerapkan" /></div>
-    <div class="kkpm-grid-shell">
-      <div id="kkPmGridWrap" class="kkpm-grid-wrap">
-        <div id="kkPmGridSizer" class="kkpm-grid-sizer"><div id="kkPmCellLayer" class="kkpm-cell-layer"></div><div id="kkPmHeaderLayer" class="kkpm-header-layer"></div></div>
-      </div>
-      <div id="kkPmRowNums" class="kkpm-rownums"></div>
-    </div>
-    <div class="kkpm-footer">
-      <span><b>PM SPIP Terintegrasi</b> · workbook 28 lembar · formula Excel lintas sheet, shared formula, dropdown, kolom/baris tersembunyi dan per OPD/tahun.</span>
-      <button type="button" id="kkPmCloseFooter">Tutup</button>
-    </div>
-  </div>
-</div>
-
-<script src="/pm_workbook.js?v=20260910" defer></script>
 <script src="/script.js?v=20260910-r1" defer></script>
