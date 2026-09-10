@@ -5,6 +5,144 @@ let SUBUNSUR_DATA = {};
 let PARAM_LIST = [];
 let saveTimer = null;
 
+
+// ====== REALTIME MULTI-USER ======
+let realtimeSocket = null;
+let realtimeReconnectTimer = null;
+let realtimeReconnectAttempt = 0;
+let realtimeRefreshTimer = null;
+let realtimeRefreshPending = false;
+let realtimeHeartbeatTimer = null;
+let realtimeConnectingYear = null;
+
+function isEditingFormField() {
+  const el = document.activeElement;
+  return !!(el && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
+}
+
+function ensureRealtimeBadge() {
+  let badge = document.getElementById('realtimeStatusBadge');
+  if (badge) return badge;
+  badge = document.createElement('div');
+  badge.id = 'realtimeStatusBadge';
+  badge.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:9999;padding:7px 11px;border-radius:999px;background:rgba(255,255,255,.96);box-shadow:0 4px 16px rgba(15,23,42,.14);font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;color:#475569;border:1px solid #e2e8f0;pointer-events:none;transition:opacity .2s ease;';
+  document.body.appendChild(badge);
+  return badge;
+}
+
+function setRealtimeBadge(text, state='idle') {
+  const badge = ensureRealtimeBadge();
+  badge.textContent = text;
+  badge.dataset.state = state;
+  badge.style.color = state === 'online' ? '#166534' : state === 'error' ? '#b91c1c' : '#475569';
+  badge.style.borderColor = state === 'online' ? '#bbf7d0' : state === 'error' ? '#fecaca' : '#e2e8f0';
+}
+
+function scheduleRealtimeRefresh(reason='Pembaruan operator lain') {
+  realtimeRefreshPending = true;
+  if (isEditingFormField() || isSaving) {
+    setRealtimeBadge('🔄 Perubahan lain menunggu', 'idle');
+    return;
+  }
+  clearTimeout(realtimeRefreshTimer);
+  realtimeRefreshTimer = setTimeout(async () => {
+    if (isEditingFormField() || isSaving) return;
+    realtimeRefreshPending = false;
+    try {
+      await loadData();
+      setRealtimeBadge('🟢 Realtime aktif', 'online');
+    } catch (e) {
+      setRealtimeBadge('🟠 Realtime menunggu sinkron', 'error');
+    }
+  }, 250);
+}
+
+function closeRealtimeSocket() {
+  clearTimeout(realtimeReconnectTimer);
+  clearInterval(realtimeHeartbeatTimer);
+  realtimeReconnectTimer = null;
+  realtimeHeartbeatTimer = null;
+  if (realtimeSocket) {
+    try { realtimeSocket.close(1000, 'change-year'); } catch {}
+  }
+  realtimeSocket = null;
+}
+
+function connectRealtime() {
+  const year = String(currentYear || document.getElementById('yearSelect')?.value || new Date().getFullYear());
+  if (!year || typeof WebSocket === 'undefined') return;
+  if (realtimeSocket && realtimeConnectingYear === year && [WebSocket.OPEN, WebSocket.CONNECTING].includes(realtimeSocket.readyState)) return;
+
+  closeRealtimeSocket();
+  realtimeConnectingYear = year;
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${location.host}/realtime?year=${encodeURIComponent(year)}`;
+  setRealtimeBadge('🟡 Menghubungkan realtime…', 'idle');
+
+  let ws;
+  try { ws = new WebSocket(wsUrl); } catch (err) {
+    setRealtimeBadge('🟠 Realtime menunggu koneksi', 'error');
+    scheduleRealtimeReconnect();
+    return;
+  }
+  realtimeSocket = ws;
+
+  ws.addEventListener('open', () => {
+    realtimeReconnectAttempt = 0;
+    setRealtimeBadge('🟢 Realtime aktif', 'online');
+    clearInterval(realtimeHeartbeatTimer);
+    realtimeHeartbeatTimer = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        try { ws.send(JSON.stringify({ type: 'ping' })); } catch {}
+      }
+    }, 25000);
+  });
+
+  ws.addEventListener('message', (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'connected' || msg.type === 'pong') return;
+      if (msg.type === 'data-changed' && String(msg.year) === String(currentYear)) {
+        scheduleRealtimeRefresh('Perubahan dari operator lain');
+      }
+    } catch {}
+  });
+
+  ws.addEventListener('error', () => {
+    setRealtimeBadge('🟠 Realtime terputus sementara', 'error');
+  });
+
+  ws.addEventListener('close', () => {
+    clearInterval(realtimeHeartbeatTimer);
+    realtimeHeartbeatTimer = null;
+    if (realtimeSocket === ws) realtimeSocket = null;
+    scheduleRealtimeReconnect();
+  });
+}
+
+function scheduleRealtimeReconnect() {
+  clearTimeout(realtimeReconnectTimer);
+  const delay = Math.min(15000, 1000 * (2 ** Math.min(realtimeReconnectAttempt++, 4))) + Math.floor(Math.random() * 400);
+  realtimeReconnectTimer = setTimeout(() => connectRealtime(), delay);
+}
+
+window.addEventListener('online', () => {
+  flushOfflineSaveQueue();
+  retryIndexedDbUploads();
+  connectRealtime();
+});
+window.addEventListener('offline', () => setRealtimeBadge('📴 Offline — realtime menunggu', 'error'));
+document.addEventListener('focusout', () => {
+  if (realtimeRefreshPending && !isEditingFormField() && !isSaving) scheduleRealtimeRefresh();
+});
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    connectRealtime();
+    if (realtimeRefreshPending && !isEditingFormField() && !isSaving) scheduleRealtimeRefresh();
+  }
+});
+
+
 // ====== AUTOSAVE OFFLINE / KONEKSI LAMBAT ======
 // Perubahan disimpan ke browser terlebih dahulu saat server tidak dapat dihubungi.
 // Antrian ini kemudian dikirim ulang otomatis ketika koneksi kembali normal.
@@ -332,94 +470,6 @@ async function callServerWithRetry(action, params={}, retries=2){
   throw lastError;
 }
 
-// ====== REALTIME MULTI-USER SYNC ======
-let realtimeSocket = null;
-let realtimeReconnectTimer = null;
-let realtimeReconnectAttempt = 0;
-let realtimeStarted = false;
-let realtimeServerActive = false;
-
-function websocketUrlForYear(year){
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${location.host}/realtime?year=${encodeURIComponent(year)}`;
-}
-
-function scheduleRealtimeReconnect(){
-  clearTimeout(realtimeReconnectTimer);
-  if(!navigator.onLine || !realtimeStarted) return;
-  const delay=Math.min(15000,1000*Math.pow(2,Math.min(realtimeReconnectAttempt,4)));
-  realtimeReconnectAttempt++;
-  realtimeReconnectTimer=setTimeout(connectRealtime,delay);
-}
-
-async function applyRealtimeOpdUpdate(opdId, hint={}){
-  if(!opdId || !navigator.onLine) return;
-  try{
-    const result=await callServer('getOpd',{opdId,year:currentYear});
-    if(result?.status!=='success' || !result.row) return;
-    const idx=rows.findIndex(r=>String(r.id)===String(opdId));
-    if(idx>=0) rows[idx]=result.row;
-    else rows.push(result.row);
-
-    // Never overwrite a user's in-progress form just because another operator
-    // updated the same OPD. Refresh the visible file list when it is safe.
-    if(editingRowId===opdId && hint.subunsur && hint.paramId && hint.level!=null){
-      try{ renderFileList(result.row,hint.subunsur,hint.paramId,String(hint.level)); }catch{}
-    }
-    render();
-    updateKpisLocal();
-    const status=document.getElementById('saveStatus');
-    if(status && !offlineSaveQueue.length){
-      status.textContent='🔄 Data diperbarui operator lain';
-      status.dataset.statusType='realtime';
-      clearTimeout(window.__realtimeStatusTimer);
-      window.__realtimeStatusTimer=setTimeout(()=>{ if(status.dataset.statusType==='realtime') status.textContent=''; },1800);
-    }
-  }catch(err){
-    console.warn('Gagal menerapkan pembaruan realtime:',err);
-  }
-}
-
-function connectRealtime(){
-  clearTimeout(realtimeReconnectTimer);
-  if(!realtimeStarted || !navigator.onLine || !currentYear) return;
-  try{
-    if(realtimeSocket){ try{realtimeSocket.close();}catch{} }
-    const ws=new WebSocket(websocketUrlForYear(currentYear));
-    realtimeSocket=ws;
-    ws.onopen=()=>{
-      realtimeReconnectAttempt=0;
-      realtimeServerActive=true;
-      setConnectionStatus('🟢 Realtime aktif — perubahan operator lain diterima otomatis','success');
-      setTimeout(()=>{const el=document.getElementById('saveStatus'); if(el && el.dataset.statusType==='success' && el.textContent.includes('Realtime aktif')) el.textContent='';},1800);
-    };
-    ws.onmessage=(event)=>{
-      try{
-        const msg=JSON.parse(event.data||'{}');
-        if(msg.type==='connected') return;
-        const p=msg.payload||msg;
-        if(String(p.year||'')!==String(currentYear)) return;
-        if(p.opdId) applyRealtimeOpdUpdate(p.opdId,p);
-        else if(p.type==='opd-added') loadData();
-      }catch(err){ console.warn('Pesan realtime tidak valid:',err); }
-    };
-    ws.onclose=()=>{ realtimeServerActive=false; scheduleRealtimeReconnect(); };
-    ws.onerror=()=>{ realtimeServerActive=false; try{ws.close();}catch{} };
-  }catch(err){
-    realtimeServerActive=false;
-    scheduleRealtimeReconnect();
-  }
-}
-
-function initRealtimeSync(){
-  if(realtimeStarted) return;
-  realtimeStarted=true;
-  window.addEventListener('online',()=>{realtimeReconnectAttempt=0;connectRealtime();});
-  window.addEventListener('offline',()=>{realtimeServerActive=false;});
-  document.addEventListener('visibilitychange',()=>{ if(!document.hidden && (!realtimeSocket || realtimeSocket.readyState!==WebSocket.OPEN)) connectRealtime(); });
-  connectRealtime();
-}
-
 
 // ====== VERIFIKASI PASSWORD ======
 async function verifyAccess(password) {
@@ -530,6 +580,7 @@ async function loadData() {
   const year = document.getElementById('yearSelect').value;
   currentYear = year;
   document.getElementById('currentYearLabel').textContent = year;
+  if (realtimeConnectingYear !== String(year)) connectRealtime();
   
   try {
     const data = await callServer('getData', { year });
@@ -1059,7 +1110,6 @@ document.getElementById('kpiChartClose').addEventListener('click', function() {
   }, 10000);
 
   initOfflineAutosave();
-  initRealtimeSync();
 
   try {
     setProgress(10, 'Memuat data subunsur...');
@@ -2035,6 +2085,7 @@ if (urlParams.get('access') === 'portal') {
       });
       await loadYears();
       await loadData();
+      connectRealtime();
       showDashboard();
     } catch (e) {
       console.error('Inisialisasi gagal:', e);
