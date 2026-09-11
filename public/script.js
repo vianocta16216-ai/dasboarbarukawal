@@ -339,6 +339,10 @@ function applyOfflineQueueToRows() {
           row.subunsurs[c.subCode] = row.subunsurs[c.subCode] || {};
           row.subunsurs[c.subCode][c.paramId] = row.subunsurs[c.subCode][c.paramId] || {level:0};
           row.subunsurs[c.subCode][c.paramId][c.field] = c.value;
+          if (c.field === 'level') {
+            row.parameterLevels = row.parameterLevels || {};
+            row.parameterLevels[`${c.subCode}|${c.paramId}`] = Math.max(0,Math.min(5,Number(c.value)||0));
+          }
         });
         row.nilaiStrukturProses = calculateSA(row);
         row.sa = row.nilaiStrukturProses;
@@ -764,9 +768,19 @@ function getStructureProcessBreakdown(subunsurs) {
 // master (43 parameter). Hanya parameter master yang dihitung; key liar/legacy
 // di dalam JSON tidak ikut memengaruhi nilai.
 function getRowStructureProcessBreakdown(row) {
-  // Authoritative UI source: the persisted subunsurs JSON. parameterLevels is
-  // only a projection/compatibility cache and must never override a real value
-  // from subunsurs (especially legacy registry zeros).
+  const master = Array.isArray(PARAM_LIST) ? PARAM_LIST : [];
+  const levels = row?.parameterLevels;
+  if (levels && typeof levels === 'object' && master.length) {
+    const b = { totalParams: master.length, selectedParams:0, sumLevels:0, byLevel:{1:0,2:0,3:0,4:0,5:0} };
+    for (const p of master) {
+      const key = `${p.subCode}|${p.paramId}`;
+      const lv = Math.max(0, Math.min(5, Number(levels[key]) || 0));
+      if (lv > 0) { b.selectedParams++; b.sumLevels += lv; b.byLevel[lv]++; }
+    }
+    b.value = Math.round((b.sumLevels / 43) * 100) / 100;
+    b.totalParams = 43;
+    return b;
+  }
   const b = getStructureProcessBreakdown(row?.subunsurs || {});
   if (b.totalParams > 0) return b;
   return {totalParams:43,selectedParams:0,sumLevels:0,byLevel:{1:0,2:0,3:0,4:0,5:0},value:0};
@@ -1950,6 +1964,8 @@ document.getElementById('modalSave').addEventListener('click', async function() 
     const value = parseInt(el.value) || 0;
     const oldValue = Number(editingSubunsurSnapshot?.[subCode]?.[paramId]?.level || 0);
     row.subunsurs[subCode][paramId].level = value;
+    row.parameterLevels = row.parameterLevels || {};
+    row.parameterLevels[`${subCode}|${paramId}`] = value;
     if (value !== oldValue) changes.push({subCode, paramId, field:'level', value});
   });
 
