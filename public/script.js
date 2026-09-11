@@ -3,6 +3,44 @@ let rows = [];
 let currentYear = new Date().getFullYear().toString();
 let SUBUNSUR_DATA = {};
 let PARAM_LIST = [];
+
+// ====== NORMALISASI STRUKTUR & PROSES ======
+function normalizeLevel(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(5, Math.trunc(n))) : 0;
+}
+function normalizeSubunsurs(subunsurs) {
+  const src = (subunsurs && typeof subunsurs === 'object' && !Array.isArray(subunsurs)) ? subunsurs : {};
+  const out = {};
+  for (const [subCode, info] of Object.entries(src)) {
+    const params = (info && typeof info === 'object' && !Array.isArray(info)) ? info : {};
+    out[subCode] = {};
+    for (const [paramId, value] of Object.entries(params)) {
+      const obj = (value && typeof value === 'object' && !Array.isArray(value)) ? {...value} : {};
+      obj.level = normalizeLevel(obj.level);
+      for (let lv = 1; lv <= 5; lv++) {
+        const fk = `files${lv}`;
+        const ek = `evid${lv}`;
+        if (Object.prototype.hasOwnProperty.call(obj, fk)) {
+          try { obj[fk] = Array.isArray(obj[fk]) ? obj[fk] : (typeof obj[fk] === 'string' ? JSON.parse(obj[fk]) : []); }
+          catch { obj[fk] = []; }
+          if (!Array.isArray(obj[fk])) obj[fk] = [];
+        }
+        if (Object.prototype.hasOwnProperty.call(obj, ek)) obj[ek] = String(obj[ek] ?? '');
+      }
+      out[subCode][paramId] = obj;
+    }
+  }
+  return out;
+}
+function normalizeRowStructure(row) {
+  if (!row || typeof row !== 'object') return row;
+  row.subunsurs = normalizeSubunsurs(row.subunsurs);
+  const bd = getStructureProcessBreakdown(row.subunsurs);
+  row.nilaiStrukturProses = bd.value;
+  row.sa = bd.value;
+  return row;
+}
 let saveTimer = null;
 
 
@@ -705,9 +743,7 @@ async function loadData() {
     if (Array.isArray(data)) {
       rows = data.map(r => {
         const row = { ...r, nilaiMaturitas:Number(r.nilaiMaturitas ?? r.nilai_maturitas ?? 0) || 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, kkPmData:r.kkPmData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
-        row.nilaiStrukturProses = calculateSA(row);
-        row.sa = row.nilaiStrukturProses;
-        return row;
+         return normalizeRowStructure(row);
       });
       rows.sort((a,b)=>{ const x=(parseFloat(b.nilaiMaturitas)||0)-(parseFloat(a.nilaiMaturitas)||0); return x || (parseFloat(b.nilaiStrukturProses)||0)-(parseFloat(a.nilaiStrukturProses)||0); });
       applyOfflineQueueToRows();
@@ -739,7 +775,7 @@ function getStructureProcessBreakdown(subunsurs) {
     for (const param of params) {
       breakdown.totalParams++;
       const raw = subunsurs?.[subCode]?.[param.id]?.level;
-      const level = Math.max(0, Math.min(5, Number(raw) || 0));
+      const level = normalizeLevel(raw);
       if (level > 0) {
         breakdown.selectedParams++;
         breakdown.sumLevels += level;
@@ -771,7 +807,7 @@ function updateKpisLocal(){
   const kap = rows.map(r=>Number(r.nilaiKapabilitasApip)||0).filter(v=>v>0);
   const qa=rows.filter(r=>r.qaApip==='Selesai').length, status=rows.filter(r=>r.status==='Selesai').length, rtp=rows.filter(r=>r.rtp==='Selesai').length, ev=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length).length;
   applyKpis({
-    rataStrukturProses:avgAll('nilaiStrukturProses'),
+    rataStrukturProses:strukturFilled.length ? strukturFilled.reduce((a,b)=>a+b,0)/strukturFilled.length : 0,
     rataMaturitas:avgFilled('nilaiMaturitas'),
     rataMRI:avgFilled('mri'),
     rataIEPK:avgFilled('iepk'),
@@ -1376,6 +1412,7 @@ async function openEditModal(id) {
     if (!row.subunsurs[subCode]) row.subunsurs[subCode] = {};
     SUBUNSUR_DATA[subCode].params.forEach(param => {
       if (!row.subunsurs[subCode][param.id]) row.subunsurs[subCode][param.id] = { level: 0 };
+       row.subunsurs[subCode][param.id].level = normalizeLevel(row.subunsurs[subCode][param.id].level);
     });
   });
   editingRowId = row.id;
@@ -1402,7 +1439,8 @@ async function openEditModal(id) {
       paramDiv.style.paddingTop = '10px';
       paramDiv.style.marginTop = '10px';
       const paramsHtml = `<div class="params-box"><p><strong style="font-size:14px;">Parameter:</strong> <span class="param-desc-text">${param.desc}</span></p></div>`;
-      const levelSelect = `<div class="level-select"><span style="font-size:12px;color:var(--text-secondary)">Level:</span><select data-sub="${subCode}" data-param="${param.id}" data-field="level"><option value="0" ${data.level === 0 ? 'selected' : ''}>0</option>${[1,2,3,4,5].map(lv => `<option value="${lv}" ${data.level === lv ? 'selected' : ''}>${lv}</option>`).join('')}</select></div>`;
+      const selectedLevel = normalizeLevel(data.level);
+       const levelSelect = `<div class="level-select"><span style="font-size:12px;color:var(--text-secondary)">Level:</span><select data-sub="${subCode}" data-param="${param.id}" data-field="level"><option value="0" ${selectedLevel === 0 ? 'selected' : ''}>0</option>${[1,2,3,4,5].map(lv => `<option value="${lv}" ${selectedLevel === lv ? 'selected' : ''}>${lv}</option>`).join('')}</select></div>`;
       let evidHtml = `<div class="evid-group">`;
       for (let lv = 1; lv <= 5; lv++) {
         const evid = data['evid' + lv] || '';
@@ -1441,7 +1479,7 @@ async function openEditModal(id) {
     liveRow.subunsurs = liveRow.subunsurs || {};
     liveRow.subunsurs[el.dataset.sub] = liveRow.subunsurs[el.dataset.sub] || {};
     liveRow.subunsurs[el.dataset.sub][el.dataset.param] = liveRow.subunsurs[el.dataset.sub][el.dataset.param] || {level:0};
-    liveRow.subunsurs[el.dataset.sub][el.dataset.param].level = Math.max(0, Math.min(5, Number(el.value) || 0));
+    liveRow.subunsurs[el.dataset.sub][el.dataset.param].level = normalizeLevel(el.value);
     const bd = getStructureProcessBreakdown(liveRow.subunsurs);
     liveRow.nilaiStrukturProses = bd.value;
     liveRow.sa = bd.value;
@@ -1873,7 +1911,7 @@ function scheduleModalServerAutosave() {
     const saveParams={opdId:row.id,year:currentYear,changes};
     try{
       const saved=await callServerWithRetry('saveSubunsur',saveParams,3);
-      if(saved?.subunsurs && typeof saved.subunsurs==='object'){ row.subunsurs = saved.subunsurs; }
+      if(saved?.subunsurs && typeof saved.subunsurs==='object'){ row.subunsurs = normalizeSubunsurs(saved.subunsurs); }
       if(saved?.nilaiStrukturProses!=null){row.nilaiStrukturProses=saved.nilaiStrukturProses;row.sa=saved.nilaiStrukturProses;}
       if(saved?.strukturProsesStatus!=null) row.strukturProsesStatus=saved.strukturProsesStatus;
       // Pull the authoritative row after the write so the UI snapshot can never
@@ -1957,7 +1995,7 @@ document.getElementById('modalSave').addEventListener('click', async function() 
   const saveParams = {opdId:row.id, year:currentYear, changes};
   try {
     const saved=await callServerWithRetry('saveSubunsur', saveParams);
-    if(saved?.subunsurs && typeof saved.subunsurs==='object') row.subunsurs=saved.subunsurs;
+    if(saved?.subunsurs && typeof saved.subunsurs==='object') row.subunsurs=normalizeSubunsurs(saved.subunsurs);
     if(saved?.nilaiStrukturProses!=null){row.nilaiStrukturProses=saved.nilaiStrukturProses;row.sa=saved.nilaiStrukturProses;}
     if(saved?.strukturProsesStatus!=null) row.strukturProsesStatus=saved.strukturProsesStatus;
     const fresh=await fetchAuthoritativeRow(row.id);
