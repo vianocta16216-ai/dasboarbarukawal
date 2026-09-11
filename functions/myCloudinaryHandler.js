@@ -202,6 +202,16 @@ async function ensureOpdSchema(env){
       PRIMARY KEY(year, opd_id, subunsur, param_id)
     )`).run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_parameter_levels_opd ON opd_parameter_levels(year, opd_id)").run();
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS opd_parameter_levels_v2 (
+      year TEXT NOT NULL,
+      opd_id TEXT NOT NULL,
+      subunsur TEXT NOT NULL,
+      param_id TEXT NOT NULL,
+      level INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(year, opd_id, subunsur, param_id)
+    )`).run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_parameter_levels_v2_opd ON opd_parameter_levels_v2(year, opd_id)").run();
 
     // One-time backfill from the legacy subunsurs JSON so existing Level selections are preserved.
     try {
@@ -867,7 +877,7 @@ export async function onRequest({ request, env, ctx }) {
 
       case 'getData': {
         const {results}=await env.DB.prepare("SELECT * FROM opd_data WHERE year=? ORDER BY CAST(nilai_maturitas AS REAL) DESC, CAST(nilai_struktur_proses AS REAL) DESC, CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
-        const levelRows=await env.DB.prepare("SELECT opd_id,subunsur,param_id,level FROM opd_parameter_levels WHERE year=?").bind(year).all();
+        const levelRows=await env.DB.prepare("SELECT opd_id,subunsur,param_id,level FROM opd_parameter_levels_v2 WHERE year=?").bind(String(year)).all();
         const levelMap=new Map();
         for(const lr of (levelRows.results||[])){
           const key=`${lr.opd_id}|${lr.subunsur}|${lr.param_id}`;
@@ -885,8 +895,9 @@ export async function onRequest({ request, env, ctx }) {
             for(const prm of (Array.isArray(info?.params)?info.params:[])){
               const key=`${r.id}|${subCode}|${prm.id}`;
               const jsonLevel = subunsurs?.[subCode]?.[prm.id]?.level;
-              const hasJsonLevel = jsonLevel !== undefined && jsonLevel !== null && jsonLevel !== '';
-              const v = hasJsonLevel ? Math.max(0,Math.min(5,Number(jsonLevel)||0)) : (levelMap.has(key)?levelMap.get(key):0);
+              const v = levelMap.has(key)
+                ? levelMap.get(key)
+                : Math.max(0,Math.min(5,Number(jsonLevel)||0));
               parameterLevels[`${subCode}|${prm.id}`]=v;
               subunsurs[subCode]=subunsurs[subCode]||{};
               subunsurs[subCode][prm.id]=subunsurs[subCode][prm.id]||{};
@@ -1003,7 +1014,7 @@ export async function onRequest({ request, env, ctx }) {
               await runD1WithRetry(() => env.DB.prepare(
                 "UPDATE opd_data SET subunsurs=json_set(COALESCE(subunsurs,'{}'), ?, json(?)) WHERE id=? AND year=?"
               ).bind(path, newLevel, params.opdId, year));
-              await runD1WithRetry(() => env.DB.prepare(`INSERT INTO opd_parameter_levels(year,opd_id,subunsur,param_id,level,updated_at)
+              await runD1WithRetry(() => env.DB.prepare(`INSERT INTO opd_parameter_levels_v2(year,opd_id,subunsur,param_id,level,updated_at)
                 VALUES(?,?,?,?,?,?)
                 ON CONFLICT(year,opd_id,subunsur,param_id) DO UPDATE SET level=excluded.level, updated_at=excluded.updated_at`
               ).bind(String(year),String(params.opdId),subCode,paramId,newLevel,Date.now()));
@@ -1021,15 +1032,17 @@ export async function onRequest({ request, env, ctx }) {
           if (!rec.results.length) throw new Error('OPD tidak ditemukan');
           let authoritativeSubunsurs={};
           try { authoritativeSubunsurs = rec.results[0].subunsurs ? JSON.parse(rec.results[0].subunsurs) : {}; } catch { authoritativeSubunsurs={}; }
-          const levelRowsForOpd=await env.DB.prepare("SELECT subunsur,param_id,level FROM opd_parameter_levels WHERE year=? AND opd_id=?").bind(String(year),String(params.opdId)).all();
+          const levelRowsForOpd=await env.DB.prepare("SELECT subunsur,param_id,level FROM opd_parameter_levels_v2 WHERE year=? AND opd_id=?").bind(String(year),String(params.opdId)).all();
           const authoritativeLevels=new Map();
           for(const lr of (levelRowsForOpd.results||[])) authoritativeLevels.set(`${lr.subunsur}|${lr.param_id}`,Math.max(0,Math.min(5,Number(lr.level)||0)));
           let breakdown={ totalParams:countTotalParameters(), selectedParams:0, sumLevels:0, byLevel:{1:0,2:0,3:0,4:0,5:0} }; // mutable: refreshed by the authoritative verification pass below
           for(const [subCode,info] of Object.entries(SUBUNSUR_DATA||{})){
             for(const prm of (Array.isArray(info?.params)?info.params:[])){
               const jsonLevel = authoritativeSubunsurs?.[subCode]?.[prm.id]?.level;
-              const hasJsonLevel = jsonLevel !== undefined && jsonLevel !== null && jsonLevel !== '';
-              const lv = hasJsonLevel ? Math.max(0,Math.min(5,Number(jsonLevel)||0)) : (authoritativeLevels.get(`${subCode}|${prm.id}`) ?? 0);
+              const keyLevel = `${subCode}|${prm.id}`;
+              const lv = authoritativeLevels.has(keyLevel)
+                ? authoritativeLevels.get(keyLevel)
+                : Math.max(0,Math.min(5,Number(jsonLevel)||0));
               if(lv>0){breakdown.selectedParams++;breakdown.sumLevels+=lv;breakdown.byLevel[lv]++;}
             }
           }
@@ -1044,7 +1057,7 @@ export async function onRequest({ request, env, ctx }) {
             const verify=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
             let latest={};
             try { latest=verify.results?.[0]?.subunsurs ? JSON.parse(verify.results[0].subunsurs) : {}; } catch { latest={}; }
-            const latestLevelRows=await env.DB.prepare("SELECT subunsur,param_id,level FROM opd_parameter_levels WHERE year=? AND opd_id=?").bind(String(year),String(params.opdId)).all();
+            const latestLevelRows=await env.DB.prepare("SELECT subunsur,param_id,level FROM opd_parameter_levels_v2 WHERE year=? AND opd_id=?").bind(String(year),String(params.opdId)).all();
             const lm=new Map(); for(const lr of (latestLevelRows.results||[])) lm.set(`${lr.subunsur}|${lr.param_id}`,Math.max(0,Math.min(5,Number(lr.level)||0)));
             const latestBreakdown={ totalParams:countTotalParameters(), selectedParams:0, sumLevels:0, byLevel:{1:0,2:0,3:0,4:0,5:0} };
             for(const [subCode,info] of Object.entries(SUBUNSUR_DATA||{})) for(const prm of (Array.isArray(info?.params)?info.params:[])){ const jsonLevel = latest?.[subCode]?.[prm.id]?.level;
