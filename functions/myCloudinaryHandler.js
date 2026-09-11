@@ -933,20 +933,26 @@ export async function onRequest({ request, env, ctx }) {
             } else {
               const value = String(change.value ?? '').substring(0, 5000);
               await runD1WithRetry(() => env.DB.prepare(
-                "UPDATE opd_data SET subunsurs=json_set(COALESCE(subunsurs,'{}'), ?, json(?)) WHERE id=? AND year=?"
+                "UPDATE opd_data SET subunsurs=json_set(COALESCE(subunsurs,'{}'), ?, json_quote(?)) WHERE id=? AND year=?"
               ).bind(path, value, params.opdId, year));
             }
           }
 
-          const rec = await env.DB.prepare("SELECT sa, nilai_struktur_proses, struktur_proses_status FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId, year).all();
+          const rec = await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId, year).all();
           if (!rec.results.length) throw new Error('OPD tidak ditemukan');
-          const current = rec.results[0];
+          let authoritative={};
+          try { authoritative=rec.results[0]?.subunsurs ? JSON.parse(rec.results[0].subunsurs) : {}; } catch {}
+          const saNow=calculateSAFromSubunsur(authoritative);
+          const evNow=countParameterEvidence(authoritative);
+          const statusNow=evNow===countTotalParameters()?'Selesai':(evNow>0?'Proses':'Belum');
+          await runD1WithRetry(() => env.DB.prepare("UPDATE opd_data SET sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?")
+            .bind(saNow,saNow,statusNow,params.opdId,year));
           notifyRealtime(env, ctx, year, { action: 'saveSubunsur', opdId: params.opdId });
           return jsonResponse({
             status:'success',
             message:'Perubahan subunsur tersimpan',
-            nilaiStrukturProses:Number(current.sa)||0,
-            strukturProsesStatus:current.struktur_proses_status||'Belum'
+            nilaiStrukturProses:saNow,
+            strukturProsesStatus:statusNow
           });
         }
 
@@ -1222,13 +1228,23 @@ export async function onRequest({ request, env, ctx }) {
             throw new Error('Upload ID sudah terikat ke OPD/kolom lain. Upload dibatalkan untuk mencegah salah penempatan data.');
           }
         }else{
-          // UUID uploadId is unique. Do NOT use INSERT OR IGNORE here: a legacy
-          // constraint must never silently discard a new identity.
-          await env.DB.prepare(`INSERT INTO evidence_upload_registry
+          // Atomically claim the upload identity. Concurrent retries of the same
+          // uploadId converge on the existing row instead of raising a UNIQUE error.
+          await runD1WithRetry(() => env.DB.prepare(`INSERT INTO evidence_upload_registry
             (upload_id,year,opd_id,subunsur,param_id,level,type,sync_status,created_at,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?)`)
-            .bind(uploadId,String(year),String(opdId),String(subCode||''),String(paramId||''),String(level||''),'evidence','pending',now,now)
-            .run();
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(upload_id) DO NOTHING`)
+            .bind(uploadId,String(year),String(opdId),String(subCode||''),String(paramId||''),String(level||''),'evidence','pending',now,now));
+          const claimed=await env.DB.prepare("SELECT upload_id,year,opd_id,subunsur,param_id,level,type FROM evidence_upload_registry WHERE upload_id=? LIMIT 1").bind(uploadId).all();
+          const claimedRow=claimed.results?.[0];
+          if(!claimedRow) throw new Error('Upload identity could not be created');
+          const sameClaim=String(claimedRow.year)===String(year) &&
+            String(claimedRow.opd_id)===String(opdId) &&
+            String(claimedRow.subunsur||'')===String(subCode||'') &&
+            String(claimedRow.param_id||'')===String(paramId||'') &&
+            String(claimedRow.level||'')===String(level||'') &&
+            String(claimedRow.type||'evidence')==='evidence';
+          if(!sameClaim) throw new Error('Upload ID sudah digunakan untuk lokasi lain. Upload dibatalkan.');
         }
 
         // Best-effort legacy mirror. It cannot block the upload.
