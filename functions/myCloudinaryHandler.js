@@ -895,9 +895,13 @@ export async function onRequest({ request, env, ctx }) {
             for(const prm of (Array.isArray(info?.params)?info.params:[])){
               const key=`${r.id}|${subCode}|${prm.id}`;
               const jsonLevel = subunsurs?.[subCode]?.[prm.id]?.level;
-              const v = levelMap.has(key)
-                ? levelMap.get(key)
-                : Math.max(0,Math.min(5,Number(jsonLevel)||0));
+              // The nested subunsurs JSON is the primary source for levels.
+              // The v2 table is only a fallback for legacy/missing JSON values,
+              // so stale zero values in the auxiliary table never hide a saved level.
+              const hasJsonLevel = jsonLevel !== undefined && jsonLevel !== null && jsonLevel !== '';
+              const v = hasJsonLevel
+                ? Math.max(0,Math.min(5,Number(jsonLevel)||0))
+                : (levelMap.has(key) ? levelMap.get(key) : 0);
               parameterLevels[`${subCode}|${prm.id}`]=v;
               subunsurs[subCode]=subunsurs[subCode]||{};
               subunsurs[subCode][prm.id]=subunsurs[subCode][prm.id]||{};
@@ -994,7 +998,7 @@ export async function onRequest({ request, env, ctx }) {
         if (Array.isArray(changes)) {
           const totalParams = Math.max(1, Object.values(SUBUNSUR_DATA).reduce((n, x) => n + ((x && Array.isArray(x.params)) ? x.params.length : 0), 0));
           const valid = changes.filter(c =>
-            c && /^[A-Za-z0-9_-]{1,40}$/.test(String(c.subCode || '')) &&
+            c && /^[A-Za-z0-9_.-]{1,40}$/.test(String(c.subCode || '')) &&
             /^[A-Za-z0-9_.-]{1,80}$/.test(String(c.paramId || '')) &&
             /^(level|evid[1-5])$/.test(String(c.field || ''))
           ).slice(0, 200);
