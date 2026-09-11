@@ -1297,14 +1297,27 @@ export async function onRequest({ request, env, ctx }) {
             fileType
           };
           const jsonItem=JSON.stringify(uploadMeta);
-          const safeSubPath=subCode.replace(/"/g,'\\"');
-          const safeParamPath=paramId.replace(/"/g,'\\"');
-          const filesPath=`$.\"${safeSubPath}\".\"${safeParamPath}\".\"files${level.replace(/"/g,'\\"')}\"`;
-          await runD1WithRetry(()=>env.DB.prepare(`UPDATE opd_data SET subunsurs=json_insert(
-            json_set(json_set(json_set(COALESCE(subunsurs,'{}'), ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), json('{}'))), ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), json('{}'))), ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), '[]')),
-            ? , json(?) )
-            WHERE id=? AND year=?`)
-            .bind(`$.\"${safeSubPath}\"`,`$.\"${safeSubPath}\"`, `$.\"${safeSubPath}\".\"${safeParamPath}\"`,`$.\"${safeSubPath}\".\"${safeParamPath}\"`, filesPath, filesPath, filesPath+'[#]', jsonItem, opdId, year));
+          const safeSubPath=subCode.replace(/[^A-Za-z0-9_.-]/g,'');
+          const safeParamPath=paramId.replace(/[^A-Za-z0-9_.-]/g,'');
+          const safeLevel=(String(level).match(/[1-5]/)||['1'])[0];
+          const subPath = `$.\"${safeSubPath}\"`;
+          const paramPath = `$.\"${safeSubPath}\".\"${safeParamPath}\"`;
+          const filesPath = `$.\"${safeSubPath}\".\"${safeParamPath}\".\"files${safeLevel}\"`;
+          // Persist the upload history atomically in the exact OPD/parameter/level.
+          // The old implementation passed '$[#]' as a bound parameter; SQLite JSON1
+          // does not treat a bound append path reliably, leaving the array empty.
+          // Build the append path as a SQL literal while all data values remain bound.
+          const appendSql = `UPDATE opd_data SET subunsurs = json_set(
+              json_set(
+                json_set(COALESCE(subunsurs,'{}'), ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), json('{}'))),
+                ?, COALESCE(json_extract(COALESCE(subunsurs,'{}'), ?), json('{}'))
+              ),
+              '${filesPath}',
+              json_insert(COALESCE(json_extract(COALESCE(subunsurs,'{}'), '${filesPath}'), '[]'), '$[#]', json(?))
+            ) WHERE id=? AND year=?`;
+          await runD1WithRetry(()=>env.DB.prepare(appendSql).bind(
+            subPath, subPath, paramPath, paramPath, jsonItem, opdId, year
+          ));
           const latest=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,year).all();
           let subunsursLatest={};try{subunsursLatest=latest.results[0]?.subunsurs?JSON.parse(latest.results[0].subunsurs):{}}catch{}
           const strukturNilai=calculateSAFromSubunsur(subunsursLatest);
