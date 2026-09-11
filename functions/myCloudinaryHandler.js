@@ -142,6 +142,25 @@ async function ensureOpdSchema(env){
       updated_at INTEGER NOT NULL DEFAULT 0
     )`).run();
 
+    // Authoritative upload identity registry. This is deliberately separate from
+    // the legacy evidence_uploads table so old/partial schemas cannot block uploads.
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS evidence_upload_registry (
+      upload_id TEXT PRIMARY KEY,
+      year TEXT NOT NULL,
+      opd_id TEXT NOT NULL,
+      subunsur TEXT NOT NULL,
+      param_id TEXT NOT NULL,
+      level TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'evidence',
+      r2_key TEXT,
+      gdrive_id TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      sync_error TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`).run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_evidence_upload_registry_location ON evidence_upload_registry(year,opd_id,subunsur,param_id,level)").run();
+
     const evidenceInfo = await env.DB.prepare("PRAGMA table_info(evidence_uploads)").all();
     const evidenceCols = new Set((evidenceInfo.results || []).map(c => String(c.name)));
 
@@ -1186,32 +1205,40 @@ export async function onRequest({ request, env, ctx }) {
         // Strong idempotency + location binding:
         // one uploadId can belong to exactly one year/OPD/subunsur/parameter/level.
         const now=Date.now();
-        const regCheck=await env.DB.prepare("SELECT * FROM evidence_uploads WHERE upload_id=? LIMIT 1").bind(uploadId).all();
+        // The dedicated registry is the source of truth for upload placement.
+        const regCheck=await env.DB.prepare(
+          "SELECT upload_id,year,opd_id,subunsur,param_id,level,type,r2_key,gdrive_id,sync_status FROM evidence_upload_registry WHERE upload_id=? LIMIT 1"
+        ).bind(uploadId).all();
+
         if(regCheck.results?.length){
           const reg=regCheck.results[0];
           const sameLocation=String(reg.year)===String(year) &&
-            String(reg.opd_id)===opdId &&
-            String(reg.subunsur||'')===subCode &&
-            String(reg.param_id||'')===paramId &&
-            String(reg.level||'')===level &&
+            String(reg.opd_id)===String(opdId) &&
+            String(reg.subunsur||'')===String(subCode||'') &&
+            String(reg.param_id||'')===String(paramId||'') &&
+            String(reg.level||'')===String(level||'') &&
             String(reg.type||'evidence')==='evidence';
-          if(!sameLocation) throw new Error('Upload ID sudah terikat ke OPD/kolom lain. Upload dibatalkan untuk mencegah salah penempatan data.');
+          if(!sameLocation){
+            throw new Error('Upload ID sudah terikat ke OPD/kolom lain. Upload dibatalkan untuk mencegah salah penempatan data.');
+          }
         }else{
+          // UUID uploadId is unique. Do NOT use INSERT OR IGNORE here: a legacy
+          // constraint must never silently discard a new identity.
+          await env.DB.prepare(`INSERT INTO evidence_upload_registry
+            (upload_id,year,opd_id,subunsur,param_id,level,type,sync_status,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?)`)
+            .bind(uploadId,String(year),String(opdId),String(subCode||''),String(paramId||''),String(level||''),'evidence','pending',now,now)
+            .run();
+        }
+
+        // Best-effort legacy mirror. It cannot block the upload.
+        try{
           await env.DB.prepare(`INSERT OR IGNORE INTO evidence_uploads
             (upload_id,year,opd_id,subunsur,param_id,level,type,sync_status,created_at,updated_at)
             VALUES (?,?,?,?,?,?,?,?,?,?)`)
-            .bind(uploadId,String(year),opdId,subCode,paramId,level,'evidence','pending',now,now).run();
-          const claim=await env.DB.prepare("SELECT * FROM evidence_uploads WHERE upload_id=? LIMIT 1").bind(uploadId).all();
-          const reg=claim.results?.[0];
-          if(!reg) throw new Error('Gagal mengunci identitas upload');
-          const sameLocation=String(reg.year)===String(year) &&
-            String(reg.opd_id)===opdId &&
-            String(reg.subunsur||'')===subCode &&
-            String(reg.param_id||'')===paramId &&
-            String(reg.level||'')===level &&
-            String(reg.type||'evidence')==='evidence';
-          if(!sameLocation) throw new Error('Upload ID dipakai oleh lokasi lain. Upload dibatalkan.');
-        }
+            .bind(uploadId,String(year),String(opdId),String(subCode||''),String(paramId||''),String(level||''),'evidence','pending',now,now)
+            .run();
+        }catch(_){}
 
         const existingRec=await env.DB.prepare("SELECT opd,subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,year).all();
         if(!existingRec.results.length) throw new Error('OPD tidak ditemukan');
@@ -1220,7 +1247,7 @@ export async function onRequest({ request, env, ctx }) {
         try{ existingObj=existingRec.results[0]?.subunsurs?JSON.parse(existingRec.results[0].subunsurs):{}; }catch{}
         const existingArr=existingObj?.[subCode]?.[paramId]?.['files'+level];
         const existing=Array.isArray(existingArr)?existingArr.find(x=>x&&x.uploadId===uploadId):null;
-        const regNow=(await env.DB.prepare("SELECT * FROM evidence_uploads WHERE upload_id=? LIMIT 1").bind(uploadId).all()).results?.[0];
+        const regNow=(await env.DB.prepare("SELECT * FROM evidence_upload_registry WHERE upload_id=? LIMIT 1").bind(uploadId).all()).results?.[0];
 
         if(existing?.gdriveId || regNow?.gdrive_id){
           const gdriveId=existing?.gdriveId||regNow.gdrive_id;
@@ -1278,8 +1305,12 @@ export async function onRequest({ request, env, ctx }) {
           await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET sa=?,nilai_struktur_proses=?,struktur_proses_status=? WHERE id=? AND year=?").bind(strukturNilai,strukturNilai,strukturStatus,opdId,year));
         }
 
-        await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET sync_status='pending',updated_at=? WHERE upload_id=?")
+        await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET sync_status='pending',updated_at=? WHERE upload_id=?")
           .bind(Date.now(),uploadId));
+        try{
+          await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET sync_status='pending',updated_at=? WHERE upload_id=?")
+            .bind(Date.now(),uploadId));
+        }catch(_){}
 
         const job={type:'evidence',uploadId,year,opdId,opdName:params.opdName||existingRec.results[0].opd||'OPD',
           r2Key,fileName:sanitizeString(fileName).substring(0,150),fileType,subunsur:subCode,paramId,level};
@@ -1289,16 +1320,28 @@ export async function onRequest({ request, env, ctx }) {
         try{
           const gdriveId=await directGoogleDriveBackup(env,job);
           await updateEvidenceFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
-          await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET gdrive_id=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=?")
+          await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET gdrive_id=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=?")
             .bind(gdriveId,Date.now(),uploadId));
+          try{
+            await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET gdrive_id=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=?")
+              .bind(gdriveId,Date.now(),uploadId));
+            try{
+              await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET gdrive_id=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=?")
+                .bind(gdriveId,Date.now(),uploadId));
+            }catch(_){}
+          }catch(_){}
           notifyRealtime(env,ctx,year,{action:'uploadFile',opdId,uploadId,storage:'R2 + Google Drive'});
           return jsonResponse({status:'success',url:`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${r2Key}`,
             fileName:job.fileName,googleDriveId:gdriveId,gdriveId,syncStatus:'done',uploadId,backupQueued:false,r2Saved:true,r2Key});
         }catch(driveErr){
           const message=String(driveErr?.message||driveErr);
           await updateEvidenceFileStatus(env,job,{syncStatus:'retrying',syncError:message,storage:'R2'});
-          await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=?")
+          await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=?")
             .bind(message,Date.now(),uploadId));
+          try{
+            await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=?")
+              .bind(message,Date.now(),uploadId));
+          }catch(_){}
           notifyRealtime(env,ctx,year,{action:'uploadFile',opdId,uploadId,storage:'R2',syncStatus:'retrying'});
           return jsonResponse({
             status:'pending',
@@ -1330,7 +1373,7 @@ export async function onRequest({ request, env, ctx }) {
           // NEVER create a new evidence record during a Drive retry.
           // If the exact OPD/subunsur/parameter/level record is absent, stop.
           if(!item) throw new Error('Evidence tidak ditemukan pada OPD/kolom yang sama. Retry dibatalkan untuk mencegah salah penempatan.');
-          const registry=await env.DB.prepare("SELECT * FROM evidence_uploads WHERE upload_id=? LIMIT 1").bind(uploadId).all();
+          const registry=await env.DB.prepare("SELECT * FROM evidence_upload_registry WHERE upload_id=? LIMIT 1").bind(uploadId).all();
           const reg=registry.results?.[0];
           if(!reg) throw new Error('Registri upload tidak ditemukan. Retry dibatalkan untuk keamanan.');
           const sameLocation=String(reg.year)===targetYear &&
@@ -1361,8 +1404,12 @@ export async function onRequest({ request, env, ctx }) {
           if(job.type==='rtp') await updateRtpFileStatus(env,job,{syncStatus:'retrying',syncError:String(err.message||err)});
           else{
             await updateEvidenceFileStatus(env,job,{syncStatus:'retrying',syncError:String(err.message||err)});
-            await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=?")
+            await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=?")
               .bind(String(err.message||err),Date.now(),uploadId));
+            try{
+              await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=?")
+                .bind(String(err.message||err),Date.now(),uploadId));
+            }catch(_){}
           }
           notifyRealtime(env,ctx,targetYear,{action:'retryDriveBackup',opdId,uploadId,storage:'R2',syncStatus:'retrying'});
           return jsonResponse({status:'pending',syncStatus:'retrying',uploadId,driveError:String(err.message||err),message:'R2 tetap tersimpan. Google Drive belum berhasil; retry otomatis akan dilanjutkan.'});
