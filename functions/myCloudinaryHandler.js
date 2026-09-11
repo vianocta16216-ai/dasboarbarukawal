@@ -217,7 +217,7 @@ async function ensureOpdSchema(env){
             const lv = Math.max(0, Math.min(5, Number(raw) || 0));
             stmts.push(env.DB.prepare(`INSERT INTO opd_parameter_levels(year,opd_id,subunsur,param_id,level,updated_at)
               VALUES(?,?,?,?,?,?)
-              ON CONFLICT(year,opd_id,subunsur,param_id) DO UPDATE SET level=excluded.level, updated_at=excluded.updated_at`
+              ON CONFLICT(year,opd_id,subunsur,param_id) DO NOTHING`
             ).bind(String(rr.year), String(rr.id), String(subCode), String(prm.id), lv, nowBackfill));
           }
         }
@@ -884,7 +884,9 @@ export async function onRequest({ request, env, ctx }) {
           for(const [subCode, info] of Object.entries(SUBUNSUR_DATA||{})){
             for(const prm of (Array.isArray(info?.params)?info.params:[])){
               const key=`${r.id}|${subCode}|${prm.id}`;
-              const v=levelMap.has(key)?levelMap.get(key):Math.max(0,Math.min(5,Number(subunsurs?.[subCode]?.[prm.id]?.level)||0));
+              const jsonLevel = subunsurs?.[subCode]?.[prm.id]?.level;
+              const hasJsonLevel = jsonLevel !== undefined && jsonLevel !== null && jsonLevel !== '';
+              const v = hasJsonLevel ? Math.max(0,Math.min(5,Number(jsonLevel)||0)) : (levelMap.has(key)?levelMap.get(key):0);
               parameterLevels[`${subCode}|${prm.id}`]=v;
               subunsurs[subCode]=subunsurs[subCode]||{};
               subunsurs[subCode][prm.id]=subunsurs[subCode][prm.id]||{};
@@ -1025,7 +1027,9 @@ export async function onRequest({ request, env, ctx }) {
           let breakdown={ totalParams:countTotalParameters(), selectedParams:0, sumLevels:0, byLevel:{1:0,2:0,3:0,4:0,5:0} }; // mutable: refreshed by the authoritative verification pass below
           for(const [subCode,info] of Object.entries(SUBUNSUR_DATA||{})){
             for(const prm of (Array.isArray(info?.params)?info.params:[])){
-              const lv=authoritativeLevels.get(`${subCode}|${prm.id}`) ?? Math.max(0,Math.min(5,Number(authoritativeSubunsurs?.[subCode]?.[prm.id]?.level)||0));
+              const jsonLevel = authoritativeSubunsurs?.[subCode]?.[prm.id]?.level;
+              const hasJsonLevel = jsonLevel !== undefined && jsonLevel !== null && jsonLevel !== '';
+              const lv = hasJsonLevel ? Math.max(0,Math.min(5,Number(jsonLevel)||0)) : (authoritativeLevels.get(`${subCode}|${prm.id}`) ?? 0);
               if(lv>0){breakdown.selectedParams++;breakdown.sumLevels+=lv;breakdown.byLevel[lv]++;}
             }
           }
@@ -1043,7 +1047,9 @@ export async function onRequest({ request, env, ctx }) {
             const latestLevelRows=await env.DB.prepare("SELECT subunsur,param_id,level FROM opd_parameter_levels WHERE year=? AND opd_id=?").bind(String(year),String(params.opdId)).all();
             const lm=new Map(); for(const lr of (latestLevelRows.results||[])) lm.set(`${lr.subunsur}|${lr.param_id}`,Math.max(0,Math.min(5,Number(lr.level)||0)));
             const latestBreakdown={ totalParams:countTotalParameters(), selectedParams:0, sumLevels:0, byLevel:{1:0,2:0,3:0,4:0,5:0} };
-            for(const [subCode,info] of Object.entries(SUBUNSUR_DATA||{})) for(const prm of (Array.isArray(info?.params)?info.params:[])){ const lv=lm.get(`${subCode}|${prm.id}`)??Math.max(0,Math.min(5,Number(latest?.[subCode]?.[prm.id]?.level)||0)); if(lv>0){latestBreakdown.selectedParams++;latestBreakdown.sumLevels+=lv;latestBreakdown.byLevel[lv]++;} }
+            for(const [subCode,info] of Object.entries(SUBUNSUR_DATA||{})) for(const prm of (Array.isArray(info?.params)?info.params:[])){ const jsonLevel = latest?.[subCode]?.[prm.id]?.level;
+                const hasJsonLevel = jsonLevel !== undefined && jsonLevel !== null && jsonLevel !== '';
+                const lv = hasJsonLevel ? Math.max(0,Math.min(5,Number(jsonLevel)||0)) : (lm.get(`${subCode}|${prm.id}`) ?? 0); if(lv>0){latestBreakdown.selectedParams++;latestBreakdown.sumLevels+=lv;latestBreakdown.byLevel[lv]++;} }
             latestBreakdown.value=Math.round((latestBreakdown.sumLevels/latestBreakdown.totalParams)*100)/100;
             const latestStatus=(countParameterEvidence(latest)===countTotalParameters()?'Selesai':(countParameterEvidence(latest)>0?'Proses':'Belum'));
             authoritativeSubunsurs=latest; breakdown=latestBreakdown; currentSa=latestBreakdown.value; currentStatus=latestStatus;
