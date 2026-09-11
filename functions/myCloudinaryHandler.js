@@ -928,10 +928,14 @@ export async function onRequest({ request, env, ctx }) {
             const path = '$."' + subCode.replace(/"/g, '') + '"."' + paramId.replace(/"/g, '') + '"."' + field + '"';
             if (field === 'level') {
               const newLevel = Math.max(0, Math.min(5, Number(change.value) || 0));
+              // IMPORTANT: do NOT calculate the derived SA from the JSON column in the
+              // same UPDATE statement. SQLite may evaluate json_extract() against the
+              // already-updated value, which turns the intended (new-old) delta into
+              // zero and leaves SA stuck at 0. We update the authoritative subunsurs
+              // first, then calculate SA from the freshly re-read JSON below.
               await runD1WithRetry(() => env.DB.prepare(
-                "UPDATE opd_data SET subunsurs=json_set(COALESCE(subunsurs,'{}'), ?, json(?)), sa=ROUND(COALESCE(sa,0) + (? - COALESCE(CAST(json_extract(COALESCE(subunsurs,'{}'), ?) AS REAL),0)) / ?, 2), nilai_struktur_proces=ROUND(COALESCE(sa,0) + (? - COALESCE(CAST(json_extract(COALESCE(subunsurs,'{}'), ?) AS REAL),0)) / ?, 2) WHERE id=? AND year=?"
-                  .replace('nilai_struktur_proces','nilai_struktur_proses')
-              ).bind(path, newLevel, newLevel, path, totalParams, newLevel, path, totalParams, params.opdId, year));
+                "UPDATE opd_data SET subunsurs=json_set(COALESCE(subunsurs,'{}'), ?, json(?)) WHERE id=? AND year=?"
+              ).bind(path, newLevel, params.opdId, year));
             } else {
               const value = String(change.value ?? '').substring(0, 5000);
               await runD1WithRetry(() => env.DB.prepare(
@@ -946,11 +950,21 @@ export async function onRequest({ request, env, ctx }) {
           if (!rec.results.length) throw new Error('OPD tidak ditemukan');
           let authoritativeSubunsurs={};
           try { authoritativeSubunsurs = rec.results[0].subunsurs ? JSON.parse(rec.results[0].subunsurs) : {}; } catch { authoritativeSubunsurs={}; }
-          const breakdown=structureProcessBreakdown(authoritativeSubunsurs);
-          const currentSa=breakdown.value;
-          const evidenceCount=countParameterEvidence(authoritativeSubunsurs);
-          const currentStatus=evidenceCount===countTotalParameters()?'Selesai':(evidenceCount>0?'Proses':'Belum');
-          await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?").bind(currentSa,currentSa,currentStatus,params.opdId,year));
+          let breakdown=structureProcessBreakdown(authoritativeSubunsurs);
+          let currentSa=breakdown.value;
+          let currentStatus=(countParameterEvidence(authoritativeSubunsurs)===countTotalParameters()?'Selesai':(countParameterEvidence(authoritativeSubunsurs)>0?'Proses':'Belum'));
+          // Keep the persisted derived columns converged with the authoritative JSON.
+          // A short second pass protects against another operator writing another
+          // parameter between our read and derived-column update.
+          for (let pass=0; pass<2; pass++) {
+            await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?").bind(currentSa,currentSa,currentStatus,params.opdId,year));
+            const verify=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+            let latest={};
+            try { latest=verify.results?.[0]?.subunsurs ? JSON.parse(verify.results[0].subunsurs) : {}; } catch { latest={}; }
+            const latestBreakdown=structureProcessBreakdown(latest);
+            const latestStatus=(countParameterEvidence(latest)===countTotalParameters()?'Selesai':(countParameterEvidence(latest)>0?'Proses':'Belum'));
+            authoritativeSubunsurs=latest; breakdown=latestBreakdown; currentSa=latestBreakdown.value; currentStatus=latestStatus;
+          }
           notifyRealtime(env, ctx, year, { action: 'saveSubunsur', opdId: params.opdId });
           return jsonResponse({
             status:'success',
