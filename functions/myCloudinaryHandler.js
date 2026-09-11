@@ -189,6 +189,42 @@ async function ensureOpdSchema(env){
     await env.DB.prepare("UPDATE evidence_uploads SET sync_status=COALESCE(NULLIF(sync_status,''),'pending') WHERE sync_status IS NULL OR sync_status=''").run();
 
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_evidence_uploads_location ON evidence_uploads(year, opd_id, subunsur, param_id, level)").run();
+
+    // Dedicated source-of-truth table for the 43 Structure & Process parameter levels.
+    // This prevents nested JSON snapshots from ever causing the derived score to fall back to 0.
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS opd_parameter_levels (
+      year TEXT NOT NULL,
+      opd_id TEXT NOT NULL,
+      subunsur TEXT NOT NULL,
+      param_id TEXT NOT NULL,
+      level INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY(year, opd_id, subunsur, param_id)
+    )`).run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_parameter_levels_opd ON opd_parameter_levels(year, opd_id)").run();
+
+    // One-time backfill from the legacy subunsurs JSON so existing Level selections are preserved.
+    try {
+      const rowsForBackfill = await env.DB.prepare("SELECT id, year, subunsurs FROM opd_data").all();
+      const nowBackfill = Date.now();
+      for (const rr of (rowsForBackfill.results || [])) {
+        let obj = {};
+        try { obj = rr.subunsurs ? JSON.parse(rr.subunsurs) : {}; } catch { obj = {}; }
+        const stmts=[];
+        for (const [subCode, info] of Object.entries(SUBUNSUR_DATA || {})) {
+          for (const prm of (Array.isArray(info?.params) ? info.params : [])) {
+            const raw = obj?.[subCode]?.[prm.id]?.level;
+            const lv = Math.max(0, Math.min(5, Number(raw) || 0));
+            stmts.push(env.DB.prepare(`INSERT INTO opd_parameter_levels(year,opd_id,subunsur,param_id,level,updated_at)
+              VALUES(?,?,?,?,?,?)
+              ON CONFLICT(year,opd_id,subunsur,param_id) DO UPDATE SET level=excluded.level, updated_at=excluded.updated_at`
+            ).bind(String(rr.year), String(rr.id), String(subCode), String(prm.id), lv, nowBackfill));
+          }
+        }
+        for(let i=0;i<stmts.length;i+=50) if(stmts.length) await env.DB.batch(stmts.slice(i,i+50));
+      }
+    } catch (e) { console.warn('Backfill opd_parameter_levels dilewati:', e?.message || e); }
+
     schemaReady=true;
   })().catch(err=>{schemaReadyPromise=null;throw err;});
   return schemaReadyPromise;
@@ -831,10 +867,39 @@ export async function onRequest({ request, env, ctx }) {
 
       case 'getData': {
         const {results}=await env.DB.prepare("SELECT * FROM opd_data WHERE year=? ORDER BY CAST(nilai_maturitas AS REAL) DESC, CAST(nilai_struktur_proses AS REAL) DESC, CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
-        const mapped=results.map(r=>{const subunsurs=r.subunsurs?JSON.parse(r.subunsurs):{};const kkData=normalizeKkData(r.kk_data);let kkPmData={};try{kkPmData=r.kk_pm_data?JSON.parse(r.kk_pm_data):{}}catch{}const kkRtpData=normalizeWorkbookData(r.kk_rtp_data,[]);let rtpEvidence=[];try{rtpEvidence=r.rtp_evidence?JSON.parse(r.rtp_evidence):[]}catch{}const strukturNilai=calculateSAFromSubunsur(subunsurs); const strukturEvidenceCount=countParameterEvidence(subunsurs); const totalParams=countTotalParameters(); const strukturStatus=strukturEvidenceCount===totalParams?'Selesai':(strukturEvidenceCount>0?'Proses':'Belum'); return{...r,subunsurs,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',qaApip:r.qa_apip||'Belum',nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,nilaiMaturitas:Number(r.nilai_maturitas||0),nilaiKapabilitasApip:Number(r.nilai_kapabilitas_apip||0)};});
+        const levelRows=await env.DB.prepare("SELECT opd_id,subunsur,param_id,level FROM opd_parameter_levels WHERE year=?").bind(year).all();
+        const levelMap=new Map();
+        for(const lr of (levelRows.results||[])){
+          const key=`${lr.opd_id}|${lr.subunsur}|${lr.param_id}`;
+          levelMap.set(key,Math.max(0,Math.min(5,Number(lr.level)||0)));
+        }
+        const mapped=results.map(r=>{
+          let subunsurs={};
+          try{subunsurs=r.subunsurs?JSON.parse(r.subunsurs):{}}catch{subunsurs={};}
+          const kkData=normalizeKkData(r.kk_data);
+          let kkPmData={}; try{kkPmData=r.kk_pm_data?JSON.parse(r.kk_pm_data):{}}catch{}
+          const kkRtpData=normalizeWorkbookData(r.kk_rtp_data,[]);
+          let rtpEvidence=[]; try{rtpEvidence=r.rtp_evidence?JSON.parse(r.rtp_evidence):[]}catch{}
+          const parameterLevels={};
+          for(const [subCode, info] of Object.entries(SUBUNSUR_DATA||{})){
+            for(const prm of (Array.isArray(info?.params)?info.params:[])){
+              const key=`${r.id}|${subCode}|${prm.id}`;
+              const v=levelMap.has(key)?levelMap.get(key):Math.max(0,Math.min(5,Number(subunsurs?.[subCode]?.[prm.id]?.level)||0));
+              parameterLevels[`${subCode}|${prm.id}`]=v;
+              subunsurs[subCode]=subunsurs[subCode]||{};
+              subunsurs[subCode][prm.id]=subunsurs[subCode][prm.id]||{};
+              subunsurs[subCode][prm.id].level=v;
+            }
+          }
+          let sumLevels=0, selected=0; const totalParams=countTotalParameters();
+          for(const v of Object.values(parameterLevels)){ if(v>0){selected++;sumLevels+=v;} }
+          const strukturNilai=totalParams?Math.round((sumLevels/totalParams)*100)/100:0;
+          const strukturEvidenceCount=countParameterEvidence(subunsurs);
+          const strukturStatus=strukturEvidenceCount===totalParams?'Selesai':(strukturEvidenceCount>0?'Proses':'Belum');
+          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',qaApip:r.qa_apip||'Belum',nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,nilaiMaturitas:Number(r.nilai_maturitas||0),nilaiKapabilitasApip:Number(r.nilai_kapabilitas_apip||0)};
+        });
         return new Response(JSON.stringify(mapped),{status:200,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate, max-age=0'}});
       }
-
       case 'addOpd': {
         const id = params.id || 'r' + Math.random().toString(36).slice(2,9);
         const opd = sanitizeString(params.opd || 'OPD Baru');
@@ -936,6 +1001,10 @@ export async function onRequest({ request, env, ctx }) {
               await runD1WithRetry(() => env.DB.prepare(
                 "UPDATE opd_data SET subunsurs=json_set(COALESCE(subunsurs,'{}'), ?, json(?)) WHERE id=? AND year=?"
               ).bind(path, newLevel, params.opdId, year));
+              await runD1WithRetry(() => env.DB.prepare(`INSERT INTO opd_parameter_levels(year,opd_id,subunsur,param_id,level,updated_at)
+                VALUES(?,?,?,?,?,?)
+                ON CONFLICT(year,opd_id,subunsur,param_id) DO UPDATE SET level=excluded.level, updated_at=excluded.updated_at`
+              ).bind(String(year),String(params.opdId),subCode,paramId,newLevel,Date.now()));
             } else {
               const value = String(change.value ?? '').substring(0, 5000);
               await runD1WithRetry(() => env.DB.prepare(
@@ -950,7 +1019,17 @@ export async function onRequest({ request, env, ctx }) {
           if (!rec.results.length) throw new Error('OPD tidak ditemukan');
           let authoritativeSubunsurs={};
           try { authoritativeSubunsurs = rec.results[0].subunsurs ? JSON.parse(rec.results[0].subunsurs) : {}; } catch { authoritativeSubunsurs={}; }
-          let breakdown=structureProcessBreakdown(authoritativeSubunsurs);
+          const levelRowsForOpd=await env.DB.prepare("SELECT subunsur,param_id,level FROM opd_parameter_levels WHERE year=? AND opd_id=?").bind(String(year),String(params.opdId)).all();
+          const authoritativeLevels=new Map();
+          for(const lr of (levelRowsForOpd.results||[])) authoritativeLevels.set(`${lr.subunsur}|${lr.param_id}`,Math.max(0,Math.min(5,Number(lr.level)||0)));
+          const breakdown={ totalParams:countTotalParameters(), selectedParams:0, sumLevels:0, byLevel:{1:0,2:0,3:0,4:0,5:0} };
+          for(const [subCode,info] of Object.entries(SUBUNSUR_DATA||{})){
+            for(const prm of (Array.isArray(info?.params)?info.params:[])){
+              const lv=authoritativeLevels.get(`${subCode}|${prm.id}`) ?? Math.max(0,Math.min(5,Number(authoritativeSubunsurs?.[subCode]?.[prm.id]?.level)||0));
+              if(lv>0){breakdown.selectedParams++;breakdown.sumLevels+=lv;breakdown.byLevel[lv]++;}
+            }
+          }
+          breakdown.value=Math.round((breakdown.sumLevels/breakdown.totalParams)*100)/100;
           let currentSa=breakdown.value;
           let currentStatus=(countParameterEvidence(authoritativeSubunsurs)===countTotalParameters()?'Selesai':(countParameterEvidence(authoritativeSubunsurs)>0?'Proses':'Belum'));
           // Keep the persisted derived columns converged with the authoritative JSON.
@@ -961,7 +1040,11 @@ export async function onRequest({ request, env, ctx }) {
             const verify=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
             let latest={};
             try { latest=verify.results?.[0]?.subunsurs ? JSON.parse(verify.results[0].subunsurs) : {}; } catch { latest={}; }
-            const latestBreakdown=structureProcessBreakdown(latest);
+            const latestLevelRows=await env.DB.prepare("SELECT subunsur,param_id,level FROM opd_parameter_levels WHERE year=? AND opd_id=?").bind(String(year),String(params.opdId)).all();
+            const lm=new Map(); for(const lr of (latestLevelRows.results||[])) lm.set(`${lr.subunsur}|${lr.param_id}`,Math.max(0,Math.min(5,Number(lr.level)||0)));
+            const latestBreakdown={ totalParams:countTotalParameters(), selectedParams:0, sumLevels:0, byLevel:{1:0,2:0,3:0,4:0,5:0} };
+            for(const [subCode,info] of Object.entries(SUBUNSUR_DATA||{})) for(const prm of (Array.isArray(info?.params)?info.params:[])){ const lv=lm.get(`${subCode}|${prm.id}`)??Math.max(0,Math.min(5,Number(latest?.[subCode]?.[prm.id]?.level)||0)); if(lv>0){latestBreakdown.selectedParams++;latestBreakdown.sumLevels+=lv;latestBreakdown.byLevel[lv]++;} }
+            latestBreakdown.value=Math.round((latestBreakdown.sumLevels/latestBreakdown.totalParams)*100)/100;
             const latestStatus=(countParameterEvidence(latest)===countTotalParameters()?'Selesai':(countParameterEvidence(latest)>0?'Proses':'Belum'));
             authoritativeSubunsurs=latest; breakdown=latestBreakdown; currentSa=latestBreakdown.value; currentStatus=latestStatus;
           }
