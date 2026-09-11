@@ -706,8 +706,7 @@ async function loadData() {
       rows = data.map(r => {
         const row = { ...r, nilaiMaturitas:Number(r.nilaiMaturitas ?? r.nilai_maturitas ?? 0) || 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, kkPmData:r.kkPmData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
         const bd = getRowStructureProcessBreakdown(row);
-        row.nilaiStrukturProses = Number(r.nilaiStrukturProses ?? r.nilai_struktur_proses ?? bd.value) || 0;
-        if (Number.isFinite(row.nilaiStrukturProses) && row.nilaiStrukturProses !== bd.value && (!r.parameterLevels || typeof r.parameterLevels !== 'object')) row.nilaiStrukturProses = bd.value;
+        row.nilaiStrukturProses = bd.value;
         row.sa = row.nilaiStrukturProses;
         row.structureProcessBreakdown = getRowStructureProcessBreakdown(row);
         return row;
@@ -765,13 +764,12 @@ function getStructureProcessBreakdown(subunsurs) {
 // master (43 parameter). Hanya parameter master yang dihitung; key liar/legacy
 // di dalam JSON tidak ikut memengaruhi nilai.
 function getRowStructureProcessBreakdown(row) {
-  if (row && row.parameterLevels && typeof row.parameterLevels === 'object') {
-    const total = Number(row.totalParameterLevels || 43) || 43;
-    let sum=0, selected=0; const byLevel={1:0,2:0,3:0,4:0,5:0};
-    for (const raw of Object.values(row.parameterLevels)) { const lv=Math.max(0,Math.min(5,Number(raw)||0)); if(lv>0){selected++;sum+=lv;byLevel[lv]++;} }
-    return {totalParams:total,selectedParams:selected,sumLevels:sum,byLevel,value:Math.round((sum/total)*100)/100};
-  }
-  return getStructureProcessBreakdown(row?.subunsurs || {});
+  // Authoritative UI source: the persisted subunsurs JSON. parameterLevels is
+  // only a projection/compatibility cache and must never override a real value
+  // from subunsurs (especially legacy registry zeros).
+  const b = getStructureProcessBreakdown(row?.subunsurs || {});
+  if (b.totalParams > 0) return b;
+  return {totalParams:43,selectedParams:0,sumLevels:0,byLevel:{1:0,2:0,3:0,4:0,5:0},value:0};
 }
 
 function calculateSA(row) {
@@ -791,7 +789,7 @@ function updateKpisLocal(){
   const kap = rows.map(r=>Number(r.nilaiKapabilitasApip)||0).filter(v=>v>0);
   const qa=rows.filter(r=>r.qaApip==='Selesai').length, status=rows.filter(r=>r.status==='Selesai').length, rtp=rows.filter(r=>r.rtp==='Selesai').length, ev=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length).length;
   applyKpis({
-    rataStrukturProses:avgAll('nilaiStrukturProses'),
+    rataStrukturProses:total ? struktur.reduce((a,b)=>a+b,0)/total : 0,
     rataMaturitas:avgFilled('nilaiMaturitas'),
     rataMRI:avgFilled('mri'),
     rataIEPK:avgFilled('iepk'),
