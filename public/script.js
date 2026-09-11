@@ -165,9 +165,15 @@ function readModalDraft() {
 }
 
 function writeModalDraftNow() {
-  if (!editingRowId || !isEditModalOpen()) return;
+  if (!editingRowId || !isEditModalOpen() || !modalDirty) return;
   try {
-    const draft = { year:String(currentYear), opdId:String(editingRowId), savedAt:Date.now(), fields:[] };
+    const draft = {
+      year:String(currentYear),
+      opdId:String(editingRowId),
+      savedAt:Date.now(),
+      baseSnapshot: editingSubunsurSnapshot || {},
+      fields:[]
+    };
     document.querySelectorAll('#subunsurContainer select[data-sub], #subunsurContainer textarea[data-sub]').forEach(el => {
       draft.fields.push({ subCode:el.dataset.sub, paramId:el.dataset.param, field:el.dataset.field || 'level', value:el.value });
     });
@@ -178,6 +184,7 @@ function writeModalDraftNow() {
 }
 
 function scheduleModalDraftSave() {
+  modalDirty = true;
   clearTimeout(modalDraftTimer);
   modalDraftTimer = setTimeout(writeModalDraftNow, 250);
 }
@@ -185,18 +192,29 @@ function scheduleModalDraftSave() {
 function restoreModalDraft() {
   const d = readModalDraft();
   if (!d || String(d.year)!==String(currentYear) || String(d.opdId)!==String(editingRowId)) return;
-  let restored = 0;
+  let restored = 0, differsFromBase = false;
   for (const f of (Array.isArray(d.fields) ? d.fields : [])) {
+    const base = editingSubunsurSnapshot?.[f.subCode]?.[f.paramId] || {};
+    const baseValue = String(base?.[f.field] ?? (f.field === 'level' ? 0 : ''));
+    const draftValue = String(f.value ?? '');
+    if (draftValue !== baseValue) differsFromBase = true;
     const sel = `#subunsurContainer [data-sub="${CSS.escape(String(f.subCode||''))}"][data-param="${CSS.escape(String(f.paramId||''))}"][data-field="${CSS.escape(String(f.field||''))}"]`;
     const el = document.querySelector(sel);
-    if (el) { el.value = f.value ?? ''; restored++; }
+    if (el && draftValue !== baseValue) { el.value = draftValue; restored++; }
   }
-  if (restored) {
-    const st=document.getElementById('modalSaveStatus');
-    if(st){ st.style.display='block'; st.style.color='#b45309'; st.textContent='📦 Draft lokal dipulihkan. Klik Simpan untuk mengirim ke server.'; }
+  if (!differsFromBase || !restored) {
+    clearModalDraft();
+    modalDirty = false;
+    return;
+  }
+  modalDirty = true;
+  const st=document.getElementById('modalSaveStatus');
+  if(st){
+    st.style.display='block';
+    st.style.color='#b45309';
+    st.textContent='📦 Draft lokal dipulihkan. Klik Simpan untuk mengirim ke server.';
   }
 }
-
 function clearModalDraft() {
   clearTimeout(modalDraftTimer);
   modalDraftTimer = null;
@@ -434,6 +452,7 @@ const pendingUploadFiles = new Map();
 const OFFLINE_FILE_DB = 'kawal-spip-offline-files-v1';
 const OFFLINE_FILE_STORE = 'uploads';
 let offlineFileDbPromise = null;
+const offlineUploadInFlight = new Set();
 function openOfflineFileDb(){
   if(offlineFileDbPromise) return offlineFileDbPromise;
   offlineFileDbPromise=new Promise((resolve,reject)=>{
@@ -459,20 +478,22 @@ async function retryIndexedDbUploads(){
   const pending=await getPendingUploadsFromIndexedDB();
   for(const rec of pending){
     if (Number(rec.nextRetryAt||0) > now) continue;
-    const row=rows.find(r=>r.id===rec.opdId); if(!row) continue;
+    if (offlineUploadInFlight.has(rec.uploadId)) continue;
+    const row=rows.find(r=>String(r.id)===String(rec.opdId)); if(!row) continue;
+    if(!rec.subCode || !rec.paramId || !rec.level || String(rec.year)!==String(currentYear)) continue;
+    offlineUploadInFlight.add(rec.uploadId);
     try{
       const result=await uploadFile(row,rec.subCode,rec.paramId,rec.level,rec.file,rec.uploadId);
       const container=row.subunsurs=row.subunsurs||{};
-      const key='files'+rec.level;
       const fileArray=ensureEvidenceFileArray(container,rec.subCode,rec.paramId,rec.level);
       const existing=fileArray.find(x=>typeof x==='object'&&x.uploadId===rec.uploadId);
-      const item={url:result.url||rec.url||'',fileName:result.fileName||rec.fileName,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'retrying',syncError:result.driveError||null,r2Key:result.r2Key||rec.r2Key||null,fileType:rec.fileType||rec.file.type||'application/octet-stream',uploadId:rec.uploadId,uploadedAt:rec.createdAt||new Date().toISOString()};
+      const item={url:result.url||rec.url||'',fileName:result.fileName||rec.fileName,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'retrying',syncError:result.driveError||null,r2Key:result.r2Key||rec.r2Key||null,fileType:rec.fileType||(rec.file?.type)||'application/octet-stream',uploadId:rec.uploadId,uploadedAt:rec.createdAt||new Date().toISOString()};
       if(existing) Object.assign(existing,item); else fileArray.push(item);
       if(result.gdriveId && result.syncStatus==='done'){
         pendingUploadFiles.delete(rec.uploadId);
         await deletePendingUploadFromIndexedDB(rec.uploadId);
+        editingSubunsurSnapshot=JSON.parse(JSON.stringify(row.subunsurs||{}));
       }else{
-        // IMPORTANT: do not delete the local file while Drive is still pending.
         rec.r2Key=item.r2Key; rec.url=item.url; rec.lastError=result.driveError||rec.lastError||'Menunggu Google Drive'; rec.nextRetryAt=Date.now()+15000;
         await savePendingUploadToIndexedDB(rec);
       }
@@ -485,15 +506,12 @@ async function retryIndexedDbUploads(){
       rec.lastError=e?.message||String(e);
       await savePendingUploadToIndexedDB(rec);
       console.warn('Retry offline file gagal; akan mencoba lagi otomatis:',rec.uploadId,e);
+    } finally {
+      offlineUploadInFlight.delete(rec.uploadId);
     }
   }
 }
 
-// ===== TEMPLATE KERTAS KERJA PM TERINTEGRASI (embedded, no network fetch) =====
-
-// ============================================================
-// PERUBAHAN KEAMANAN: TAMBAHKAN FUNGSI ESCAPE HTML
-// ============================================================
 function escapeHtml(str) {
   return String(str == null ? '' : str)
     .replace(/&/g, '&amp;')
@@ -1316,6 +1334,7 @@ let editingSubunsurSnapshot = null;
 let fileToDelete = null;
 let modalAutosaveTimer = null;
 let modalAutosaveRunning = false;
+let modalDirty = false;
 async function fetchAuthoritativeRow(opdId){
   try{
     const data=await callServer('getData',{year:currentYear});
@@ -1468,6 +1487,9 @@ async function openEditModal(id) {
            };
            const existingUpload=fileArray.find(x=>x && typeof x==='object' && x.uploadId===uploadItem.uploadId);
            if(existingUpload) Object.assign(existingUpload,uploadItem); else fileArray.push(uploadItem);
+           editingSubunsurSnapshot=JSON.parse(JSON.stringify(targetRow.subunsurs||{}));
+           modalDirty=false;
+           clearModalDraft();
           renderFileList(targetRow, subCode, paramId, level);
           completed++;
           setTimeout(() => {
@@ -1488,6 +1510,9 @@ async function openEditModal(id) {
                const uploadItem={url:result.url,fileName:result.fileName||file.name,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'pending',syncError:result.driveError||null,r2Key:result.r2Key||null,fileType:file.type||'application/octet-stream',uploadId:result.uploadId||sessionUploadId,uploadedAt:new Date().toISOString()};
                const existingUpload=fileArray.find(x=>x && typeof x==='object' && x.uploadId===uploadItem.uploadId);
                if(existingUpload) Object.assign(existingUpload,uploadItem); else fileArray.push(uploadItem);
+               editingSubunsurSnapshot=JSON.parse(JSON.stringify(targetRow.subunsurs||{}));
+               modalDirty=false;
+               clearModalDraft();
               renderFileList(targetRow,subCode,paramId,level);
               fill.style.width='100%'; text.textContent=result.syncStatus==='done'?'100% • Drive OK':'100% • Retry Drive';
               pendingUploadFiles.delete(sessionUploadId); await deletePendingUploadFromIndexedDB(sessionUploadId); recovered=true; completed++; break;
@@ -1826,6 +1851,7 @@ function scheduleModalServerAutosave() {
       // Refresh snapshot only after the server confirms the atomic field updates.
       editingSubunsurSnapshot=JSON.parse(JSON.stringify(row.subunsurs||{}));
       clearModalDraft();
+      modalDirty=false;
       if(st){st.style.color='#16a34a';st.textContent='✅ Autosave tersimpan';}
       updateKpisLocal();
     }catch(err){
@@ -1905,6 +1931,8 @@ document.getElementById('modalSave').addEventListener('click', async function() 
     modalStatus.style.color = '#16a34a';
     modalStatus.textContent = '✅ Perubahan berhasil disimpan!';
     clearModalDraft();
+    modalDirty=false;
+    editingSubunsurSnapshot=JSON.parse(JSON.stringify(row.subunsurs||{}));
     setTimeout(() => { closeEditModal(); render(); }, 600);
   } catch (err) {
     if (isNetworkError(err) || !navigator.onLine || err.transient) {
@@ -2317,12 +2345,16 @@ function showWarning(message) {
 document.getElementById('modalClose').addEventListener('click', closeEditModal);
 document.getElementById('modalCancel').addEventListener('click', closeEditModal);
 function closeEditModal() {
-  if (isEditModalOpen()) writeModalDraftNow();
+  if (isEditModalOpen()) {
+    if (modalDirty) writeModalDraftNow();
+    else clearModalDraft();
+  }
   clearTimeout(modalAutosaveTimer);
   modalAutosaveTimer=null;
   document.getElementById('editModal').classList.remove('active');
   editingRowId = null;
   editingSubunsurSnapshot = null;
+  modalDirty = false;
 }
 
 // ====== AKSES LANGSUNG VIA PORTAL ======
