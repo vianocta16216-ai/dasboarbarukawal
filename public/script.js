@@ -463,13 +463,11 @@ async function retryIndexedDbUploads(){
     try{
       const result=await uploadFile(row,rec.subCode,rec.paramId,rec.level,rec.file,rec.uploadId);
       const container=row.subunsurs=row.subunsurs||{};
-      container[rec.subCode]=container[rec.subCode]||{};
-      container[rec.subCode][rec.paramId]=container[rec.subCode][rec.paramId]||{level:0};
       const key='files'+rec.level;
-      container[rec.subCode][rec.paramId][key]=Array.isArray(container[rec.subCode][rec.paramId][key])?container[rec.subCode][rec.paramId][key]:[];
-      const existing=container[rec.subCode][rec.paramId][key].find(x=>typeof x==='object'&&x.uploadId===rec.uploadId);
+      const fileArray=ensureEvidenceFileArray(container,rec.subCode,rec.paramId,rec.level);
+      const existing=fileArray.find(x=>typeof x==='object'&&x.uploadId===rec.uploadId);
       const item={url:result.url||rec.url||'',fileName:result.fileName||rec.fileName,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'retrying',syncError:result.driveError||null,r2Key:result.r2Key||rec.r2Key||null,fileType:rec.fileType||rec.file.type||'application/octet-stream',uploadId:rec.uploadId,uploadedAt:rec.createdAt||new Date().toISOString()};
-      if(existing) Object.assign(existing,item); else container[rec.subCode][rec.paramId][key].push(item);
+      if(existing) Object.assign(existing,item); else fileArray.push(item);
       if(result.gdriveId && result.syncStatus==='done'){
         pendingUploadFiles.delete(rec.uploadId);
         await deletePendingUploadFromIndexedDB(rec.uploadId);
@@ -1456,18 +1454,20 @@ async function openEditModal(id) {
           else await savePendingUploadToIndexedDB({uploadId:sessionUploadId,opdId:targetRow.id,opdName:targetRow.opd||'OPD',subCode,paramId,level:String(level),year:currentYear,file,fileName:file.name,fileType:file.type||'application/octet-stream',createdAt:Date.now(),r2Key:result.r2Key||null,url:result.url||''});
           fill.style.width = '100%';
           text.textContent = result.syncStatus === 'done' ? '100% • Drive OK' : '100% • Retry Drive';
-          if (!targetRow.subunsurs[subCode][paramId]['files' + level]) targetRow.subunsurs[subCode][paramId]['files' + level] = [];
-          targetRow.subunsurs[subCode][paramId]['files' + level].push({
-            url: result.url,
-            fileName: result.fileName || file.name,
-            gdriveId: result.gdriveId || null,
-            syncStatus: result.syncStatus || 'pending',
-            syncError: result.driveError || null,
-            r2Key: result.r2Key || null,
-            fileType: file.type || 'application/octet-stream',
-            uploadId: result.uploadId || null,
-            uploadedAt: new Date().toISOString()
-          });
+           const fileArray=ensureEvidenceFileArray(targetRow.subunsurs=targetRow.subunsurs||{},subCode,paramId,level);
+           const uploadItem={
+             url: result.url,
+             fileName: result.fileName || file.name,
+             gdriveId: result.gdriveId || null,
+             syncStatus: result.syncStatus || 'pending',
+             syncError: result.driveError || null,
+             r2Key: result.r2Key || null,
+             fileType: file.type || 'application/octet-stream',
+             uploadId: result.uploadId || sessionUploadId,
+             uploadedAt: new Date().toISOString()
+           };
+           const existingUpload=fileArray.find(x=>x && typeof x==='object' && x.uploadId===uploadItem.uploadId);
+           if(existingUpload) Object.assign(existingUpload,uploadItem); else fileArray.push(uploadItem);
           renderFileList(targetRow, subCode, paramId, level);
           completed++;
           setTimeout(() => {
@@ -1484,8 +1484,10 @@ async function openEditModal(id) {
             try {
               await new Promise(r=>setTimeout(r,700*retry));
               const result=await uploadFile(targetRow,subCode,paramId,level,file,sessionUploadId);
-              if (!targetRow.subunsurs[subCode][paramId]['files'+level]) targetRow.subunsurs[subCode][paramId]['files'+level]=[];
-              targetRow.subunsurs[subCode][paramId]['files'+level].push({url:result.url,fileName:result.fileName||file.name,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'pending',syncError:result.driveError||null,r2Key:result.r2Key||null,fileType:file.type||'application/octet-stream',uploadId:result.uploadId||sessionUploadId,uploadedAt:new Date().toISOString()});
+               const fileArray=ensureEvidenceFileArray(targetRow.subunsurs=targetRow.subunsurs||{},subCode,paramId,level);
+               const uploadItem={url:result.url,fileName:result.fileName||file.name,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'pending',syncError:result.driveError||null,r2Key:result.r2Key||null,fileType:file.type||'application/octet-stream',uploadId:result.uploadId||sessionUploadId,uploadedAt:new Date().toISOString()};
+               const existingUpload=fileArray.find(x=>x && typeof x==='object' && x.uploadId===uploadItem.uploadId);
+               if(existingUpload) Object.assign(existingUpload,uploadItem); else fileArray.push(uploadItem);
               renderFileList(targetRow,subCode,paramId,level);
               fill.style.width='100%'; text.textContent=result.syncStatus==='done'?'100% • Drive OK':'100% • Retry Drive';
               pendingUploadFiles.delete(sessionUploadId); await deletePendingUploadFromIndexedDB(sessionUploadId); recovered=true; completed++; break;
@@ -1496,9 +1498,10 @@ async function openEditModal(id) {
             // mengulang upload dengan uploadId yang sama.
             pendingUploadFiles.set(sessionUploadId,file);
             await savePendingUploadToIndexedDB({uploadId:sessionUploadId,opdId:targetRow.id,opdName:targetRow.opd||'OPD',subCode,paramId,level:String(level),year:currentYear,file,fileName:file.name,fileType:file.type||'application/octet-stream',createdAt:Date.now()});
-            if (!targetRow.subunsurs[subCode][paramId]['files' + level]) targetRow.subunsurs[subCode][paramId]['files' + level] = [];
-            const list=targetRow.subunsurs[subCode][paramId]['files'+level];
-            list.push({url:'',fileName:file.name,gdriveId:null,syncStatus:'retrying',syncError:err.message,r2Key:null,fileType:file.type||'application/octet-stream',uploadId:sessionUploadId,localPending:true,uploadedAt:new Date().toISOString()});
+             const list=ensureEvidenceFileArray(targetRow.subunsurs=targetRow.subunsurs||{},subCode,paramId,level);
+             const pendingItem={url:'',fileName:file.name,gdriveId:null,syncStatus:'retrying',syncError:err.message,r2Key:null,fileType:file.type||'application/octet-stream',uploadId:sessionUploadId,localPending:true,uploadedAt:new Date().toISOString()};
+             const existingPending=list.find(x=>x && typeof x==='object' && x.uploadId===sessionUploadId);
+             if(existingPending) Object.assign(existingPending,pendingItem); else list.push(pendingItem);
             renderFileList(targetRow,subCode,paramId,level);
             fill.style.width='100%'; text.textContent='100% • Retry tersedia';
             showWarning('⚠️ Upload gagal sementara. File tidak dibuang. Tombol Retry tersedia.');
@@ -1559,6 +1562,27 @@ function getPreviewUrl(fileUrl, fileName) {
   }
 
   return fileUrl;
+}
+
+function ensureEvidenceFileArray(container, subCode, paramId, level){
+  container = container || {};
+  container[subCode] = container[subCode] || {};
+  container[subCode][paramId] = container[subCode][paramId] || {};
+  const key = 'files' + level;
+  const current = container[subCode][paramId][key];
+  if (Array.isArray(current)) return current;
+  if (typeof current === 'string') {
+    try{
+      const parsed = JSON.parse(current);
+      if(Array.isArray(parsed)){
+        container[subCode][paramId][key] = parsed;
+        return parsed;
+      }
+    }catch(_){}
+  }
+  const arr = [];
+  container[subCode][paramId][key] = arr;
+  return arr;
 }
 
 function renderFileList(row, subCode, paramId, level) {
