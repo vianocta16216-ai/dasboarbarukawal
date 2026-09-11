@@ -543,8 +543,12 @@ function callServer(action, params = {}) {
       }
       return fetch(functionUrl,{method:'POST',headers:isForm?{}:{'Content-Type':'application/json'},body:isForm?params:JSON.stringify({action,...params})});
     }
-    const query=new URLSearchParams({action,...params}).toString();
-    return fetch(`${functionUrl}?${query}`,{method:'GET'});
+    const queryParams = new URLSearchParams({action,...params});
+    // getData/getSubunsurData must always be authoritative; never allow an old
+    // browser/CDN cache to put a previous 0/default value back into the UI.
+    queryParams.set('_ts', String(Date.now()));
+    const query=queryParams.toString();
+    return fetch(`${functionUrl}?${query}`,{method:'GET', cache:'no-store', headers:{'Cache-Control':'no-cache'}});
   };
   return makeRequest().then(async response=>{
     const text=await response.text();
@@ -728,22 +732,30 @@ async function loadData() {
 }
 
 // ====== FUNGSI: Hitung SA berdasarkan 43 total parameter ======
+function getStructureProcessBreakdown(subunsurs) {
+  const breakdown = { totalParams: 0, selectedParams: 0, sumLevels: 0, byLevel: {1:0,2:0,3:0,4:0,5:0} };
+  for (const [subCode, subInfo] of Object.entries(SUBUNSUR_DATA || {})) {
+    const params = Array.isArray(subInfo?.params) ? subInfo.params : [];
+    for (const param of params) {
+      breakdown.totalParams++;
+      const raw = subunsurs?.[subCode]?.[param.id]?.level;
+      const level = Math.max(0, Math.min(5, Number(raw) || 0));
+      if (level > 0) {
+        breakdown.selectedParams++;
+        breakdown.sumLevels += level;
+        breakdown.byLevel[level]++;
+      }
+    }
+  }
+  breakdown.value = breakdown.totalParams ? Math.round((breakdown.sumLevels / breakdown.totalParams) * 100) / 100 : 0;
+  return breakdown;
+}
+
+// Nilai Struktur dan Proses = rata-rata level yang dipilih pada SETIAP parameter
+// master (43 parameter). Hanya parameter master yang dihitung; key liar/legacy
+// di dalam JSON tidak ikut memengaruhi nilai.
 function calculateSA(row) {
-    if (!row.subunsurs) return 0;
-    let totalLevel = 0;
-    let totalParams = 0;
-    Object.keys(SUBUNSUR_DATA).forEach(subCode => {
-        if (SUBUNSUR_DATA[subCode].params) {
-            totalParams += SUBUNSUR_DATA[subCode].params.length;
-        }
-    });
-    Object.keys(row.subunsurs).forEach(subCode => {
-        Object.keys(row.subunsurs[subCode]).forEach(paramId => {
-            const level = row.subunsurs[subCode][paramId].level;
-            if (level > 0) totalLevel += level;
-        });
-    });
-    return totalParams > 0 ? Math.round((totalLevel / totalParams) * 100) / 100 : 0;
+  return getStructureProcessBreakdown(row?.subunsurs || {}).value;
 }
 
 // ====== HITUNG KPI LOKAL ======
@@ -1422,8 +1434,24 @@ async function openEditModal(id) {
   });
 
   restoreModalDraft();
-  container.addEventListener('input', scheduleModalDraftSave);
-  container.addEventListener('change', scheduleModalDraftSave);
+  const syncLiveStructureValue = (el) => {
+    if (!el || el.dataset.field !== 'level' || !editingRowId) return;
+    const liveRow = rows.find(r => String(r.id) === String(editingRowId));
+    if (!liveRow) return;
+    liveRow.subunsurs = liveRow.subunsurs || {};
+    liveRow.subunsurs[el.dataset.sub] = liveRow.subunsurs[el.dataset.sub] || {};
+    liveRow.subunsurs[el.dataset.sub][el.dataset.param] = liveRow.subunsurs[el.dataset.sub][el.dataset.param] || {level:0};
+    liveRow.subunsurs[el.dataset.sub][el.dataset.param].level = Math.max(0, Math.min(5, Number(el.value) || 0));
+    const bd = getStructureProcessBreakdown(liveRow.subunsurs);
+    liveRow.nilaiStrukturProses = bd.value;
+    liveRow.sa = bd.value;
+    liveRow.strukturProsesStatus = bd.selectedParams === bd.totalParams ? 'Selesai' : (bd.selectedParams > 0 ? 'Proses' : 'Belum');
+    // Keep the table's value in sync even before the modal is closed.
+    const tableInput = document.querySelector(`.auto-structure-value[data-id=\"${CSS.escape(String(liveRow.id))}\"]`);
+    if (tableInput) tableInput.value = bd.value.toFixed(2);
+  };
+  container.addEventListener('input', (e) => { syncLiveStructureValue(e.target); scheduleModalDraftSave(); });
+  container.addEventListener('change', (e) => { syncLiveStructureValue(e.target); scheduleModalDraftSave(); });
   container.addEventListener('input', scheduleModalServerAutosave);
   container.addEventListener('change', scheduleModalServerAutosave);
 
