@@ -1022,7 +1022,7 @@ export async function onRequest({ request, env, ctx }) {
           const levelRowsForOpd=await env.DB.prepare("SELECT subunsur,param_id,level FROM opd_parameter_levels WHERE year=? AND opd_id=?").bind(String(year),String(params.opdId)).all();
           const authoritativeLevels=new Map();
           for(const lr of (levelRowsForOpd.results||[])) authoritativeLevels.set(`${lr.subunsur}|${lr.param_id}`,Math.max(0,Math.min(5,Number(lr.level)||0)));
-          const breakdown={ totalParams:countTotalParameters(), selectedParams:0, sumLevels:0, byLevel:{1:0,2:0,3:0,4:0,5:0} };
+          let breakdown={ totalParams:countTotalParameters(), selectedParams:0, sumLevels:0, byLevel:{1:0,2:0,3:0,4:0,5:0} }; // mutable: refreshed by the authoritative verification pass below
           for(const [subCode,info] of Object.entries(SUBUNSUR_DATA||{})){
             for(const prm of (Array.isArray(info?.params)?info.params:[])){
               const lv=authoritativeLevels.get(`${subCode}|${prm.id}`) ?? Math.max(0,Math.min(5,Number(authoritativeSubunsurs?.[subCode]?.[prm.id]?.level)||0));
