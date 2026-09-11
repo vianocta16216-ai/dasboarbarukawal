@@ -705,10 +705,11 @@ async function loadData() {
     if (Array.isArray(data)) {
       rows = data.map(r => {
         const row = { ...r, nilaiMaturitas:Number(r.nilaiMaturitas ?? r.nilai_maturitas ?? 0) || 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, kkPmData:r.kkPmData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
-        const bd = getStructureProcessBreakdown(row.subunsurs || {});
-        row.nilaiStrukturProses = bd.value;
-        row.sa = bd.value;
-        row.structureProcessBreakdown = bd;
+        const bd = getRowStructureProcessBreakdown(row);
+        row.nilaiStrukturProses = Number(r.nilaiStrukturProses ?? r.nilai_struktur_proses ?? bd.value) || 0;
+        if (Number.isFinite(row.nilaiStrukturProses) && row.nilaiStrukturProses !== bd.value && (!r.parameterLevels || typeof r.parameterLevels !== 'object')) row.nilaiStrukturProses = bd.value;
+        row.sa = row.nilaiStrukturProses;
+        row.structureProcessBreakdown = getRowStructureProcessBreakdown(row);
         return row;
       });
       rows.sort((a,b)=>{ const x=(parseFloat(b.nilaiMaturitas)||0)-(parseFloat(a.nilaiMaturitas)||0); return x || (parseFloat(b.nilaiStrukturProses)||0)-(parseFloat(a.nilaiStrukturProses)||0); });
@@ -763,8 +764,18 @@ function getStructureProcessBreakdown(subunsurs) {
 // Nilai Struktur dan Proses = rata-rata level yang dipilih pada SETIAP parameter
 // master (43 parameter). Hanya parameter master yang dihitung; key liar/legacy
 // di dalam JSON tidak ikut memengaruhi nilai.
+function getRowStructureProcessBreakdown(row) {
+  if (row && row.parameterLevels && typeof row.parameterLevels === 'object') {
+    const total = Number(row.totalParameterLevels || 43) || 43;
+    let sum=0, selected=0; const byLevel={1:0,2:0,3:0,4:0,5:0};
+    for (const raw of Object.values(row.parameterLevels)) { const lv=Math.max(0,Math.min(5,Number(raw)||0)); if(lv>0){selected++;sum+=lv;byLevel[lv]++;} }
+    return {totalParams:total,selectedParams:selected,sumLevels:sum,byLevel,value:Math.round((sum/total)*100)/100};
+  }
+  return getStructureProcessBreakdown(row?.subunsurs || {});
+}
+
 function calculateSA(row) {
-  return getStructureProcessBreakdown(row?.subunsurs || {}).value;
+  return getRowStructureProcessBreakdown(row).value;
 }
 
 // ====== HITUNG KPI LOKAL ======
@@ -839,8 +850,8 @@ function render() {
   else {
     empty.style.display = 'none';
     tbody.innerHTML = rows.map((r, index) => {
-      const structureBreakdown = getStructureProcessBreakdown(r.subunsurs || {});
-      const struktur = structureBreakdown.value;
+      const structureBreakdown = getRowStructureProcessBreakdown(r);
+      const struktur = Number(r.nilaiStrukturProses ?? structureBreakdown.value) || 0;
       r.nilaiStrukturProses = struktur;
       r.sa = struktur;
       r.structureProcessBreakdown = structureBreakdown;
@@ -1454,7 +1465,9 @@ async function openEditModal(id) {
     liveRow.subunsurs[el.dataset.sub] = liveRow.subunsurs[el.dataset.sub] || {};
     liveRow.subunsurs[el.dataset.sub][el.dataset.param] = liveRow.subunsurs[el.dataset.sub][el.dataset.param] || {level:0};
     liveRow.subunsurs[el.dataset.sub][el.dataset.param].level = Math.max(0, Math.min(5, Number(el.value) || 0));
-    const bd = getStructureProcessBreakdown(liveRow.subunsurs);
+    liveRow.parameterLevels = liveRow.parameterLevels || {};
+    liveRow.parameterLevels[`${el.dataset.sub}|${el.dataset.param}`] = liveRow.subunsurs[el.dataset.sub][el.dataset.param].level;
+    const bd = getRowStructureProcessBreakdown(liveRow);
     liveRow.nilaiStrukturProses = bd.value;
     liveRow.sa = bd.value;
     liveRow.strukturProsesStatus = bd.selectedParams === bd.totalParams ? 'Selesai' : (bd.selectedParams > 0 ? 'Proses' : 'Belum');
