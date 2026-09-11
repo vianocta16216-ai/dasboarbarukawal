@@ -705,12 +705,10 @@ async function loadData() {
     if (Array.isArray(data)) {
       rows = data.map(r => {
         const row = { ...r, nilaiMaturitas:Number(r.nilaiMaturitas ?? r.nilai_maturitas ?? 0) || 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, kkPmData:r.kkPmData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
-        const structureBreakdown = getStructureProcessBreakdown(row.subunsurs);
-        row.nilaiStrukturProses = structureBreakdown.value;
-        row.sa = structureBreakdown.value;
-        row.strukturProsesStatus = structureBreakdown.selectedParams === structureBreakdown.totalParams
-          ? 'Selesai'
-          : (structureBreakdown.selectedParams > 0 ? 'Proses' : 'Belum');
+        const bd = getStructureProcessBreakdown(row.subunsurs || {});
+        row.nilaiStrukturProses = bd.value;
+        row.sa = bd.value;
+        row.structureProcessBreakdown = bd;
         return row;
       });
       rows.sort((a,b)=>{ const x=(parseFloat(b.nilaiMaturitas)||0)-(parseFloat(a.nilaiMaturitas)||0); return x || (parseFloat(b.nilaiStrukturProses)||0)-(parseFloat(a.nilaiStrukturProses)||0); });
@@ -738,20 +736,27 @@ async function loadData() {
 // ====== FUNGSI: Hitung SA berdasarkan 43 total parameter ======
 function getStructureProcessBreakdown(subunsurs) {
   const breakdown = { totalParams: 0, selectedParams: 0, sumLevels: 0, byLevel: {1:0,2:0,3:0,4:0,5:0} };
-  for (const [subCode, subInfo] of Object.entries(SUBUNSUR_DATA || {})) {
-    const params = Array.isArray(subInfo?.params) ? subInfo.params : [];
-    for (const param of params) {
-      breakdown.totalParams++;
-      const raw = subunsurs?.[subCode]?.[param.id]?.level;
-      const level = Math.max(0, Math.min(5, Number(raw) || 0));
-      if (level > 0) {
-        breakdown.selectedParams++;
-        breakdown.sumLevels += level;
-        breakdown.byLevel[level]++;
-      }
+  // The master contains exactly 43 parameters. Iterate only the master list so an
+  // OPD's value is never affected by stray/legacy JSON keys.
+  const master = Array.isArray(PARAM_LIST) && PARAM_LIST.length === 43
+    ? PARAM_LIST
+    : Object.entries(SUBUNSUR_DATA || {}).flatMap(([subCode, subInfo]) =>
+        (Array.isArray(subInfo?.params) ? subInfo.params : []).map(param => ({subCode, paramId:param.id}))
+      );
+  for (const param of master) {
+    breakdown.totalParams++;
+    const raw = subunsurs?.[param.subCode]?.[param.paramId]?.level;
+    const level = Math.max(0, Math.min(5, Number(raw) || 0));
+    if (level > 0) {
+      breakdown.selectedParams++;
+      breakdown.sumLevels += level;
+      breakdown.byLevel[level]++;
     }
   }
-  breakdown.value = breakdown.totalParams ? Math.round((breakdown.sumLevels / breakdown.totalParams) * 100) / 100 : 0;
+  // Always use 43 as denominator when the 43-parameter master is available.
+  const denominator = (PARAM_LIST.length === 43) ? 43 : breakdown.totalParams;
+  breakdown.totalParams = denominator;
+  breakdown.value = denominator ? Math.round((breakdown.sumLevels / denominator) * 100) / 100 : 0;
   return breakdown;
 }
 
@@ -768,20 +773,20 @@ function updateKpisLocal(){
   const avgAll = field => total ? rows.reduce((sum,r)=>sum + (Number(r[field]) || 0),0) / total : 0;
   const avgFilled = field => { const a=rows.map(r=>Number(r[field])).filter(v=>Number.isFinite(v)&&v>0); return a.length?a.reduce((x,y)=>x+y,0)/a.length:0; };
   const pct=(n,d)=>d?Math.round(n/d*100):0;
-  const struktur = rows.map(r => calculateSA(r)).filter(v => Number.isFinite(v) && v > 0);
+  const struktur = rows.map(r=>Number(r.nilaiStrukturProses)||0);
   const maturitas = rows.map(r=>Number(r.nilaiMaturitas)||0).filter(v=>v>0);
   const mri = rows.map(r=>Number(r.mri)||0).filter(v=>v>0);
   const iepk = rows.map(r=>Number(r.iepk)||0).filter(v=>v>0);
   const kap = rows.map(r=>Number(r.nilaiKapabilitasApip)||0).filter(v=>v>0);
   const qa=rows.filter(r=>r.qaApip==='Selesai').length, status=rows.filter(r=>r.status==='Selesai').length, rtp=rows.filter(r=>r.rtp==='Selesai').length, ev=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length).length;
   applyKpis({
-    rataStrukturProses:struktur.length ? struktur.reduce((a,b)=>a+b,0)/struktur.length : 0,
+    rataStrukturProses:avgAll('nilaiStrukturProses'),
     rataMaturitas:avgFilled('nilaiMaturitas'),
     rataMRI:avgFilled('mri'),
     rataIEPK:avgFilled('iepk'),
     rataKapabilitasApip:avgFilled('nilaiKapabilitasApip'),
     qaApip:pct(qa,total), statusSelesai:pct(status,total), rtpSelesai:pct(rtp,total), evidenceRtp:pct(ev,total),
-    total, strukturCount:struktur.length, maturitasCount:maturitas.length, mriCount:mri.length, iepkCount:iepk.length, kapabilitasCount:kap.length,
+    total, strukturCount:total, maturitasCount:maturitas.length, mriCount:mri.length, iepkCount:iepk.length, kapabilitasCount:kap.length,
     qaApipCount:qa,statusSelesaiCount:status,rtpSelesaiCount:rtp,evidenceRtpCount:ev
   });
 }
@@ -834,9 +839,11 @@ function render() {
   else {
     empty.style.display = 'none';
     tbody.innerHTML = rows.map((r, index) => {
-      const struktur = calculateSA(r);
+      const structureBreakdown = getStructureProcessBreakdown(r.subunsurs || {});
+      const struktur = structureBreakdown.value;
       r.nilaiStrukturProses = struktur;
       r.sa = struktur;
+      r.structureProcessBreakdown = structureBreakdown;
       const totalParams = PARAM_LIST.length || 43;
       let countEvidence = 0;
       if (PARAM_LIST.length) {
@@ -1400,11 +1407,8 @@ async function openEditModal(id) {
     const sortedParams = [...subInfo.params].sort((a,b) => parseFloat(a.id) - parseFloat(b.id));
     
     sortedParams.forEach(param => {
-      const rawData = (row.subunsurs[subCode] && row.subunsurs[subCode][param.id]) || {};
-      const data = {
-        ...rawData,
-        level: Math.max(0, Math.min(5, Number(rawData.level) || 0))
-      };
+      const rawData = (row.subunsurs[subCode] && row.subunsurs[subCode][param.id]) || { level: 0 };
+      const data = { ...rawData, level: Math.max(0, Math.min(5, Number(rawData.level) || 0)) };
       const paramDiv = document.createElement('div');
       paramDiv.style.borderTop = '1px solid var(--border)';
       paramDiv.style.paddingTop = '10px';
@@ -1457,6 +1461,7 @@ async function openEditModal(id) {
     // Keep the table's value in sync even before the modal is closed.
     const tableInput = document.querySelector(`.auto-structure-value[data-id=\"${CSS.escape(String(liveRow.id))}\"]`);
     if (tableInput) tableInput.value = bd.value.toFixed(2);
+    updateKpisLocal();
   };
   container.addEventListener('input', (e) => { syncLiveStructureValue(e.target); scheduleModalDraftSave(); });
   container.addEventListener('change', (e) => { syncLiveStructureValue(e.target); scheduleModalDraftSave(); });
@@ -1891,6 +1896,7 @@ function scheduleModalServerAutosave() {
       editingSubunsurSnapshot=JSON.parse(JSON.stringify(row.subunsurs||{}));
       clearModalDraft();
       if(st){st.style.color='#16a34a';st.textContent='✅ Autosave tersimpan di server';}
+      render();
       updateKpisLocal();
     }catch(err){
       if(isNetworkError(err)||!navigator.onLine||err.transient){
@@ -1974,7 +1980,9 @@ document.getElementById('modalSave').addEventListener('click', async function() 
     modalStatus.textContent = '✅ Perubahan berhasil disimpan!';
     clearModalDraft();
     if(fresh) editingSubunsurSnapshot=JSON.parse(JSON.stringify(fresh.subunsurs||{}));
-    setTimeout(() => { closeEditModal(); render(); }, 600);
+    updateKpisLocal();
+    render();
+    setTimeout(() => { closeEditModal(); }, 600);
   } catch (err) {
     if (isNetworkError(err) || !navigator.onLine || err.transient) {
       queueOfflineSave('saveSubunsur', saveParams, err.message);
