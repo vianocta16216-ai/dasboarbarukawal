@@ -401,20 +401,22 @@ function countParameterEvidence(subunsurs) {
   return count;
 }
 
+function structureProcessBreakdown(subunsurs) {
+  const b = { totalParams: 0, selectedParams: 0, sumLevels: 0, byLevel: {1:0,2:0,3:0,4:0,5:0} };
+  for (const [subCode, subInfo] of Object.entries(SUBUNSUR_DATA || {})) {
+    const params = Array.isArray(subInfo?.params) ? subInfo.params : [];
+    for (const param of params) {
+      b.totalParams++;
+      const level = Math.max(0, Math.min(5, Number(subunsurs?.[subCode]?.[param.id]?.level) || 0));
+      if (level > 0) { b.selectedParams++; b.sumLevels += level; b.byLevel[level]++; }
+    }
+  }
+  b.value = b.totalParams ? Math.round((b.sumLevels / b.totalParams) * 100) / 100 : 0;
+  return b;
+}
+
 function calculateSAFromSubunsur(subunsurs) {
-  if (!subunsurs) return 0;
-  let totalLevel = 0;
-  let totalParams = 0;
-  Object.keys(SUBUNSUR_DATA).forEach(subCode => {
-    if (SUBUNSUR_DATA[subCode].params) totalParams += SUBUNSUR_DATA[subCode].params.length;
-  });
-  Object.keys(subunsurs).forEach(subCode => {
-    Object.keys(subunsurs[subCode]).forEach(paramId => {
-      const level = subunsurs[subCode][paramId].level;
-      if (level > 0) totalLevel += level;
-    });
-  });
-  return totalParams > 0 ? Math.round((totalLevel / totalParams) * 100) / 100 : 0;
+  return structureProcessBreakdown(subunsurs || {}).value;
 }
 
 async function getGoogleAccessToken(env) {
@@ -830,7 +832,7 @@ export async function onRequest({ request, env, ctx }) {
       case 'getData': {
         const {results}=await env.DB.prepare("SELECT * FROM opd_data WHERE year=? ORDER BY CAST(nilai_maturitas AS REAL) DESC, CAST(nilai_struktur_proses AS REAL) DESC, CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
         const mapped=results.map(r=>{const subunsurs=r.subunsurs?JSON.parse(r.subunsurs):{};const kkData=normalizeKkData(r.kk_data);let kkPmData={};try{kkPmData=r.kk_pm_data?JSON.parse(r.kk_pm_data):{}}catch{}const kkRtpData=normalizeWorkbookData(r.kk_rtp_data,[]);let rtpEvidence=[];try{rtpEvidence=r.rtp_evidence?JSON.parse(r.rtp_evidence):[]}catch{}const strukturNilai=calculateSAFromSubunsur(subunsurs); const strukturEvidenceCount=countParameterEvidence(subunsurs); const totalParams=countTotalParameters(); const strukturStatus=strukturEvidenceCount===totalParams?'Selesai':(strukturEvidenceCount>0?'Proses':'Belum'); return{...r,subunsurs,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',qaApip:r.qa_apip||'Belum',nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,nilaiMaturitas:Number(r.nilai_maturitas||0),nilaiKapabilitasApip:Number(r.nilai_kapabilitas_apip||0)};});
-        return new Response(JSON.stringify(mapped),{status:200,headers:{'Content-Type':'application/json'}});
+        return new Response(JSON.stringify(mapped),{status:200,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate, max-age=0'}});
       }
 
       case 'addOpd': {
@@ -944,7 +946,8 @@ export async function onRequest({ request, env, ctx }) {
           if (!rec.results.length) throw new Error('OPD tidak ditemukan');
           let authoritativeSubunsurs={};
           try { authoritativeSubunsurs = rec.results[0].subunsurs ? JSON.parse(rec.results[0].subunsurs) : {}; } catch { authoritativeSubunsurs={}; }
-          const currentSa=calculateSAFromSubunsur(authoritativeSubunsurs);
+          const breakdown=structureProcessBreakdown(authoritativeSubunsurs);
+          const currentSa=breakdown.value;
           const evidenceCount=countParameterEvidence(authoritativeSubunsurs);
           const currentStatus=evidenceCount===countTotalParameters()?'Selesai':(evidenceCount>0?'Proses':'Belum');
           await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?").bind(currentSa,currentSa,currentStatus,params.opdId,year));
@@ -954,7 +957,8 @@ export async function onRequest({ request, env, ctx }) {
             message:'Perubahan subunsur tersimpan',
             subunsurs:authoritativeSubunsurs,
             nilaiStrukturProses:Number(currentSa)||0,
-            strukturProsesStatus:currentStatus
+            strukturProsesStatus:currentStatus,
+            structureProcessBreakdown:breakdown
           });
         }
 
