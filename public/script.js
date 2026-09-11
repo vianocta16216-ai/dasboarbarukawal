@@ -784,7 +784,7 @@ function updateKpisLocal(){
   const avgAll = field => total ? rows.reduce((sum,r)=>sum + (Number(r[field]) || 0),0) / total : 0;
   const avgFilled = field => { const a=rows.map(r=>Number(r[field])).filter(v=>Number.isFinite(v)&&v>0); return a.length?a.reduce((x,y)=>x+y,0)/a.length:0; };
   const pct=(n,d)=>d?Math.round(n/d*100):0;
-  const struktur = rows.map(r=>Number(r.nilaiStrukturProses)||0);
+  const struktur = rows.map(r=>Number(getRowStructureProcessBreakdown(r).value)||0);
   const maturitas = rows.map(r=>Number(r.nilaiMaturitas)||0).filter(v=>v>0);
   const mri = rows.map(r=>Number(r.mri)||0).filter(v=>v>0);
   const iepk = rows.map(r=>Number(r.iepk)||0).filter(v=>v>0);
@@ -851,7 +851,8 @@ function render() {
     empty.style.display = 'none';
     tbody.innerHTML = rows.map((r, index) => {
       const structureBreakdown = getRowStructureProcessBreakdown(r);
-      const struktur = Number(r.nilaiStrukturProses ?? structureBreakdown.value) || 0;
+      const hasAuthoritativeLevels = r && r.parameterLevels && typeof r.parameterLevels === 'object';
+      const struktur = hasAuthoritativeLevels ? Number(structureBreakdown.value || 0) : Number(r.nilaiStrukturProses ?? structureBreakdown.value) || 0;
       r.nilaiStrukturProses = struktur;
       r.sa = struktur;
       r.structureProcessBreakdown = structureBreakdown;
@@ -887,7 +888,7 @@ function render() {
         <td>${selectHtml(r.id,'status',r.status,['Selesai','Proses','Belum'])}</td>
         <td>${selectHtml(r.id,'evidence',r.evidence,['Lengkap','Sebagian','Belum'])}</td>
         <td>${selectHtml(r.id,'rtp',r.rtp,['Selesai','Belum'])}</td>
-        <td><input class="auto-structure-value" type="number" value="${Number(struktur).toFixed(2)}" readonly aria-label="Nilai Struktur dan Proses otomatis" title="Otomatis dari 43 parameter"></td>
+        <td><input class="auto-structure-value" type="number" data-id="${r.id}" value="${Number(struktur).toFixed(2)}" readonly aria-label="Nilai Struktur dan Proses otomatis" title="Otomatis dari 43 parameter"></td>
         <td><span class="badge ${strukturStatus==='Selesai'?'badge-lengkap':(strukturStatus==='Proses'?'badge-sebagian':'badge-kosong')}">${strukturStatus}</span></td>
         <td><span class="badge ${badgeClass}" title="Jumlah parameter dengan evidence pada 43 parameter">${badgeLabel}</span></td>
         <td><button class="btn-detail" data-id="${r.id}" title="Evidence Struktur dan Proses">📁</button></td>
