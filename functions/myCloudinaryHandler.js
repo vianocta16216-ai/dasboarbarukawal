@@ -525,13 +525,35 @@ async function getRtpDriveFolder(env, accessToken, year, opdName, folderName){
   const yearFolder=await getOrCreateFolder(accessToken,root,String(year));
   const opdFolder=await getOrCreateFolder(accessToken,yearFolder,safeDriveName(opdName||'OPD'));
   const rtpFolder=await getOrCreateFolder(accessToken,opdFolder,'Kertas Kerja RTP');
-  const evidenceFolder=await getOrCreateFolder(accessToken,rtpFolder,safeDriveName(folderName||'Evidence RTP'));
+
+  // KHUSUS EVIDENCE RTP: jangan gunakan DRIVE_FOLDER_CACHE untuk folder evidence.
+  // Folder dapat dihapus manual oleh user di Google Drive. Bila ID lama masih
+  // tertinggal di cache/database, cache tersebut bisa menunjuk ke folder yang
+  // sudah tidak ada. Cari ulang langsung berdasarkan nama + parent agar sistem
+  // fleksibel dan otomatis membuat folder baru bila folder lama terhapus.
+  const evidenceName=safeDriveName(folderName||'Evidence RTP');
+  const safeName=evidenceName.replace(/'/g,"\\'");
+  const query=`name='${safeName}' and mimeType='application/vnd.google-apps.folder' and '${rtpFolder}' in parents and trashed=false`;
+  const params=new URLSearchParams({q:query,fields:'files(id,name,mimeType,parents,trashed)',spaces:'drive',includeItemsFromAllDrives:'true',supportsAllDrives:'true',pageSize:'10'});
+  const response=await fetchWithRetry(`https://www.googleapis.com/drive/v3/files?${params.toString()}`,{headers:{Authorization:`Bearer ${accessToken}`}}, {retries:3,baseDelay:500});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok) throw new Error('Gagal mencari folder Evidence RTP di Google Drive: '+JSON.stringify(data));
+
+  // Bila folder sudah dihapus, hasil query kosong dan folder baru dibuat.
+  const evidenceFolder=data.files?.find(f=>f && !f.trashed && f.mimeType==='application/vnd.google-apps.folder' && Array.isArray(f.parents) && f.parents.includes(rtpFolder))?.id
+    || await createFolder(accessToken,rtpFolder,evidenceName);
+
+  // Verifikasi ID/folder terbaru langsung ke Google Drive sebelum dikembalikan.
   const file=await getDriveFile(accessToken,evidenceFolder);
   if(!file || file.trashed || file.mimeType!=='application/vnd.google-apps.folder'){
-    throw new Error('Folder Evidence RTP berhasil diminta tetapi tidak dapat diverifikasi di Google Drive.');
+    throw new Error('Folder Evidence RTP tidak dapat diverifikasi setelah dibuat/ditemukan.');
   }
   const parents=Array.isArray(file.parents)?file.parents:[];
   if(!parents.includes(rtpFolder)) throw new Error('Folder Evidence RTP terdeteksi di lokasi Google Drive yang tidak sesuai.');
+
+  // Perbarui cache dengan ID yang benar agar operasi berikutnya dalam instance
+  // yang sama langsung memakai folder aktif.
+  DRIVE_FOLDER_CACHE.set(`${rtpFolder}\u0000${evidenceName}`,evidenceFolder);
   return {evidenceFolder,rtpFolder,opdFolder,yearFolder,root};
 }
 
@@ -1181,7 +1203,28 @@ export async function onRequest({ request, env, ctx }) {
         if(!results.length)throw new Error('OPD tidak ditemukan');
         let list=[];try{list=results[0].rtp_evidence?JSON.parse(results[0].rtp_evidence):[]}catch{}
         const folder=safeDriveName(results[0].rtp_evidence_folder||'Evidence RTP','Evidence RTP');
-        return new Response(JSON.stringify({status:'success',rtpEvidence:list,folderName:folder,folderId:results[0].rtp_evidence_folder_id||null,folderUrl:results[0].rtp_evidence_folder_id?`https://drive.google.com/drive/folders/${encodeURIComponent(results[0].rtp_evidence_folder_id)}`:null}),{status:200,headers:{'Content-Type':'application/json'}});
+        let folderId=results[0].rtp_evidence_folder_id||null;
+
+        // Self-healing: bila folder pernah dihapus manual dari Google Drive,
+        // buka modal kembali -> cek ID lama -> buat/temukan folder aktif -> simpan ID baru.
+        try{
+          const accessToken=await getGoogleAccessToken(env);
+          if(folderId){
+            const oldFolder=await getDriveFile(accessToken,folderId);
+            const valid=oldFolder && !oldFolder.trashed && oldFolder.mimeType==='application/vnd.google-apps.folder';
+            if(!valid) folderId=null;
+          }
+          if(!folderId){
+            const driveFolder=await getRtpDriveFolder(env,accessToken,year,results[0].opd||'OPD',folder);
+            folderId=driveFolder.evidenceFolder;
+            await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET rtp_evidence_folder=?, rtp_evidence_folder_id=? WHERE id=? AND year=?").bind(folder,folderId,params.opdId,year));
+          }
+        }catch(err){
+          // Jangan menggagalkan tampilan evidence/R2 bila Drive sementara bermasalah.
+          // Modal tetap bisa dibuka; upload berikutnya akan melakukan self-healing lagi.
+          console.warn('Validasi folder Evidence RTP ditunda:',err?.message||err);
+        }
+        return new Response(JSON.stringify({status:'success',rtpEvidence:list,folderName:folder,folderId,folderUrl:folderId?`https://drive.google.com/drive/folders/${encodeURIComponent(folderId)}`:null}),{status:200,headers:{'Content-Type':'application/json'}});
       }
       case 'saveRtpEvidenceFolder': {
         const folderName=safeDriveName(params.folderName||'Evidence RTP','Evidence RTP').substring(0,100)||'Evidence RTP';
