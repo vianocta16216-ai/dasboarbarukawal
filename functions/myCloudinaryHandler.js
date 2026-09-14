@@ -109,7 +109,7 @@ async function ensureOpdSchema(env){
     const info=await env.DB.prepare("PRAGMA table_info(opd_data)").all();
     const cols=new Set((info.results||[]).map(x=>x.name));
     const hadStructureField=cols.has('nilai_struktur_proses');
-    const adds=[['nilai_struktur_proses','REAL NOT NULL DEFAULT 0'],['nilai_maturitas','REAL NOT NULL DEFAULT 0'],['nilai_kapabilitas_apip','REAL NOT NULL DEFAULT 0'],['kk_pm_data',"TEXT NOT NULL DEFAULT '{}'"],['kk_rtp_data',"TEXT NOT NULL DEFAULT '{}'"],['rtp_evidence',"TEXT NOT NULL DEFAULT '[]'"],['rtp_evidence_folder',"TEXT NOT NULL DEFAULT 'Evidence RTP'"],['struktur_proses_status',"TEXT NOT NULL DEFAULT 'Belum'"]];
+    const adds=[['nilai_struktur_proses','REAL NOT NULL DEFAULT 0'],['nilai_maturitas','REAL NOT NULL DEFAULT 0'],['nilai_kapabilitas_apip','REAL NOT NULL DEFAULT 0'],['kk_pm_data',"TEXT NOT NULL DEFAULT '{}'"],['kk_rtp_data',"TEXT NOT NULL DEFAULT '{}'"],['rtp_evidence',"TEXT NOT NULL DEFAULT '[]'"],['rtp_evidence_folder',"TEXT NOT NULL DEFAULT 'Evidence RTP'"],['rtp_evidence_folder_id',"TEXT NOT NULL DEFAULT ''"],['struktur_proses_status',"TEXT NOT NULL DEFAULT 'Belum'"]];
     for(const [name,type] of adds)if(!cols.has(name))await env.DB.prepare(`ALTER TABLE opd_data ADD COLUMN ${name} ${type}`).run();
     if(cols.has('sa') && !hadStructureField) {
       await env.DB.prepare("UPDATE opd_data SET nilai_struktur_proses=CAST(COALESCE(sa,0) AS REAL)").run();
@@ -519,6 +519,22 @@ async function getOrCreateFolder(accessToken,parentId,folderName){
   return promise;
 }
 
+async function getRtpDriveFolder(env, accessToken, year, opdName, folderName){
+  assertGoogleDriveConfigured(env);
+  const root=await getOrCreateFolder(accessToken,env.GOOGLE_DRIVE_FOLDER_ID,'Kertas Kerja Spreadsheet');
+  const yearFolder=await getOrCreateFolder(accessToken,root,String(year));
+  const opdFolder=await getOrCreateFolder(accessToken,yearFolder,safeDriveName(opdName||'OPD'));
+  const rtpFolder=await getOrCreateFolder(accessToken,opdFolder,'Kertas Kerja RTP');
+  const evidenceFolder=await getOrCreateFolder(accessToken,rtpFolder,safeDriveName(folderName||'Evidence RTP'));
+  const file=await getDriveFile(accessToken,evidenceFolder);
+  if(!file || file.trashed || file.mimeType!=='application/vnd.google-apps.folder'){
+    throw new Error('Folder Evidence RTP berhasil diminta tetapi tidak dapat diverifikasi di Google Drive.');
+  }
+  const parents=Array.isArray(file.parents)?file.parents:[];
+  if(!parents.includes(rtpFolder)) throw new Error('Folder Evidence RTP terdeteksi di lokasi Google Drive yang tidak sesuai.');
+  return {evidenceFolder,rtpFolder,opdFolder,yearFolder,root};
+}
+
 async function findDriveFileByUploadId(accessToken, parentFolderId, uploadId) {
   const id = String(uploadId || '').trim();
   if (!id) return null;
@@ -662,12 +678,19 @@ async function directGoogleDriveBackup(env, job) {
     const token=await getGoogleAccessToken(env);
 
     if(job.type==='rtp'){
-      const root=await getOrCreateFolder(token,env.GOOGLE_DRIVE_FOLDER_ID,'Kertas Kerja Spreadsheet');
-      const yearFolder=await getOrCreateFolder(token,root,String(job.year));
-      const opdFolder=await getOrCreateFolder(token,yearFolder,safeDriveName(job.opdName||'OPD'));
-      const rtpFolder=await getOrCreateFolder(token,opdFolder,'Kertas Kerja RTP');
-      const evidenceFolder=await getOrCreateFolder(token,rtpFolder,safeDriveName(job.folderName||'Evidence RTP'));
-      return uploadBytesToGoogleDriveFolder(env,token,evidenceFolder,job.fileName,bytes,job.fileType,job.uploadId);
+      let evidenceFolder=job.gdriveFolderId;
+      if(evidenceFolder){
+        const folder=await getDriveFile(token,evidenceFolder);
+        if(!folder || folder.trashed || folder.mimeType!=='application/vnd.google-apps.folder') evidenceFolder=null;
+      }
+      if(!evidenceFolder){
+        evidenceFolder=(await getRtpDriveFolder(env,token,job.year,job.opdName,job.folderName)).evidenceFolder;
+      }
+      const gdriveId=await uploadBytesToGoogleDriveFolder(env,token,evidenceFolder,job.fileName,bytes,job.fileType,job.uploadId);
+      const uploaded=await getDriveFile(token,gdriveId);
+      if(!uploaded || uploaded.trashed) throw new Error('Google Drive mengembalikan ID tetapi file tidak dapat diverifikasi.');
+      if(!(Array.isArray(uploaded.parents)&&uploaded.parents.includes(evidenceFolder))) throw new Error('File berhasil di-upload tetapi masuk ke folder Google Drive yang tidak sesuai.');
+      return gdriveId;
     }
 
     const parts=String(job.r2Key).split('/');
@@ -1153,26 +1176,25 @@ export async function onRequest({ request, env, ctx }) {
       case 'getRtpKkSheets': { const {results}=await env.DB.prepare("SELECT kk_rtp_data FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();if(!results.length)throw new Error('OPD tidak ditemukan');return new Response(JSON.stringify({status:'success',kkRtpData:normalizeWorkbookData(results[0].kk_rtp_data,[])}),{status:200,headers:{'Content-Type':'application/json'}}); }
       case 'createRtpKkSheets': { const {results}=await env.DB.prepare("SELECT kk_rtp_data,opd FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();if(!results.length)throw new Error('OPD tidak ditemukan');const cur=normalizeWorkbookData(results[0].kk_rtp_data,[]);const kkRtpData=await ensureRtpSpreadsheet(env,{...params,opd:params.opd||results[0].opd,currentKkRtpData:cur});await env.DB.prepare("UPDATE opd_data SET kk_rtp_data=? WHERE id=? AND year=?").bind(JSON.stringify(kkRtpData),params.opdId,year).run();notifyRealtime(env,ctx,year,{action:'createRtpKkSheets',opdId:params.opdId});return new Response(JSON.stringify({status:'success',kkRtpData}),{status:200,headers:{'Content-Type':'application/json'}}); }
       case 'saveRtpKkData': { const kkRtpData=normalizeWorkbookData(params.kkRtpData,[]);await env.DB.prepare("UPDATE opd_data SET kk_rtp_data=? WHERE id=? AND year=?").bind(JSON.stringify(kkRtpData),params.opdId,year).run();notifyRealtime(env,ctx,year,{action:'saveRtpKkData',opdId:params.opdId});return new Response(JSON.stringify({status:'success',kkRtpData}),{status:200,headers:{'Content-Type':'application/json'}}); }
-      case 'getRtpEvidence': { const {results}=await env.DB.prepare("SELECT rtp_evidence, rtp_evidence_folder FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();if(!results.length)throw new Error('OPD tidak ditemukan');let list=[];try{list=results[0].rtp_evidence?JSON.parse(results[0].rtp_evidence):[]}catch{}const folder=safeDriveName(results[0].rtp_evidence_folder||'Evidence RTP','Evidence RTP');return new Response(JSON.stringify({status:'success',rtpEvidence:list,folderName:folder}),{status:200,headers:{'Content-Type':'application/json'}}); }
+      case 'getRtpEvidence': {
+        const {results}=await env.DB.prepare("SELECT rtp_evidence, rtp_evidence_folder, rtp_evidence_folder_id, opd FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+        if(!results.length)throw new Error('OPD tidak ditemukan');
+        let list=[];try{list=results[0].rtp_evidence?JSON.parse(results[0].rtp_evidence):[]}catch{}
+        const folder=safeDriveName(results[0].rtp_evidence_folder||'Evidence RTP','Evidence RTP');
+        return new Response(JSON.stringify({status:'success',rtpEvidence:list,folderName:folder,folderId:results[0].rtp_evidence_folder_id||null,folderUrl:results[0].rtp_evidence_folder_id?`https://drive.google.com/drive/folders/${encodeURIComponent(results[0].rtp_evidence_folder_id)}`:null}),{status:200,headers:{'Content-Type':'application/json'}});
+      }
       case 'saveRtpEvidenceFolder': {
         const folderName=safeDriveName(params.folderName||'Evidence RTP','Evidence RTP').substring(0,100)||'Evidence RTP';
         const rec=await env.DB.prepare("SELECT opd FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
         if(!rec.results.length) throw new Error('OPD tidak ditemukan');
-        let gdriveFolderId=null;
-        const driveReady=!!(env.GOOGLE_DRIVE_CLIENT_ID&&env.GOOGLE_DRIVE_CLIENT_SECRET&&env.GOOGLE_DRIVE_REFRESH_TOKEN&&env.GOOGLE_DRIVE_FOLDER_ID);
-        if(driveReady){
-          const accessToken=await getGoogleAccessToken(env);
-          const root=await getOrCreateFolder(accessToken,env.GOOGLE_DRIVE_FOLDER_ID,'Kertas Kerja Spreadsheet');
-          const yearFolder=await getOrCreateFolder(accessToken,root,String(year));
-          const opdFolder=await getOrCreateFolder(accessToken,yearFolder,safeDriveName(rec.results[0].opd||'OPD'));
-          const rtpFolder=await getOrCreateFolder(accessToken,opdFolder,'Kertas Kerja RTP');
-          gdriveFolderId=await getOrCreateFolder(accessToken,rtpFolder,folderName);
-        }
-        await env.DB.prepare("UPDATE opd_data SET rtp_evidence_folder=? WHERE id=? AND year=?").bind(folderName,params.opdId,year).run();
+        const accessToken=await getGoogleAccessToken(env);
+        const driveFolder=await getRtpDriveFolder(env,accessToken,year,rec.results[0].opd,folderName);
+        const folderUrl=`https://drive.google.com/drive/folders/${encodeURIComponent(driveFolder.evidenceFolder)}`;
+        await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET rtp_evidence_folder=?, rtp_evidence_folder_id=? WHERE id=? AND year=?").bind(folderName,driveFolder.evidenceFolder,params.opdId,year));
         notifyRealtime(env, ctx, year, { action: 'saveRtpEvidenceFolder', opdId: params.opdId });
         const safeOpd=sanitizeString(rec.results[0].opd||'OPD').substring(0,80)||'OPD';
         const r2Prefix=`kawal_spip/${year}/${safeOpd}/Kertas Kerja RTP/${folderName}/`;
-        return new Response(JSON.stringify({status:'success',folderName,gdriveFolderId,r2Prefix,driveConfigured:driveReady}),{status:200,headers:{'Content-Type':'application/json'}});
+        return new Response(JSON.stringify({status:'success',folderName,gdriveFolderId:driveFolder.evidenceFolder,folderUrl,r2Prefix,driveConfigured:true}),{status:200,headers:{'Content-Type':'application/json'}});
       }
       case 'uploadRtpEvidence': {
         assertGoogleDriveConfigured(env);
@@ -1196,6 +1218,9 @@ export async function onRequest({ request, env, ctx }) {
         }
         const safeOpd=sanitizeString(params.opdName).substring(0,80)||'OPD';
         const folderName=safeDriveName(params.folderName||'Evidence RTP','Evidence RTP').substring(0,100)||'Evidence RTP';
+        const accessToken=await getGoogleAccessToken(env);
+        const driveFolder=await getRtpDriveFolder(env,accessToken,year,safeOpd,folderName);
+        const gdriveFolderId=driveFolder.evidenceFolder;
         const baseFilePath=`kawal_spip/${year}/${safeOpd}/Kertas Kerja RTP/${folderName}/${safeFileName}`;
         const uploadId=String(params.uploadId||crypto.randomUUID());
         const filePath=baseFilePath.replace(/([^/]+)$/,(m)=>`${uploadId}-${m}`);
@@ -1208,7 +1233,8 @@ export async function onRequest({ request, env, ctx }) {
           }
           if(existing?.r2Key) {
             try{
-              const existingJob={type:'rtp',uploadId,year,opdId:params.opdId,opdName:params.opdName||'OPD',r2Key:existing.r2Key,fileName:existing.fileName||safeFileName,fileType:existing.fileType||fileType,folderName:existing.folderName||folderName};
+              const folderRec=await env.DB.prepare("SELECT rtp_evidence_folder_id FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+              const existingJob={type:'rtp',uploadId,year,opdId:params.opdId,opdName:params.opdName||'OPD',r2Key:existing.r2Key,fileName:existing.fileName||safeFileName,fileType:existing.fileType||fileType,folderName:existing.folderName||folderName,gdriveFolderId:folderRec.results?.[0]?.rtp_evidence_folder_id||null};
               const existingGdriveId=await directGoogleDriveBackup(env,existingJob);
               await updateRtpFileStatus(env,existingJob,{gdriveId:existingGdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
               const latestExisting=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
@@ -1227,9 +1253,9 @@ export async function onRequest({ request, env, ctx }) {
         if(!results.length)throw new Error('OPD tidak ditemukan');
         let list=[];try{list=results[0].rtp_evidence?JSON.parse(results[0].rtp_evidence):[]}catch{}
         list.push(item);
-        await env.DB.prepare("UPDATE opd_data SET rtp_evidence=?, rtp_evidence_folder=? WHERE id=? AND year=?").bind(JSON.stringify(list),folderName,params.opdId,year).run();
+        await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET rtp_evidence=?, rtp_evidence_folder=?, rtp_evidence_folder_id=? WHERE id=? AND year=?").bind(JSON.stringify(list),folderName,gdriveFolderId,params.opdId,year));
 
-        const job={type:'rtp',uploadId,year,opdId:params.opdId,opdName:params.opdName||'OPD',r2Key:filePath,fileName:safeFileName,fileType,folderName};
+        const job={type:'rtp',uploadId,year,opdId:params.opdId,opdName:params.opdName||'OPD',r2Key:filePath,fileName:safeFileName,fileType,folderName,gdriveFolderId};
         notifyRealtime(env, ctx, year, { action: 'uploadRtpEvidence', opdId: params.opdId, uploadId });
         // MANDATORY GOOGLE DRIVE: RTP upload is successful only after Drive returns an ID.
         try {
@@ -1238,7 +1264,7 @@ export async function onRequest({ request, env, ctx }) {
           notifyRealtime(env, ctx, year, { action: 'uploadRtpEvidence', opdId: params.opdId, uploadId, storage: 'R2 + Google Drive' });
           const latest=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
           let latestList=[];try{latestList=latest.results[0]?.rtp_evidence?JSON.parse(latest.results[0].rtp_evidence):[]}catch{}
-          return jsonResponse({status:'success',url:publicUrl,fileName:safeFileName,folderName,gdriveId,rtpEvidence:latestList,syncStatus:'done',uploadId,backupQueued:false,r2Saved:true,r2Key:filePath});
+          return jsonResponse({status:'success',url:publicUrl,fileName:safeFileName,folderName,gdriveId,gdriveFolderId,folderUrl:`https://drive.google.com/drive/folders/${encodeURIComponent(gdriveFolderId)}`,rtpEvidence:latestList,syncStatus:'done',uploadId,backupQueued:false,r2Saved:true,r2Key:filePath});
         } catch (driveErr) {
           const message=String(driveErr?.message||driveErr);
           await updateRtpFileStatus(env,job,{syncStatus:'retrying',syncError:message,storage:'R2'});
@@ -1504,11 +1530,11 @@ export async function onRequest({ request, env, ctx }) {
         if(!opdId || !uploadId) throw new Error('opdId dan uploadId wajib diisi');
         let job=null;
         if(type==='rtp'){
-          const rec=await env.DB.prepare("SELECT opd,rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,targetYear).all();
+          const rec=await env.DB.prepare("SELECT opd,rtp_evidence,rtp_evidence_folder,rtp_evidence_folder_id FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,targetYear).all();
           if(!rec.results.length) throw new Error('OPD tidak ditemukan');
           let list=[];try{list=rec.results[0]?.rtp_evidence?JSON.parse(rec.results[0].rtp_evidence):[]}catch{}
           const item=list.find(x=>x&&x.uploadId===uploadId); if(!item) throw new Error('Evidence RTP tidak ditemukan pada OPD/lokasi yang sama');
-          job={type:'rtp',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||'',fileName:item.fileName||'evidence',fileType:item.fileType||'application/octet-stream',folderName:item.folderName||'Evidence RTP'};
+          job={type:'rtp',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||'',fileName:item.fileName||'evidence',fileType:item.fileType||'application/octet-stream',folderName:item.folderName||rec.results[0].rtp_evidence_folder||'Evidence RTP',gdriveFolderId:rec.results[0].rtp_evidence_folder_id||null};
         } else {
           const rec=await env.DB.prepare("SELECT opd,subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,targetYear).all();
           if(!rec.results.length) throw new Error('OPD tidak ditemukan');
