@@ -655,7 +655,7 @@ document.getElementById('btnOpdAccess').addEventListener('click', async function
     document.getElementById('opdAccessOverlay').style.display = 'none';
     showOpdList();
   } else {
-    errorDiv.textContent = '❌ Password salah!';
+    errorDiv.textContent = 'Password salah!';
     errorDiv.style.display = 'block';
     errorDiv.style.background = '#fee2e2';
     errorDiv.style.color = '#dc2626';
@@ -663,6 +663,25 @@ document.getElementById('btnOpdAccess').addEventListener('click', async function
 });
 
 document.getElementById('opdAccessPassword').addEventListener('keyup', (e) => { if (e.key === 'Enter') document.getElementById('btnOpdAccess').click(); });
+
+// Toggle tampil/sembunyikan password khusus akses Daftar OPD.
+const toggleOpdAccessPassword = document.getElementById('toggleOpdAccessPassword');
+const opdAccessPasswordInput = document.getElementById('opdAccessPassword');
+const toggleOpdAccessPasswordIcon = document.getElementById('toggleOpdAccessPasswordIcon');
+if (toggleOpdAccessPassword && opdAccessPasswordInput) {
+  toggleOpdAccessPassword.addEventListener('click', function () {
+    const showing = opdAccessPasswordInput.type === 'text';
+    opdAccessPasswordInput.type = showing ? 'password' : 'text';
+    toggleOpdAccessPassword.setAttribute('aria-pressed', String(!showing));
+    toggleOpdAccessPassword.setAttribute('aria-label', showing ? 'Tampilkan password' : 'Sembunyikan password');
+    if (toggleOpdAccessPasswordIcon) {
+      toggleOpdAccessPasswordIcon.innerHTML = showing
+        ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>'
+        : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><path d="M3 3l18 18"></path>';
+    }
+    opdAccessPasswordInput.focus();
+  });
+}
 document.getElementById('btnOpdAccessCancel').addEventListener('click', function() {
   document.getElementById('opdAccessOverlay').style.display = 'none';
   showDashboard();
