@@ -570,60 +570,70 @@ async function findDriveFileByUploadId(accessToken, parentFolderId, uploadId) {
 }
 
 async function uploadBytesToGoogleDriveFolder(env, accessToken, parentFolderId, fileName, bytes, fileType='application/octet-stream', uploadId='') {
+  // Evidence is capped at 10 MB in this application. For files of this size,
+  // Drive multipart upload is simpler and more reliable in Cloudflare Workers
+  // than a resumable session. It also avoids retrying a PUT against a stale
+  // resumable-session URL.
   const existing = await findDriveFileByUploadId(accessToken, parentFolderId, uploadId);
   if (existing) return existing.id;
 
   const metadata = {
-    name: fileName,
+    name: String(fileName || 'evidence'),
     parents: [parentFolderId],
     appProperties: { kawalUploadId: String(uploadId || '') }
   };
 
-  async function startSession() {
-    const res = await fetchWithRetry('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
-      method:'POST',
-      headers:{
-        Authorization:`Bearer ${accessToken}`,
-        'Content-Type':'application/json; charset=UTF-8',
-        'X-Upload-Content-Type':fileType,
-        'X-Upload-Content-Length':String(bytes.length)
-      },
-      body:JSON.stringify(metadata)
-    }, {retries:5,baseDelay:800});
-    if (!res.ok) throw new Error('Gagal inisialisasi upload Google Drive: '+await res.text());
-    const location=res.headers.get('Location');
-    if(!location) throw new Error('Google Drive tidak mengembalikan URL sesi resumable');
-    return location;
+  const endpoint = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,mimeType,parents,webViewLink';
+  let lastError = null;
+
+  // POST is deliberately retried only after checking Drive by uploadId. This
+  // prevents a lost HTTP response from creating duplicate Drive files.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const body = new FormData();
+      body.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      body.append('file', new Blob([bytes], { type: fileType || 'application/octet-stream' }), String(fileName || 'evidence'));
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body
+      });
+      const raw = await res.text();
+      let data = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw }; }
+
+      if (res.ok && data.id) return data.id;
+
+      const err = new Error(`Google Drive upload gagal (HTTP ${res.status}): ${JSON.stringify(data)}`);
+      err.status = res.status;
+      lastError = err;
+
+      const after = await findDriveFileByUploadId(accessToken, parentFolderId, uploadId);
+      if (after) return after.id;
+
+      if (![408, 425, 429, 500, 502, 503, 504].includes(res.status) || attempt === 2) {
+        throw err;
+      }
+      await new Promise(resolve => setTimeout(resolve, Math.min(4000, 700 * Math.pow(2, attempt) + Math.floor(Math.random() * 300))));
+    } catch (err) {
+      lastError = err;
+      if (err?.name === 'TypeError' && attempt < 2) {
+        await new Promise(resolve => setTimeout(resolve, Math.min(4000, 700 * Math.pow(2, attempt))));
+        continue;
+      }
+      if (attempt === 2) break;
+      // A network failure may mean Drive already committed the multipart POST.
+      try {
+        const after = await findDriveFileByUploadId(accessToken, parentFolderId, uploadId);
+        if (after) return after.id;
+      } catch (_) {}
+      await new Promise(resolve => setTimeout(resolve, Math.min(4000, 700 * Math.pow(2, attempt) + Math.floor(Math.random() * 300))));
+    }
   }
 
-  async function putSession(location) {
-    const res = await fetchWithRetry(location, {
-      method:'PUT',
-      headers:{
-        'Content-Type':fileType,
-        'Content-Length':String(bytes.length),
-        'Content-Range':`bytes 0-${bytes.length-1}/${bytes.length}`
-      },
-      body:bytes
-    }, {retries:5,baseDelay:1000});
-    const data=await res.json().catch(()=>({}));
-    if(res.ok && data.id) return data.id;
-    throw new Error('Google Drive menolak upload: '+JSON.stringify(data));
-  }
-
-  let location = await startSession();
-  try {
-    return await putSession(location);
-  } catch (firstErr) {
-    // Check idempotency once more in case Drive committed the file but the response was lost.
-    const after = await findDriveFileByUploadId(accessToken, parentFolderId, uploadId);
-    if (after) return after.id;
-    // Recreate the resumable session and try again from byte 0.
-    location = await startSession();
-    return await putSession(location);
-  }
+  throw lastError || new Error('Upload Google Drive gagal tanpa pesan error.');
 }
-
 
 async function uploadToGoogleDrive(env, filePath, fileName, bytes, rootFolderId) {
   const accessToken = await getGoogleAccessToken(env);
@@ -634,34 +644,9 @@ async function uploadToGoogleDrive(env, filePath, fileName, bytes, rootFolderId)
     if (!folderName) continue;
     currentFolderId = await getOrCreateFolder(accessToken, currentFolderId, folderName);
   }
-  const metadata = { name: fileName, parents: [currentFolderId] };
-  const initResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json; charset=UTF-8',
-      'X-Upload-Content-Type': 'application/octet-stream',
-      'X-Upload-Content-Length': bytes.length.toString()
-    },
-    body: JSON.stringify(metadata)
-  });
-  if (!initResponse.ok) {
-    const errText = await initResponse.text();
-    throw new Error('Gagal inisialisasi upload: ' + errText);
-  }
-  const location = initResponse.headers.get('Location');
-  if (!location) throw new Error('Tidak ada URL upload dari Google Drive');
-  const uploadResponse = await fetch(location, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': bytes.length.toString() },
-    body: bytes
-  });
-  const result = await uploadResponse.json();
-  if (!uploadResponse.ok) throw new Error('Gagal upload file ke Google Drive: ' + JSON.stringify(result));
-  return result.id;
+  const stableUploadId = `backup:${filePath}`;
+  return uploadBytesToGoogleDriveFolder(env, accessToken, currentFolderId, fileName, bytes, 'application/octet-stream', stableUploadId);
 }
-
-
 
 async function updateEvidenceFileStatus(env, job, patch) {
   const rec = await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(job.opdId,job.year).all();
