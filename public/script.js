@@ -488,22 +488,32 @@ async function retryIndexedDbUploads(){
     if (Number(rec.nextRetryAt||0) > now) continue;
     const row=rows.find(r=>r.id===rec.opdId); if(!row) continue;
     try{
-      const result=await uploadFile(row,rec.subCode,rec.paramId,rec.level,rec.file,rec.uploadId);
-      const container=row.subunsurs=row.subunsurs||{};
-      const key='files'+rec.level;
-      const fileArray=ensureEvidenceFileArray(container,rec.subCode,rec.paramId,rec.level);
-      const existing=fileArray.find(x=>typeof x==='object'&&x.uploadId===rec.uploadId);
-      const item={url:result.url||rec.url||'',fileName:result.fileName||rec.fileName,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'retrying',syncError:result.driveError||null,r2Key:result.r2Key||rec.r2Key||null,fileType:rec.fileType||rec.file.type||'application/octet-stream',uploadId:rec.uploadId,uploadedAt:rec.createdAt||new Date().toISOString()};
-      if(existing) Object.assign(existing,item); else fileArray.push(item);
-      if(result.gdriveId && result.syncStatus==='done'){
-        pendingUploadFiles.delete(rec.uploadId);
-        await deletePendingUploadFromIndexedDB(rec.uploadId);
+      if(rec.type==='report'){
+        const type=rec.reportType||'pm_spip';
+        const result=await uploadReportFileClient(row,type,rec.file,rec.uploadId);
+        const list=reportListForRow(row,type);
+        const existing=list.find(x=>x&&x.uploadId===rec.uploadId);
+        const item={url:result.url||rec.url||'',fileName:result.fileName||rec.fileName,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'retrying',syncError:result.syncError||result.driveError||null,r2Key:result.r2Key||rec.r2Key||null,fileType:rec.fileType||rec.file.type||'application/octet-stream',uploadId:rec.uploadId,folderName:result.folderName||REPORT_CONFIG[type].folder,gdriveFolderId:result.gdriveFolderId||null,uploadedAt:rec.createdAt||new Date().toISOString()};
+        if(existing)Object.assign(existing,item);else list.push(item);setReportListForRow(row,type,list);
+        if(result.gdriveId && result.syncStatus==='done'){pendingUploadFiles.delete(rec.uploadId);await deletePendingUploadFromIndexedDB(rec.uploadId);}else{rec.r2Key=item.r2Key;rec.url=item.url;rec.lastError=result.driveError||rec.lastError||'Menunggu Google Drive';rec.nextRetryAt=Date.now()+15000;await savePendingUploadToIndexedDB(rec);}
+        render();
       }else{
-        // IMPORTANT: do not delete the local file while Drive is still pending.
-        rec.r2Key=item.r2Key; rec.url=item.url; rec.lastError=result.driveError||rec.lastError||'Menunggu Google Drive'; rec.nextRetryAt=Date.now()+15000;
-        await savePendingUploadToIndexedDB(rec);
+        const result=await uploadFile(row,rec.subCode,rec.paramId,rec.level,rec.file,rec.uploadId);
+        const container=row.subunsurs=row.subunsurs||{};
+        const key='files'+rec.level;
+        const fileArray=ensureEvidenceFileArray(container,rec.subCode,rec.paramId,rec.level);
+        const existing=fileArray.find(x=>typeof x==='object'&&x.uploadId===rec.uploadId);
+        const item={url:result.url||rec.url||'',fileName:result.fileName||rec.fileName,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'retrying',syncError:result.driveError||null,r2Key:result.r2Key||rec.r2Key||null,fileType:rec.fileType||rec.file.type||'application/octet-stream',uploadId:rec.uploadId,uploadedAt:rec.createdAt||new Date().toISOString()};
+        if(existing) Object.assign(existing,item); else fileArray.push(item);
+        if(result.gdriveId && result.syncStatus==='done'){
+          pendingUploadFiles.delete(rec.uploadId);
+          await deletePendingUploadFromIndexedDB(rec.uploadId);
+        }else{
+          rec.r2Key=item.r2Key; rec.url=item.url; rec.lastError=result.driveError||rec.lastError||'Menunggu Google Drive'; rec.nextRetryAt=Date.now()+15000;
+          await savePendingUploadToIndexedDB(rec);
+        }
+        renderFileList(row,rec.subCode,rec.paramId,rec.level);
       }
-      renderFileList(row,rec.subCode,rec.paramId,rec.level);
     }catch(e){
       const attempt=Number(rec.retryCount||0)+1;
       rec.retryCount=attempt;
@@ -534,7 +544,7 @@ function escapeHtml(str) {
 // PERUBAHAN KEAMANAN: GANTI VERSI SEBELUMNYA DENGAN VERSI AMAN INI
 function callServer(action, params = {}) {
   const functionUrl='/myCloudinaryHandler';
-  const readOnlyActions=new Set(['getYears','getData','getSubunsurData','getKkSheets','getRtpKkSheets','getRtpEvidence','listBackups']);
+  const readOnlyActions=new Set(['getYears','getData','getSubunsurData','getKkSheets','getRtpKkSheets','getRtpEvidence','getReportFiles','listBackups']);
   const isForm=params instanceof FormData;
   const isBinary=params && params.__binaryFile instanceof File;
   const cleanParams=isBinary ? Object.fromEntries(Object.entries(params).filter(([k])=>k!=='__binaryFile')) : params;
@@ -727,7 +737,7 @@ async function loadData() {
     rows = [];
     if (Array.isArray(data)) {
       rows = data.map(r => {
-        const row = { ...r, nilaiMaturitas:Number(r.nilaiMaturitas ?? r.nilai_maturitas ?? 0) || 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, kkPmData:r.kkPmData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
+        const row = { ...r, nilaiMaturitas:Number(r.nilaiMaturitas ?? r.nilai_maturitas ?? 0) || 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, kkPmData:r.kkPmData||{}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', pmSpipReports:Array.isArray(r.pmSpipReports)?r.pmSpipReports:[], pmSpipFolder:r.pmSpipFolder||'Laporan Hasil PM SPIP', rrRtpReports:Array.isArray(r.rrRtpReports)?r.rrRtpReports:[], rrRtpFolder:r.rrRtpFolder||'Laporan Pemantauan RR_RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
         const bd = getRowStructureProcessBreakdown(row);
         row.nilaiStrukturProses = bd.value;
         row.sa = row.nilaiStrukturProses;
@@ -924,7 +934,9 @@ function render() {
         <td><span class="badge ${badgeClass}" title="Jumlah parameter dengan evidence pada 43 parameter">${badgeLabel}</span></td>
         <td><button class="btn-detail" data-id="${r.id}" title="Evidence Struktur dan Proses">📁</button></td>
         <td><button class="btn-kk" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja SPIP">📊</button></td>
+        <td><button class="btn-report-pm" data-id="${r.id}" title="Upload Laporan Hasil PM SPIP">📄</button><div class="report-count pm">${Array.isArray(r.pmSpipReports)?r.pmSpipReports.length:0}</div></td>
         <td><button class="btn-kk-rtp" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja RTP">📋</button></td>
+        <td><button class="btn-report-rr" data-id="${r.id}" title="Upload Laporan Pemantauan RR_RTP">📄</button><div class="report-count rr">${Array.isArray(r.rrRtpReports)?r.rrRtpReports.length:0}</div></td>
         <td><button class="btn-rtp-evidence" data-id="${r.id}" title="Upload Evidence RTP">📤</button><div class="rtp-evidence-count">${Array.isArray(r.rtpEvidence)?r.rtpEvidence.length:0}</div></td>
         <td><button class="del-btn" data-id="${r.id}" title="Hapus">&times;</button></td>
       </tr>`;
@@ -1805,8 +1817,26 @@ async function autoRetryPendingDriveBackups(){
       }
     }
   }
+  for(const row of rows){
+    for(const type of ['pm_spip','rr_rtp']){
+      for(const pending of reportListForRow(row,type)){
+        if(!pending || typeof pending!=='object' || !pending.uploadId || pending.syncStatus==='done') continue;
+        tasks.push({row,reportType:type,pending});
+      }
+    }
+  }
   // Drive retry is continuous, but concurrency is deliberately limited to 3 files at a time.
   const worker=async(task)=>{
+    if(task.reportType){
+      const {row,reportType,pending}=task;
+      try{
+        const r=await callServerWithRetry('retryDriveBackup',{opdId:row.id,year:currentYear,uploadId:pending.uploadId,type:'report',reportType},1);
+        if(r?.gdriveId){pending.gdriveId=r.gdriveId;pending.syncStatus='done';pending.storage='R2 + Google Drive';pending.syncError=null;}
+        else{pending.syncStatus='retrying';pending.syncError=r?.driveError||pending.syncError||'Menunggu Google Drive';const attempt=Number(pending.retryCount||0)+1;pending.retryCount=attempt;pending.nextRetryAt=Date.now()+Math.min(300000,2000*Math.pow(2,Math.min(attempt,8)))+Math.floor(Math.random()*1500);}
+        setReportListForRow(row,reportType,reportListForRow(row,reportType));
+        return;
+      }catch(err){pending.syncStatus='retrying';pending.syncError=err?.message||String(err);const attempt=Number(pending.retryCount||0)+1;pending.retryCount=attempt;pending.nextRetryAt=Date.now()+Math.min(300000,2000*Math.pow(2,Math.min(attempt,8)))+Math.floor(Math.random()*1500);return;}
+    }
     const {row,subCode,paramId,level,pending}=task;
     try{
       const r=await callServerWithRetry('retryDriveBackup',{
@@ -2058,7 +2088,7 @@ document.getElementById('addOpdOk').addEventListener('click', async function() {
   btnOk.disabled = true;
   btnOk.textContent = '⏳ Menambahkan...';
   try {
-    const newOpd = { id:'r'+Math.random().toString(36).slice(2,9), opd:'OPD Baru', sa:0, nilaiStrukturProses:0, nilaiMaturitas:0, nilaiKapabilitasApip:0, evidence:'Belum', qaApip:'Belum', mri:0, iepk:0, rtp:'Belum', status:'Belum', strukturProsesStatus:'Belum', subunsurs:{}, kkData:{}, kkRtpData:{}, rtpEvidence:[] };
+    const newOpd = { id:'r'+Math.random().toString(36).slice(2,9), opd:'OPD Baru', sa:0, nilaiStrukturProses:0, nilaiMaturitas:0, nilaiKapabilitasApip:0, evidence:'Belum', qaApip:'Belum', mri:0, iepk:0, rtp:'Belum', status:'Belum', strukturProsesStatus:'Belum', subunsurs:{}, kkData:{}, kkRtpData:{}, rtpEvidence:[], pmSpipReports:[], pmSpipFolder:'Laporan Hasil PM SPIP', rrRtpReports:[], rrRtpFolder:'Laporan Pemantauan RR_RTP' };
     Object.keys(SUBUNSUR_DATA).forEach(subCode => {
       newOpd.subunsurs[subCode] = {};
       SUBUNSUR_DATA[subCode].params.forEach(param => { newOpd.subunsurs[subCode][param.id] = { level: 0 }; });
@@ -2587,6 +2617,30 @@ async function openKkRtp(id){const row=rows.find(r=>r.id===id);if(!row)return;co
 function renderRtpSheetLinks(row){const l=document.getElementById('sheetLinksList');if(!l)return;const w=row.kkRtpData;if(w&&w.workbookSpreadsheetId){const u=w.workbookUrl||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(w.workbookSpreadsheetId)}/edit`;l.innerHTML=`<div class="sheet-link-card"><div class="sheet-link-name"><div style="font-size:15px;font-weight:800;color:#0f172a;">📋 ${sheetLinksEsc(w.workbookName||'Kertas Kerja RTP')}</div><div style="font-size:12px;color:#64748b;margin-top:5px;">${sheetLinksEsc(row.opd||'OPD')} · ${sheetLinksEsc(currentYear)} · workbook RTP</div></div><a class="sheet-link-open" href="${sheetLinksEsc(u)}" target="_blank" rel="noopener noreferrer">Buka Spreadsheet ↗</a></div>`;}else l.innerHTML=`<div class="sheet-link-card">KK RTP belum dibuat pada tahun ${sheetLinksEsc(currentYear)}.</div>`;}
 async function createRtpSheetLinksForCurrentRow(auto=false){const row=rows.find(r=>r.id===sheetLinksEditingRowId);if(!row)return;const b=document.getElementById('sheetLinksCreate'),rf=document.getElementById('sheetLinksRefresh');if(b)b.disabled=true;if(rf)rf.disabled=true;sheetLinksSetStatus(auto?'Membuat KK RTP…':'Membuat/sinkronkan KK RTP…');try{const d=await callServer('createRtpKkSheets',{opdId:row.id,opd:row.opd||'OPD',year:currentYear});row.kkRtpData=d.kkRtpData||{};renderRtpSheetLinks(row);sheetLinksSetStatus('KK RTP berhasil tersedia.','success');}catch(err){sheetLinksSetStatus('Gagal membuat KK RTP: '+err.message,'error');}finally{if(b)b.disabled=false;if(rf)rf.disabled=false;}}
 
+// ===== LAPORAN PM SPIP & LAPORAN PEMANTAUAN RR_RTP =====
+let reportUploadEditingRowId=null;
+let reportUploadEditingType='pm_spip';
+
+const REPORT_CONFIG={
+  pm_spip:{title:'LAPORAN HASIL PM SPIP',folder:'Laporan Hasil PM SPIP',button:'📄 Upload Laporan PM SPIP',icon:'📘',desc:'File akan otomatis disimpan ke Google Drive berdasarkan Tahun → Nama OPD → Laporan Hasil PM SPIP.'},
+  rr_rtp:{title:'LAPORAN PEMANTAUAN RR_RTP',folder:'Laporan Pemantauan RR_RTP',button:'📄 Upload Laporan RR_RTP',icon:'📙',desc:'File akan otomatis disimpan ke Google Drive berdasarkan Tahun → Nama OPD → Laporan Pemantauan RR_RTP.'}
+};
+function reportListForRow(row,type){return type==='pm_spip'?(Array.isArray(row.pmSpipReports)?row.pmSpipReports:[]):(Array.isArray(row.rrRtpReports)?row.rrRtpReports:[]);}
+function setReportListForRow(row,type,list){if(type==='pm_spip')row.pmSpipReports=list;else row.rrRtpReports=list;}
+function reportSetStatus(msg,type=''){const e=document.getElementById('reportUploadStatus');if(!e)return;e.textContent=msg||'';e.className='sheet-links-status'+(type?' '+type:'');e.style.display=msg?'block':'none';}
+function renderReportUploadList(row,type){const e=document.getElementById('reportUploadList');if(!e)return;const a=reportListForRow(row,type);const cfg=REPORT_CONFIG[type];if(!a.length){e.innerHTML=`<div class="sheet-link-card">Belum ada file pada folder <b>${sheetLinksEsc(cfg.folder)}</b>.</div>`;return;}e.innerHTML='<div class="rtp-file-list">'+a.map((f,i)=>{const done=!!f.gdriveId&&f.syncStatus==='done';const status=done?'✅ Google Drive + R2':(f.syncStatus==='retrying'?'🔄 Perlu Retry Google Drive':'⏳ Menyimpan ke Google Drive');const retry=(done||!f.uploadId)?'':`<button class="report-retry-btn" data-upload-id="${sheetLinksEsc(f.uploadId)}">↻ Retry</button>`;const open=f.gdriveId?`https://drive.google.com/file/d/${encodeURIComponent(f.gdriveId)}/view`:(f.url||'#');return `<div class="rtp-file-item"><div><div class="rtp-file-name">${cfg.icon} ${sheetLinksEsc(f.fileName||'Laporan')}</div><div class="rtp-file-meta">${status}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions"><a href="${sheetLinksEsc(open)}" target="_blank" rel="noopener noreferrer">Buka</a>${retry}<button class="report-delete-btn" data-index="${i}">Hapus</button></div></div>`;}).join('')+'</div>';}
+async function openReportUploadModal(id,type){const row=rows.find(r=>r.id===id);if(!row)return;reportUploadEditingRowId=id;reportUploadEditingType=type;const cfg=REPORT_CONFIG[type],modal=document.getElementById('reportUploadModal');if(!modal)return;document.getElementById('reportUploadTitle').innerHTML=`${cfg.icon} ${cfg.title} - <span id="reportUploadOpdName">${sheetLinksEsc(row.opd||'Tanpa Nama')}</span>`;document.getElementById('reportUploadDescription').textContent=cfg.desc;document.getElementById('reportUploadChoose').textContent=cfg.button;modal.classList.add('active');reportSetStatus(`Memuat folder ${cfg.folder}...`);try{const d=await callServer('getReportFiles',{opdId:id,year:currentYear,reportType:type});const list=Array.isArray(d.reports)?d.reports:[];setReportListForRow(row,type,list);row[type==='pm_spip'?'pmSpipFolder':'rrRtpFolder']=d.folderName||cfg.folder;row[type==='pm_spip'?'pmSpipFolderId':'rrRtpFolderId']=d.folderId||null;const driveLink=document.getElementById('reportUploadDriveLink');if(driveLink){driveLink.href=d.folderUrl||'#';driveLink.style.display=d.folderUrl?'inline-flex':'none';}renderReportUploadList(row,type);reportSetStatus(d.folderUrl?`✅ Folder Google Drive terhubung: ${cfg.folder}.`:`Folder ${cfg.folder} siap dibuat saat upload.`,d.folderUrl?'success':'');}catch(err){reportSetStatus('Gagal memuat: '+err.message,'error');}}
+function closeReportUploadModal(){document.getElementById('reportUploadModal')?.classList.remove('active');reportUploadEditingRowId=null;}
+async function uploadReportFileClient(row,type,file,existingUploadId=null){if(!file)return null;if(file.size>MAX_FILE_UPLOAD_BYTES)throw new Error('File terlalu besar! Maks 10 MB per file.');const uploadId=existingUploadId||crypto.randomUUID();const payload={__binaryFile:file,opdId:row.id,opdName:row.opd||'OPD',reportType:type,year:currentYear,fileName:file.name,fileType:file.type||'application/octet-stream',uploadId};const result=await callServerWithRetry('uploadReportFile',payload,3);return{url:result.url,fileName:result.fileName,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'pending',syncError:result.driveError||null,uploadId:result.uploadId||uploadId,r2Key:result.r2Key||null,folderName:result.folderName||REPORT_CONFIG[type].folder,gdriveFolderId:result.folderId||null};}
+async function retryReportFile(row,type,item){try{item.syncStatus='retrying';renderReportUploadList(row,type);if(item.localPending){const localFile=pendingUploadFiles.get(item.uploadId);if(!localFile)throw new Error('File lokal untuk retry sudah tidak tersedia. Silakan pilih file kembali.');const r=await uploadReportFileClient(row,type,localFile,item.uploadId);Object.assign(item,{url:r.url||item.url,fileName:r.fileName||item.fileName,gdriveId:r.gdriveId||null,syncStatus:r.syncStatus||'pending',syncError:r.syncError||null,r2Key:r.r2Key||item.r2Key,localPending:false});pendingUploadFiles.delete(item.uploadId);await deletePendingUploadFromIndexedDB(item.uploadId);renderReportUploadList(row,type);render();reportSetStatus(item.gdriveId?'✅ R2 + Google Drive tersimpan.':'🔄 Google Drive belum berhasil. Silakan Retry.',item.gdriveId?'success':'');return;}
+const r=await callServerWithRetry('retryDriveBackup',{opdId:row.id,year:currentYear,uploadId:item.uploadId,type:'report',reportType:type},2);item.gdriveId=r.gdriveId||item.gdriveId||null;item.syncStatus=r.syncStatus||'retrying';item.syncError=r.driveError||null;if(item.gdriveId)item.storage='R2 + Google Drive';renderReportUploadList(row,type);render();reportSetStatus(item.gdriveId?'✅ R2 + Google Drive tersimpan.':'🔄 Google Drive belum berhasil. Silakan Retry.',item.gdriveId?'success':'');}catch(err){item.syncStatus='retrying';item.syncError=err.message;renderReportUploadList(row,type);reportSetStatus('Retry gagal: '+err.message,'error');}}
+
+document.getElementById('reportUploadChoose')?.addEventListener('click',()=>document.getElementById('reportUploadInput')?.click());
+document.getElementById('reportUploadInput')?.addEventListener('change',async e=>{const row=rows.find(r=>r.id===reportUploadEditingRowId),type=reportUploadEditingType;if(!row||!e.target.files?.length)return;const files=Array.from(e.target.files);try{validateSelectedUploadFiles(files,'file laporan');}catch(err){reportSetStatus('❌ '+err.message,'error');e.target.value='';return;}let done=0,failed=0;for(const file of files){const uploadId=crypto.randomUUID();try{reportSetStatus(`Mengunggah ${done+failed+1}/${files.length}: ${file.name}`);const r=await uploadReportFileClient(row,type,file,uploadId);const list=reportListForRow(row,type);const item={url:r.url||'',fileName:r.fileName||file.name,gdriveId:r.gdriveId||null,syncStatus:r.syncStatus||'pending',syncError:r.syncError||null,r2Key:r.r2Key||null,fileType:file.type||'application/octet-stream',uploadId:r.uploadId||uploadId,folderName:r.folderName||REPORT_CONFIG[type].folder,gdriveFolderId:r.gdriveFolderId||null,uploadedAt:new Date().toISOString()};const existing=list.find(x=>x&&x.uploadId===item.uploadId);if(existing)Object.assign(existing,item);else list.push(item);setReportListForRow(row,type,list);renderReportUploadList(row,type);render();done++;if(r.gdriveId){pendingUploadFiles.delete(uploadId);await deletePendingUploadFromIndexedDB(uploadId);}else{pendingUploadFiles.set(uploadId,file);await savePendingUploadToIndexedDB({uploadId,opdId:row.id,opdName:row.opd||'OPD',reportType:type,type:'report',year:currentYear,file,fileName:file.name,fileType:file.type||'application/octet-stream',createdAt:Date.now()});}}catch(err){failed++;pendingUploadFiles.set(uploadId,file);await savePendingUploadToIndexedDB({uploadId,opdId:row.id,opdName:row.opd||'OPD',reportType:type,type:'report',year:currentYear,file,fileName:file.name,fileType:file.type||'application/octet-stream',createdAt:Date.now()});const list=reportListForRow(row,type);list.push({url:'',fileName:file.name,gdriveId:null,syncStatus:'retrying',syncError:err.message,r2Key:null,fileType:file.type||'application/octet-stream',uploadId,localPending:true,folderName:REPORT_CONFIG[type].folder,uploadedAt:new Date().toISOString()});setReportListForRow(row,type,list);renderReportUploadList(row,type);}}reportSetStatus(failed?`Selesai: ${done} berhasil, ${failed} gagal.`:`✅ ${done} file diproses; yang belum masuk Google Drive dapat di-Retry.`,failed?'error':'success');e.target.value='';});
+document.getElementById('reportUploadList')?.addEventListener('click',async e=>{const rb=e.target.closest('.report-retry-btn');if(rb){const row=rows.find(r=>r.id===reportUploadEditingRowId);if(!row)return;const list=reportListForRow(row,reportUploadEditingType),f=list.find(x=>x.uploadId===rb.dataset.uploadId);if(f)await retryReportFile(row,reportUploadEditingType,f);return;}const db=e.target.closest('.report-delete-btn');if(db){const row=rows.find(r=>r.id===reportUploadEditingRowId);if(!row)return;const list=reportListForRow(row,reportUploadEditingType),f=list[Number(db.dataset.index)];if(!f)return;try{reportSetStatus('Menghapus...');const d=await callServerWithRetry('deleteReportFile',{opdId:row.id,year:currentYear,fileUrl:f.url,gdriveId:f.gdriveId||null,reportType:reportUploadEditingType},2);setReportListForRow(row,reportUploadEditingType,Array.isArray(d.reports)?d.reports:[]);renderReportUploadList(row,reportUploadEditingType);render();reportSetStatus('File laporan dihapus.','success');}catch(err){reportSetStatus('Gagal hapus: '+err.message,'error');}}});
+document.getElementById('reportUploadRefresh')?.addEventListener('click',()=>{if(reportUploadEditingRowId)openReportUploadModal(reportUploadEditingRowId,reportUploadEditingType);});
+document.getElementById('reportUploadClose')?.addEventListener('click',closeReportUploadModal);document.getElementById('reportUploadCloseFooter')?.addEventListener('click',closeReportUploadModal);
+
 // ===== EVIDENCE RTP =====
 let rtpEvidenceEditingRowId=null;function rtpEvidenceSetStatus(msg,type=''){const e=document.getElementById('rtpEvidenceStatus');if(!e)return;e.textContent=msg||'';e.className='sheet-links-status'+(type?' '+type:'');e.style.display=msg?'block':'none';}
 function renderRtpEvidenceList(row){const e=document.getElementById('rtpEvidenceList');if(!e)return;const a=Array.isArray(row.rtpEvidence)?row.rtpEvidence:[];if(!a.length){e.innerHTML='<div class="sheet-link-card">Belum ada evidence RTP.</div>';return;}e.innerHTML='<div class="rtp-file-list">'+a.map((f,i)=>{const status=f.gdriveId?'✅ Google Drive + R2':(f.syncStatus==='retrying'?'🔄 Perlu Retry Google Drive':'⏳ Mengirim ke Google Drive');const retry=(f.gdriveId||!f.uploadId)?'':`<button class="rtp-retry-btn" data-upload-id="${sheetLinksEsc(f.uploadId)}">↻ Retry</button>`;return `<div class="rtp-file-item"><div><div class="rtp-file-name">📄 ${sheetLinksEsc(f.fileName||'File')}</div><div class="rtp-file-meta">${status}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions"><a href="${sheetLinksEsc(f.url||'#')}" target="_blank" rel="noopener noreferrer">Buka</a>${retry}<button class="rtp-delete-btn" data-index="${i}">Hapus</button></div></div>`;}).join('')+'</div>';}
@@ -2640,7 +2694,9 @@ document.addEventListener('click',function(e){
   if(btn.classList.contains('btn-edit-name')) openEditNameModal(btn.getAttribute('data-id'));
   else if(btn.classList.contains('btn-detail')) openEditModal(btn.getAttribute('data-id'));
   else if(btn.classList.contains('btn-kk')) openSpreadsheetModal(btn.getAttribute('data-id'));
+  else if(btn.classList.contains('btn-report-pm')) openReportUploadModal(btn.getAttribute('data-id'),'pm_spip');
   else if(btn.classList.contains('btn-kk-rtp')) openKkRtp(btn.getAttribute('data-id'));
+  else if(btn.classList.contains('btn-report-rr')) openReportUploadModal(btn.getAttribute('data-id'),'rr_rtp');
   else if(btn.classList.contains('btn-rtp-evidence')) openRtpEvidenceModal(btn.getAttribute('data-id'));
   else if(btn.classList.contains('del-btn')) openConfirmModal(btn.getAttribute('data-id'));
 });

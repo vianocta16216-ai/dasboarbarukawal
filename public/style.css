@@ -453,7 +453,7 @@ table {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 13px;
-  min-width: 2350px;
+  min-width: 2750px;
 }
 
 
@@ -1657,6 +1657,24 @@ input[type="file"]:hover {
 .btn-rtp-evidence{background:linear-gradient(135deg,#d97706,#f59e0b)!important;color:#fff!important;box-shadow:0 2px 6px rgba(217,119,6,.25)!important}
 .btn-rtp-evidence:hover{background:linear-gradient(135deg,#b45309,#d97706)!important}
 .rtp-evidence-count{font-size:10px;font-weight:800;color:#64748b;margin-top:3px}
+.btn-report-pm{background:linear-gradient(135deg,#0f766e,#14b8a6)!important;color:#fff!important;box-shadow:0 2px 6px rgba(15,118,110,.25)!important}
+.btn-report-pm:hover{background:linear-gradient(135deg,#115e59,#0f766e)!important}
+.btn-report-rr{background:linear-gradient(135deg,#7c3aed,#a855f7)!important;color:#fff!important;box-shadow:0 2px 6px rgba(124,58,237,.23)!important}
+.btn-report-rr:hover{background:linear-gradient(135deg,#6d28d9,#7c3aed)!important}
+.report-count{font-size:10px;font-weight:800;margin-top:3px}
+.report-count.pm{color:#0f766e}.report-count.rr{color:#7c3aed}
+.report-upload-button{background:linear-gradient(135deg,#0f766e,#2563eb)!important}
+.report-upload-button:hover{filter:brightness(.96)}
+.report-drive-box{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #dbe3ee;border-radius:12px;padding:12px 14px;background:linear-gradient(135deg,#f8fafc,#eef6ff);margin-bottom:14px}
+.report-drive-label{display:block;font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.report-drive-path{font-size:13px;font-weight:700;color:#0f172a;word-break:break-word}
+.report-drive-badge{font-size:10px;font-weight:900;color:#0f766e;border:1px solid #99f6e4;background:#ecfeff;border-radius:999px;padding:5px 8px;white-space:nowrap}
+.report-drive-link{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;text-decoration:none;background:#0f766e;color:#fff;padding:7px 10px;border-radius:7px;font-size:12px;font-weight:800}
+.report-drive-link:hover{background:#115e59}
+.report-upload-box{margin-bottom:14px} 
+.report-retry-btn{background:#ede9fe;color:#6d28d9;border:none;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px}.report-retry-btn:hover{background:#ddd6fe}
+.report-delete-btn{background:#fee2e2;color:#b91c1c;border:none;border-radius:7px;padding:7px 10px;font-size:12px;font-weight:700;cursor:pointer}
+.report-delete-btn:hover{background:#fecaca}
 .rtp-upload-box{border:2px dashed #cbd5e1;border-radius:14px;padding:24px;text-align:center;background:#f8fafc;margin-bottom:16px}
 .rtp-upload-button{background:linear-gradient(135deg,#f59e0b,#ea580c)!important;color:#fff!important;border:0!important;padding:12px 18px;border-radius:10px;cursor:pointer;font-weight:800}
 .rtp-upload-help{font-size:12px;color:#64748b;margin-top:8px}

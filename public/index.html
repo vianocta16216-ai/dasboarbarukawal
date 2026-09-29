@@ -80,7 +80,7 @@
   <div class="panel">
     <div class="panel-head"><h2>🏢 Daftar OPD - Tahun <span id="currentYearLabel">2026</span></h2><p class="status-msg" id="saveStatus"></p></div>
     <p class="desc">Nilai Maturitas diinput manual. Nilai Struktur dan Proses dihitung otomatis dari level 43 parameter. Status Struktur dan Proses serta Kelengkapannya mengikuti progres evidence 43 parameter.</p>
-    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">QA APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="width:78px;">KK SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">QA APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="width:78px;">KK SPIP</th><th style="min-width:145px;">Laporan Hasil PM SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:155px;">Laporan Pemantauan RR_RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
     <div class="empty-state" id="emptyState" style="display:none;">Belum ada OPD. Klik <strong>"Tambah OPD"</strong> untuk memulai.</div>
   </div>
 </div>
@@ -313,6 +313,34 @@
   </div>
 </div>
 
+<!-- ===== LAPORAN PM SPIP & RR_RTP ===== -->
+<div class="sheet-links-overlay" id="reportUploadModal">
+  <div class="sheet-links-modal" style="max-width:780px;">
+    <div class="sheet-links-header">
+      <h3 id="reportUploadTitle">📘 LAPORAN HASIL PM SPIP - <span id="reportUploadOpdName"></span></h3>
+      <button class="sheet-links-close" id="reportUploadClose" aria-label="Tutup">&times;</button>
+    </div>
+    <div class="sheet-links-body">
+      <div class="sheet-links-info" id="reportUploadDescription">File akan otomatis disimpan ke Google Drive berdasarkan Tahun → Nama OPD → Folder Laporan.</div>
+      <div class="sheet-links-status" id="reportUploadStatus"></div>
+      <div class="report-drive-box">
+        <div><span class="report-drive-label">Folder Google Drive</span><span class="report-drive-path">Laporan SPIP / Tahun / Nama OPD / Folder Laporan</span></div>
+        <a id="reportUploadDriveLink" class="report-drive-link" href="#" target="_blank" rel="noopener noreferrer" style="display:none;">Buka Folder ↗</a>
+      </div>
+      <div class="rtp-upload-box report-upload-box">
+        <input id="reportUploadInput" type="file" multiple hidden accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png">
+        <button class="rtp-upload-button report-upload-button" id="reportUploadChoose" type="button">📄 Upload Laporan</button>
+        <div class="rtp-upload-help">Maks. 10 MB per file • total pilihan maks. 10 MB. Folder Google Drive dibuat otomatis sesuai OPD dan tahun aktif.</div>
+      </div>
+      <div id="reportUploadList"></div>
+    </div>
+    <div class="sheet-links-footer">
+      <button id="reportUploadRefresh" type="button">↻ Muat Ulang</button>
+      <button id="reportUploadCloseFooter" type="button">Tutup</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== EVIDENCE RTP ===== -->
 <div class="sheet-links-overlay" id="rtpEvidenceModal">
   <div class="sheet-links-modal" style="max-width:760px;">
@@ -342,4 +370,4 @@
   </div>
 </div>
 
-<script src="/script.js?v=20260911-sp4" defer></script>
+<script src="/script.js?v=20260929-report-spip-rr" defer></script>
