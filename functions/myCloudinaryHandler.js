@@ -275,6 +275,44 @@ function assertGoogleDriveConfigured(env) {
   }
 }
 
+const VERIFICATION_STATUS_SET = new Set(['diterima','diterima_catatan','dikembalikan']);
+const VERIFICATION_WEIGHTS_SERVER = Object.freeze({diterima:1, diterima_catatan:0.75, dikembalikan:0, '':0});
+function sanitizeVerificationField(value,maxLength){
+  return String(value ?? '').replace(/[<>`\\]/g,'').trim().substring(0,maxLength);
+}
+function normalizeVerificationRecord(raw){
+  const v=raw && typeof raw==='object' ? raw : {};
+  const status=VERIFICATION_STATUS_SET.has(String(v.status||'')) ? String(v.status) : '';
+  return {
+    examinerName:sanitizeVerificationField(v.examinerName ?? v.namaPemeriksa,100),
+    note:sanitizeVerificationField(v.note ?? v.catatanPemeriksa,1000),
+    status,
+    verifiedAt:v.verifiedAt || null,
+    updatedAt:v.updatedAt || null
+  };
+}
+function calculateVerificationSummaryServer(files){
+  const arr=Array.isArray(files) ? files.filter(Boolean) : [];
+  let score=0,verified=0,accepted=0,withNotes=0,returned=0;
+  arr.forEach(file=>{
+    const v=normalizeVerificationRecord(file?.verification);
+    if(VERIFICATION_STATUS_SET.has(v.status)) verified++;
+    if(v.status==='diterima') accepted++;
+    else if(v.status==='diterima_catatan') withNotes++;
+    else if(v.status==='dikembalikan') returned++;
+    score+=(VERIFICATION_WEIGHTS_SERVER[v.status]||0)*100;
+  });
+  return {
+    total:arr.length,
+    verified,
+    accepted,
+    withNotes,
+    returned,
+    percentage:arr.length ? Math.round((score/arr.length)*100)/100 : 0,
+    progress:arr.length ? Math.round((verified/arr.length)*10000)/100 : 0
+  };
+}
+
 function safeDriveName(v, fallback='OPD') {
   return String(v || fallback)
     .replace(/[\\/:*?"<>|#%{}]/g, ' ')
@@ -843,7 +881,7 @@ export async function onRequest({ request, env, ctx }) {
   // Daftar aksi sensitif yang tidak boleh diakses via GET
   const SENSITIVE_ACTIONS = [
     'verifyAccess', 'verifyDelete', 'addOpd', 'saveData', 'saveField',
-    'uploadFile', 'deleteFile', 'deleteOpd', 'addYear', 'deleteYear',
+    'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'deleteOpd', 'addYear', 'deleteYear',
     'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup'
   ];
 
@@ -1479,6 +1517,58 @@ export async function onRequest({ request, env, ctx }) {
         notifyRealtime(env, ctx, year, { action: 'deleteRtpEvidence', opdId: params.opdId });
         return new Response(JSON.stringify({status:'success',rtpEvidence:list}),{status:200,headers:{'Content-Type':'application/json'}});
       }
+      case 'saveEvidenceVerification': {
+        const opdId=String(params.opdId||'');
+        const subunsur=String(params.subunsur||'');
+        const paramId=String(params.paramId||'');
+        const level=String(params.level||'');
+        const uploadId=String(params.uploadId||'');
+        const status=String(params.status||'');
+        const examinerName=sanitizeVerificationField(params.examinerName,100);
+        const note=sanitizeVerificationField(params.note,1000);
+        if(!opdId || !subunsur || !paramId || !/^[1-5]$/.test(level) || !uploadId) throw new Error('Lokasi evidence tidak lengkap.');
+        if(!VERIFICATION_STATUS_SET.has(status)) throw new Error('Hasil verifikasi tidak valid.');
+        if(!examinerName) throw new Error('Nama pemeriksa wajib diisi.');
+        if((status==='diterima_catatan' || status==='dikembalikan') && !note) throw new Error('Catatan pemeriksa wajib diisi untuk status ini.');
+        const rec=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,year).all();
+        if(!rec.results.length) throw new Error('OPD tidak ditemukan.');
+        let obj={}; try{obj=rec.results[0]?.subunsurs?JSON.parse(rec.results[0].subunsurs):{}}catch{}
+        const arr=obj?.[subunsur]?.[paramId]?.['files'+level];
+        if(!Array.isArray(arr)) throw new Error('Daftar file evidence tidak ditemukan.');
+        const fileObj=arr.find(x=>x && typeof x==='object' && String(x.uploadId||'')===uploadId);
+        if(!fileObj) throw new Error('File evidence tidak ditemukan pada OPD/parameter/level yang sama.');
+        const now=new Date().toISOString();
+        const verification={examinerName,note,status,verifiedAt:now,updatedAt:now};
+        fileObj.verification=verification;
+        await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET subunsurs=? WHERE id=? AND year=?").bind(JSON.stringify(obj),opdId,year));
+        notifyRealtime(env,ctx,year,{action:'saveEvidenceVerification',opdId,subunsur,paramId,level,uploadId,status});
+        return jsonResponse({status:'success',verification,summary:calculateVerificationSummaryServer(arr)});
+      }
+
+      case 'saveRtpEvidenceVerification': {
+        const opdId=String(params.opdId||'');
+        const uploadId=String(params.uploadId||'');
+        const status=String(params.status||'');
+        const examinerName=sanitizeVerificationField(params.examinerName,100);
+        const note=sanitizeVerificationField(params.note,1000);
+        if(!opdId || !uploadId) throw new Error('Identitas evidence RTP tidak lengkap.');
+        if(!VERIFICATION_STATUS_SET.has(status)) throw new Error('Hasil verifikasi tidak valid.');
+        if(!examinerName) throw new Error('Nama pemeriksa wajib diisi.');
+        if((status==='diterima_catatan' || status==='dikembalikan') && !note) throw new Error('Catatan pemeriksa wajib diisi untuk status ini.');
+        const rec=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,year).all();
+        if(!rec.results.length) throw new Error('OPD tidak ditemukan.');
+        let list=[]; try{list=rec.results[0]?.rtp_evidence?JSON.parse(rec.results[0].rtp_evidence):[]}catch{}
+        if(!Array.isArray(list)) list=[];
+        const fileObj=list.find(x=>x && typeof x==='object' && String(x.uploadId||'')===uploadId);
+        if(!fileObj) throw new Error('File Evidence RTP tidak ditemukan pada OPD yang sama.');
+        const now=new Date().toISOString();
+        const verification={examinerName,note,status,verifiedAt:now,updatedAt:now};
+        fileObj.verification=verification;
+        await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET rtp_evidence=? WHERE id=? AND year=?").bind(JSON.stringify(list),opdId,year));
+        notifyRealtime(env,ctx,year,{action:'saveRtpEvidenceVerification',opdId,uploadId,status});
+        return jsonResponse({status:'success',verification,summary:calculateVerificationSummaryServer(list)});
+      }
+
       case 'deleteOpd': {
         if (params.opdId === 'all') await env.DB.prepare("DELETE FROM opd_data WHERE year = ?").bind(year).run();
         else await env.DB.prepare("DELETE FROM opd_data WHERE id = ?").bind(params.opdId).run();
