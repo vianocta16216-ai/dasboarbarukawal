@@ -2123,6 +2123,19 @@ function removeUploadedFile(opdId, subCode, paramId, level, fileUrl) {
   document.getElementById('fileDeleteModal').classList.add('active');
 }
 
+function closeFileDeleteModal() {
+  document.getElementById('fileDeleteModal')?.classList.remove('active');
+  fileToDelete = null;
+  isDeletingFile = false;
+  const btnOk = document.getElementById('fileDeleteOk');
+  if (btnOk) {
+    btnOk.disabled = false;
+    btnOk.textContent = 'Ya, Hapus';
+  }
+}
+
+document.getElementById('fileDeleteCancel')?.addEventListener('click', closeFileDeleteModal);
+
 document.getElementById('fileDeleteOk').addEventListener('click', async function() {
   if (isDeletingFile) return;
   if (!fileToDelete) return;
