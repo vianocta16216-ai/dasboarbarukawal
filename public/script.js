@@ -531,6 +531,189 @@ async function retryIndexedDbUploads(){
 // ============================================================
 // PERUBAHAN KEAMANAN: TAMBAHKAN FUNGSI ESCAPE HTML
 // ============================================================
+// ====== VERIFIKASI INSPEKTORAT EVIDENCE ======
+// Bobot persentase dibuat eksplisit agar mudah disesuaikan tanpa menyentuh
+// alur upload. Diterima = penuh, Diterima dengan Catatan = sebagian,
+// Dikembalikan/Belum Diverifikasi = 0.
+const VERIFICATION_WEIGHTS = Object.freeze({
+  diterima: 1,
+  diterima_catatan: 0.75,
+  dikembalikan: 0,
+  '': 0,
+  pending: 0
+});
+const VERIFICATION_LABELS = Object.freeze({
+  diterima: 'Diterima',
+  diterima_catatan: 'Diterima dengan Catatan',
+  dikembalikan: 'Dikembalikan',
+  '': 'Belum Diverifikasi',
+  pending: 'Belum Diverifikasi'
+});
+
+function normalizeVerification(raw) {
+  const v = raw && typeof raw === 'object' ? raw : {};
+  const status = Object.prototype.hasOwnProperty.call(VERIFICATION_LABELS, String(v.status || '')) ? String(v.status || '') : '';
+  return {
+    examinerName: String(v.examinerName || v.namaPemeriksa || '').trim(),
+    note: String(v.note || v.catatanPemeriksa || '').trim(),
+    status,
+    verifiedAt: v.verifiedAt || null,
+    updatedAt: v.updatedAt || null
+  };
+}
+
+function getVerificationScore(file) {
+  const v = normalizeVerification(file?.verification);
+  return Math.round((Number(VERIFICATION_WEIGHTS[v.status] || 0)) * 100);
+}
+
+function getFileVerificationSummary(files) {
+  const arr = Array.isArray(files) ? files.filter(Boolean) : [];
+  const summary = {
+    total: arr.length,
+    verified: 0,
+    accepted: 0,
+    withNotes: 0,
+    returned: 0,
+    percentage: 0,
+    progress: 0
+  };
+  if (!arr.length) return summary;
+  let scoreSum = 0;
+  arr.forEach(file => {
+    const v = normalizeVerification(file?.verification);
+    const status = v.status;
+    const verified = ['diterima','diterima_catatan','dikembalikan'].includes(status);
+    if (verified) summary.verified++;
+    if (status === 'diterima') summary.accepted++;
+    else if (status === 'diterima_catatan') summary.withNotes++;
+    else if (status === 'dikembalikan') summary.returned++;
+    scoreSum += getVerificationScore(file);
+  });
+  summary.percentage = Math.round((scoreSum / arr.length) * 100) / 100;
+  summary.progress = Math.round((summary.verified / arr.length) * 10000) / 100;
+  return summary;
+}
+
+function getAllStructureEvidenceFiles(row) {
+  const out = [];
+  const source = row?.subunsurs || {};
+  const subs = Object.keys(SUBUNSUR_DATA || {});
+  const paramSource = PARAM_LIST.length ? PARAM_LIST : subs.flatMap(subCode =>
+    (SUBUNSUR_DATA[subCode]?.params || []).map(param => ({subCode, paramId:String(param.id)}))
+  );
+  paramSource.forEach(param => {
+    const item = source?.[param.subCode]?.[param.paramId];
+    for (let lv = 1; lv <= 5; lv++) {
+      const files = item?.['files' + lv];
+      if (Array.isArray(files)) out.push(...files);
+      else if (typeof files === 'string') {
+        try { const parsed = JSON.parse(files); if (Array.isArray(parsed)) out.push(...parsed); } catch (_) {}
+      }
+    }
+  });
+  return out;
+}
+
+function getRowStructureVerificationSummary(row) {
+  return getFileVerificationSummary(getAllStructureEvidenceFiles(row));
+}
+
+function getRtpEvidenceVerificationSummary(row) {
+  return getFileVerificationSummary(Array.isArray(row?.rtpEvidence) ? row.rtpEvidence : []);
+}
+
+function verificationStatusOptions(current='') {
+  return `<option value="" ${current === '' ? 'selected' : ''}>Belum Diverifikasi</option>
+    <option value="diterima" ${current === 'diterima' ? 'selected' : ''}>Diterima</option>
+    <option value="diterima_catatan" ${current === 'diterima_catatan' ? 'selected' : ''}>Diterima dengan Catatan</option>
+    <option value="dikembalikan" ${current === 'dikembalikan' ? 'selected' : ''}>Dikembalikan</option>`;
+}
+
+function formatVerificationDate(value) {
+  if (!value) return '';
+  try { return new Date(value).toLocaleString('id-ID', { dateStyle:'medium', timeStyle:'short' }); }
+  catch (_) { return String(value); }
+}
+
+function updateStructureVerificationTableSummary(row) {
+  if (!row) return;
+  const summary = getRowStructureVerificationSummary(row);
+  const el = document.querySelector(`.structure-evidence-summary[data-id="${CSS.escape(String(row.id))}"]`);
+  if (el) {
+    el.innerHTML = `${summary.percentage.toFixed(0)}%<small>${summary.total} file</small>`;
+    el.title = `Persentase verifikasi evidence: ${summary.percentage.toFixed(2)}%. Diterima ${summary.accepted}, catatan ${summary.withNotes}, dikembalikan ${summary.returned}.`;
+  }
+}
+
+function updateRtpVerificationTableSummary(row) {
+  if (!row) return;
+  const summary = getRtpEvidenceVerificationSummary(row);
+  const el = document.querySelector(`.rtp-evidence-summary[data-id="${CSS.escape(String(row.id))}"]`);
+  if (el) {
+    el.innerHTML = `${summary.percentage.toFixed(0)}%<small>${summary.total} file</small>`;
+    el.title = `Persentase verifikasi Evidence RTP: ${summary.percentage.toFixed(2)}%. Diterima ${summary.accepted}, catatan ${summary.withNotes}, dikembalikan ${summary.returned}.`;
+  }
+}
+
+async function saveEvidenceVerification(row, subCode, paramId, level, uploadId, controls) {
+  if (!row || !uploadId) throw new Error('Identitas file verifikasi tidak ditemukan.');
+  const examinerName = String(controls?.name?.value || '').trim();
+  const note = String(controls?.note?.value || '').trim();
+  const status = String(controls?.status?.value || '');
+  if (!status) throw new Error('Pilih hasil verifikasi terlebih dahulu.');
+  if (!examinerName) throw new Error('Nama pemeriksa wajib diisi.');
+  if ((status === 'diterima_catatan' || status === 'dikembalikan') && !note) {
+    throw new Error('Catatan pemeriksa wajib diisi untuk status ini.');
+  }
+  const saveBtn = controls?.button;
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Menyimpan...'; }
+  try {
+    const d = await callServerWithRetry('saveEvidenceVerification', {
+      opdId: row.id, year: currentYear, subunsur: subCode, paramId, level, uploadId,
+      examinerName, note, status
+    }, 3);
+    const item = row.subunsurs?.[subCode]?.[paramId]?.['files' + level];
+    const fileObj = Array.isArray(item) ? item.find(x => x && typeof x === 'object' && x.uploadId === uploadId) : null;
+    if (fileObj) fileObj.verification = d.verification || { examinerName, note, status, verifiedAt: new Date().toISOString() };
+    renderFileList(row, subCode, paramId, level);
+    const rowSummary = getRowStructureVerificationSummary(row);
+    row.structureVerificationSummary = rowSummary;
+    updateStructureVerificationTableSummary(row);
+    render();
+    return d;
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Simpan Verifikasi'; }
+  }
+}
+
+async function saveRtpEvidenceVerification(row, uploadId, controls) {
+  if (!row || !uploadId) throw new Error('Identitas file verifikasi tidak ditemukan.');
+  const examinerName = String(controls?.name?.value || '').trim();
+  const note = String(controls?.note?.value || '').trim();
+  const status = String(controls?.status?.value || '');
+  if (!status) throw new Error('Pilih hasil verifikasi terlebih dahulu.');
+  if (!examinerName) throw new Error('Nama pemeriksa wajib diisi.');
+  if ((status === 'diterima_catatan' || status === 'dikembalikan') && !note) {
+    throw new Error('Catatan pemeriksa wajib diisi untuk status ini.');
+  }
+  const saveBtn = controls?.button;
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Menyimpan...'; }
+  try {
+    const d = await callServerWithRetry('saveRtpEvidenceVerification', {
+      opdId: row.id, year: currentYear, uploadId, examinerName, note, status
+    }, 3);
+    const fileObj = (row.rtpEvidence || []).find(x => x && typeof x === 'object' && x.uploadId === uploadId);
+    if (fileObj) fileObj.verification = d.verification || { examinerName, note, status, verifiedAt: new Date().toISOString() };
+    renderRtpEvidenceList(row);
+    updateRtpVerificationTableSummary(row);
+    render();
+    return d;
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Simpan Verifikasi'; }
+  }
+}
+
 function escapeHtml(str) {
   return String(str == null ? '' : str)
     .replace(/&/g, '&amp;')
@@ -932,12 +1115,12 @@ function render() {
         <td><input class="auto-structure-value" type="number" data-id="${r.id}" value="${Number(struktur).toFixed(2)}" readonly aria-label="Nilai Struktur dan Proses otomatis" title="Otomatis dari 43 parameter"></td>
         <td><span class="badge ${strukturStatus==='Selesai'?'badge-lengkap':(strukturStatus==='Proses'?'badge-sebagian':'badge-kosong')}">${strukturStatus}</span></td>
         <td><span class="badge ${badgeClass}" title="Jumlah parameter dengan evidence pada 43 parameter">${badgeLabel}</span></td>
-        <td><button class="btn-detail" data-id="${r.id}" title="Evidence Struktur dan Proses">📁</button></td>
+        <td><div class="evidence-cell"><button class="btn-detail" data-id="${r.id}" title="Evidence Struktur dan Proses">📁</button><span class="structure-evidence-summary" data-id="${r.id}">${getRowStructureVerificationSummary(r).percentage.toFixed(0)}%<small>${getRowStructureVerificationSummary(r).total} file</small></span></div></td>
         <td><button class="btn-kk" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja SPIP">📊</button></td>
         <td><button class="btn-report-pm" data-id="${r.id}" title="Upload Laporan Hasil PM SPIP">📄</button><div class="report-count pm">${Array.isArray(r.pmSpipReports)?r.pmSpipReports.length:0}</div></td>
         <td><button class="btn-kk-rtp" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja RTP">📋</button></td>
         <td><button class="btn-report-rr" data-id="${r.id}" title="Upload Laporan Pemantauan RR_RTP">📄</button><div class="report-count rr">${Array.isArray(r.rrRtpReports)?r.rrRtpReports.length:0}</div></td>
-        <td><button class="btn-rtp-evidence" data-id="${r.id}" title="Upload Evidence RTP">📤</button><div class="rtp-evidence-count">${Array.isArray(r.rtpEvidence)?r.rtpEvidence.length:0}</div></td>
+        <td><div class="evidence-cell"><button class="btn-rtp-evidence" data-id="${r.id}" title="Upload Evidence RTP / Verifikasi Inspektorat">📤</button><span class="rtp-evidence-summary" data-id="${r.id}">${getRtpEvidenceVerificationSummary(r).percentage.toFixed(0)}%<small>${Array.isArray(r.rtpEvidence)?r.rtpEvidence.length:0} file</small></span></div></td>
         <td><button class="del-btn" data-id="${r.id}" title="Hapus">&times;</button></td>
       </tr>`;
     }).join('');
@@ -1483,6 +1666,7 @@ async function openEditModal(id) {
     <small style="color:#64748b;">Maks. 10 MB/file • total pilihan maks. 10 MB • bisa pilih banyak file dengan Ctrl/Shift</small>
   </div>
   <div class="evid-upload-progress" data-sub="${subCode}" data-param="${param.id}" data-level="${lv}"></div>
+  <div class="verification-level-summary" data-sub="${subCode}" data-param="${param.id}" data-level="${lv}"></div>
   <div class="file-list" style="margin-top:8px; display:flex; flex-direction:column; gap:6px;"></div>
 </div>`;
       }
@@ -1719,10 +1903,18 @@ function renderFileList(row, subCode, paramId, level) {
   } else if (typeof rawFiles === 'string') {
     try { const parsed = JSON.parse(rawFiles); files = Array.isArray(parsed) ? parsed : []; } catch (_) { files = []; }
   } else if (rawFiles && typeof rawFiles === 'object') {
-    // Legacy/terkunci: jangan pernah memanggil forEach pada object.
     if (Array.isArray(rawFiles.files)) files = rawFiles.files;
     else files = Object.values(rawFiles).filter(v => typeof v === 'string' || (v && typeof v === 'object'));
   }
+
+  const summaryEl = rowEl.querySelector('.verification-level-summary');
+  const summary = getFileVerificationSummary(files);
+  if (summaryEl) {
+    summaryEl.innerHTML = files.length
+      ? `<strong>Persentase Verifikasi Level ${escapeHtml(level)}: ${summary.percentage.toFixed(0)}%</strong><span>Verifikasi selesai ${summary.progress.toFixed(0)}% · ${summary.total} file · Diterima ${summary.accepted} · Catatan ${summary.withNotes} · Dikembalikan ${summary.returned}</span>`
+      : `<span>Belum ada file untuk diverifikasi pada Level ${escapeHtml(level)}.</span>`;
+  }
+
   fileListEl.innerHTML = '';
   if (!files.length) {
     fileListEl.innerHTML = '<span style="font-size:12px;color:#64748b;">Belum ada file.</span>';
@@ -1730,43 +1922,82 @@ function renderFileList(row, subCode, paramId, level) {
   }
 
   files.forEach((fileObj, index) => {
-    let fileUrl, fileName;
+    let fileUrl = '', fileName = '';
+    const isObject = fileObj && typeof fileObj === 'object';
     if (typeof fileObj === 'string') {
       fileUrl = fileObj;
       const urlParts = fileUrl.split('?')[0].split('/');
       fileName = decodeURIComponent(urlParts[urlParts.length - 1]) || `File ${index + 1}`;
     } else {
-      fileUrl = fileObj.url || '';
-      fileName = fileObj.fileName || fileObj.name || `File ${index + 1}`;
+      fileUrl = fileObj?.url || '';
+      fileName = fileObj?.fileName || fileObj?.name || `File ${index + 1}`;
     }
 
     const ext = fileName.split('.').pop().toLowerCase();
     let displayUrl = fileUrl;
-
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
-       displayUrl = fileUrl;
-    }
-    else if (['xls', 'xlsx'].includes(ext)) {
-       displayUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(fileUrl)}`;
-    }
-    else if (['pdf', 'doc', 'docx', 'ppt', 'pptx'].includes(ext)) {
-       displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
+    if (['xls', 'xlsx'].includes(ext)) {
+      displayUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(fileUrl)}`;
+    } else if (['pdf', 'doc', 'docx', 'ppt', 'pptx'].includes(ext)) {
+      displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
     }
 
     const div = document.createElement('div');
-    div.style.cssText = 'display:flex; align-items:center; gap:8px; background:#f1f5f9; padding:6px; border-radius:6px; margin-top:6px; flex-wrap:wrap;';
-    const status = typeof fileObj === 'object' ? (fileObj.syncStatus || (fileObj.gdriveId ? 'done' : 'pending')) : 'pending';
+    div.className = 'evidence-file-card';
+    const status = isObject ? (fileObj.syncStatus || (fileObj.gdriveId ? 'done' : 'pending')) : 'pending';
     const statusLabel = status === 'done' ? '✅ R2 + Google Drive' : (status === 'retrying' ? '🔄 Perlu Retry Google Drive' : '⏳ Menyimpan ke R2 + Google Drive');
-    const retryButton = (status !== 'done') && typeof fileObj === 'object' && fileObj.uploadId ? `<button type="button" onclick="retryUploadedFile('${row.id}','${subCode}','${paramId}',${level},'${fileObj.uploadId}')" style="background:#dbeafe;color:#1d4ed8;border:none;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;">↻ Retry</button>` : '';
+    const retryButton = (status !== 'done') && isObject && fileObj.uploadId ? `<button type="button" onclick="retryUploadedFile('${row.id}','${subCode}','${paramId}',${level},'${fileObj.uploadId}')" class="file-action retry">↻ Retry</button>` : '';
+
+    const verification = normalizeVerification(fileObj?.verification);
+    const verifiedClass = verification.status ? ` is-${verification.status}` : '';
+    const canVerify = isObject && !!fileObj.uploadId;
+    const verifyHtml = canVerify ? `
+      <div class="file-verification-panel${verifiedClass}">
+        <div class="file-verification-head"><strong>🛡️ Verifikasi Inspektorat</strong><span class="verification-score-badge">${getVerificationScore(fileObj)}%</span></div>
+        <div class="verification-form-grid">
+          <label>Nama Pemeriksa<input type="text" maxlength="100" class="verify-examiner" value="${escapeHtml(verification.examinerName)}" placeholder="Ketik nama pemeriksa"></label>
+          <label>Hasil Verifikasi<select class="verify-status">${verificationStatusOptions(verification.status)}</select></label>
+        </div>
+        <label class="verify-note-label">Catatan Pemeriksa<textarea maxlength="1000" class="verify-note" placeholder="Catatan, alasan pengembalian, atau koreksi yang perlu ditindaklanjuti...">${escapeHtml(verification.note)}</textarea></label>
+        <div class="verification-save-row"><span class="verification-updated">${verification.verifiedAt ? 'Diverifikasi: ' + escapeHtml(formatVerificationDate(verification.verifiedAt)) : 'Belum diverifikasi'}</span><button type="button" class="verification-save-btn" data-verify-evidence="1">💾 Simpan Verifikasi</button></div>
+      </div>` : `
+      <div class="file-verification-legacy">⚠️ File lama belum memiliki identitas upload. Upload ulang file ini untuk mengaktifkan verifikasi Inspektorat per file.</div>`;
+
     div.innerHTML = `
-      <a href="${displayUrl}" target="_blank" rel="noopener" class="file-link" style="flex-grow:1; min-width:220px; margin:0;">📎 ${escapeHtml(fileName)}</a>
-      <span style="font-size:11px;color:#475569;">${statusLabel}</span>
-      ${retryButton}
-      <button type="button" onclick="removeUploadedFile('${row.id}', '${subCode}', '${paramId}', ${level}, '${fileUrl}')" style="background:#fee2e2; color:#dc2626; border:none; border-radius:6px; padding:4px 8px; cursor:pointer; font-size:12px;">🗑️ Hapus</button>
+      <div class="evidence-file-main">
+        <a href="${escapeHtml(displayUrl)}" target="_blank" rel="noopener" class="file-link">📎 ${escapeHtml(fileName)}</a>
+        <span class="evidence-storage-status">${statusLabel}</span>
+        ${retryButton}
+        <button type="button" class="file-action delete" onclick="removeUploadedFile('${row.id}', '${subCode}', '${paramId}', ${level}, '${String(fileUrl).replace(/'/g, "\\'")}')">🗑️ Hapus</button>
+      </div>
+      ${verifyHtml}
     `;
+    if (canVerify) {
+      const saveBtn = div.querySelector('.verification-save-btn');
+      div.dataset.uploadId = fileObj.uploadId;
+      saveBtn.dataset.uploadId = fileObj.uploadId;
+      saveBtn.dataset.sub = subCode;
+      saveBtn.dataset.param = paramId;
+      saveBtn.dataset.level = String(level);
+      saveBtn.addEventListener('click', async () => {
+        const statusEl = div.querySelector('.verification-updated');
+        try {
+          statusEl.textContent = '⏳ Menyimpan verifikasi...';
+          await saveEvidenceVerification(row, subCode, paramId, level, fileObj.uploadId, {
+            name: div.querySelector('.verify-examiner'),
+            note: div.querySelector('.verify-note'),
+            status: div.querySelector('.verify-status'),
+            button: saveBtn
+          });
+        } catch (err) {
+          statusEl.textContent = '❌ ' + (err.message || err);
+          statusEl.style.color = '#b91c1c';
+        }
+      });
+    }
     fileListEl.appendChild(div);
   });
 }
+
 async function retryUploadedFile(opdId, subCode, paramId, level, uploadId) {
   const row = rows.find(r => r.id === opdId); if(!row) return;
   const rawFiles = row.subunsurs?.[subCode]?.[paramId]?.['files'+level];
@@ -2643,7 +2874,32 @@ document.getElementById('reportUploadClose')?.addEventListener('click',closeRepo
 
 // ===== EVIDENCE RTP =====
 let rtpEvidenceEditingRowId=null;function rtpEvidenceSetStatus(msg,type=''){const e=document.getElementById('rtpEvidenceStatus');if(!e)return;e.textContent=msg||'';e.className='sheet-links-status'+(type?' '+type:'');e.style.display=msg?'block':'none';}
-function renderRtpEvidenceList(row){const e=document.getElementById('rtpEvidenceList');if(!e)return;const a=Array.isArray(row.rtpEvidence)?row.rtpEvidence:[];if(!a.length){e.innerHTML='<div class="sheet-link-card">Belum ada evidence RTP.</div>';return;}e.innerHTML='<div class="rtp-file-list">'+a.map((f,i)=>{const status=f.gdriveId?'✅ Google Drive + R2':(f.syncStatus==='retrying'?'🔄 Perlu Retry Google Drive':'⏳ Mengirim ke Google Drive');const retry=(f.gdriveId||!f.uploadId)?'':`<button class="rtp-retry-btn" data-upload-id="${sheetLinksEsc(f.uploadId)}">↻ Retry</button>`;return `<div class="rtp-file-item"><div><div class="rtp-file-name">📄 ${sheetLinksEsc(f.fileName||'File')}</div><div class="rtp-file-meta">${status}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions"><a href="${sheetLinksEsc(f.url||'#')}" target="_blank" rel="noopener noreferrer">Buka</a>${retry}<button class="rtp-delete-btn" data-index="${i}">Hapus</button></div></div>`;}).join('')+'</div>';}
+function renderRtpEvidenceList(row){
+  const e=document.getElementById('rtpEvidenceList');
+  if(!e)return;
+  const a=Array.isArray(row.rtpEvidence)?row.rtpEvidence:[];
+  const summary=getFileVerificationSummary(a);
+  const summaryHtml=`<div class="rtp-verification-summary"><div><strong>Persentase Verifikasi Evidence RTP</strong><b>${summary.percentage.toFixed(0)}%</b></div><div class="rtp-verification-stats">${summary.total} file · Verifikasi selesai ${summary.progress.toFixed(0)}% · Diterima ${summary.accepted} · Catatan ${summary.withNotes} · Dikembalikan ${summary.returned}</div><div class="rtp-verification-legend">Bobot otomatis: Diterima 100% · Diterima dengan Catatan 75% · Dikembalikan 0%</div></div>`;
+  if(!a.length){e.innerHTML=summaryHtml+'<div class="sheet-link-card">Belum ada evidence RTP.</div>';updateRtpVerificationTableSummary(row);return;}
+  e.innerHTML=summaryHtml+'<div class="rtp-file-list">'+a.map((f,i)=>{
+    const status=f.gdriveId?'✅ Google Drive + R2':(f.syncStatus==='retrying'?'🔄 Perlu Retry Google Drive':'⏳ Mengirim ke Google Drive');
+    const retry=(f.gdriveId||!f.uploadId)?'':`<button class="rtp-retry-btn" data-upload-id="${sheetLinksEsc(f.uploadId)}">↻ Retry</button>`;
+    const v=normalizeVerification(f?.verification);
+    const verifyScore=getVerificationScore(f);
+    const verifyHtml=f?.uploadId?`<div class="file-verification-panel rtp-verification-panel is-${v.status||'pending'}">
+      <div class="file-verification-head"><strong>🛡️ Verifikasi Inspektorat</strong><span class="verification-score-badge">${verifyScore}%</span></div>
+      <div class="verification-form-grid">
+        <label>Nama Pemeriksa<input type="text" maxlength="100" class="rtp-verify-examiner" value="${sheetLinksEsc(v.examinerName)}" placeholder="Ketik nama pemeriksa"></label>
+        <label>Hasil Verifikasi<select class="rtp-verify-status">${verificationStatusOptions(v.status)}</select></label>
+      </div>
+      <label class="verify-note-label">Catatan Pemeriksa<textarea maxlength="1000" class="rtp-verify-note" placeholder="Catatan, alasan pengembalian, atau koreksi yang perlu ditindaklanjuti...">${sheetLinksEsc(v.note)}</textarea></label>
+      <div class="verification-save-row"><span class="verification-updated">${v.verifiedAt ? 'Diverifikasi: '+sheetLinksEsc(formatVerificationDate(v.verifiedAt)) : 'Belum diverifikasi'}</span><button class="verification-save-btn rtp-verification-save" data-upload-id="${sheetLinksEsc(f.uploadId)}">💾 Simpan Verifikasi</button></div>
+    </div>`:'<div class="file-verification-legacy">⚠️ File lama belum memiliki identitas upload. Upload ulang file ini untuk mengaktifkan verifikasi Inspektorat.</div>';
+    return `<div class="rtp-file-item rtp-file-item-expanded"><div class="rtp-file-top"><div><div class="rtp-file-name">📄 ${sheetLinksEsc(f.fileName||'File')}</div><div class="rtp-file-meta">${status}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions"><a href="${sheetLinksEsc(f.url||'#')}" target="_blank" rel="noopener noreferrer">Buka</a>${retry}<button class="rtp-delete-btn" data-index="${i}">Hapus</button></div></div>${verifyHtml}</div>`;
+  }).join('')+'</div>';
+  updateRtpVerificationTableSummary(row);
+}
+
 async function openRtpEvidenceModal(id){const row=rows.find(r=>r.id===id);if(!row)return;const modal=document.getElementById('rtpEvidenceModal');const opdName=document.getElementById('rtpEvidenceOpdName');if(!modal||!opdName){console.error('Modal Evidence RTP belum tersedia di DOM.');return;}rtpEvidenceEditingRowId=id;opdName.textContent=row.opd||'Tanpa Nama';const folderInput=document.getElementById('rtpEvidenceFolderName');const preview=document.getElementById('rtpEvidenceFolderPreview');const setPreview=()=>{if(preview)preview.textContent=(folderInput?.value||'').trim()||'Evidence RTP';};if(folderInput){folderInput.value=row.rtpEvidenceFolder||'Evidence RTP';folderInput.oninput=setPreview;}setPreview();modal.classList.add('active');rtpEvidenceSetStatus('Memuat daftar evidence RTP...');try{const d=await callServer('getRtpEvidence',{opdId:id,year:currentYear});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];row.rtpEvidenceFolder=d.folderName||row.rtpEvidenceFolder||'Evidence RTP';row.rtpEvidenceFolderId=d.folderId||row.rtpEvidenceFolderId||null;row.rtpEvidenceFolderUrl=d.folderUrl||row.rtpEvidenceFolderUrl||null;if(folderInput)folderInput.value=row.rtpEvidenceFolder;setPreview();renderRtpEvidenceList(row);rtpEvidenceSetStatus(row.rtpEvidenceFolderUrl?'✅ Folder Google Drive terhubung. Silakan upload file.':'Silakan tulis nama folder, lalu upload file.','success');}catch(err){rtpEvidenceSetStatus('Gagal memuat: '+err.message,'error');}}
 async function uploadRtpEvidence(file){
   const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);
@@ -2681,7 +2937,29 @@ document.getElementById('rtpEvidenceFolderSave')?.addEventListener('click',async
   await Promise.all(workers);
   rtpEvidenceSetStatus(failed?`Selesai: ${done} berhasil, ${failed} gagal.`:`✅ ${done} file diproses; yang belum masuk Google Drive dapat di-Retry.` ,failed?'error':'success');
   e.target.value='';
-});document.getElementById('rtpEvidenceList')?.addEventListener('click',async e=>{const rb=e.target.closest('.rtp-retry-btn');if(rb){const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[]).find(x=>x.uploadId===rb.dataset.uploadId);if(!f)return;try{f.syncStatus='retrying';renderRtpEvidenceList(row);rtpEvidenceSetStatus('Mencoba ulang backup Google Drive...');const d=await callServerWithRetry('retryDriveBackup',{opdId:row.id,year:currentYear,type:'rtp',uploadId:f.uploadId},2);f.gdriveId=d.gdriveId||f.gdriveId||null;f.syncStatus=d.syncStatus||'retrying';f.syncError=d.driveError||null;renderRtpEvidenceList(row);render();rtpEvidenceSetStatus(f.gdriveId?'✅ R2 + Google Drive tersimpan.':'🔄 Google Drive belum berhasil. Silakan Retry.',f.gdriveId?'success':'');}catch(err){f.syncStatus='retrying';f.syncError=err.message;renderRtpEvidenceList(row);rtpEvidenceSetStatus('Retry gagal: '+err.message,'error');}return;}const b=e.target.closest('.rtp-delete-btn');if(!b)return;const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[])[Number(b.dataset.index)];if(!f)return;try{rtpEvidenceSetStatus('Menghapus...');const d=await callServerWithRetry('deleteRtpEvidence',{opdId:row.id,year:currentYear,fileUrl:f.url,gdriveId:f.gdriveId||null});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];renderRtpEvidenceList(row);render();rtpEvidenceSetStatus('File dihapus.','success');}catch(err){rtpEvidenceSetStatus('Gagal hapus: '+err.message,'error');}});document.getElementById('rtpEvidenceRefresh')?.addEventListener('click',()=>{if(rtpEvidenceEditingRowId)openRtpEvidenceModal(rtpEvidenceEditingRowId);});function closeRtpEvidenceModal(){document.getElementById('rtpEvidenceModal')?.classList.remove('active');rtpEvidenceEditingRowId=null;}document.getElementById('rtpEvidenceClose')?.addEventListener('click',closeRtpEvidenceModal);document.getElementById('rtpEvidenceCloseFooter')?.addEventListener('click',closeRtpEvidenceModal);
+});document.getElementById('rtpEvidenceList')?.addEventListener('click',async e=>{
+  const vb=e.target.closest('.rtp-verification-save');
+  if(vb){
+    const row=rows.find(r=>r.id===rtpEvidenceEditingRowId); if(!row)return;
+    const file=(row.rtpEvidence||[]).find(x=>x&&x.uploadId===vb.dataset.uploadId); if(!file)return;
+    const panel=vb.closest('.file-verification-panel');
+    const statusEl=panel?.querySelector('.verification-updated');
+    try{
+      if(statusEl)statusEl.textContent='⏳ Menyimpan verifikasi...';
+      await saveRtpEvidenceVerification(row,file.uploadId,{
+        name:panel?.querySelector('.rtp-verify-examiner'),
+        note:panel?.querySelector('.rtp-verify-note'),
+        status:panel?.querySelector('.rtp-verify-status'),
+        button:vb
+      });
+      if(statusEl)statusEl.style.color='#166534';
+    }catch(err){if(statusEl){statusEl.textContent='❌ '+(err.message||err);statusEl.style.color='#b91c1c';}}
+    return;
+  }
+  const rb=e.target.closest('.rtp-retry-btn');
+  if(rb){const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[]).find(x=>x.uploadId===rb.dataset.uploadId);if(!f)return;try{f.syncStatus='retrying';renderRtpEvidenceList(row);rtpEvidenceSetStatus('Mencoba ulang backup Google Drive...');const d=await callServerWithRetry('retryDriveBackup',{opdId:row.id,year:currentYear,type:'rtp',uploadId:f.uploadId},2);f.gdriveId=d.gdriveId||f.gdriveId||null;f.syncStatus=d.syncStatus||'retrying';f.syncError=d.driveError||null;renderRtpEvidenceList(row);render();rtpEvidenceSetStatus(f.gdriveId?'✅ R2 + Google Drive tersimpan.':'🔄 Google Drive belum berhasil. Silakan Retry.',f.gdriveId?'success':'');}catch(err){f.syncStatus='retrying';f.syncError=err.message;renderRtpEvidenceList(row);rtpEvidenceSetStatus('Retry gagal: '+err.message,'error');}return;}
+  const b=e.target.closest('.rtp-delete-btn');if(!b)return;const row=rows.find(r=>r.id===rtpEvidenceEditingRowId);if(!row)return;const f=(row.rtpEvidence||[])[Number(b.dataset.index)];if(!f)return;try{rtpEvidenceSetStatus('Menghapus...');const d=await callServerWithRetry('deleteRtpEvidence',{opdId:row.id,year:currentYear,fileUrl:f.url,gdriveId:f.gdriveId||null});row.rtpEvidence=Array.isArray(d.rtpEvidence)?d.rtpEvidence:[];renderRtpEvidenceList(row);render();rtpEvidenceSetStatus('File dihapus.','success');}catch(err){rtpEvidenceSetStatus('Gagal hapus: '+err.message,'error');}});
+document.getElementById('rtpEvidenceRefresh')?.addEventListener('click',()=>{if(rtpEvidenceEditingRowId)openRtpEvidenceModal(rtpEvidenceEditingRowId);});function closeRtpEvidenceModal(){document.getElementById('rtpEvidenceModal')?.classList.remove('active');rtpEvidenceEditingRowId=null;}document.getElementById('rtpEvidenceClose')?.addEventListener('click',closeRtpEvidenceModal);document.getElementById('rtpEvidenceCloseFooter')?.addEventListener('click',closeRtpEvidenceModal);
 document.addEventListener('click',function(e){
   const close=e.target.closest('#sheetLinksClose,#sheetLinksCancel');
   if(close){closeSpreadsheetModal();return;}

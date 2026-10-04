@@ -1884,3 +1884,42 @@ tbody td:nth-child(2){box-shadow:2px 0 8px rgba(15,23,42,.05)}
     border-radius: 17px;
   }
 }
+
+
+/* ===== VERIFIKASI INSPEKTORAT EVIDENCE ===== */
+.evidence-cell{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:62px}
+.structure-evidence-summary,.rtp-evidence-summary{display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;font-weight:900;line-height:1.05;color:#0f766e;min-width:60px}
+.structure-evidence-summary small,.rtp-evidence-summary small{display:block;margin-top:3px;font-size:10px;font-weight:700;color:#64748b;white-space:nowrap}
+.verification-level-summary{margin:8px 0 2px;padding:8px 10px;border:1px solid #dbeafe;background:#f8fbff;border-radius:9px;color:#334155;font-size:11px;line-height:1.4}
+.verification-level-summary strong{display:inline-block;color:#0f766e;margin-right:7px}
+.verification-level-summary span{color:#64748b}
+.evidence-file-card{border:1px solid #dbe3ee;background:#fff;border-radius:10px;padding:9px;box-shadow:0 1px 3px rgba(15,23,42,.04)}
+.evidence-file-main{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.evidence-file-main .file-link{flex:1;min-width:220px;margin:0}
+.evidence-storage-status{font-size:11px;color:#475569}
+.file-action{border:0;border-radius:7px;padding:5px 9px;cursor:pointer;font-size:11px;font-weight:800}
+.file-action.retry{background:#dbeafe;color:#1d4ed8}.file-action.delete{background:#fee2e2;color:#b91c1c}
+.file-verification-panel{margin-top:9px;padding:10px;border-radius:9px;border:1px solid #dbeafe;background:linear-gradient(180deg,#f8fbff,#fff)}
+.file-verification-panel.is-diterima{border-color:#bbf7d0;background:#f0fdf4}
+.file-verification-panel.is-diterima_catatan{border-color:#fde68a;background:#fffbeb}
+.file-verification-panel.is-dikembalikan{border-color:#fecaca;background:#fff7f7}
+.file-verification-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;color:#334155}
+.verification-score-badge{min-width:36px;text-align:center;padding:4px 7px;border-radius:999px;background:#e0f2fe;color:#0369a1;font-weight:900}
+.file-verification-panel.is-diterima .verification-score-badge{background:#dcfce7;color:#166534}
+.file-verification-panel.is-diterima_catatan .verification-score-badge{background:#fef3c7;color:#92400e}
+.file-verification-panel.is-dikembalikan .verification-score-badge{background:#fee2e2;color:#b91c1c}
+.verification-form-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(190px,.55fr);gap:8px}
+.file-verification-panel label{display:flex;flex-direction:column;gap:5px;font-size:10px;font-weight:800;color:#475569}
+.file-verification-panel input,.file-verification-panel select,.file-verification-panel textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#0f172a;padding:8px 9px;font:inherit;font-size:12px;outline:none}
+.file-verification-panel input:focus,.file-verification-panel select:focus,.file-verification-panel textarea:focus{border-color:#0f766e;box-shadow:0 0 0 3px rgba(15,118,110,.08)}
+.file-verification-panel textarea{min-height:62px;resize:vertical}
+.verify-note-label{margin-top:8px}
+.verification-save-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;flex-wrap:wrap}
+.verification-updated{font-size:10px;color:#64748b;min-height:18px}
+.verification-save-btn{border:0;border-radius:7px;padding:7px 10px;background:#0f766e;color:#fff;font-size:11px;font-weight:800;cursor:pointer}
+.verification-save-btn:hover{background:#0b615d}.verification-save-btn:disabled{opacity:.65;cursor:wait}
+.file-verification-legacy{margin-top:8px;padding:8px 9px;border-radius:7px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:10px;line-height:1.4}
+.rtp-verification-summary{border:1px solid #bae6fd;background:linear-gradient(135deg,#f0f9ff,#f8fafc);border-radius:12px;padding:12px 13px;margin-bottom:12px}
+.rtp-verification-summary>div:first-child{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#334155;font-size:12px}.rtp-verification-summary>div:first-child b{font-size:24px;color:#0f766e;letter-spacing:-.5px}.rtp-verification-stats{margin-top:4px;color:#475569;font-size:11px}.rtp-verification-legend{margin-top:7px;color:#64748b;font-size:10px}
+.rtp-file-item-expanded{display:block}.rtp-file-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.rtp-verification-panel{margin-top:10px}
+@media (max-width:720px){.verification-form-grid{grid-template-columns:1fr}.evidence-file-main .file-link{min-width:0}.rtp-file-top{align-items:flex-start;flex-direction:column}.rtp-file-actions{width:100%;justify-content:flex-end}}
