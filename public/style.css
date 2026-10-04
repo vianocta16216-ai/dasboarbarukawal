@@ -1923,3 +1923,33 @@ tbody td:nth-child(2){box-shadow:2px 0 8px rgba(15,23,42,.05)}
 .rtp-verification-summary>div:first-child{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#334155;font-size:12px}.rtp-verification-summary>div:first-child b{font-size:24px;color:#0f766e;letter-spacing:-.5px}.rtp-verification-stats{margin-top:4px;color:#475569;font-size:11px}.rtp-verification-legend{margin-top:7px;color:#64748b;font-size:10px}
 .rtp-file-item-expanded{display:block}.rtp-file-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.rtp-verification-panel{margin-top:10px}
 @media (max-width:720px){.verification-form-grid{grid-template-columns:1fr}.evidence-file-main .file-link{min-width:0}.rtp-file-top{align-items:flex-start;flex-direction:column}.rtp-file-actions{width:100%;justify-content:flex-end}}
+
+/* ===== REPLACEMENT FILE: hanya muncul setelah verifikasi Dikembalikan ===== */
+.file-action.replace-evidence-btn,
+.rtp-replace-btn{
+  border:1px solid #f59e0b;
+  background:#fff7ed;
+  color:#9a3412;
+  border-radius:7px;
+  padding:7px 10px;
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.file-action.replace-evidence-btn:hover,
+.rtp-replace-btn:hover{background:#ffedd5;border-color:#ea580c}
+.file-action.replace-evidence-btn:disabled,
+.rtp-replace-btn:disabled{opacity:.65;cursor:wait}
+.file-replacement-notice{
+  margin:8px 0 9px;
+  padding:8px 10px;
+  border:1px solid #bbf7d0;
+  border-radius:8px;
+  background:#f0fdf4;
+  color:#166534;
+  font-size:11px;
+  line-height:1.45;
+  font-weight:700;
+}
+.verification-save-row{flex-wrap:wrap}
