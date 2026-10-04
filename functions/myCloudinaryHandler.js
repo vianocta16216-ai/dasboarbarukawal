@@ -276,6 +276,11 @@ function assertGoogleDriveConfigured(env) {
 }
 
 const VERIFICATION_STATUS_SET = new Set(['diterima','diterima_catatan','dikembalikan']);
+function normalizeVerificationStatus(value){
+  const status=String(value||'');
+  return VERIFICATION_STATUS_SET.has(status)?status:'';
+}
+
 const VERIFICATION_WEIGHTS_SERVER = Object.freeze({diterima:1, diterima_catatan:0.75, dikembalikan:0, '':0});
 function sanitizeVerificationField(value,maxLength){
   return String(value ?? '').replace(/[<>`\\]/g,'').trim().substring(0,maxLength);
@@ -871,6 +876,40 @@ async function deleteGoogleDriveFile(env, fileId) {
   }
 }
 
+async function updateGoogleDriveFileContent(env, fileId, fileName, bytes, fileType='application/octet-stream') {
+  const accessToken = await getGoogleAccessToken(env);
+  const safeName = String(fileName || 'evidence').substring(0, 150) || 'evidence';
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const body = new FormData();
+      body.append('metadata', new Blob([JSON.stringify({ name: safeName })], { type: 'application/json' }));
+      body.append('file', new Blob([bytes], { type: fileType || 'application/octet-stream' }), safeName);
+      const url = `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}?uploadType=multipart&supportsAllDrives=true&fields=id,name,mimeType,parents,webViewLink,trashed`;
+      const response = await fetch(url, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body
+      });
+      const raw = await response.text();
+      let data = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch { data = { raw }; }
+      if (response.ok && data.id) return data;
+      const err = new Error(`Google Drive replace gagal (HTTP ${response.status}): ${JSON.stringify(data)}`);
+      err.status = response.status;
+      lastError = err;
+      if (![408, 425, 429, 500, 502, 503, 504].includes(response.status) || attempt === 2) throw err;
+      await new Promise(resolve => setTimeout(resolve, Math.min(4000, 700 * Math.pow(2, attempt) + Math.floor(Math.random() * 300))));
+    } catch (err) {
+      lastError = err;
+      if (attempt === 2) break;
+      if (![408, 425, 429, 500, 502, 503, 504].includes(Number(err?.status)) && err?.name !== 'TypeError') throw err;
+      await new Promise(resolve => setTimeout(resolve, Math.min(4000, 700 * Math.pow(2, attempt))));
+    }
+  }
+  throw lastError || new Error('Google Drive replace gagal tanpa pesan error.');
+}
+
 export async function onRequest({ request, env, ctx }) {
   const ACCESS_PASSWORD = env.ACCESS_PASSWORD;
   const DELETE_PASSWORD = env.DELETE_PASSWORD;
@@ -882,7 +921,7 @@ export async function onRequest({ request, env, ctx }) {
   const SENSITIVE_ACTIONS = [
     'verifyAccess', 'verifyDelete', 'addOpd', 'saveData', 'saveField',
     'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'deleteOpd', 'addYear', 'deleteYear',
-    'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup'
+    'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup'
   ];
 
   // KK RTP dan pengaturan folder Evidence RTP wajib melalui POST.
@@ -890,7 +929,7 @@ export async function onRequest({ request, env, ctx }) {
     try {
       const contentType=request.headers.get('content-type')||'';
       // Binary upload mode: metadata stays in the query string; the request body is the file stream.
-      if(action==='uploadFile' || action==='uploadRtpEvidence' || action==='uploadReportFile'){
+      if(action==='uploadFile' || action==='uploadRtpEvidence' || action==='replaceEvidenceFile' || action==='replaceRtpEvidence' || action==='uploadReportFile'){
         url.searchParams.forEach((value,key)=>{params[key]=value;});
         params.fileType=params.fileType||contentType||'application/octet-stream';
         params.fileName=params.fileName||request.headers.get('X-File-Name')||'evidence';
@@ -1540,6 +1579,7 @@ export async function onRequest({ request, env, ctx }) {
         const now=new Date().toISOString();
         const verification={examinerName,note,status,verifiedAt:now,updatedAt:now};
         fileObj.verification=verification;
+        if(fileObj.replacementStatus==='menunggu_verifikasi') fileObj.replacementStatus=null;
         await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET subunsurs=? WHERE id=? AND year=?").bind(JSON.stringify(obj),opdId,year));
         notifyRealtime(env,ctx,year,{action:'saveEvidenceVerification',opdId,subunsur,paramId,level,uploadId,status});
         return jsonResponse({status:'success',verification,summary:calculateVerificationSummaryServer(arr)});
@@ -1564,6 +1604,7 @@ export async function onRequest({ request, env, ctx }) {
         const now=new Date().toISOString();
         const verification={examinerName,note,status,verifiedAt:now,updatedAt:now};
         fileObj.verification=verification;
+        if(fileObj.replacementStatus==='menunggu_verifikasi') fileObj.replacementStatus=null;
         await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET rtp_evidence=? WHERE id=? AND year=?").bind(JSON.stringify(list),opdId,year));
         notifyRealtime(env,ctx,year,{action:'saveRtpEvidenceVerification',opdId,uploadId,status});
         return jsonResponse({status:'success',verification,summary:calculateVerificationSummaryServer(list)});
@@ -1874,6 +1915,166 @@ export async function onRequest({ request, env, ctx }) {
           return jsonResponse({status:'pending',syncStatus:'retrying',uploadId,driveError:String(err.message||err),message:'R2 tetap tersimpan. Google Drive belum berhasil; retry otomatis akan dilanjutkan.'});
         }
       }
+      case 'replaceEvidenceFile': {
+        assertGoogleDriveConfigured(env);
+        const opdId=String(params.opdId||'');
+        const subunsur=String(params.subunsur||'');
+        const paramId=String(params.paramId||'');
+        const level=String(params.level||'');
+        const uploadId=String(params.uploadId||'');
+        if(!opdId || !subunsur || !paramId || !/^[1-5]$/.test(level) || !uploadId) throw new Error('Identitas file pengganti tidak lengkap.');
+        const file=params.file;
+        const legacyData=params.fileData;
+        if(!file && !legacyData && !request.body) throw new Error('File pengganti tidak diterima');
+        let bytes=null; let fileType=params.fileType||'application/octet-stream'; let fileName=sanitizeString(params.fileName||'evidence').substring(0,150)||'evidence';
+        if(file){
+          if((file.size||0)>10*1024*1024) throw new Error('File > 10MB, terlalu besar!');
+          fileName=sanitizeString(file.name||fileName).substring(0,150)||'evidence';
+          fileType=file.type||fileType; bytes=new Uint8Array(await file.arrayBuffer());
+        }else if(legacyData){
+          bytes=decodeBase64File(legacyData,10);
+        }else{
+          const size=Number(params.fileSize)||0; if(size>10*1024*1024) throw new Error('File > 10MB, terlalu besar!');
+          bytes=new Uint8Array(await request.arrayBuffer());
+        }
+        const rec=await env.DB.prepare("SELECT opd,subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,year).all();
+        if(!rec.results.length) throw new Error('OPD tidak ditemukan');
+        let obj={}; try{obj=rec.results[0]?.subunsurs?JSON.parse(rec.results[0].subunsurs):{}}catch{}
+        const arr=obj?.[subunsur]?.[paramId]?.['files'+level];
+        if(!Array.isArray(arr)) throw new Error('Daftar file evidence tidak ditemukan.');
+        const item=arr.find(x=>x&&typeof x==='object'&&String(x.uploadId||'')===uploadId);
+        if(!item) throw new Error('File evidence tidak ditemukan pada OPD/parameter/level yang sama.');
+        if(normalizeVerificationStatus(item?.verification?.status)!=='dikembalikan') throw new Error('Penggantian file hanya tersedia setelah hasil verifikasi Dikembalikan.');
+        if(!item.r2Key) throw new Error('Lokasi file R2 tidak ditemukan.');
+
+        const previousObject=await env.EVIDENCE_BUCKET.get(item.r2Key);
+        if(!previousObject) throw new Error('File lama pada R2 tidak ditemukan.');
+        const previousBytes=new Uint8Array(await previousObject.arrayBuffer());
+        const previousContentType=previousObject.httpMetadata?.contentType||item.fileType||'application/octet-stream';
+        await env.EVIDENCE_BUCKET.put(item.r2Key,bytes,{httpMetadata:{contentType:fileType}});
+        let gdriveId=String(item.gdriveId||'').trim();
+        try {
+          if(gdriveId){
+            try{
+              const accessToken=await getGoogleAccessToken(env);
+              const currentDrive=await getDriveFile(accessToken,gdriveId);
+              if(currentDrive && !currentDrive.trashed){
+                const updated=await updateGoogleDriveFileContent(env,gdriveId,fileName,bytes,fileType);
+                gdriveId=updated.id||gdriveId;
+              }else{
+                gdriveId='';
+              }
+            }catch(err){
+              if(Number(err?.status)!==404) throw err;
+              gdriveId='';
+            }
+          }
+          if(!gdriveId){
+            const job={type:'evidence',uploadId,year,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key,fileName,fileType,subunsur,paramId,level};
+            gdriveId=await directGoogleDriveBackup(env,job);
+          }
+        } catch (err) {
+          // Do not leave R2 and Drive out of sync when replacement fails.
+          await env.EVIDENCE_BUCKET.put(item.r2Key,previousBytes,{httpMetadata:{contentType:previousContentType}}).catch(()=>{});
+          throw err;
+        }
+        const now=new Date().toISOString();
+        item.fileName=fileName;
+        item.fileType=fileType;
+        item.storage='R2 + Google Drive';
+        item.syncStatus='done';
+        item.syncError=null;
+        item.gdriveId=gdriveId;
+        item.url=`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${item.r2Key}`;
+        item.replacementStatus='menunggu_verifikasi';
+        item.replacedAt=now;
+        item.replacementVersion=Math.max(1,Number(item.replacementVersion||0)+1);
+        item.verification=null;
+        await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET subunsurs=? WHERE id=? AND year=?").bind(JSON.stringify(obj),opdId,year));
+        try{await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET gdrive_id=?,r2_key=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=?").bind(gdriveId,item.r2Key,Date.now(),uploadId));}catch(_){ }
+        try{await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET gdrive_id=?,r2_key=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=?").bind(gdriveId,item.r2Key,Date.now(),uploadId));}catch(_){ }
+        notifyRealtime(env,ctx,year,{action:'replaceEvidenceFile',opdId,subunsur,paramId,level,uploadId,storage:'R2 + Google Drive'});
+        return jsonResponse({status:'success',message:'File evidence berhasil diganti tanpa membuat file/record baru.',file:item});
+      }
+
+      case 'replaceRtpEvidence': {
+        assertGoogleDriveConfigured(env);
+        const opdId=String(params.opdId||'');
+        const uploadId=String(params.uploadId||'');
+        if(!opdId || !uploadId) throw new Error('Identitas Evidence RTP pengganti tidak lengkap.');
+        const file=params.file;
+        const legacyData=params.fileData;
+        if(!file && !legacyData && !request.body) throw new Error('File pengganti tidak diterima');
+        let bytes=null; let fileType=params.fileType||'application/octet-stream'; let fileName=sanitizeString(params.fileName||'evidence').substring(0,150)||'evidence';
+        if(file){
+          if((file.size||0)>10*1024*1024) throw new Error('File > 10MB, terlalu besar!');
+          fileName=sanitizeString(file.name||fileName).substring(0,150)||'evidence';
+          fileType=file.type||fileType; bytes=new Uint8Array(await file.arrayBuffer());
+        }else if(legacyData){
+          bytes=decodeBase64File(legacyData,10);
+        }else{
+          const size=Number(params.fileSize)||0; if(size>10*1024*1024) throw new Error('File >10MB, terlalu besar!');
+          bytes=new Uint8Array(await request.arrayBuffer());
+        }
+        const rec=await env.DB.prepare("SELECT opd,rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,year).all();
+        if(!rec.results.length) throw new Error('OPD tidak ditemukan');
+        let list=[]; try{list=rec.results[0]?.rtp_evidence?JSON.parse(rec.results[0].rtp_evidence):[]}catch{}
+        if(!Array.isArray(list)) list=[];
+        const index=list.findIndex(x=>x&&typeof x==='object'&&String(x.uploadId||'')===uploadId);
+        if(index<0) throw new Error('File Evidence RTP tidak ditemukan pada OPD yang sama.');
+        const item=list[index];
+        if(normalizeVerificationStatus(item?.verification?.status)!=='dikembalikan') throw new Error('Penggantian file hanya tersedia setelah hasil verifikasi Dikembalikan.');
+        if(!item.r2Key) throw new Error('Lokasi file R2 tidak ditemukan.');
+
+        const previousObject=await env.EVIDENCE_BUCKET.get(item.r2Key);
+        if(!previousObject) throw new Error('File lama pada R2 tidak ditemukan.');
+        const previousBytes=new Uint8Array(await previousObject.arrayBuffer());
+        const previousContentType=previousObject.httpMetadata?.contentType||item.fileType||'application/octet-stream';
+        await env.EVIDENCE_BUCKET.put(item.r2Key,bytes,{httpMetadata:{contentType:fileType}});
+        let gdriveId=String(item.gdriveId||'').trim();
+        try {
+          if(gdriveId){
+            try{
+              const accessToken=await getGoogleAccessToken(env);
+              const currentDrive=await getDriveFile(accessToken,gdriveId);
+              if(currentDrive && !currentDrive.trashed){
+                const updated=await updateGoogleDriveFileContent(env,gdriveId,fileName,bytes,fileType);
+                gdriveId=updated.id||gdriveId;
+              }else{
+                gdriveId='';
+              }
+            }catch(err){
+              if(Number(err?.status)!==404) throw err;
+              gdriveId='';
+            }
+          }
+          if(!gdriveId){
+            const folderRec=await env.DB.prepare("SELECT rtp_evidence_folder,rtp_evidence_folder_id FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,year).all();
+            const job={type:'rtp',uploadId,year,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key,fileName,fileType,folderName:item.folderName||folderRec.results?.[0]?.rtp_evidence_folder||'Evidence RTP',gdriveFolderId:item.gdriveFolderId||folderRec.results?.[0]?.rtp_evidence_folder_id||null};
+            gdriveId=await directGoogleDriveBackup(env,job);
+            item.gdriveFolderId=job.gdriveFolderId||null;
+          }
+        } catch (err) {
+          await env.EVIDENCE_BUCKET.put(item.r2Key,previousBytes,{httpMetadata:{contentType:previousContentType}}).catch(()=>{});
+          throw err;
+        }
+        const now=new Date().toISOString();
+        item.fileName=fileName;
+        item.fileType=fileType;
+        item.storage='R2 + Google Drive';
+        item.syncStatus='done';
+        item.syncError=null;
+        item.gdriveId=gdriveId;
+        item.url=`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${item.r2Key}`;
+        item.replacementStatus='menunggu_verifikasi';
+        item.replacedAt=now;
+        item.replacementVersion=Math.max(1,Number(item.replacementVersion||0)+1);
+        item.verification=null;
+        await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET rtp_evidence=? WHERE id=? AND year=?").bind(JSON.stringify(list),opdId,year));
+        notifyRealtime(env,ctx,year,{action:'replaceRtpEvidence',opdId,uploadId,storage:'R2 + Google Drive'});
+        return jsonResponse({status:'success',message:'File Evidence RTP berhasil diganti tanpa membuat file/record baru.',file:item,rtpEvidence:list});
+      }
+
       case 'deleteFile': {
         const cleanUrl = params.fileUrl.split('?')[0];
         const marker = 'r2.dev/';
