@@ -534,7 +534,7 @@ async function retryIndexedDbUploads(){
 // ====== VERIFIKASI INSPEKTORAT EVIDENCE ======
 // Bobot persentase dibuat eksplisit agar mudah disesuaikan tanpa menyentuh
 // alur upload. Diterima = penuh, Diterima dengan Catatan = sebagian,
-// Dikembalikan/Belum Diverifikasi = 0.
+// Dikembalikan/Belum dinilai QA = 0.
 const VERIFICATION_WEIGHTS = Object.freeze({
   diterima: 1,
   diterima_catatan: 0.75,
@@ -546,8 +546,8 @@ const VERIFICATION_LABELS = Object.freeze({
   diterima: 'Diterima',
   diterima_catatan: 'Diterima dengan Catatan',
   dikembalikan: 'Dikembalikan',
-  '': 'Belum Diverifikasi',
-  pending: 'Belum Diverifikasi'
+  '': 'Belum dinilai QA',
+  pending: 'Belum dinilai QA'
 });
 
 function normalizeVerification(raw) {
@@ -619,6 +619,25 @@ function getRowStructureVerificationSummary(row) {
   return getFileVerificationSummary(getAllStructureEvidenceFiles(row));
 }
 
+
+function getRowQaApipSummary(row){
+  const summary=getRowStructureVerificationSummary(row);
+  return {
+    total:summary.total||0,
+    accepted:summary.accepted||0,
+    withNotes:summary.withNotes||0,
+    returned:summary.returned||0,
+    score:Math.round((Number(summary.percentage)||0)*100)/100,
+    percentage:Number(summary.percentage)||0
+  };
+}
+function updateQaApipTableSummary(row){
+  if(!row)return;
+  const s=getRowQaApipSummary(row);
+  const el=document.querySelector(`.qa-apip-summary[data-id="${CSS.escape(String(row.id))}"]`);
+  if(el){el.innerHTML=`${s.percentage.toFixed(0)}%<small>${s.total} file</small>`;el.title=`Hasil QA APIP: ${s.percentage.toFixed(2)}%. Diterima ${s.accepted}, catatan ${s.withNotes}, dikembalikan ${s.returned}.`;}
+}
+
 function getRtpEvidenceVerificationSummary(row) {
   return getFileVerificationSummary(Array.isArray(row?.rtpEvidence) ? row.rtpEvidence : []);
 }
@@ -638,7 +657,7 @@ function getRowDocumentVerificationSummary(row) {
 }
 
 function verificationStatusOptions(current='') {
-  return `<option value="" ${current === '' ? 'selected' : ''}>Belum Diverifikasi</option>
+  return `<option value="" ${current === '' ? 'selected' : ''}>Belum dinilai QA</option>
     <option value="diterima" ${current === 'diterima' ? 'selected' : ''}>Diterima</option>
     <option value="diterima_catatan" ${current === 'diterima_catatan' ? 'selected' : ''}>Diterima dengan Catatan</option>
     <option value="dikembalikan" ${current === 'dikembalikan' ? 'selected' : ''}>Dikembalikan</option>`;
@@ -656,7 +675,7 @@ function updateStructureVerificationTableSummary(row) {
   const el = document.querySelector(`.structure-evidence-summary[data-id="${CSS.escape(String(row.id))}"]`);
   if (el) {
     el.innerHTML = `${summary.percentage.toFixed(0)}%<small>${summary.total} file</small>`;
-    el.title = `Persentase verifikasi evidence: ${summary.percentage.toFixed(2)}%. Diterima ${summary.accepted}, catatan ${summary.withNotes}, dikembalikan ${summary.returned}.`;
+    el.title = `Persentase hasil QA evidence: ${summary.percentage.toFixed(2)}%. Diterima ${summary.accepted}, catatan ${summary.withNotes}, dikembalikan ${summary.returned}.`;
   }
 }
 
@@ -666,7 +685,7 @@ function updateRtpVerificationTableSummary(row) {
   const el = document.querySelector(`.rtp-evidence-summary[data-id="${CSS.escape(String(row.id))}"]`);
   if (el) {
     el.innerHTML = `${summary.percentage.toFixed(0)}%<small>${summary.total} file</small>`;
-    el.title = `Persentase verifikasi Evidence RTP: ${summary.percentage.toFixed(2)}%. Diterima ${summary.accepted}, catatan ${summary.withNotes}, dikembalikan ${summary.returned}.`;
+    el.title = `Persentase hasil QA Evidence RTP: ${summary.percentage.toFixed(2)}%. Diterima ${summary.accepted}, catatan ${summary.withNotes}, dikembalikan ${summary.returned}.`;
   }
 }
 
@@ -694,10 +713,11 @@ async function saveEvidenceVerification(row, subCode, paramId, level, uploadId, 
     const rowSummary = getRowStructureVerificationSummary(row);
     row.structureVerificationSummary = rowSummary;
     updateStructureVerificationTableSummary(row);
+    updateQaApipTableSummary(row);
     render();
     return d;
   } finally {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Simpan Verifikasi'; }
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Simpan Hasil QA'; }
   }
 }
 
@@ -724,7 +744,7 @@ async function saveRtpEvidenceVerification(row, uploadId, controls) {
     render();
     return d;
   } finally {
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Simpan Verifikasi'; }
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Simpan Hasil QA'; }
   }
 }
 
@@ -1027,7 +1047,7 @@ function updateKpisLocal(){
   const mri = rows.map(r=>Number(r.mri)||0).filter(v=>v>0);
   const iepk = rows.map(r=>Number(r.iepk)||0).filter(v=>v>0);
   const kap = rows.map(r=>Number(r.nilaiKapabilitasApip)||0).filter(v=>v>0);
-  const qa=rows.filter(r=>r.qaApip==='Selesai').length, status=rows.filter(r=>r.status==='Selesai').length, rtp=rows.filter(r=>r.rtp==='Selesai').length, ev=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length).length;
+  const qa=rows.filter(r=>r.qaApip==='Selesai').length, status=rows.filter(r=>r.status==='Selesai').length, rtp=rows.filter(r=>r.rtp==='Selesai').length, ev=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length).length; const qaSummaries=rows.map(getRowQaApipSummary); const qaTotalFiles=qaSummaries.reduce((n,x)=>n+x.total,0); const qaScorePoints=qaSummaries.reduce((n,x)=>n+(x.total*(Number(x.percentage)||0)/100),0); const qaResultPct=qaTotalFiles?Math.round((qaScorePoints/qaTotalFiles)*100):0;
 
   const documentSummaries = rows.map(getRowDocumentVerificationSummary);
   const totalDocuments = documentSummaries.reduce((sum,s)=>sum+s.total,0);
@@ -1043,10 +1063,10 @@ function updateKpisLocal(){
     qaApip:pct(qa,total), statusSelesai:pct(status,total), rtpSelesai:pct(rtp,total), evidenceRtp:pct(ev,total),
     verifikasiDokumen:verificationDocumentsPct, totalDocuments, verifiedDocuments,
     total, strukturCount:total, maturitasCount:maturitas.length, mriCount:mri.length, iepkCount:iepk.length, kapabilitasCount:kap.length,
-    qaApipCount:qa,statusSelesaiCount:status,rtpSelesaiCount:rtp,evidenceRtpCount:ev
+    qaApipCount:qa,qaHasilApip:qaResultPct,qaHasilApipTotal:qaTotalFiles,statusSelesaiCount:status,rtpSelesaiCount:rtp,evidenceRtpCount:ev
   });
 }
-function applyKpis(k){const t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;},b=(id,v)=>{const e=document.getElementById(id);if(e)e.style.width=Math.max(0,Math.min(100,v))+'%';};t('kpiStrukturProses',k.rataStrukturProses.toFixed(2));b('kpiStrukturProsesBar',k.rataStrukturProses/5*100);t('kpiStrukturProsesNote',k.total+' OPD');t('kpiMaturitas',k.rataMaturitas.toFixed(2));b('kpiMaturitasBar',k.rataMaturitas/5*100);t('kpiMaturitasNote',k.maturitasCount+' OPD terisi');t('kpiMRI',k.rataMRI.toFixed(2));b('kpiMRIBar',k.rataMRI/5*100);t('kpiMRINote',k.mriCount+' OPD terisi');t('kpiIEPK',k.rataIEPK.toFixed(2));b('kpiIEPKBar',k.rataIEPK/5*100);t('kpiIEPKNote',k.iepkCount+' OPD terisi');t('kpiKapabilitasApip',k.rataKapabilitasApip.toFixed(2));b('kpiKapabilitasApipBar',k.rataKapabilitasApip/5*100);t('kpiKapabilitasApipNote',k.kapabilitasCount+' OPD terisi');t('kpiQaApip',k.qaApip+'%');b('kpiQaApipBar',k.qaApip);t('kpiQaApipNote',k.qaApipCount+' dari '+k.total+' OPD');t('kpiStatusSelesai',k.statusSelesai+'%');b('kpiStatusSelesaiBar',k.statusSelesai);t('kpiStatusSelesaiNote',k.statusSelesaiCount+' dari '+k.total+' OPD');t('kpiRtpSelesai',k.rtpSelesai+'%');b('kpiRtpSelesaiBar',k.rtpSelesai);t('kpiRtpSelesaiNote',k.rtpSelesaiCount+' dari '+k.total+' OPD');t('kpiEvidenceRtp',k.evidenceRtp+'%');b('kpiEvidenceRtpBar',k.evidenceRtp);t('kpiEvidenceRtpNote',k.evidenceRtpCount+' dari '+k.total+' OPD');t('kpiVerifikasiDokumen',k.verifikasiDokumen+'%');b('kpiVerifikasiDokumenBar',k.verifikasiDokumen);t('kpiVerifikasiDokumenNote',k.verifiedDocuments+' dari '+k.totalDocuments+' dokumen');}
+function applyKpis(k){const t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;},b=(id,v)=>{const e=document.getElementById(id);if(e)e.style.width=Math.max(0,Math.min(100,v))+'%';};t('kpiStrukturProses',k.rataStrukturProses.toFixed(2));b('kpiStrukturProsesBar',k.rataStrukturProses/5*100);t('kpiStrukturProsesNote',k.total+' OPD');t('kpiMaturitas',k.rataMaturitas.toFixed(2));b('kpiMaturitasBar',k.rataMaturitas/5*100);t('kpiMaturitasNote',k.maturitasCount+' OPD terisi');t('kpiMRI',k.rataMRI.toFixed(2));b('kpiMRIBar',k.rataMRI/5*100);t('kpiMRINote',k.mriCount+' OPD terisi');t('kpiIEPK',k.rataIEPK.toFixed(2));b('kpiIEPKBar',k.rataIEPK/5*100);t('kpiIEPKNote',k.iepkCount+' OPD terisi');t('kpiKapabilitasApip',k.rataKapabilitasApip.toFixed(2));b('kpiKapabilitasApipBar',k.rataKapabilitasApip/5*100);t('kpiKapabilitasApipNote',k.kapabilitasCount+' OPD terisi');t('kpiQaApip',k.qaApip+'%');b('kpiQaApipBar',k.qaApip);t('kpiQaApipNote',k.qaApipCount+' dari '+k.total+' OPD');t('kpiQaHasilApip',k.qaHasilApip+'%');b('kpiQaHasilApipBar',k.qaHasilApip);t('kpiQaHasilApipNote',k.qaHasilApipTotal+' file evidence');t('kpiStatusSelesai',k.statusSelesai+'%');b('kpiStatusSelesaiBar',k.statusSelesai);t('kpiStatusSelesaiNote',k.statusSelesaiCount+' dari '+k.total+' OPD');t('kpiRtpSelesai',k.rtpSelesai+'%');b('kpiRtpSelesaiBar',k.rtpSelesai);t('kpiRtpSelesaiNote',k.rtpSelesaiCount+' dari '+k.total+' OPD');t('kpiEvidenceRtp',k.evidenceRtp+'%');b('kpiEvidenceRtpBar',k.evidenceRtp);t('kpiEvidenceRtpNote',k.evidenceRtpCount+' dari '+k.total+' OPD');t('kpiVerifikasiDokumen',k.verifikasiDokumen+'%');b('kpiVerifikasiDokumenBar',k.verifikasiDokumen);t('kpiVerifikasiDokumenNote',k.verifiedDocuments+' dari '+k.totalDocuments+' dokumen');}
 
 // ====== SAVE DATA ======
 function debounceSave() {
@@ -1137,11 +1157,12 @@ function render() {
         <td><span class="badge ${strukturStatus==='Selesai'?'badge-lengkap':(strukturStatus==='Proses'?'badge-sebagian':'badge-kosong')}">${strukturStatus}</span></td>
         <td><span class="badge ${badgeClass}" title="Jumlah parameter dengan evidence pada 43 parameter">${badgeLabel}</span></td>
         <td><div class="evidence-cell"><button class="btn-detail" data-id="${r.id}" title="Evidence Struktur dan Proses">📁</button><span class="structure-evidence-summary" data-id="${r.id}">${getRowStructureVerificationSummary(r).percentage.toFixed(0)}%<small>${getRowStructureVerificationSummary(r).total} file</small></span></div></td>
+        <td><div class="evidence-cell qa-apip-cell"><button class="btn-qa-apip" data-id="${r.id}" title="Buka Penjaminan Kualitas / Quality Assurance APIP">🛡️</button><span class="qa-apip-summary" data-id="${r.id}">${getRowQaApipSummary(r).percentage.toFixed(0)}%<small>${getRowQaApipSummary(r).total} file</small></span></div></td>
         <td><button class="btn-kk" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja SPIP">📊</button></td>
         <td><button class="btn-report-pm" data-id="${r.id}" title="Upload Laporan Hasil PM SPIP">📄</button><div class="report-count pm">${Array.isArray(r.pmSpipReports)?r.pmSpipReports.length:0}</div></td>
         <td><button class="btn-kk-rtp" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja RTP">📋</button></td>
         <td><button class="btn-report-rr" data-id="${r.id}" title="Upload Laporan Pemantauan RR_RTP">📄</button><div class="report-count rr">${Array.isArray(r.rrRtpReports)?r.rrRtpReports.length:0}</div></td>
-        <td><div class="evidence-cell"><button class="btn-rtp-evidence" data-id="${r.id}" title="Upload Evidence RTP / Verifikasi Inspektorat">📤</button><span class="rtp-evidence-summary" data-id="${r.id}">${getRtpEvidenceVerificationSummary(r).percentage.toFixed(0)}%<small>${Array.isArray(r.rtpEvidence)?r.rtpEvidence.length:0} file</small></span></div></td>
+        <td><div class="evidence-cell"><button class="btn-rtp-evidence" data-id="${r.id}" title="Upload Evidence RTP / Penjaminan Kualitas / QA APIP">📤</button><span class="rtp-evidence-summary" data-id="${r.id}">${getRtpEvidenceVerificationSummary(r).percentage.toFixed(0)}%<small>${Array.isArray(r.rtpEvidence)?r.rtpEvidence.length:0} file</small></span></div></td>
         <td><button class="del-btn" data-id="${r.id}" title="Hapus">&times;</button></td>
       </tr>`;
     }).join('');
@@ -1263,11 +1284,12 @@ function showChart(type) {
     rataMRI:'Nilai MRI per OPD',
     rataIEPK:'Nilai IEPK per OPD',
     nilaiKapabilitasApip:'Nilai Kapabilitas APIP per OPD',
-    qaApip:'Persentase QA APIP Selesai',
+    qaApip:'Persentase Status QA APIP Selesai',
+    qaHasilApip:'Persentase Hasil QA APIP per OPD',
     statusSelesai:'Persentase OPD Selesai (Status)',
     rtpSelesai:'Persentase RTP Selesai',
     evidenceRtp:'Persentase OPD dengan Evidence RTP',
-    verifikasiDokumen:'Persentase Verifikasi Dokumen per OPD'
+    verifikasiDokumen:'Persentase Dokumen Dinilai QA APIP per OPD'
   };
 
   let labels=[];
@@ -1308,6 +1330,13 @@ function showChart(type) {
     countFalse=totalCount-countTrue;
     labels=['Level >= 3','Level < 3']; data=[countTrue,countFalse];
     backgroundColor=['#10b981','#e2e8f0']; borderColor=['#ffffff','#ffffff']; typeChart='pie';
+  } else if (type==='qaHasilApip') {
+    const chartData=[...rows].map(r=>({row:r,summary:getRowQaApipSummary(r)}));
+    chartData.sort((a,b)=>b.summary.percentage-a.summary.percentage);
+    labels=chartData.map(x=>x.row.opd||'OPD Tanpa Nama');
+    data=chartData.map(x=>Math.round(Math.max(0,Math.min(100,x.summary.percentage))));
+    verificationMeta=chartData.map(x=>({total:x.summary.total,score:x.summary.percentage}));
+    typeChart='bar';
   } else if (type==='qaApip') {
     totalCount=rows.length;
     countTrue=rows.filter(r=>r.qaApip==='Selesai').length;
@@ -2143,6 +2172,7 @@ async function openEditModal(id) {
            const existingUpload=fileArray.find(x=>x && typeof x==='object' && x.uploadId===uploadItem.uploadId);
            if(existingUpload) Object.assign(existingUpload,uploadItem); else fileArray.push(uploadItem);
           renderFileList(targetRow, subCode, paramId, level);
+          updateQaApipTableSummary(targetRow);
           completed++;
           setTimeout(() => {
             progressItem.remove();
@@ -2163,6 +2193,7 @@ async function openEditModal(id) {
                const existingUpload=fileArray.find(x=>x && typeof x==='object' && x.uploadId===uploadItem.uploadId);
                if(existingUpload) Object.assign(existingUpload,uploadItem); else fileArray.push(uploadItem);
               renderFileList(targetRow,subCode,paramId,level);
+              updateQaApipTableSummary(targetRow);
               fill.style.width='100%'; text.textContent=result.syncStatus==='done'?'100% • Drive OK':'100% • Retry Drive';
               pendingUploadFiles.delete(sessionUploadId); await deletePendingUploadFromIndexedDB(sessionUploadId); recovered=true; completed++; break;
             } catch(e) { err=e; }
@@ -2283,6 +2314,7 @@ async function replaceStructureEvidenceFile(row, subCode, paramId, level, upload
     const summary = getRowStructureVerificationSummary(row);
     row.structureVerificationSummary = summary;
     updateStructureVerificationTableSummary(row);
+    updateQaApipTableSummary(row);
     render();
     showWarning('✅ File sudah diganti di R2 dan Google Drive. File lama tidak dibuat sebagai file tambahan. Menunggu verifikasi Inspektorat.');
   } finally {
@@ -2328,7 +2360,7 @@ function renderFileList(row, subCode, paramId, level) {
   const summary = getFileVerificationSummary(files);
   if (summaryEl) {
     summaryEl.innerHTML = files.length
-      ? `<strong>Persentase Verifikasi Level ${escapeHtml(level)}: ${summary.percentage.toFixed(0)}%</strong><span>Verifikasi selesai ${summary.progress.toFixed(0)}% · ${summary.total} file · Diterima ${summary.accepted} · Catatan ${summary.withNotes} · Dikembalikan ${summary.returned}</span>`
+      ? `<strong>Persentase Hasil QA APIP Level ${escapeHtml(level)}: ${summary.percentage.toFixed(0)}%</strong><span>Penilaian QA selesai ${summary.progress.toFixed(0)}% · ${summary.total} file · Diterima ${summary.accepted} · Catatan ${summary.withNotes} · Dikembalikan ${summary.returned}</span>`
       : `<span>Belum ada file untuk diverifikasi pada Level ${escapeHtml(level)}.</span>`;
   }
 
@@ -2374,14 +2406,14 @@ function renderFileList(row, subCode, paramId, level) {
     const replaceHtml = canReplace ? `<button type="button" class="file-action replace-evidence-btn">↻ Ganti File</button><input type="file" class="replace-evidence-input" hidden accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.mp4,.webm,.mov,.avi,.mkv,.xlsx,.xls,.ppt,.pptx">` : '';
     const verifyHtml = canVerify ? `
       <div class="file-verification-panel${verifiedClass}">
-        <div class="file-verification-head"><strong>🛡️ Verifikasi Inspektorat</strong><span class="verification-score-badge">${getVerificationScore(fileObj)}%</span></div>
+        <div class="file-verification-head"><strong>🛡️ Penjaminan Kualitas / QA APIP</strong><span class="verification-score-badge">${getVerificationScore(fileObj)}%</span></div>
         ${replacementNotice}
         <div class="verification-form-grid">
-          <label>Nama Pemeriksa<input type="text" maxlength="100" class="verify-examiner" value="${escapeHtml(verification.examinerName)}" placeholder="Ketik nama pemeriksa"></label>
-          <label>Hasil Verifikasi<select class="verify-status">${verificationStatusOptions(verification.status)}</select></label>
+          <label>Nama Penjamin Kualitas / QA APIP<input type="text" maxlength="100" class="verify-examiner" value="${escapeHtml(verification.examinerName)}" placeholder="Ketik nama pemeriksa"></label>
+          <label>Hasil QA APIP<select class="verify-status">${verificationStatusOptions(verification.status)}</select></label>
         </div>
-        <label class="verify-note-label">Catatan Pemeriksa<textarea maxlength="1000" class="verify-note" placeholder="Catatan, alasan pengembalian, atau koreksi yang perlu ditindaklanjuti...">${escapeHtml(verification.note)}</textarea></label>
-        <div class="verification-save-row"><span class="verification-updated">${verification.verifiedAt ? 'Diverifikasi: ' + escapeHtml(formatVerificationDate(verification.verifiedAt)) : 'Belum diverifikasi'}</span><button type="button" class="verification-save-btn" data-verify-evidence="1">💾 Simpan Verifikasi</button>${replaceHtml}</div>
+        <label class="verify-note-label">Catatan QA APIP<textarea maxlength="1000" class="verify-note" placeholder="Catatan, alasan pengembalian, atau koreksi yang perlu ditindaklanjuti...">${escapeHtml(verification.note)}</textarea></label>
+        <div class="verification-save-row"><span class="verification-updated">${verification.verifiedAt ? 'Dinilai QA: ' + escapeHtml(formatVerificationDate(verification.verifiedAt)) : 'Belum dinilai QA'}</span><button type="button" class="verification-save-btn" data-verify-evidence="1">💾 Simpan Hasil QA</button>${replaceHtml}</div>
       </div>` : `
       <div class="file-verification-legacy">⚠️ File lama belum memiliki identitas upload. Upload ulang file ini untuk mengaktifkan verifikasi Inspektorat per file.</div>`;
 
@@ -3232,6 +3264,29 @@ async function loadSheetLinksForRow(row){
     return null;
   }
 }
+
+async function openQaSpreadsheet(id){
+  const row=rows.find(r=>r.id===id);if(!row)return;
+  const modal=document.getElementById('sheetLinksModal'); if(!modal)return;
+  modal.dataset.mode='qa';
+  sheetLinksEditingRowId=id;
+  modal.querySelector('.sheet-links-header h3').innerHTML='🛡️ PENJAMINAN KUALITAS / QUALITY ASSURANCE APIP - <span id="sheetLinksOpdName"></span>';
+  modal.querySelector('.sheet-links-body').innerHTML=`
+    <div class="sheet-links-info">Spreadsheet ini adalah <b>Penjaminan Kualitas / Quality Assurance APIP</b>. File pada <b>Evidence Struktur dan Proses</b> ditarik otomatis ke sheet <b>KK Penjaminan Kualitas</b>. Rekap Parameter dan Rekap Unsur menghitung hasil QA secara otomatis.</div>
+    <div class="sheet-links-status" id="sheetLinksStatus"></div><div id="sheetLinksList"></div>
+    <div style="margin-top:10px;font-size:11px;color:#64748b;line-height:1.45;">Workbook hanya menyimpan link/file reference dan hasil penilaian QA; file evidence tetap dikelola oleh sistem upload.</div>`;
+  modal.querySelector('.sheet-links-footer').innerHTML='<button id="sheetLinksRefresh">↻ Muat Link</button><button class="primary" id="sheetLinksCreate">＋ Buat/Sinkronkan QA APIP</button><button id="sheetLinksCancel">Tutup</button>';
+  document.getElementById('sheetLinksOpdName').textContent=row.opd||'Tanpa Nama';
+  modal.classList.add('active');
+  sheetLinksSetStatus('Menyiapkan spreadsheet QA APIP...');
+  try{
+    const result=await callServer('createQaSheets',{opdId:row.id,opd:row.opd||'OPD',year:currentYear});
+    row.qaData=result.qaData||{};
+    const url=row.qaData.workbookUrl||'';
+    document.getElementById('sheetLinksList').innerHTML=url?`<div class="sheet-link-card"><a href="${sheetLinksEsc(url)}" target="_blank" rel="noopener">🔗 Buka Spreadsheet Penjaminan Kualitas / QA APIP</a></div>`:'';
+    sheetLinksSetStatus('Evidence Struktur dan Proses sudah ditarik ke workbook QA APIP.','success');
+  }catch(err){sheetLinksSetStatus('Gagal menyiapkan QA APIP: '+err.message,'error');}
+}
 function openSpreadsheetModal(id){
   const row=rows.find(r=>r.id===id);if(!row)return;
   const modal=document.getElementById('sheetLinksModal');
@@ -3340,7 +3395,7 @@ function renderRtpEvidenceList(row){
   if(!e)return;
   const a=Array.isArray(row.rtpEvidence)?row.rtpEvidence:[];
   const summary=getFileVerificationSummary(a);
-  const summaryHtml=`<div class="rtp-verification-summary"><div><strong>Persentase Verifikasi Evidence RTP</strong><b>${summary.percentage.toFixed(0)}%</b></div><div class="rtp-verification-stats">${summary.total} file · Verifikasi selesai ${summary.progress.toFixed(0)}% · Diterima ${summary.accepted} · Catatan ${summary.withNotes} · Dikembalikan ${summary.returned}</div><div class="rtp-verification-legend">Bobot otomatis: Diterima 100% · Diterima dengan Catatan 75% · Dikembalikan 0%</div></div>`;
+  const summaryHtml=`<div class="rtp-verification-summary"><div><strong>Persentase Hasil QA APIP Evidence RTP</strong><b>${summary.percentage.toFixed(0)}%</b></div><div class="rtp-verification-stats">${summary.total} file · Penilaian QA selesai ${summary.progress.toFixed(0)}% · Diterima ${summary.accepted} · Catatan ${summary.withNotes} · Dikembalikan ${summary.returned}</div><div class="rtp-verification-legend">Bobot otomatis: Diterima 100% · Diterima dengan Catatan 75% · Dikembalikan 0%</div></div>`;
   if(!a.length){e.innerHTML=summaryHtml+'<div class="sheet-link-card">Belum ada evidence RTP.</div>';updateRtpVerificationTableSummary(row);return;}
   e.innerHTML=summaryHtml+'<div class="rtp-file-list">'+a.map((f,i)=>{
     const status=f.gdriveId?'✅ Google Drive + R2':(f.syncStatus==='retrying'?'🔄 Perlu Retry Google Drive':'⏳ Mengirim ke Google Drive');
@@ -3351,14 +3406,14 @@ function renderRtpEvidenceList(row){
     const replacementNotice=f?.replacementStatus==='menunggu_verifikasi' ? `<div class="file-replacement-notice">✅ File sudah diganti${f.replacedAt?' pada '+sheetLinksEsc(formatVerificationDate(f.replacedAt)):''}. File lama tidak diduplikasi. Menunggu verifikasi Inspektorat.</div>` : '';
     const replaceHtml=canReplace ? `<button class="rtp-replace-btn" data-upload-id="${sheetLinksEsc(f.uploadId)}">↻ Ganti File</button><input type="file" class="rtp-replace-input" hidden accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.mp4,.webm,.mov,.avi,.mkv,.xlsx,.xls,.ppt,.pptx">` : '';
     const verifyHtml=f?.uploadId?`<div class="file-verification-panel rtp-verification-panel is-${v.status||'pending'}">
-      <div class="file-verification-head"><strong>🛡️ Verifikasi Inspektorat</strong><span class="verification-score-badge">${verifyScore}%</span></div>
+      <div class="file-verification-head"><strong>🛡️ Penjaminan Kualitas / QA APIP</strong><span class="verification-score-badge">${verifyScore}%</span></div>
       ${replacementNotice}
       <div class="verification-form-grid">
-        <label>Nama Pemeriksa<input type="text" maxlength="100" class="rtp-verify-examiner" value="${sheetLinksEsc(v.examinerName)}" placeholder="Ketik nama pemeriksa"></label>
-        <label>Hasil Verifikasi<select class="rtp-verify-status">${verificationStatusOptions(v.status)}</select></label>
+        <label>Nama Penjamin Kualitas / QA APIP<input type="text" maxlength="100" class="rtp-verify-examiner" value="${sheetLinksEsc(v.examinerName)}" placeholder="Ketik nama pemeriksa"></label>
+        <label>Hasil QA APIP<select class="rtp-verify-status">${verificationStatusOptions(v.status)}</select></label>
       </div>
-      <label class="verify-note-label">Catatan Pemeriksa<textarea maxlength="1000" class="rtp-verify-note" placeholder="Catatan, alasan pengembalian, atau koreksi yang perlu ditindaklanjuti...">${sheetLinksEsc(v.note)}</textarea></label>
-      <div class="verification-save-row"><span class="verification-updated">${v.verifiedAt ? 'Diverifikasi: '+sheetLinksEsc(formatVerificationDate(v.verifiedAt)) : 'Belum diverifikasi'}</span><button class="verification-save-btn rtp-verification-save" data-upload-id="${sheetLinksEsc(f.uploadId)}">💾 Simpan Verifikasi</button>${replaceHtml}</div>
+      <label class="verify-note-label">Catatan QA APIP<textarea maxlength="1000" class="rtp-verify-note" placeholder="Catatan, alasan pengembalian, atau koreksi yang perlu ditindaklanjuti...">${sheetLinksEsc(v.note)}</textarea></label>
+      <div class="verification-save-row"><span class="verification-updated">${v.verifiedAt ? 'Dinilai QA: '+sheetLinksEsc(formatVerificationDate(v.verifiedAt)) : 'Belum dinilai QA'}</span><button class="verification-save-btn rtp-verification-save" data-upload-id="${sheetLinksEsc(f.uploadId)}">💾 Simpan Hasil QA</button>${replaceHtml}</div>
     </div>`:'<div class="file-verification-legacy">⚠️ File lama belum memiliki identitas upload. Upload ulang file ini untuk mengaktifkan verifikasi Inspektorat.</div>';
     return `<div class="rtp-file-item rtp-file-item-expanded"><div class="rtp-file-top"><div><div class="rtp-file-name">📄 ${sheetLinksEsc(f.fileName||'File')}</div><div class="rtp-file-meta">${status}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions"><a href="${sheetLinksEsc(f.url||'#')}" target="_blank" rel="noopener noreferrer">Buka</a>${retry}<button class="rtp-delete-btn" data-index="${i}">Hapus</button></div></div>${verifyHtml}</div>`;
   }).join('')+'</div>';
@@ -3450,11 +3505,12 @@ document.addEventListener('click',function(e){
   const refresh=e.target.closest('#sheetLinksRefresh');
   if(refresh){const row=rows.find(r=>r.id===sheetLinksEditingRowId);if(row){sheetLinksSetStatus('Memuat ulang link…');loadSheetLinksForRow(row).then(()=>sheetLinksSetStatus('Link diperbarui.','success'));}return;}
   const create=e.target.closest('#sheetLinksCreate');
-  if(create){if(document.getElementById('sheetLinksModal')?.dataset.mode==='rtp')createRtpSheetLinksForCurrentRow(false);else createSheetLinksForCurrentRow(false);return;}
+  if(create){const mode=document.getElementById('sheetLinksModal')?.dataset.mode;if(mode==='rtp')createRtpSheetLinksForCurrentRow(false);else if(mode==='qa')openQaSpreadsheet(sheetLinksEditingRowId);else createSheetLinksForCurrentRow(false);return;}
   const btn=e.target.closest('button');
   if(!btn)return;
   if(btn.classList.contains('btn-edit-name')) openEditNameModal(btn.getAttribute('data-id'));
   else if(btn.classList.contains('btn-detail')) openEditModal(btn.getAttribute('data-id'));
+  else if(btn.classList.contains('btn-qa-apip')) openQaSpreadsheet(btn.getAttribute('data-id'));
   else if(btn.classList.contains('btn-kk')) openSpreadsheetModal(btn.getAttribute('data-id'));
   else if(btn.classList.contains('btn-report-pm')) openReportUploadModal(btn.getAttribute('data-id'),'pm_spip');
   else if(btn.classList.contains('btn-kk-rtp')) openKkRtp(btn.getAttribute('data-id'));

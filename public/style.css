@@ -2353,3 +2353,5 @@ tbody td:nth-child(2){box-shadow:2px 0 8px rgba(15,23,42,.05)}
     width: 100%;
   }
 }
+
+.qa-apip-cell{min-width:190px}.qa-apip-cell .qa-apip-summary{display:inline-flex;flex-direction:column;align-items:center;min-width:54px;font-weight:800;color:#0f766e}.qa-apip-cell .qa-apip-summary small{font-size:10px;color:#64748b;font-weight:600}.btn-qa-apip{background:linear-gradient(135deg,#0f766e,#2563eb);color:#fff;border:none;border-radius:10px;padding:9px 11px;cursor:pointer;box-shadow:0 4px 10px rgba(15,118,110,.18)}.btn-qa-apip:hover{transform:translateY(-1px)}
