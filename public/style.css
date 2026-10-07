@@ -830,6 +830,38 @@ tbody input[readonly] {
   padding-bottom: 12px;
 }
 
+.parameter-context {
+  margin-bottom: 12px;
+}
+
+.parameter-subunsur-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: #e0e7ff;
+  border-left: 4px solid var(--primary);
+  color: #1e293b;
+  line-height: 1.45;
+}
+
+.parameter-context-label {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--primary);
+}
+
+.parameter-subunsur-title strong {
+  font-size: 14px;
+  font-weight: 750;
+  color: #1e293b;
+}
+
 .params-box {
   background: #eff6ff;
   border-left: 4px solid var(--primary);

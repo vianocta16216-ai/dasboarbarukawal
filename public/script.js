@@ -1666,7 +1666,10 @@ async function openEditModal(id) {
       paramDiv.style.borderTop = '1px solid var(--border)';
       paramDiv.style.paddingTop = '10px';
       paramDiv.style.marginTop = '10px';
-      const paramsHtml = `<div class="params-box"><p><strong style="font-size:14px;">Parameter:</strong> <span class="param-desc-text">${param.desc}</span></p></div>`;
+      const paramsHtml = `<div class="parameter-context" aria-label="Identitas sub-unsur dan parameter">
+  <div class="parameter-subunsur-title"><span class="parameter-context-label">Sub-Unsur</span><strong>${subInfo.label}</strong></div>
+  <div class="params-box"><p><strong style="font-size:14px;">Parameter:</strong> <span class="param-desc-text">${param.desc}</span></p></div>
+</div>`;
       const levelSelect = `<div class="level-select"><span style="font-size:12px;color:var(--text-secondary)">Level:</span><select data-sub="${subCode}" data-param="${param.id}" data-field="level"><option value="0" ${data.level === 0 ? 'selected' : ''}>0</option>${[1,2,3,4,5].map(lv => `<option value="${lv}" ${data.level === lv ? 'selected' : ''}>${lv}</option>`).join('')}</select></div>`;
       let evidHtml = `<div class="evid-group">`;
       for (let lv = 1; lv <= 5; lv++) {
