@@ -1301,6 +1301,7 @@ function showChart(type) {
   let countTrue=0;
   let countFalse=0;
   let verificationMeta=[];
+  let qaMeta=[];
 
   if (!rows || rows.length===0) {
     alert('Data OPD belum tersedia!');
@@ -1309,6 +1310,7 @@ function showChart(type) {
 
   const isLineChart=['nilaiStrukturProses','nilaiMaturitas','rataMRI','rataIEPK','nilaiKapabilitasApip'].includes(type);
   const isVerificationByOpdChart=type==='verifikasiDokumen';
+  const isQaByOpdChart=type==='qaApip';
 
   if (isLineChart) {
     let chartData=[...rows];
@@ -1330,11 +1332,21 @@ function showChart(type) {
     countFalse=totalCount-countTrue;
     labels=['Level >= 3','Level < 3']; data=[countTrue,countFalse];
     backgroundColor=['#10b981','#e2e8f0']; borderColor=['#ffffff','#ffffff']; typeChart='pie';
-  } else if (type==='qaApip') {
-    const chartData=[...rows].map(r=>({row:r,summary:r.qaApipSummary||{percentage:0,evaluated:0,total:671}}));
+  } else if (isQaByOpdChart) {
+    // QA APIP mengambil nilai langsung dari ringkasan kolom Penjaminan Kualitas / Quality Assurance APIP.
+    const chartData=[...rows].map(r=>({
+      row:r,
+      summary:r.qaApipSummary||{percentage:0,evaluated:0,total:671,na:0,evidenceFiles:0}
+    }));
     chartData.sort((a,b)=>(Number(b.summary.percentage)||0)-(Number(a.summary.percentage)||0));
     labels=chartData.map(x=>x.row.opd||'OPD Tanpa Nama');
     data=chartData.map(x=>Math.round(Math.max(0,Math.min(100,Number(x.summary.percentage)||0))*100)/100);
+    qaMeta=chartData.map(x=>({
+      total:Number(x.summary.total)||671,
+      evaluated:Number(x.summary.evaluated)||0,
+      na:Number(x.summary.na)||0,
+      evidenceFiles:Number(x.summary.evidenceFiles)||0
+    }));
     typeChart='bar';
   } else if (type==='statusSelesai') {
     totalCount=rows.length;
@@ -1503,6 +1515,55 @@ function showChart(type) {
         plugins:{
           legend:{display:false},
           tooltip:{backgroundColor:'#0f172a',position:'nearest',callbacks:{label:function(context){const m=verificationMeta[context.dataIndex]||{total:0,verified:0};return ` ${Number(context.parsed.x||0).toFixed(0)}% · ${m.verified} dari ${m.total} dokumen terverifikasi`;}}}
+        },
+        scales:{
+          x:{min:0,max:100,border:{display:false},grid:{color:'rgba(148,163,184,0.14)'},ticks:{color:'#64748b',stepSize:20,font:{size:11,weight:'600'},callback:value=>Number(value)+'%'}},
+          y:{border:{display:false},grid:{display:false},ticks:{color:'#334155',font:{size:10,weight:'600'},callback:function(value){const label=labels[value]||'';return label.length>34?label.slice(0,31)+'…':label;}}}
+        },
+        animation:{duration:1000,easing:'easeOutQuart'}
+      }
+    });
+  } else if (isQaByOpdChart) {
+    // Tampilan QA APIP sengaja mengikuti grafik horizontal "Persentase Verifikasi Dokumen per OPD".
+    // Fitur grafik lain tidak disentuh.
+    const chartWidth=Math.max(520, container.clientWidth-2);
+    const chartHeight=Math.max(430, Math.min(900, 170 + labels.length * 30));
+    canvas.width=chartWidth;
+    canvas.height=chartHeight;
+    canvas.style.width='100%';
+    canvas.style.height=chartHeight+'px';
+    canvas.style.minWidth='0';
+    canvas.style.display='block';
+    canvas.style.margin='0';
+    container.style.overflow='auto';
+
+    const barGradient=ctx.createLinearGradient(0,0,chartWidth,0);
+    barGradient.addColorStop(0,'#4f46e5');
+    barGradient.addColorStop(0.55,'#6366f1');
+    barGradient.addColorStop(1,'#8b5cf6');
+
+    chartInstance=new Chart(ctx,{
+      type:'bar',
+      data:{labels,datasets:[{label:titles[type],data,backgroundColor:barGradient,borderColor:'#4f46e5',borderWidth:1.5,borderRadius:7,maxBarThickness:28}]},
+      options:{
+        responsive:false,
+        maintainAspectRatio:false,
+        indexAxis:'y',
+        layout:{padding:{top:12,right:28,bottom:18,left:12}},
+        interaction:{mode:'nearest',intersect:false},
+        plugins:{
+          legend:{display:false},
+          tooltip:{
+            backgroundColor:'#0f172a',
+            position:'nearest',
+            padding:10,
+            callbacks:{
+              label:function(context){
+                const m=qaMeta[context.dataIndex]||{total:671,evaluated:0,na:0,evidenceFiles:0};
+                return ` ${Number(context.parsed.x||0).toFixed(2)}% · ${m.evaluated}/${m.total} item dinilai · ${m.evidenceFiles} file evidence`;
+              }
+            }
+          }
         },
         scales:{
           x:{min:0,max:100,border:{display:false},grid:{color:'rgba(148,163,184,0.14)'},ticks:{color:'#64748b',stepSize:20,font:{size:11,weight:'600'},callback:value=>Number(value)+'%'}},
