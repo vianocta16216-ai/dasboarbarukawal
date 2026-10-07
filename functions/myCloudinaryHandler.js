@@ -516,6 +516,23 @@ function countParameterEvidence(subunsurs) {
   return count;
 }
 
+function countStructureEvidenceFiles(subunsurs) {
+  if (!subunsurs || typeof subunsurs !== 'object') return 0;
+  let count = 0;
+  for (const subCode of Object.keys(SUBUNSUR_DATA || {})) {
+    const params = SUBUNSUR_DATA[subCode]?.params || [];
+    for (const param of params) {
+      const data = subunsurs?.[subCode]?.[param.id];
+      if (!data) continue;
+      for (let lv=1; lv<=5; lv++) {
+        const files = data['files'+lv];
+        if (Array.isArray(files)) count += files.length;
+      }
+    }
+  }
+  return count;
+}
+
 function structureProcessBreakdown(subunsurs) {
   const b = { totalParams: 0, selectedParams: 0, sumLevels: 0, byLevel: {1:0,2:0,3:0,4:0,5:0} };
   for (const [subCode, subInfo] of Object.entries(SUBUNSUR_DATA || {})) {
@@ -1147,16 +1164,18 @@ export async function onRequest({ request, env, ctx }) {
           const strukturNilai=totalParams?Math.round((sumLevels/totalParams)*100)/100:0;
           const strukturEvidenceCount=countParameterEvidence(subunsurs);
           const strukturStatus=strukturEvidenceCount===totalParams?'Selesai':(strukturEvidenceCount>0?'Proses':'Belum');
+          const qaEvidenceFiles=countStructureEvidenceFiles(subunsurs);
           const q=qaSummaryMap.get(String(r.id));
           const qaEvaluated=Number(q?.evaluated_items||0);
           const qaNa=Number(q?.na_items||0);
           const qaSum=Number(q?.sum_score||0);
           const qaTotalItems=671;
           const qaPending=Math.max(0,qaTotalItems-qaEvaluated-qaNa);
-          const qaPercentage=qaEvaluated>0 ? Math.round((qaSum/qaEvaluated)*10000)/100 : 0;
+          const qaApplicableItems=Math.max(0,qaTotalItems-qaNa);
+          const qaPercentage=qaApplicableItems>0 ? Math.round((qaSum/qaApplicableItems)*10000)/100 : 0;
           const qaCompletion=qaTotalItems>0 ? Math.round(((qaEvaluated+qaNa)/qaTotalItems)*10000)/100 : 0;
           const qaStatus=qaCompletion>=100?'Selesai':(qaCompletion>0?'Proses':'Belum');
-          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,evaluated:qaEvaluated,na:qaNa,pending:qaPending,sum:qaSum,percentage:qaPercentage,completion:qaCompletion,status:qaStatus},nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,nilaiMaturitas:Number(r.nilai_maturitas||0),nilaiKapabilitasApip:Number(r.nilai_kapabilitas_apip||0)};
+          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,evaluated:qaEvaluated,na:qaNa,pending:qaPending,sum:qaSum,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,nilaiMaturitas:Number(r.nilai_maturitas||0),nilaiKapabilitasApip:Number(r.nilai_kapabilitas_apip||0)};
         });
         return new Response(JSON.stringify(mapped),{status:200,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate, max-age=0'}});
       }
@@ -1676,11 +1695,16 @@ export async function onRequest({ request, env, ctx }) {
               COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) AS sum_score
           FROM opd_qa_apip_items WHERE year=? AND opd_id=?`).bind(String(year),opdId).all();
         const qr=q.results?.[0]||{}; const evaluated=Number(qr.evaluated_items||0); const na=Number(qr.na_items||0); const sum=Number(qr.sum_score||0); const total=671;
-        const pending=Math.max(0,total-evaluated-na); const percentage=evaluated?Math.round((sum/evaluated)*10000)/100:0; const completion=Math.round(((evaluated+na)/total)*10000)/100;
+        const pending=Math.max(0,total-evaluated-na);
+        const applicable=Math.max(0,total-na);
+        const percentage=applicable?Math.round((sum/applicable)*10000)/100:0;
+        const completion=Math.round(((evaluated+na)/total)*10000)/100;
+        const evRec=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,String(year)).all();
+        let evidenceFiles=0; try{evidenceFiles=countStructureEvidenceFiles(evRec.results?.[0]?.subunsurs?JSON.parse(evRec.results[0].subunsurs):{});}catch{}
         const qaStatus=completion>=100?'Selesai':(completion>0?'Proses':'Belum');
         await env.DB.prepare("UPDATE opd_data SET qa_apip=? WHERE id=? AND year=?").bind(qaStatus,opdId,year).run();
-        notifyRealtime(env,ctx,year,{action:'saveQaApipItem',opdId,subunsur,paramId,grade,itemNo,summary:{total,evaluated,na,pending,sum,percentage,completion,status:qaStatus}});
-        return jsonResponse({status:'success',item:{subunsur,paramId,grade,itemNo,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now},summary:{total,evaluated,na,pending,sum,percentage,completion,status:qaStatus}});
+        notifyRealtime(env,ctx,year,{action:'saveQaApipItem',opdId,subunsur,paramId,grade,itemNo,summary:{total,evaluated,na,pending,sum,percentage,completion,evidenceFiles,status:qaStatus}});
+        return jsonResponse({status:'success',item:{subunsur,paramId,grade,itemNo,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now},summary:{total,evaluated,na,pending,sum,percentage,completion,evidenceFiles,status:qaStatus}});
       }
 
       case 'deleteQaApipItem': {
@@ -1693,10 +1717,15 @@ export async function onRequest({ request, env, ctx }) {
               COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) AS sum_score
           FROM opd_qa_apip_items WHERE year=? AND opd_id=?`).bind(String(year),opdId).all();
         const qr=q.results?.[0]||{}; const evaluated=Number(qr.evaluated_items||0); const na=Number(qr.na_items||0); const sum=Number(qr.sum_score||0); const total=671;
-        const pending=Math.max(0,total-evaluated-na); const percentage=evaluated?Math.round((sum/evaluated)*10000)/100:0; const completion=Math.round(((evaluated+na)/total)*10000)/100;
+        const pending=Math.max(0,total-evaluated-na);
+        const applicable=Math.max(0,total-na);
+        const percentage=applicable?Math.round((sum/applicable)*10000)/100:0;
+        const completion=Math.round(((evaluated+na)/total)*10000)/100;
+        const evRec=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,String(year)).all();
+        let evidenceFiles=0; try{evidenceFiles=countStructureEvidenceFiles(evRec.results?.[0]?.subunsurs?JSON.parse(evRec.results[0].subunsurs):{});}catch{}
         const qaStatus=completion>=100?'Selesai':(completion>0?'Proses':'Belum');
         await env.DB.prepare("UPDATE opd_data SET qa_apip=? WHERE id=? AND year=?").bind(qaStatus,opdId,year).run();
-        const summary={total,evaluated,na,pending,sum,percentage,completion,status:qaStatus};
+        const summary={total,evaluated,na,pending,sum,percentage,completion,evidenceFiles,status:qaStatus};
         notifyRealtime(env,ctx,year,{action:'deleteQaApipItem',opdId,subunsur,paramId,grade,itemNo,summary});
         return jsonResponse({status:'success',summary});
       }
