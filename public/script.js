@@ -1595,6 +1595,21 @@ document.getElementById('confirmOk').addEventListener('click', async function() 
 });
 
 // ====== MODAL EDIT SUBUNSUR ======
+// Pengurutan kode SPIP bertingkat harus berdasarkan setiap segmen angka.
+// Contoh: 3.2 < 3.10 < 3.11 (bukan berdasarkan nilai desimal).
+function compareSpipCode(a, b) {
+  const pa = String(a ?? '').split('.').map(v => Number(v));
+  const pb = String(b ?? '').split('.').map(v => Number(v));
+  const len = Math.max(pa.length, pb.length);
+
+  for (let i = 0; i < len; i++) {
+    const va = Number.isFinite(pa[i]) ? pa[i] : 0;
+    const vb = Number.isFinite(pb[i]) ? pb[i] : 0;
+    if (va !== vb) return va - vb;
+  }
+  return 0;
+}
+
 let editingRowId = null;
 let editingSubunsurSnapshot = null;
 let fileToDelete = null;
@@ -1634,7 +1649,7 @@ async function openEditModal(id) {
   const container = document.getElementById('subunsurContainer');
   container.innerHTML = '';
 
-  const sortedSubs = Object.keys(SUBUNSUR_DATA).sort((a,b) => parseFloat(a) - parseFloat(b));
+  const sortedSubs = Object.keys(SUBUNSUR_DATA).sort(compareSpipCode);
 
   sortedSubs.forEach(subCode => {
     const subInfo = SUBUNSUR_DATA[subCode];
@@ -1642,7 +1657,7 @@ async function openEditModal(id) {
     subDiv.className = 'sub-item';
     subDiv.innerHTML = `<label>${subInfo.label}</label>`;
     
-    const sortedParams = [...subInfo.params].sort((a,b) => parseFloat(a.id) - parseFloat(b.id));
+    const sortedParams = [...subInfo.params].sort((a,b) => compareSpipCode(a.id, b.id));
     
     sortedParams.forEach(param => {
       const rawData = (row.subunsurs[subCode] && row.subunsurs[subCode][param.id]) || { level: 0 };
