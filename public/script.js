@@ -1333,10 +1333,11 @@ function showChart(type) {
     labels=['Level >= 3','Level < 3']; data=[countTrue,countFalse];
     backgroundColor=['#10b981','#e2e8f0']; borderColor=['#ffffff','#ffffff']; typeChart='pie';
   } else if (isQaByOpdChart) {
-    // QA APIP mengambil nilai langsung dari ringkasan kolom Penjaminan Kualitas / Quality Assurance APIP.
+    // QA APIP sengaja menggunakan bentuk grafik BAR HORIZONTAL yang sama
+    // dengan KPI Verifikasi Dokumen per OPD. Tidak memakai pie/doughnut.
     const chartData=[...rows].map(r=>({
       row:r,
-      summary:r.qaApipSummary||{percentage:0,evaluated:0,total:671,na:0,evidenceFiles:0}
+      summary:r.qaApipSummary||{percentage:0,evaluated:0,na:0,total:671,evidenceFiles:0}
     }));
     chartData.sort((a,b)=>(Number(b.summary.percentage)||0)-(Number(a.summary.percentage)||0));
     labels=chartData.map(x=>x.row.opd||'OPD Tanpa Nama');
@@ -1524,10 +1525,10 @@ function showChart(type) {
       }
     });
   } else if (isQaByOpdChart) {
-    // Tampilan QA APIP sengaja mengikuti grafik horizontal "Persentase Verifikasi Dokumen per OPD".
-    // Fitur grafik lain tidak disentuh.
+    // QA APIP: bentuk wajib BAR HORIZONTAL seperti KPI Verifikasi Dokumen per OPD.
+    // Branch ini terpisah agar renderer KPI lain tidak berubah.
     const chartWidth=Math.max(520, container.clientWidth-2);
-    const chartHeight=Math.max(430, Math.min(900, 170 + labels.length * 30));
+    const chartHeight=Math.max(430, Math.min(900, 170 + labels.length * 24));
     canvas.width=chartWidth;
     canvas.height=chartHeight;
     canvas.style.width='100%';
@@ -1537,19 +1538,25 @@ function showChart(type) {
     canvas.style.margin='0';
     container.style.overflow='auto';
 
-    const barGradient=ctx.createLinearGradient(0,0,chartWidth,0);
-    barGradient.addColorStop(0,'#4f46e5');
-    barGradient.addColorStop(0.55,'#6366f1');
-    barGradient.addColorStop(1,'#8b5cf6');
-
     chartInstance=new Chart(ctx,{
       type:'bar',
-      data:{labels,datasets:[{label:titles[type],data,backgroundColor:barGradient,borderColor:'#4f46e5',borderWidth:1.5,borderRadius:7,maxBarThickness:28}]},
+      data:{
+        labels,
+        datasets:[{
+          label:titles[type],
+          data,
+          backgroundColor:'#0f766e',
+          borderColor:'#0f766e',
+          borderWidth:1.5,
+          borderRadius:7,
+          maxBarThickness:28
+        }]
+      },
       options:{
         responsive:false,
         maintainAspectRatio:false,
         indexAxis:'y',
-        layout:{padding:{top:12,right:28,bottom:18,left:12}},
+        layout:{padding:{top:12,right:24,bottom:18,left:12}},
         interaction:{mode:'nearest',intersect:false},
         plugins:{
           legend:{display:false},
@@ -1566,8 +1573,18 @@ function showChart(type) {
           }
         },
         scales:{
-          x:{min:0,max:100,border:{display:false},grid:{color:'rgba(148,163,184,0.14)'},ticks:{color:'#64748b',stepSize:20,font:{size:11,weight:'600'},callback:value=>Number(value)+'%'}},
-          y:{border:{display:false},grid:{display:false},ticks:{color:'#334155',font:{size:10,weight:'600'},callback:function(value){const label=labels[value]||'';return label.length>34?label.slice(0,31)+'…':label;}}}
+          x:{
+            min:0,
+            max:100,
+            border:{display:false},
+            grid:{color:'rgba(148,163,184,0.14)'},
+            ticks:{color:'#64748b',stepSize:20,font:{size:11,weight:'600'},callback:value=>Number(value)+'%'}
+          },
+          y:{
+            border:{display:false},
+            grid:{display:false},
+            ticks:{color:'#334155',font:{size:10,weight:'600'},callback:function(value){const label=labels[value]||'';return label.length>34?label.slice(0,31)+'…':label;}}
+          }
         },
         animation:{duration:1000,easing:'easeOutQuart'}
       }
