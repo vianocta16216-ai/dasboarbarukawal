@@ -1694,6 +1694,74 @@ async function fetchAuthoritativeRow(opdId){
   }
 }
 
+
+// ====== NAVIGASI EVIDENCE STRUKTUR & PROSES ======
+// 25 sub-unsur dibagi menjadi 5 unsur SPIP agar pengguna tidak perlu melihat
+// seluruh parameter/evidence dalam satu halaman. Struktur data lama tetap dipakai.
+const SPIP_UNSUR_INFO = {
+  '1': { code:'1', icon:'🧭', title:'Lingkungan Pengendalian', subtitle:'Membangun lingkungan pengendalian yang sehat dan berintegritas' },
+  '2': { code:'2', icon:'⚠️', title:'Penilaian Risiko', subtitle:'Mengidentifikasi dan menganalisis risiko pencapaian tujuan' },
+  '3': { code:'3', icon:'🛠️', title:'Kegiatan Pengendalian', subtitle:'Menjalankan pengendalian atas proses dan transaksi penting' },
+  '4': { code:'4', icon:'💬', title:'Informasi dan Komunikasi', subtitle:'Menjamin informasi relevan dan komunikasi yang efektif' },
+  '5': { code:'5', icon:'🔎', title:'Pemantauan', subtitle:'Memantau efektivitas pengendalian secara berkelanjutan' }
+};
+
+function parseEvidenceFilesForNavigation(rawFiles) {
+  if (Array.isArray(rawFiles)) return rawFiles;
+  if (typeof rawFiles === 'string') {
+    try {
+      const parsed = JSON.parse(rawFiles);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+      return [];
+    }
+  }
+  if (rawFiles && typeof rawFiles === 'object') {
+    if (Array.isArray(rawFiles.files)) return rawFiles.files;
+    return Object.values(rawFiles).filter(v => typeof v === 'string' || (v && typeof v === 'object'));
+  }
+  return [];
+}
+
+function getSubunsurNavigationSummary(row, subCode) {
+  const subInfo = SUBUNSUR_DATA[subCode];
+  const files = [];
+  let parameters = 0;
+  (subInfo?.params || []).forEach(param => {
+    parameters++;
+    for (let lv = 1; lv <= 5; lv++) {
+      files.push(...parseEvidenceFilesForNavigation(row?.subunsurs?.[subCode]?.[param.id]?.['files' + lv]));
+    }
+  });
+  const verification = getFileVerificationSummary(files);
+  return { parameters, totalFiles: verification.total, verifiedFiles: verification.verified, percentage: verification.percentage || 0 };
+}
+
+function getUnsurNavigationSummary(row, unsurCode) {
+  const subCodes = Object.keys(SUBUNSUR_DATA || {}).filter(code => String(code).split('.')[0] === String(unsurCode)).sort(compareSpipCode);
+  let parameters = 0, totalFiles = 0, verifiedFiles = 0;
+  subCodes.forEach(subCode => {
+    const summary = getSubunsurNavigationSummary(row, subCode);
+    parameters += summary.parameters;
+    totalFiles += summary.totalFiles;
+    verifiedFiles += summary.verifiedFiles;
+  });
+  return {
+    subunsurs: subCodes.length,
+    parameters,
+    totalFiles,
+    verifiedFiles,
+    percentage: totalFiles ? Math.round((verifiedFiles / totalFiles) * 10000) / 100 : 0
+  };
+}
+
+function getUnsurNavigationData() {
+  return Object.keys(SPIP_UNSUR_INFO).map(code => ({
+    ...SPIP_UNSUR_INFO[code],
+    subCodes: Object.keys(SUBUNSUR_DATA || {}).filter(subCode => String(subCode).split('.')[0] === code).sort(compareSpipCode)
+  }));
+}
+
 async function openEditModal(id) {
   let row = rows.find(r => r.id === id);
   if (!row) return;
@@ -1718,7 +1786,9 @@ async function openEditModal(id) {
   sortedSubs.forEach(subCode => {
     const subInfo = SUBUNSUR_DATA[subCode];
     const subDiv = document.createElement('div');
-    subDiv.className = 'sub-item';
+    subDiv.className = 'sub-item evidence-sub-panel';
+    subDiv.dataset.element = String(subCode).split('.')[0];
+    subDiv.dataset.subCode = String(subCode);
     subDiv.innerHTML = `<label>${subInfo.label}</label>`;
     
     const sortedParams = [...subInfo.params].sort((a,b) => compareSpipCode(a.id, b.id));
@@ -1758,6 +1828,223 @@ async function openEditModal(id) {
     });
     container.appendChild(subDiv);
   });
+
+  // Pisahkan tampilan menjadi: 5 Unsur -> daftar Sub-Unsur -> detail parameter/evidence.
+  // Semua input lama tetap berada di DOM supaya fitur simpan, draft, autosave, upload,
+  // dan verifikasi tetap memakai selector/data-* yang sama.
+  const allSubPanels = Array.from(container.querySelectorAll('.evidence-sub-panel'));
+  const navRoot = document.createElement('div');
+  navRoot.className = 'evidence-structure-nav';
+
+  const navHeader = document.createElement('div');
+  navHeader.className = 'evidence-nav-header';
+  navHeader.innerHTML = `
+    <div class="evidence-nav-title-row">
+      <div>
+        <div class="evidence-nav-kicker">📁 EVIDENCE STRUKTUR & PROSES</div>
+        <h4 class="evidence-nav-title">Pilih Unsur yang ingin dikerjakan</h4>
+        <p class="evidence-nav-description">Tampilan dipisah bertahap agar tidak penuh: pilih 1 Unsur → pilih Sub-Unsur → kelola parameter, uraian, upload, dan verifikasi evidence.</p>
+      </div>
+      <div class="evidence-nav-total-badge"><strong>${Object.keys(SUBUNSUR_DATA || {}).length}</strong><span>Sub-Unsur</span></div>
+    </div>
+    <div class="evidence-breadcrumb" aria-label="Navigasi Evidence Struktur dan Proses">
+      <button type="button" class="evidence-crumb is-active" data-nav-target="unsur">5 Unsur</button>
+      <span>›</span>
+      <button type="button" class="evidence-crumb" data-nav-target="sub" disabled>Sub-Unsur</button>
+      <span>›</span>
+      <button type="button" class="evidence-crumb" data-nav-target="detail" disabled>Detail Evidence</button>
+    </div>
+  `;
+  navRoot.appendChild(navHeader);
+
+  const unsurScreen = document.createElement('div');
+  unsurScreen.className = 'evidence-nav-screen';
+  unsurScreen.dataset.screen = 'unsur';
+
+  const unsurGrid = document.createElement('div');
+  unsurGrid.className = 'evidence-unsur-grid';
+
+  const unsurData = getUnsurNavigationData();
+  unsurData.forEach(info => {
+    const summary = getUnsurNavigationSummary(row, info.code);
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'evidence-unsur-card';
+    card.dataset.unsur = info.code;
+    card.innerHTML = `
+      <span class="evidence-unsur-icon">${info.icon}</span>
+      <span class="evidence-unsur-code">UNSUR ${info.code}</span>
+      <span class="evidence-unsur-title">${escapeHtml(info.title)}</span>
+      <span class="evidence-unsur-subtitle">${escapeHtml(info.subtitle)}</span>
+      <span class="evidence-unsur-meta">
+        <span>${summary.subunsurs} Sub-Unsur</span>
+        <span>${summary.parameters} Parameter</span>
+      </span>
+      <span class="evidence-unsur-progress">
+        <span class="evidence-unsur-progress-bar"><i style="width:${Math.max(0, Math.min(100, summary.percentage))}%"></i></span>
+        <strong>${summary.totalFiles ? summary.percentage.toFixed(0) + '% terverifikasi' : 'Belum ada file'}</strong>
+      </span>
+      <span class="evidence-unsur-action">Buka Unsur <span>→</span></span>
+    `;
+    unsurGrid.appendChild(card);
+  });
+  unsurScreen.appendChild(unsurGrid);
+
+  const subScreen = document.createElement('div');
+  subScreen.className = 'evidence-nav-screen hidden';
+  subScreen.dataset.screen = 'sub';
+
+  const subScreenHead = document.createElement('div');
+  subScreenHead.className = 'evidence-sub-screen-head';
+  subScreenHead.innerHTML = `
+    <button type="button" class="evidence-back-btn" data-back="unsur">← Kembali ke 5 Unsur</button>
+    <div>
+      <div class="evidence-nav-kicker" id="evidenceSelectedUnsurKicker">UNSUR</div>
+      <h4 class="evidence-nav-title" id="evidenceSelectedUnsurTitle">Sub-Unsur</h4>
+      <p class="evidence-nav-description" id="evidenceSelectedUnsurDescription">Pilih Sub-Unsur.</p>
+    </div>
+  `;
+  subScreen.appendChild(subScreenHead);
+
+  const subGrid = document.createElement('div');
+  subGrid.className = 'evidence-subunsur-grid';
+  unsurData.forEach(info => {
+    info.subCodes.forEach(subCode => {
+      const summary = getSubunsurNavigationSummary(row, subCode);
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'evidence-subunsur-card';
+      card.dataset.element = info.code;
+      card.dataset.sub = subCode;
+      const label = SUBUNSUR_DATA[subCode]?.label || subCode;
+      card.innerHTML = `
+        <span class="evidence-subunsur-code">${escapeHtml(subCode)}</span>
+        <span class="evidence-subunsur-title">${escapeHtml(label.slice(String(subCode).length).trim())}</span>
+        <span class="evidence-subunsur-meta">
+          <span>${summary.parameters} Parameter</span>
+          <span>${summary.totalFiles} File</span>
+        </span>
+        <span class="evidence-subunsur-progress">
+          <strong>${summary.totalFiles ? summary.percentage.toFixed(0) + '%' : '0%'} verifikasi</strong>
+          <span class="evidence-subunsur-progressbar"><i style="width:${Math.max(0, Math.min(100, summary.percentage))}%"></i></span>
+        </span>
+        <span class="evidence-unsur-action">Buka Sub-Unsur <span>→</span></span>
+      `;
+      subGrid.appendChild(card);
+    });
+  });
+  subScreen.appendChild(subGrid);
+
+  const detailScreen = document.createElement('div');
+  detailScreen.className = 'evidence-nav-screen hidden';
+  detailScreen.dataset.screen = 'detail';
+
+  const detailHead = document.createElement('div');
+  detailHead.className = 'evidence-detail-head';
+  detailHead.innerHTML = `
+    <button type="button" class="evidence-back-btn" data-back="sub">← Kembali ke Sub-Unsur</button>
+    <div>
+      <div class="evidence-nav-kicker" id="evidenceSelectedSubKicker">SUB-UNSUR</div>
+      <h4 class="evidence-nav-title" id="evidenceSelectedSubTitle">Detail Evidence</h4>
+      <p class="evidence-nav-description">Kelola level, uraian evidence, upload file, serta verifikasi dokumen untuk Sub-Unsur ini.</p>
+    </div>
+  `;
+  detailScreen.appendChild(detailHead);
+
+  const detailBody = document.createElement('div');
+  detailBody.className = 'evidence-detail-body';
+  allSubPanels.forEach(panel => {
+    panel.hidden = true;
+    detailBody.appendChild(panel);
+  });
+  detailScreen.appendChild(detailBody);
+
+  navRoot.appendChild(unsurScreen);
+  navRoot.appendChild(subScreen);
+  navRoot.appendChild(detailScreen);
+  container.innerHTML = '';
+  container.appendChild(navRoot);
+
+  const breadcrumbButtons = Array.from(navRoot.querySelectorAll('.evidence-crumb'));
+  const screens = {
+    unsur: unsurScreen,
+    sub: subScreen,
+    detail: detailScreen
+  };
+
+  function setScreen(name) {
+    Object.entries(screens).forEach(([key, screen]) => screen.classList.toggle('hidden', key !== name));
+    breadcrumbButtons.forEach(btn => {
+      const target = btn.dataset.navTarget;
+      btn.classList.toggle('is-active', target === name);
+    });
+  }
+
+  function selectUnsur(unsurCode) {
+    const info = SPIP_UNSUR_INFO[unsurCode];
+    if (!info) return;
+    subScreen.querySelector('#evidenceSelectedUnsurKicker').textContent = `UNSUR ${info.code}`;
+    subScreen.querySelector('#evidenceSelectedUnsurTitle').textContent = info.title;
+    subScreen.querySelector('#evidenceSelectedUnsurDescription').textContent = info.subtitle;
+    subGrid.querySelectorAll('.evidence-subunsur-card').forEach(card => {
+      card.classList.toggle('hidden', card.dataset.element !== String(unsurCode));
+    });
+    breadcrumbButtons.forEach(btn => {
+      if (btn.dataset.navTarget === 'sub') btn.disabled = false;
+      if (btn.dataset.navTarget === 'detail') btn.disabled = true;
+    });
+    setScreen('sub');
+    subScreen.scrollIntoView({ block:'start', behavior:'smooth' });
+  }
+
+  function selectSubunsur(subCode) {
+    const info = SUBUNSUR_DATA[subCode];
+    if (!info) return;
+    detailScreen.querySelector('#evidenceSelectedSubKicker').textContent = `SUB-UNSUR ${subCode}`;
+    detailScreen.querySelector('#evidenceSelectedSubTitle').textContent = info.label;
+    allSubPanels.forEach(panel => { panel.hidden = panel.dataset.subCode !== String(subCode); });
+    const subElementCode = String(subCode).split('.')[0];
+    breadcrumbButtons.forEach(btn => {
+      if (btn.dataset.navTarget === 'sub') btn.disabled = false;
+      if (btn.dataset.navTarget === 'detail') btn.disabled = false;
+    });
+    setScreen('detail');
+    detailScreen.scrollIntoView({ block:'start', behavior:'smooth' });
+  }
+
+  navRoot.querySelectorAll('.evidence-unsur-card').forEach(card => {
+    card.addEventListener('click', () => selectUnsur(card.dataset.unsur));
+  });
+  navRoot.querySelectorAll('.evidence-subunsur-card').forEach(card => {
+    card.addEventListener('click', () => selectSubunsur(card.dataset.sub));
+  });
+  navRoot.querySelectorAll('[data-back="unsur"]').forEach(btn => btn.addEventListener('click', () => {
+    breadcrumbButtons.forEach(crumb => {
+      if (crumb.dataset.navTarget !== 'unsur') crumb.disabled = true;
+    });
+    setScreen('unsur');
+    unsurScreen.scrollIntoView({ block:'start', behavior:'smooth' });
+  }));
+  navRoot.querySelectorAll('[data-back="sub"]').forEach(btn => btn.addEventListener('click', () => {
+    breadcrumbButtons.forEach(crumb => {
+      if (crumb.dataset.navTarget === 'detail') crumb.disabled = true;
+      if (crumb.dataset.navTarget === 'sub') crumb.disabled = false;
+    });
+    setScreen('sub');
+    subScreen.scrollIntoView({ block:'start', behavior:'smooth' });
+  }));
+  breadcrumbButtons.forEach(btn => btn.addEventListener('click', () => {
+    if (btn.disabled) return;
+    if (btn.dataset.navTarget === 'unsur') {
+      breadcrumbButtons.forEach(crumb => { if (crumb.dataset.navTarget !== 'unsur') crumb.disabled = true; });
+      setScreen('unsur');
+    } else if (btn.dataset.navTarget === 'sub') {
+      breadcrumbButtons.forEach(crumb => { if (crumb.dataset.navTarget === 'detail') crumb.disabled = true; });
+      setScreen('sub');
+    }
+  }));
+
+  setScreen('unsur');
 
   document.getElementById('editModal').classList.add('active');
   sortedSubs.forEach(subCode => {
