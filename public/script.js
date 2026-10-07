@@ -1041,9 +1041,14 @@ function updateKpisLocal(){
   const iepk = rows.map(r=>Number(r.iepk)||0).filter(v=>v>0);
   const kap = rows.map(r=>Number(r.nilaiKapabilitasApip)||0).filter(v=>v>0);
   const qaSummaries=rows.map(r=>r.qaApipSummary||{total:671,evaluated:0,na:0,pending:671,sum:0,percentage:0,completion:0,status:'Belum'});
-  const qaFilledSummaries=qaSummaries.filter(s=>Number(s.evaluated||0)+Number(s.na||0)>0);
-  const qaApip=qaFilledSummaries.length ? qaFilledSummaries.reduce((sum,s)=>sum+(Number(s.percentage)||0),0)/qaFilledSummaries.length : 0;
-  const qaApipFilled=qaFilledSummaries.length;
+  // KPI is a weighted aggregate across the whole QA scope, not an average of
+  // OPD percentages. This prevents a small OPD with one completed item from
+  // pulling the overall KPI to 100%.
+  const qaTotalItems=qaSummaries.reduce((sum,s)=>sum+Math.max(0,Number(s.total||671)-Number(s.na||0)),0);
+  const qaScoreSum=qaSummaries.reduce((sum,s)=>sum+(Number(s.sum)||0),0);
+  const qaApip=qaTotalItems?Math.round((qaScoreSum/qaTotalItems)*10000)/100:0;
+  const qaApipFilled=qaSummaries.filter(s=>Number(s.evaluated||0)+Number(s.na||0)>0).length;
+  const qaEvidenceFiles=rows.reduce((sum,r)=>sum+Number(r.qaApipSummary?.evidenceFiles||0),0);
   const status=rows.filter(r=>r.status==='Selesai').length, rtp=rows.filter(r=>r.rtp==='Selesai').length, ev=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length).length;
 
   const documentSummaries = rows.map(getRowDocumentVerificationSummary);
@@ -1057,13 +1062,13 @@ function updateKpisLocal(){
     rataMRI:avgFilled('mri'),
     rataIEPK:avgFilled('iepk'),
     rataKapabilitasApip:avgFilled('nilaiKapabilitasApip'),
-    qaApip:Math.round(qaApip*100)/100, qaApipFilled, statusSelesai:pct(status,total), rtpSelesai:pct(rtp,total), evidenceRtp:pct(ev,total),
+    qaApip:Math.round(qaApip*100)/100, qaApipFilled, qaEvidenceFiles, statusSelesai:pct(status,total), rtpSelesai:pct(rtp,total), evidenceRtp:pct(ev,total),
     verifikasiDokumen:verificationDocumentsPct, totalDocuments, verifiedDocuments,
     total, strukturCount:total, maturitasCount:maturitas.length, mriCount:mri.length, iepkCount:iepk.length, kapabilitasCount:kap.length,
     statusSelesaiCount:status,rtpSelesaiCount:rtp,evidenceRtpCount:ev
   });
 }
-function applyKpis(k){const t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;},b=(id,v)=>{const e=document.getElementById(id);if(e)e.style.width=Math.max(0,Math.min(100,v))+'%';};t('kpiStrukturProses',k.rataStrukturProses.toFixed(2));b('kpiStrukturProsesBar',k.rataStrukturProses/5*100);t('kpiStrukturProsesNote',k.total+' OPD');t('kpiMaturitas',k.rataMaturitas.toFixed(2));b('kpiMaturitasBar',k.rataMaturitas/5*100);t('kpiMaturitasNote',k.maturitasCount+' OPD terisi');t('kpiMRI',k.rataMRI.toFixed(2));b('kpiMRIBar',k.rataMRI/5*100);t('kpiMRINote',k.mriCount+' OPD terisi');t('kpiIEPK',k.rataIEPK.toFixed(2));b('kpiIEPKBar',k.rataIEPK/5*100);t('kpiIEPKNote',k.iepkCount+' OPD terisi');t('kpiKapabilitasApip',k.rataKapabilitasApip.toFixed(2));b('kpiKapabilitasApipBar',k.rataKapabilitasApip/5*100);t('kpiKapabilitasApipNote',k.kapabilitasCount+' OPD terisi');t('kpiQaApip',Number(k.qaApip||0).toFixed(2)+'%');b('kpiQaApipBar',k.qaApip);t('kpiQaApipNote',k.qaApipFilled+' dari '+k.total+' OPD terisi');t('kpiStatusSelesai',k.statusSelesai+'%');b('kpiStatusSelesaiBar',k.statusSelesai);t('kpiStatusSelesaiNote',k.statusSelesaiCount+' dari '+k.total+' OPD');t('kpiRtpSelesai',k.rtpSelesai+'%');b('kpiRtpSelesaiBar',k.rtpSelesai);t('kpiRtpSelesaiNote',k.rtpSelesaiCount+' dari '+k.total+' OPD');t('kpiEvidenceRtp',k.evidenceRtp+'%');b('kpiEvidenceRtpBar',k.evidenceRtp);t('kpiEvidenceRtpNote',k.evidenceRtpCount+' dari '+k.total+' OPD');t('kpiVerifikasiDokumen',k.verifikasiDokumen+'%');b('kpiVerifikasiDokumenBar',k.verifikasiDokumen);t('kpiVerifikasiDokumenNote',k.verifiedDocuments+' dari '+k.totalDocuments+' dokumen');}
+function applyKpis(k){const t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;},b=(id,v)=>{const e=document.getElementById(id);if(e)e.style.width=Math.max(0,Math.min(100,v))+'%';};t('kpiStrukturProses',k.rataStrukturProses.toFixed(2));b('kpiStrukturProsesBar',k.rataStrukturProses/5*100);t('kpiStrukturProsesNote',k.total+' OPD');t('kpiMaturitas',k.rataMaturitas.toFixed(2));b('kpiMaturitasBar',k.rataMaturitas/5*100);t('kpiMaturitasNote',k.maturitasCount+' OPD terisi');t('kpiMRI',k.rataMRI.toFixed(2));b('kpiMRIBar',k.rataMRI/5*100);t('kpiMRINote',k.mriCount+' OPD terisi');t('kpiIEPK',k.rataIEPK.toFixed(2));b('kpiIEPKBar',k.rataIEPK/5*100);t('kpiIEPKNote',k.iepkCount+' OPD terisi');t('kpiKapabilitasApip',k.rataKapabilitasApip.toFixed(2));b('kpiKapabilitasApipBar',k.rataKapabilitasApip/5*100);t('kpiKapabilitasApipNote',k.kapabilitasCount+' OPD terisi');t('kpiQaApip',Number(k.qaApip||0).toFixed(2)+'%');b('kpiQaApipBar',k.qaApip);t('kpiQaApipNote',k.qaEvidenceFiles+' dokumen evidence · '+k.qaApipFilled+' dari '+k.total+' OPD terisi');t('kpiStatusSelesai',k.statusSelesai+'%');b('kpiStatusSelesaiBar',k.statusSelesai);t('kpiStatusSelesaiNote',k.statusSelesaiCount+' dari '+k.total+' OPD');t('kpiRtpSelesai',k.rtpSelesai+'%');b('kpiRtpSelesaiBar',k.rtpSelesai);t('kpiRtpSelesaiNote',k.rtpSelesaiCount+' dari '+k.total+' OPD');t('kpiEvidenceRtp',k.evidenceRtp+'%');b('kpiEvidenceRtpBar',k.evidenceRtp);t('kpiEvidenceRtpNote',k.evidenceRtpCount+' dari '+k.total+' OPD');t('kpiVerifikasiDokumen',k.verifikasiDokumen+'%');b('kpiVerifikasiDokumenBar',k.verifikasiDokumen);t('kpiVerifikasiDokumenNote',k.verifiedDocuments+' dari '+k.totalDocuments+' dokumen');}
 
 // ====== SAVE DATA ======
 function debounceSave() {
@@ -1153,7 +1158,7 @@ function render() {
         <td><span class="badge ${strukturStatus==='Selesai'?'badge-lengkap':(strukturStatus==='Proses'?'badge-sebagian':'badge-kosong')}">${strukturStatus}</span></td>
         <td><span class="badge ${badgeClass}" title="Jumlah parameter dengan evidence pada 43 parameter">${badgeLabel}</span></td>
         <td><div class="evidence-cell"><button class="btn-detail" data-id="${r.id}" title="Evidence Struktur dan Proses">📁</button><span class="structure-evidence-summary" data-id="${r.id}">${getRowStructureVerificationSummary(r).percentage.toFixed(0)}%<small>${getRowStructureVerificationSummary(r).total} file</small></span></div></td>
-        <td><div class="qa-apip-table-cell"><button class="btn-qa-apip" data-id="${r.id}" title="Penjaminan Kualitas / Quality Assurance APIP">🛡️</button><span class="qa-apip-table-summary" data-id="${r.id}">${Number(r.qaApipSummary?.percentage||0).toFixed(0)}%<small>${Number(r.qaApipSummary?.evaluated||0)}/${Number(r.qaApipSummary?.total||671)} dinilai</small></span></div></td>
+        <td><div class="qa-apip-table-cell"><button class="btn-qa-apip" data-id="${r.id}" title="Penjaminan Kualitas / Quality Assurance APIP">🛡️</button><span class="qa-apip-table-summary" data-id="${r.id}">${Number(r.qaApipSummary?.percentage||0).toFixed(2)}%<small>${Number(r.qaApipSummary?.evaluated||0)}/${Number(r.qaApipSummary?.total||671)} item · ${Number(r.qaApipSummary?.evidenceFiles||0)} file</small></span></div></td>
         <td><button class="btn-kk" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja SPIP">📊</button></td>
         <td><button class="btn-report-pm" data-id="${r.id}" title="Upload Laporan Hasil PM SPIP">📄</button><div class="report-count pm">${Array.isArray(r.pmSpipReports)?r.pmSpipReports.length:0}</div></td>
         <td><button class="btn-kk-rtp" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja RTP">📋</button></td>
@@ -3530,7 +3535,11 @@ function qaApipGetState(sub,param,grade,itemNo){return qaApipStateMap.get(qaApip
 function qaApipSetState(sub,param,grade,itemNo,st){qaApipStateMap.set(qaApipKey(sub,param,grade,itemNo),{...st,score:qaApipScore(st),conclusion:qaApipConclusion(st)});}
 function qaApipBuildParamSummary(p){
   const pid=p.paramId||`${p.subCode}.${p.paramNo}`;
-  const out={total:0,na:0,evaluated:0,pending:0,sum:0,grades:{}};
+  // IMPORTANT: the QA percentage must NOT use only the items that have been
+  // evaluated as the denominator. Otherwise the first completed item becomes
+  // 100%. The denominator is the full QA scope for this parameter (all items,
+  // excluding only items explicitly marked N/A).
+  const out={total:0,na:0,evaluated:0,pending:0,sum:0,grades:{},linkedEvidenceFiles:0};
   p.grades.forEach(g=>{
     let total=0,na=0,evaluated=0,sum=0;
     g.items.forEach(item=>{
@@ -3540,26 +3549,43 @@ function qaApipBuildParamSummary(p){
       if(String(st.availability||'')==='N/A')na++;
       if(score!==null){evaluated++;sum+=score;}
     });
+    // A grade is measured against all of its applicable items, not just the
+    // rows already filled in, so one completed row cannot show 100% for a
+    // three-item grade.
+    const applicable=Math.max(0,total-na);
     out.total+=total; out.na+=na; out.evaluated+=evaluated; out.sum+=sum;
-    out.grades[g.grade]={total,na,evaluated,sum,percentage:evaluated?Math.round((sum/evaluated)*10000)/100:null};
+    out.grades[g.grade]={total,na,evaluated,sum,applicable,percentage:applicable?Math.round((sum/applicable)*10000)/100:null,pending:Math.max(0,total-na-evaluated)};
   });
   out.pending=Math.max(0,out.total-out.na-out.evaluated);
-  out.percentage=out.evaluated?Math.round((out.sum/out.evaluated)*10000)/100:null;
+  const applicableAll=Math.max(0,out.total-out.na);
+  out.percentage=applicableAll?Math.round((out.sum/applicableAll)*10000)/100:null;
   const threshold=Number(qaApipMaster?.thresholdGrade??1);
   let level=0;
-  for(const g of (qaApipMaster?.gradeOrder||['E','D','C','B','A'])){
-    if(out.grades[g]?.percentage!==null && out.grades[g].percentage>=threshold)level++; else break;
+  const order=qaApipMaster?.gradeOrder||['E','D','C','B','A'];
+  for(const grade of order){
+    const gs=out.grades[grade];
+    // A grade is achieved only when all applicable items of that grade have
+    // been assessed and the grade percentage reaches the configured threshold.
+    if(gs && gs.applicable>0 && gs.pending===0 && Number(gs.percentage||0)>=threshold*100) level++;
+    else break;
   }
   out.level=level;
-  out.grade=level===0?'< E':(qaApipMaster.gradeOrder[level-1]||'A');
-  out.nextGrade=level>=5?'Seluruh grade terpenuhi':`Lengkapi evidence Grade ${qaApipMaster.gradeOrder[level]} (${out.pending} item belum dinilai)`;
+  out.grade=level===0?'< E':(order[level-1]||'A');
+  if(level>=order.length) out.nextGrade='Seluruh grade terpenuhi';
+  else {
+    const next=order[level];
+    const nextSummary=out.grades[next];
+    const pendingNext=Number(nextSummary?.pending||0);
+    out.nextGrade=`Lengkapi evidence Grade ${next}${pendingNext>0?` (${pendingNext} item belum dinilai)`:''}`;
+  }
   return out;
 }
 function qaApipAllParamSummaries(){return (qaApipMaster?.parameters||[]).map(p=>({p,summary:qaApipBuildParamSummary(p)}));}
 function qaApipGroupSummary(params){
   let totalParams=0,totalItems=0,na=0,evaluated=0,sum=0,level3=0;
   params.forEach(p=>{const s=qaApipBuildParamSummary(p);totalParams++;totalItems+=s.total;na+=s.na;evaluated+=s.evaluated;sum+=s.sum;if(s.level>=3)level3++;});
-  const percentage=evaluated?Math.round((sum/evaluated)*10000)/100:null;
+  const applicable=Math.max(0,totalItems-na);
+  const percentage=applicable?Math.round((sum/applicable)*10000)/100:null;
   let category='Belum dinilai'; if(percentage!==null) category=percentage>=80?'Tinggi':percentage>=60?'Cukup':percentage>=40?'Kurang':'Rendah';
   return {totalParams,totalItems,na,evaluated,pending:Math.max(0,totalItems-na-evaluated),sum,percentage,level3,category};
 }
@@ -3570,7 +3596,7 @@ function qaApipOverallSummary(){
 function updateQaApipTableSummary(row,summary){
   const s=summary||row?.qaApipSummary||{};
   const el=document.querySelector(`.qa-apip-table-summary[data-id="${CSS.escape(String(row?.id||''))}"]`);
-  if(el)el.innerHTML=`${Number(s.percentage||0).toFixed(0)}%<small>${Number(s.evaluated||0)}/${Number(s.total||671)} dinilai</small>`;
+  if(el)el.innerHTML=`${Number(s.percentage||0).toFixed(2)}%<small>${Number(s.evaluated||0)}/${Number(s.total||671)} item · ${Number(s.evidenceFiles||0)} file</small>`;
 }
 async function ensureQaApipMasterLoaded(){
   if(qaApipMaster)return qaApipMaster;
@@ -3592,14 +3618,13 @@ function qaApipUpdateModalSummary(row){
   const evaluated=s.evaluated; const total=s.totalItems; const na=s.na; const pending=s.pending;
   const el=document.getElementById('qaApipSummary'); if(!el)return;
   const pct=s.percentage===null?0:Number(s.percentage||0);
-  el.innerHTML=`<div class="qa-summary-card qa-summary-result"><span>Hasil QA APIP</span><strong>${pct.toFixed(2)}%</strong><small>${evaluated} item dinilai</small></div><div class="qa-summary-card"><span>Jumlah Item</span><strong>${total}</strong><small>Master QA APIP</small></div><div class="qa-summary-card"><span>Belum Dinilai</span><strong>${pending}</strong><small>${na} item N/A</small></div><div class="qa-summary-card"><span>Progress Pengisian</span><strong>${Math.round(((evaluated+na)/Math.max(1,total))*100)}%</strong><small>${evaluated+na}/${total} item diproses</small></div>`;
-  const rowPct=linked?.percentage!==undefined?Number(linked.percentage):pct;
-  row.qaApipSummary={...(row.qaApipSummary||{}),total:total,evaluated,na,pending,sum:s.sum,percentage:rowPct,completion:Math.round(((evaluated+na)/Math.max(1,total))*10000)/100,status:(evaluated+na>=total?'Selesai':(evaluated+na>0?'Proses':'Belum'))};
+  el.innerHTML=`<div class="qa-summary-card qa-summary-result"><span>Hasil QA APIP</span><strong>${pct.toFixed(2)}%</strong><small>Σ nilai ÷ ${Math.max(0,total-na)} item berlaku</small></div><div class="qa-summary-card"><span>Jumlah Item</span><strong>${total}</strong><small>Master QA APIP</small></div><div class="qa-summary-card"><span>Belum Dinilai</span><strong>${pending}</strong><small>${na} item N/A</small></div><div class="qa-summary-card"><span>Progress Pengisian</span><strong>${Math.round(((evaluated+na)/Math.max(1,total))*100)}%</strong><small>${evaluated+na}/${total} item diproses · ${Number(linked.evidenceFiles||0)} file evidence</small></div>`;
+  row.qaApipSummary={...(row.qaApipSummary||{}),total:total,evaluated,na,pending,sum:s.sum,percentage:pct,completion:Math.round(((evaluated+na)/Math.max(1,total))*10000)/100,evidenceFiles:Number(linked.evidenceFiles||0),status:(evaluated+na>=total?'Selesai':(evaluated+na>0?'Proses':'Belum'))};
   updateQaApipTableSummary(row,row.qaApipSummary);
 }
 function renderQaApipPetunjuk(){
   const m=qaApipMaster; const instructions=m.instructions||[];
-  return `<div class="qa-sheet-head"><div><div class="qa-kicker">PENJAMINAN KUALITAS APIP</div><h4>Petunjuk Pengisian</h4><p>Konsep ini mengikuti workbook <b>${escapeHtml(m.source||'template QA')}</b>. Master berisi <b>${Number(m.itemsTotal||671)}</b> item untuk <b>${Number(m.parameterTotal||43)}</b> parameter.</p></div><div class="qa-threshold-box"><span>Ambang grade</span><strong>${Number(m.thresholdGrade||1)*100}%</strong></div></div><div class="qa-instruction-table-wrap"><table class="qa-instruction-table"><thead><tr><th>Kolom</th><th>Bagian</th><th>Petunjuk</th></tr></thead><tbody>${instructions.map(x=>`<tr><td><b>${escapeHtml(x.kode)}</b></td><td>${escapeHtml(x.judul)}</td><td>${escapeHtml(x.isi)}</td></tr>`).join('')}</tbody></table></div><div class="qa-formula-box"><b>Rumus Nilai Item:</b> 1 = Ada + Sah + Periode sesuai + Substansi Sesuai; 0,5 = Ada tetapi belum sepenuhnya terpenuhi; 0 = Tidak Ada atau Substansi Tidak Sesuai; N/A dan belum dinilai tidak masuk penyebut. <br><b>Rumus %:</b> Σ Nilai ÷ jumlah item yang dinilai.</div>`;
+  return `<div class="qa-sheet-head"><div><div class="qa-kicker">PENJAMINAN KUALITAS APIP</div><h4>Petunjuk Pengisian</h4><p>Konsep ini mengikuti workbook <b>${escapeHtml(m.source||'template QA')}</b>. Master berisi <b>${Number(m.itemsTotal||671)}</b> item untuk <b>${Number(m.parameterTotal||43)}</b> parameter.</p></div><div class="qa-threshold-box"><span>Ambang grade</span><strong>${Number(m.thresholdGrade||1)*100}%</strong></div></div><div class="qa-instruction-table-wrap"><table class="qa-instruction-table"><thead><tr><th>Kolom</th><th>Bagian</th><th>Petunjuk</th></tr></thead><tbody>${instructions.map(x=>`<tr><td><b>${escapeHtml(x.kode)}</b></td><td>${escapeHtml(x.judul)}</td><td>${escapeHtml(x.isi)}</td></tr>`).join('')}</tbody></table></div><div class="qa-formula-box"><b>Rumus Nilai Item:</b> 1 = Ada + Sah + Periode sesuai + Substansi Sesuai; 0,5 = Ada tetapi belum sepenuhnya terpenuhi; 0 = Tidak Ada atau Substansi Tidak Sesuai. Item N/A tidak masuk penyebut, sedangkan item yang belum dinilai tetap masuk penyebut. <br><b>Rumus %:</b> Σ Nilai ÷ jumlah seluruh item QA yang berlaku (total item dikurangi N/A). Item yang belum dinilai tetap menjadi bagian penyebut, sehingga satu item tidak dapat langsung menghasilkan 100%.</div>`;
 }
 function renderQaApipNavCard({title,code,meta,sub,kind,active=false,extra=''}){
   return `<button type="button" class="qa-nav-card${active?' active':''}" data-qa-nav-kind="${kind}" data-qa-nav-value="${escapeHtml(String(sub??code))}"><span class="qa-nav-code">${escapeHtml(String(code||''))}</span><strong>${escapeHtml(String(title||''))}</strong><span class="qa-nav-meta">${escapeHtml(String(meta||''))}</span>${extra}</button>`;
@@ -3666,7 +3691,7 @@ async function openQaApipModal(id){
   const modal=document.getElementById('qaApipModal'); if(!modal)return;
   document.getElementById('qaApipModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;
   modal.classList.add('active'); qaApipSetStatus('Memuat master dan data QA APIP...');
-  try{await Promise.all([ensureQaApipMasterLoaded(),loadQaApipData(row)]);qaApipSetStatus('✓ Data siap. Perubahan QA tersimpan otomatis per item.','success');renderQaApipModal();}
+  try{await Promise.all([ensureQaApipMasterLoaded(),loadQaApipData(row)]);qaApipSetStatus('✓ Data siap. Persentase dihitung terhadap seluruh item QA yang berlaku; file Evidence Struktur & Proses ditarik otomatis.','success');renderQaApipModal();}
   catch(err){qaApipSetStatus('Gagal memuat QA APIP: '+(err.message||err),'error');}
 }
 function closeQaApipModal(){document.getElementById('qaApipModal')?.classList.remove('active');qaApipEditingRowId=null;qaApipCurrentRow=null;qaApipStateMap=new Map();qaApipSaveTimers.forEach(t=>clearTimeout(t));qaApipSaveTimers.clear();}
@@ -3674,7 +3699,7 @@ async function saveQaApipRowFromDom(tr){
   if(!tr||!qaApipCurrentRow)return;
   const sub=String(tr.dataset.qaSub||''),paramId=String(tr.dataset.qaParam||''),grade=String(tr.dataset.qaGrade||''),itemNo=Number(tr.dataset.qaItem||0);
   const get=f=>tr.querySelector(`[data-qa-field="${f}"]`)?.value||'';
-  const payload={opdId:qaApipCurrentRow.id,year:currentYear,subunsur:sub,paramId,grade,itemNo,availability:get('availability'),identityDoc:get('identityDoc'),validity:get('validity'),periodOk:get('periodOk'),substance:get('substance'),note:get('note'),examinerName:''};
+  const payload={opdId:qaApipCurrentRow.id,year:currentYear,subunsur:sub,paramId,grade,itemNo,availability:get('availability'),identityDoc:get('identityDoc'),validity:get('validity'),periodOk:get('periodOk'),substance:get('substance'),note:get('note'),examinerName:'',evidenceCount:qaApipLinkedFiles(qaApipCurrentRow,sub,paramId,grade==='E'?1:grade==='D'?2:grade==='C'?3:grade==='B'?4:grade==='A'?5:0).length};
   qaApipSetState(sub,paramId,grade,itemNo,payload);
   qaApipSetStatus('⏳ Menyimpan perubahan QA APIP...');
   try{
