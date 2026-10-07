@@ -392,6 +392,7 @@ button:disabled {
 .kpi:nth-child(7) { background: linear-gradient(135deg, #ccfbf1 0%, #ffffff 100%); border-left: 5px solid #14b8a6; }
 .kpi:nth-child(8) { background: linear-gradient(135deg, #ffedd5 0%, #ffffff 100%); border-left: 5px solid #f97316; }
 .kpi:nth-child(9) { background: linear-gradient(135deg, #ede9fe 0%, #ffffff 100%); border-left: 5px solid #8b5cf6; }
+.kpi:nth-child(10) { background: linear-gradient(135deg, #eef2ff 0%, #ffffff 100%); border-left: 5px solid #4f46e5; }
 
 /* ===== PANEL UTAMA ===== */
 .panel {

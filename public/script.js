@@ -623,6 +623,20 @@ function getRtpEvidenceVerificationSummary(row) {
   return getFileVerificationSummary(Array.isArray(row?.rtpEvidence) ? row.rtpEvidence : []);
 }
 
+// Ringkasan KPI dokumen verifikasi: seluruh evidence yang memang memiliki
+// mekanisme verifikasi Inspektorat (Evidence Struktur & Proses + Evidence RTP).
+// Persentase dihitung berdasarkan JUMLAH DOKUMEN, bukan rata-rata persentase OPD:
+// dokumen terverifikasi / seluruh dokumen yang di-upload x 100.
+function getRowDocumentVerificationSummary(row) {
+  const structureFiles = getAllStructureEvidenceFiles(row);
+  const rtpFiles = Array.isArray(row?.rtpEvidence) ? row.rtpEvidence : [];
+  const summary = getFileVerificationSummary([...structureFiles, ...rtpFiles]);
+  return {
+    ...summary,
+    documentPercentage: summary.total ? Math.round((summary.verified / summary.total) * 10000) / 100 : 0
+  };
+}
+
 function verificationStatusOptions(current='') {
   return `<option value="" ${current === '' ? 'selected' : ''}>Belum Diverifikasi</option>
     <option value="diterima" ${current === 'diterima' ? 'selected' : ''}>Diterima</option>
@@ -1014,6 +1028,12 @@ function updateKpisLocal(){
   const iepk = rows.map(r=>Number(r.iepk)||0).filter(v=>v>0);
   const kap = rows.map(r=>Number(r.nilaiKapabilitasApip)||0).filter(v=>v>0);
   const qa=rows.filter(r=>r.qaApip==='Selesai').length, status=rows.filter(r=>r.status==='Selesai').length, rtp=rows.filter(r=>r.rtp==='Selesai').length, ev=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length).length;
+
+  const documentSummaries = rows.map(getRowDocumentVerificationSummary);
+  const totalDocuments = documentSummaries.reduce((sum,s)=>sum+s.total,0);
+  const verifiedDocuments = documentSummaries.reduce((sum,s)=>sum+s.verified,0);
+  const verificationDocumentsPct = pct(verifiedDocuments,totalDocuments);
+
   applyKpis({
     rataStrukturProses:total ? struktur.reduce((a,b)=>a+b,0)/total : 0,
     rataMaturitas:avgFilled('nilaiMaturitas'),
@@ -1021,11 +1041,12 @@ function updateKpisLocal(){
     rataIEPK:avgFilled('iepk'),
     rataKapabilitasApip:avgFilled('nilaiKapabilitasApip'),
     qaApip:pct(qa,total), statusSelesai:pct(status,total), rtpSelesai:pct(rtp,total), evidenceRtp:pct(ev,total),
+    verifikasiDokumen:verificationDocumentsPct, totalDocuments, verifiedDocuments,
     total, strukturCount:total, maturitasCount:maturitas.length, mriCount:mri.length, iepkCount:iepk.length, kapabilitasCount:kap.length,
     qaApipCount:qa,statusSelesaiCount:status,rtpSelesaiCount:rtp,evidenceRtpCount:ev
   });
 }
-function applyKpis(k){const t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;},b=(id,v)=>{const e=document.getElementById(id);if(e)e.style.width=Math.max(0,Math.min(100,v))+'%';};t('kpiStrukturProses',k.rataStrukturProses.toFixed(2));b('kpiStrukturProsesBar',k.rataStrukturProses/5*100);t('kpiStrukturProsesNote',k.total+' OPD');t('kpiMaturitas',k.rataMaturitas.toFixed(2));b('kpiMaturitasBar',k.rataMaturitas/5*100);t('kpiMaturitasNote',k.maturitasCount+' OPD terisi');t('kpiMRI',k.rataMRI.toFixed(2));b('kpiMRIBar',k.rataMRI/5*100);t('kpiMRINote',k.mriCount+' OPD terisi');t('kpiIEPK',k.rataIEPK.toFixed(2));b('kpiIEPKBar',k.rataIEPK/5*100);t('kpiIEPKNote',k.iepkCount+' OPD terisi');t('kpiKapabilitasApip',k.rataKapabilitasApip.toFixed(2));b('kpiKapabilitasApipBar',k.rataKapabilitasApip/5*100);t('kpiKapabilitasApipNote',k.kapabilitasCount+' OPD terisi');t('kpiQaApip',k.qaApip+'%');b('kpiQaApipBar',k.qaApip);t('kpiQaApipNote',k.qaApipCount+' dari '+k.total+' OPD');t('kpiStatusSelesai',k.statusSelesai+'%');b('kpiStatusSelesaiBar',k.statusSelesai);t('kpiStatusSelesaiNote',k.statusSelesaiCount+' dari '+k.total+' OPD');t('kpiRtpSelesai',k.rtpSelesai+'%');b('kpiRtpSelesaiBar',k.rtpSelesai);t('kpiRtpSelesaiNote',k.rtpSelesaiCount+' dari '+k.total+' OPD');t('kpiEvidenceRtp',k.evidenceRtp+'%');b('kpiEvidenceRtpBar',k.evidenceRtp);t('kpiEvidenceRtpNote',k.evidenceRtpCount+' dari '+k.total+' OPD');}
+function applyKpis(k){const t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;},b=(id,v)=>{const e=document.getElementById(id);if(e)e.style.width=Math.max(0,Math.min(100,v))+'%';};t('kpiStrukturProses',k.rataStrukturProses.toFixed(2));b('kpiStrukturProsesBar',k.rataStrukturProses/5*100);t('kpiStrukturProsesNote',k.total+' OPD');t('kpiMaturitas',k.rataMaturitas.toFixed(2));b('kpiMaturitasBar',k.rataMaturitas/5*100);t('kpiMaturitasNote',k.maturitasCount+' OPD terisi');t('kpiMRI',k.rataMRI.toFixed(2));b('kpiMRIBar',k.rataMRI/5*100);t('kpiMRINote',k.mriCount+' OPD terisi');t('kpiIEPK',k.rataIEPK.toFixed(2));b('kpiIEPKBar',k.rataIEPK/5*100);t('kpiIEPKNote',k.iepkCount+' OPD terisi');t('kpiKapabilitasApip',k.rataKapabilitasApip.toFixed(2));b('kpiKapabilitasApipBar',k.rataKapabilitasApip/5*100);t('kpiKapabilitasApipNote',k.kapabilitasCount+' OPD terisi');t('kpiQaApip',k.qaApip+'%');b('kpiQaApipBar',k.qaApip);t('kpiQaApipNote',k.qaApipCount+' dari '+k.total+' OPD');t('kpiStatusSelesai',k.statusSelesai+'%');b('kpiStatusSelesaiBar',k.statusSelesai);t('kpiStatusSelesaiNote',k.statusSelesaiCount+' dari '+k.total+' OPD');t('kpiRtpSelesai',k.rtpSelesai+'%');b('kpiRtpSelesaiBar',k.rtpSelesai);t('kpiRtpSelesaiNote',k.rtpSelesaiCount+' dari '+k.total+' OPD');t('kpiEvidenceRtp',k.evidenceRtp+'%');b('kpiEvidenceRtpBar',k.evidenceRtp);t('kpiEvidenceRtpNote',k.evidenceRtpCount+' dari '+k.total+' OPD');t('kpiVerifikasiDokumen',k.verifikasiDokumen+'%');b('kpiVerifikasiDokumenBar',k.verifikasiDokumen);t('kpiVerifikasiDokumenNote',k.verifiedDocuments+' dari '+k.totalDocuments+' dokumen');}
 
 // ====== SAVE DATA ======
 function debounceSave() {
@@ -1126,6 +1147,7 @@ function render() {
     }).join('');
   }
   attachHandlers();
+  updateKpisLocal();
 }
 
 function selectHtml(id, field, value, options) {
@@ -1244,7 +1266,8 @@ function showChart(type) {
     qaApip:'Persentase QA APIP Selesai',
     statusSelesai:'Persentase OPD Selesai (Status)',
     rtpSelesai:'Persentase RTP Selesai',
-    evidenceRtp:'Persentase OPD dengan Evidence RTP'
+    evidenceRtp:'Persentase OPD dengan Evidence RTP',
+    verifikasiDokumen:'Persentase Verifikasi Dokumen per OPD'
   };
 
   let labels=[];
@@ -1255,6 +1278,7 @@ function showChart(type) {
   let totalCount=0;
   let countTrue=0;
   let countFalse=0;
+  let verificationMeta=[];
 
   if (!rows || rows.length===0) {
     alert('Data OPD belum tersedia!');
@@ -1262,6 +1286,7 @@ function showChart(type) {
   }
 
   const isLineChart=['nilaiStrukturProses','nilaiMaturitas','rataMRI','rataIEPK','nilaiKapabilitasApip'].includes(type);
+  const isVerificationByOpdChart=type==='verifikasiDokumen';
 
   if (isLineChart) {
     let chartData=[...rows];
@@ -1270,6 +1295,13 @@ function showChart(type) {
     labels=chartData.map(r=>r.opd||'OPD Tanpa Nama');
     data=chartData.map(r=>Math.max(0,Math.min(5,parseFloat(r[field])||0)));
     typeChart='line';
+  } else if (isVerificationByOpdChart) {
+    const chartData=[...rows].map(r=>({row:r,summary:getRowDocumentVerificationSummary(r)}));
+    chartData.sort((a,b)=>b.summary.documentPercentage-a.summary.documentPercentage);
+    labels=chartData.map(x=>x.row.opd||'OPD Tanpa Nama');
+    data=chartData.map(x=>Math.round(Math.max(0,Math.min(100,x.summary.documentPercentage))));
+    verificationMeta=chartData.map(x=>({total:x.summary.total,verified:x.summary.verified}));
+    typeChart='bar';
   } else if (type==='opdLevel3') {
     totalCount=rows.length;
     countTrue=rows.filter(r=>(parseFloat(r.sa)||0)>=3).length;
@@ -1423,6 +1455,38 @@ function showChart(type) {
         transitions:{
           active:{animation:{duration:350}}
         }
+      }
+    });
+  } else if (isVerificationByOpdChart) {
+    const chartWidth=Math.max(520, container.clientWidth-2);
+    const chartHeight=Math.max(430, Math.min(620, 170 + labels.length * 24));
+    canvas.width=chartWidth;
+    canvas.height=chartHeight;
+    canvas.style.width='100%';
+    canvas.style.height=chartHeight+'px';
+    canvas.style.minWidth='0';
+    canvas.style.display='block';
+    canvas.style.margin='0';
+    container.style.overflow='auto';
+
+    chartInstance=new Chart(ctx,{
+      type:'bar',
+      data:{labels,datasets:[{label:titles[type],data,backgroundColor:'#6366f1',borderColor:'#4f46e5',borderWidth:1.5,borderRadius:7,maxBarThickness:28}]},
+      options:{
+        responsive:false,
+        maintainAspectRatio:false,
+        indexAxis:'y',
+        layout:{padding:{top:12,right:24,bottom:18,left:12}},
+        interaction:{mode:'nearest',intersect:false},
+        plugins:{
+          legend:{display:false},
+          tooltip:{backgroundColor:'#0f172a',position:'nearest',callbacks:{label:function(context){const m=verificationMeta[context.dataIndex]||{total:0,verified:0};return ` ${Number(context.parsed.x||0).toFixed(0)}% · ${m.verified} dari ${m.total} dokumen terverifikasi`;}}}
+        },
+        scales:{
+          x:{min:0,max:100,border:{display:false},grid:{color:'rgba(148,163,184,0.14)'},ticks:{color:'#64748b',stepSize:20,font:{size:11,weight:'600'},callback:value=>Number(value)+'%'}},
+          y:{border:{display:false},grid:{display:false},ticks:{color:'#334155',font:{size:10,weight:'600'},callback:function(value){const label=labels[value]||'';return label.length>34?label.slice(0,31)+'…':label;}}}
+        },
+        animation:{duration:1000,easing:'easeOutQuart'}
       }
     });
   } else {
