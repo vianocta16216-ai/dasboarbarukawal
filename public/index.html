@@ -16,7 +16,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KAWAL SPIP - Dashboard Lengkap</title>
 <link rel="icon" type="image/png" href="/favicon.png">
-<link rel="stylesheet" href="/style.css?v=20261007-kpi-verifikasi-dokumen">
+<link rel="stylesheet" href="/style.css?v=20261008-qa-apip-v2">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -68,12 +68,11 @@
     <div class="kpi" id="kpi-card-3" onclick="showChart('rataMRI')"><div class="kpi-header"><span class="kpi-label">Rata-rata MRI</span><span class="kpi-icon">📈</span></div><div class="kpi-value" id="kpiMRI">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiMRIBar" style="width:0%"></div></div><div class="kpi-note" id="kpiMRINote">0 OPD terisi</div></div>
     <div class="kpi" id="kpi-card-4" onclick="showChart('rataIEPK')"><div class="kpi-header"><span class="kpi-label">Rata-rata IEPK</span><span class="kpi-icon">📈</span></div><div class="kpi-value" id="kpiIEPK">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiIEPKBar" style="width:0%"></div></div><div class="kpi-note" id="kpiIEPKNote">0 OPD terisi</div></div>
     <div class="kpi" id="kpi-card-5" onclick="showChart('nilaiKapabilitasApip')"><div class="kpi-header"><span class="kpi-label">Rata-rata Nilai Kapabilitas APIP</span></div><div class="kpi-value" id="kpiKapabilitasApip">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiKapabilitasApipBar" style="width:0%"></div></div><div class="kpi-note" id="kpiKapabilitasApipNote">0 OPD terisi</div></div>
-    <div class="kpi" id="kpi-card-6" onclick="showChart('qaApip')"><div class="kpi-header"><span class="kpi-label">Status QA APIP</span><span class="kpi-icon">✅</span></div><div class="kpi-value" id="kpiQaApip">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiQaApipBar" style="width:0%"></div></div><div class="kpi-note" id="kpiQaApipNote">0 dari 0 OPD</div></div>
+    <div class="kpi" id="kpi-card-6" onclick="showChart('qaApip')"><div class="kpi-header"><span class="kpi-label">Persentase Hasil QA APIP</span><span class="kpi-icon">✅</span></div><div class="kpi-value" id="kpiQaApip">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiQaApipBar" style="width:0%"></div></div><div class="kpi-note" id="kpiQaApipNote">0 dari 0 OPD</div></div>
     <div class="kpi" id="kpi-card-7" onclick="showChart('statusSelesai')"><div class="kpi-header"><span class="kpi-label">OPD Selesai (Status)</span></div><div class="kpi-value" id="kpiStatusSelesai">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiStatusSelesaiBar" style="width:0%"></div></div><div class="kpi-note" id="kpiStatusSelesaiNote">0 dari 0 OPD</div></div>
     <div class="kpi" id="kpi-card-8" onclick="showChart('rtpSelesai')"><div class="kpi-header"><span class="kpi-label">RTP Selesai</span></div><div class="kpi-value" id="kpiRtpSelesai">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiRtpSelesaiBar" style="width:0%"></div></div><div class="kpi-note" id="kpiRtpSelesaiNote">0 dari 0 OPD</div></div>
     <div class="kpi" id="kpi-card-9" onclick="showChart('evidenceRtp')"><div class="kpi-header"><span class="kpi-label">Evidence RTP Terisi</span></div><div class="kpi-value" id="kpiEvidenceRtp">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiEvidenceRtpBar" style="width:0%"></div></div><div class="kpi-note" id="kpiEvidenceRtpNote">0 dari 0 OPD</div></div>
-    <div class="kpi" id="kpi-card-11" onclick="showChart('qaHasilApip')"><div class="kpi-header"><span class="kpi-label">Persentase Hasil QA APIP</span><span class="kpi-icon">🛡️</span></div><div class="kpi-value" id="kpiQaHasilApip">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiQaHasilApipBar" style="width:0%"></div></div><div class="kpi-note" id="kpiQaHasilApipNote">0 dari 0 file evidence</div></div>
-    <div class="kpi" id="kpi-card-10" onclick="showChart('verifikasiDokumen')"><div class="kpi-header"><span class="kpi-label">Persentase Dokumen Dinilai QA APIP</span><span class="kpi-icon">🛡️</span></div><div class="kpi-value" id="kpiVerifikasiDokumen">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiVerifikasiDokumenBar" style="width:0%"></div></div><div class="kpi-note" id="kpiVerifikasiDokumenNote">0 dari 0 dokumen</div></div>
+    <div class="kpi" id="kpi-card-10" onclick="showChart('verifikasiDokumen')"><div class="kpi-header"><span class="kpi-label">Persentase Verifikasi Dokumen</span><span class="kpi-icon">🛡️</span></div><div class="kpi-value" id="kpiVerifikasiDokumen">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiVerifikasiDokumenBar" style="width:0%"></div></div><div class="kpi-note" id="kpiVerifikasiDokumenNote">0 dari 0 dokumen</div></div>
   </div>
 </div>
 
@@ -82,8 +81,28 @@
   <div class="panel">
     <div class="panel-head"><h2>🏢 Daftar OPD - Tahun <span id="currentYearLabel">2026</span></h2><p class="status-msg" id="saveStatus"></p></div>
     <p class="desc">Nilai Maturitas diinput manual. Nilai Struktur dan Proses dihitung otomatis dari level 43 parameter. Status Struktur dan Proses serta Kelengkapannya mengikuti progres evidence 43 parameter.</p>
-    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">QA APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="min-width:205px;">Penjaminan Kualitas / Quality Assurance APIP</th><th style="width:78px;">KK SPIP</th><th style="min-width:145px;">Laporan Hasil PM SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:155px;">Laporan Pemantauan RR_RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="min-width:220px;">Penjaminan Kualitas / Quality Assurance APIP</th><th style="width:78px;">KK SPIP</th><th style="min-width:145px;">Laporan Hasil PM SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:155px;">Laporan Pemantauan RR_RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
     <div class="empty-state" id="emptyState" style="display:none;">Belum ada OPD. Klik <strong>"Tambah OPD"</strong> untuk memulai.</div>
+  </div>
+</div>
+
+<!-- Modal Penjaminan Kualitas / Quality Assurance APIP -->
+<div class="modal-overlay qa-apip-overlay" id="qaApipModal">
+  <div class="modal qa-apip-modal">
+    <div class="modal-header qa-apip-modal-header">
+      <div><h3>🛡️ Penjaminan Kualitas / Quality Assurance APIP</h3><p class="qa-apip-modal-opd" id="qaApipModalOpdName"></p></div>
+      <button class="modal-close" id="qaApipClose">&times;</button>
+    </div>
+    <div class="qa-apip-summary" id="qaApipSummary"></div>
+    <div class="qa-apip-tabs" id="qaApipTabs">
+      <button type="button" data-qa-tab="petunjuk">📖 Petunjuk</button>
+      <button type="button" data-qa-tab="kk">🛡️ KK QA APIP</button>
+      <button type="button" data-qa-tab="rekapParameter">📊 Rekap Parameter</button>
+      <button type="button" data-qa-tab="rekapUnsur">📈 Rekap Unsur</button>
+    </div>
+    <div class="qa-apip-status" id="qaApipStatus"></div>
+    <div class="qa-apip-body" id="qaApipContent"></div>
+    <div class="modal-actions qa-apip-footer"><button id="qaApipCloseFooter">Tutup</button></div>
   </div>
 </div>
 
