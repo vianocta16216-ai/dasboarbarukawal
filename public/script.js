@@ -2490,7 +2490,7 @@ function renderFileList(row, subCode, paramId, level) {
         <a href="${escapeHtml(displayUrl)}" target="_blank" rel="noopener" class="file-link">📎 ${escapeHtml(fileName)}</a>
         <span class="evidence-storage-status">${statusLabel}</span>
         ${retryButton}
-        <button type="button" class="file-action delete" onclick="removeUploadedFile('${row.id}', '${subCode}', '${paramId}', ${level}, '${String(fileUrl).replace(/'/g, "\\'")}')">🗑️ Hapus</button>
+        <button type="button" class="file-action delete" onclick="removeUploadedFile('${row.id}', '${subCode}', '${paramId}', ${level}, '${String(fileUrl).replace(/'/g, "\\'")}', ${index})">🗑️ Hapus</button>
       </div>
       ${verifyHtml}
     `;
@@ -2628,14 +2628,16 @@ async function autoRetryPendingDriveBackups(){
   });
   await Promise.all(workers);
 }
-function removeUploadedFile(opdId, subCode, paramId, level, fileUrl) {
+function removeUploadedFile(opdId, subCode, paramId, level, fileUrl, fileIndex) {
   const row = rows.find(r => String(r.id) === String(opdId));
   if (!row) return;
   const holder = row.subunsurs?.[subCode]?.[paramId];
   const files = Array.isArray(holder?.['files' + level]) ? holder['files' + level] : [];
   // Support BOTH formats that exist in older data: plain URL strings and
   // modern file objects {url, fileName, gdriveId, uploadId, ...}.
-  const fileObj = files.find(f =>
+  const parsedFileIndex = Number.isInteger(Number(fileIndex)) ? Number(fileIndex) : -1;
+  const indexedFile = parsedFileIndex >= 0 && parsedFileIndex < files.length ? files[parsedFileIndex] : null;
+  const fileObj = indexedFile ?? files.find(f =>
     (typeof f === 'string' && f === fileUrl) ||
     (f && typeof f === 'object' && f.url === fileUrl)
   );
@@ -2651,7 +2653,8 @@ function removeUploadedFile(opdId, subCode, paramId, level, fileUrl) {
     fileName,
     gdriveId: (fileObj && typeof fileObj === 'object') ? (fileObj.gdriveId || fileObj.googleDriveId || null) : null,
     uploadId: (fileObj && typeof fileObj === 'object') ? (fileObj.uploadId || null) : null,
-    r2Key: (fileObj && typeof fileObj === 'object') ? (fileObj.r2Key || null) : null
+    r2Key: (fileObj && typeof fileObj === 'object') ? (fileObj.r2Key || null) : null,
+    fileIndex: parsedFileIndex
   };
   document.getElementById('fileDeleteMessage').textContent = `Yakin ingin menghapus file "${fileName}"?`;
   document.getElementById('fileDeleteModal').classList.add('active');
@@ -2678,7 +2681,7 @@ document.getElementById('fileDeleteOk').addEventListener('click', async function
   btnOk.disabled = true;
   btnOk.textContent = '⏳ Menghapus...';
   
-  const { opdId, subCode, paramId, level, fileUrl, fileName, gdriveId, uploadId, r2Key } = fileToDelete;
+  const { opdId, subCode, paramId, level, fileUrl, fileName, gdriveId, uploadId, r2Key, fileIndex } = fileToDelete;
   const row = rows.find(r => String(r.id) === String(opdId));
   let deleted = false;
   if (row) {
@@ -2689,6 +2692,7 @@ document.getElementById('fileDeleteOk').addEventListener('click', async function
         gdriveId,
         uploadId,
         r2Key,
+        fileIndex,
         opdId,
         subunsur: subCode,
         paramId,
@@ -2701,18 +2705,24 @@ document.getElementById('fileDeleteOk').addEventListener('click', async function
       }
       const holder = row.subunsurs?.[subCode]?.[paramId];
       const files = Array.isArray(holder?.['files' + level]) ? holder['files' + level] : [];
-      const filtered = files.filter(f => !(
-        (typeof f === 'string' && f === fileUrl) ||
-        (f && typeof f === 'object' && (
-          f.url === fileUrl ||
-          (uploadId && f.uploadId === uploadId)
-        ))
-      ));
-      deleted = filtered.length !== files.length;
-      if (holder) holder['files' + level] = filtered;
+      const localIndex = Number.isInteger(Number(fileIndex)) ? Number(fileIndex) : -1;
+      if (localIndex >= 0 && localIndex < files.length) {
+        files.splice(localIndex, 1);
+        deleted = true;
+      } else {
+        const filtered = files.filter(f => !(
+          (typeof f === 'string' && f === fileUrl) ||
+          (f && typeof f === 'object' && (
+            f.url === fileUrl ||
+            (uploadId && f.uploadId === uploadId)
+          ))
+        ));
+        deleted = filtered.length !== files.length;
+        if (holder) holder['files' + level] = filtered;
+      }
       renderFileList(row, subCode, paramId, level);
       render();
-      if (!deleted) showWarning('✅ File berhasil dihapus dari server, tetapi tampilan lokal sudah disegarkan.');
+      if (!deleted) showWarning('✅ File sudah dihapus dari server. Memuat data terbaru...');
     } catch (err) {
       showWarning('❌ ' + err.message);
       return;
