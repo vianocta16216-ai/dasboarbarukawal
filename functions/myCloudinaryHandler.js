@@ -109,7 +109,7 @@ async function ensureOpdSchema(env){
     const info=await env.DB.prepare("PRAGMA table_info(opd_data)").all();
     const cols=new Set((info.results||[]).map(x=>x.name));
     const hadStructureField=cols.has('nilai_struktur_proses');
-    const adds=[['nilai_struktur_proses','REAL NOT NULL DEFAULT 0'],['nilai_maturitas','REAL NOT NULL DEFAULT 0'],['nilai_kapabilitas_apip','REAL NOT NULL DEFAULT 0'],['kk_pm_data',"TEXT NOT NULL DEFAULT '{}'"],['kk_rtp_data',"TEXT NOT NULL DEFAULT '{}'"],['rtp_evidence',"TEXT NOT NULL DEFAULT '[]'"],['rtp_evidence_folder',"TEXT NOT NULL DEFAULT 'Evidence RTP'"],['rtp_evidence_folder_id',"TEXT NOT NULL DEFAULT ''"],['pm_spip_reports',"TEXT NOT NULL DEFAULT '[]'"],['pm_spip_folder',"TEXT NOT NULL DEFAULT 'Laporan Hasil PM SPIP'"],['pm_spip_folder_id',"TEXT NOT NULL DEFAULT ''"],['rr_rtp_reports',"TEXT NOT NULL DEFAULT '[]'"],['rr_rtp_folder',"TEXT NOT NULL DEFAULT 'Laporan Pemantauan RR_RTP'"],['rr_rtp_folder_id',"TEXT NOT NULL DEFAULT ''"],['struktur_proses_status',"TEXT NOT NULL DEFAULT 'Belum'"]];
+    const adds=[['nilai_struktur_proses','REAL NOT NULL DEFAULT 0'],['nilai_maturitas','REAL NOT NULL DEFAULT 0'],['nilai_kapabilitas_apip','REAL NOT NULL DEFAULT 0'],['computed_workbook_data',"TEXT NOT NULL DEFAULT '{}'"],['kk_pm_data',"TEXT NOT NULL DEFAULT '{}'"],['kk_rtp_data',"TEXT NOT NULL DEFAULT '{}'"],['rtp_evidence',"TEXT NOT NULL DEFAULT '[]'"],['rtp_evidence_folder',"TEXT NOT NULL DEFAULT 'Evidence RTP'"],['rtp_evidence_folder_id',"TEXT NOT NULL DEFAULT ''"],['pm_spip_reports',"TEXT NOT NULL DEFAULT '[]'"],['pm_spip_folder',"TEXT NOT NULL DEFAULT 'Laporan Hasil PM SPIP'"],['pm_spip_folder_id',"TEXT NOT NULL DEFAULT ''"],['rr_rtp_reports',"TEXT NOT NULL DEFAULT '[]'"],['rr_rtp_folder',"TEXT NOT NULL DEFAULT 'Laporan Pemantauan RR_RTP'"],['rr_rtp_folder_id',"TEXT NOT NULL DEFAULT ''"],['struktur_proses_status',"TEXT NOT NULL DEFAULT 'Belum'"]];
     for(const [name,type] of adds)if(!cols.has(name))await env.DB.prepare(`ALTER TABLE opd_data ADD COLUMN ${name} ${type}`).run();
     if(cols.has('sa') && !hadStructureField) {
       await env.DB.prepare("UPDATE opd_data SET nilai_struktur_proses=CAST(COALESCE(sa,0) AS REAL)").run();
@@ -182,6 +182,18 @@ async function ensureOpdSchema(env){
       if (!evidenceCols.has(colName)) {
         await env.DB.prepare(`ALTER TABLE evidence_uploads ADD COLUMN ${colName} ${colType}`).run();
       }
+    }
+
+    const registryInfo = await env.DB.prepare("PRAGMA table_info(evidence_upload_registry)").all();
+    const registryCols = new Set((registryInfo.results || []).map(c => String(c.name)));
+    const workbookRegistryCols = [
+      ['evidence_key', "TEXT NOT NULL DEFAULT ''"],
+      ['source_model', "TEXT NOT NULL DEFAULT 'legacy'"],
+      ['target_code', "TEXT NOT NULL DEFAULT ''"],
+      ['grade', "TEXT NOT NULL DEFAULT ''"]
+    ];
+    for (const [colName, colType] of workbookRegistryCols) {
+      if (!registryCols.has(colName)) await env.DB.prepare(`ALTER TABLE evidence_upload_registry ADD COLUMN ${colName} ${colType}`).run();
     }
 
     // Migrate legacy rows so later retry/status queries always have a valid type.
@@ -317,6 +329,34 @@ async function ensureOpdSchema(env){
       PRIMARY KEY(year, opd_id, target)
     )`).run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_kk_pm_meta_opd ON opd_kk_pm_meta(year, opd_id)").run();
+
+    // Workbook-aligned Evidence Struktur & Proses. The same evidenceKey is stored once
+    // when KK3.1-KK3.4 share identical parameter content; target labels are metadata.
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS opd_workbook_evidence_items (
+      upload_id TEXT PRIMARY KEY,
+      year TEXT NOT NULL,
+      opd_id TEXT NOT NULL,
+      evidence_key TEXT NOT NULL,
+      target_code TEXT NOT NULL DEFAULT '',
+      subunsur TEXT NOT NULL DEFAULT '',
+      param_id TEXT NOT NULL DEFAULT '',
+      grade TEXT NOT NULL DEFAULT '',
+      level INTEGER NOT NULL DEFAULT 0,
+      file_name TEXT NOT NULL DEFAULT '',
+      file_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+      r2_key TEXT,
+      gdrive_id TEXT,
+      sync_status TEXT NOT NULL DEFAULT 'pending',
+      sync_error TEXT,
+      verification_status TEXT NOT NULL DEFAULT '',
+      verification_examiner TEXT NOT NULL DEFAULT '',
+      verification_note TEXT NOT NULL DEFAULT '',
+      verification_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    )`).run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_wbe_location ON opd_workbook_evidence_items(year,opd_id,evidence_key,grade)").run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_wbe_opd ON opd_workbook_evidence_items(year,opd_id,updated_at)").run();
 
     // One-time backfill from the legacy subunsurs JSON so existing Level selections are preserved.
     try {
@@ -858,6 +898,16 @@ async function uploadToGoogleDrive(env, filePath, fileName, bytes, rootFolderId)
   return uploadBytesToGoogleDriveFolder(env, accessToken, currentFolderId, fileName, bytes, 'application/octet-stream', stableUploadId);
 }
 
+async function updateWorkbookEvidenceFileStatus(env, job, patch) {
+  const row=(await env.DB.prepare("SELECT upload_id FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1").bind(job.uploadId,job.year,job.opdId).all()).results?.[0];
+  if(!row)return;
+  const map={gdriveId:'gdrive_id',syncStatus:'sync_status',syncError:'sync_error',fileName:'file_name'};
+  const sets=[];const vals=[];
+  for(const [k,v] of Object.entries(patch||{})){const col=map[k];if(!col)continue;sets.push(`${col}=?`);vals.push(v==null?null:String(v));}
+  if(!sets.length)return;sets.push('updated_at=?');vals.push(Date.now(),job.uploadId,job.year,job.opdId);
+  await runD1WithRetry(()=>env.DB.prepare(`UPDATE opd_workbook_evidence_items SET ${sets.join(',')} WHERE upload_id=? AND year=? AND opd_id=?`).bind(...vals));
+}
+
 async function updateEvidenceFileStatus(env, job, patch) {
   const rec = await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(job.opdId,job.year).all();
   let obj={}; try{obj=rec.results[0]?.subunsurs?JSON.parse(rec.results[0].subunsurs):{}}catch{}
@@ -943,6 +993,8 @@ async function processDriveBackupJob(env, job) {
       await updateRtpFileStatus(env, job, { gdriveId, storage: 'R2 + Google Drive', syncStatus: 'done', syncError: null });
     } else if (job.type === 'report') {
       await updateReportFileStatus(env, job, { gdriveId, storage: 'R2 + Google Drive', syncStatus: 'done', syncError: null });
+    } else if (job.type === 'workbook_evidence') {
+      await updateWorkbookEvidenceFileStatus(env, job, { gdriveId, storage: 'R2 + Google Drive', syncStatus: 'done', syncError: null });
     } else {
       await updateEvidenceFileStatus(env, job, { gdriveId, storage: 'R2 + Google Drive', syncStatus: 'done', syncError: null });
     }
@@ -953,6 +1005,8 @@ async function processDriveBackupJob(env, job) {
       await updateRtpFileStatus(env, job, { syncStatus: 'retrying', syncError: message });
     } else if (job.type === 'report') {
       await updateReportFileStatus(env, job, { syncStatus: 'retrying', syncError: message });
+    } else if (job.type === 'workbook_evidence') {
+      await updateWorkbookEvidenceFileStatus(env, job, { syncStatus: 'retrying', syncError: message });
     } else {
       await updateEvidenceFileStatus(env, job, { syncStatus: 'retrying', syncError: message });
     }
@@ -1111,6 +1165,22 @@ async function getKkPmWorkpaperSummary(env,year,opdId){
   return kkPmWorkpaperSummaryFromRow(q.results?.[0]||{});
 }
 
+function parseWorkbookScalar(value){
+  if(value===null||value===undefined||value==='')return{value:null,status:'incomplete'};
+  const s=String(value).trim();if(!s||/^#(DIV\/0!|VALUE!|REF!|N\/A|NAME\?|NUM!|NULL!)/i.test(s)||/lengkapi\s+kk/i.test(s))return{value:null,status:'incomplete',raw:s};
+  const n=Number(s.replace(',','.'));if(Number.isFinite(n))return{value:Math.max(0,Math.min(5,n)),status:'ok',raw:s};return{value:null,status:'incomplete',raw:s};
+}
+async function readWorkbookComputedValues(env,spreadsheetId){
+  const token=await getGoogleAccessToken(env);const ranges=['KKLEAD_SPIP!I11','KKLEAD_SPIP!I68','KKLEAD_SPIP!I85','KKLEAD_SPIP!I106'];
+  const qs=ranges.map(r=>`ranges=${encodeURIComponent(r)}`).join('&');const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchGet?${qs}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
+  const res=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${token}`}}, {retries:3,baseDelay:500});const body=await res.json().catch(()=>({}));
+  if(!res.ok){const msg=JSON.stringify(body||{});if(res.status===403&&/scope|permission|insufficient/i.test(msg))throw new Error('Akses Google Sheets belum memiliki scope spreadsheet readonly. Tambahkan scope Google Sheets readonly pada OAuth refresh token.');throw new Error(`Gagal membaca nilai formula workbook: ${msg}`);}
+  const vals=(body.valueRanges||[]).map(x=>x.values?.[0]?.[0]);
+  const parsed={nilaiMaturitas:parseWorkbookScalar(vals[0]),mri:parseWorkbookScalar(vals[1]),iepk:parseWorkbookScalar(vals[2]),nilaiKapabilitasApip:parseWorkbookScalar(vals[3])};
+  const statuses=Object.values(parsed).map(x=>x.status);
+  return{source:'KKLEAD_SPIP workbook formula cells',sheet:'KKLEAD_SPIP',cells:{nilaiMaturitas:'I11',mri:'I68',iepk:'I85',nilaiKapabilitasApip:'I106'},values:Object.fromEntries(Object.entries(parsed).map(([k,v])=>[k,v.value])),raw:Object.fromEntries(Object.entries(parsed).map(([k,v])=>[k,v.raw??null])),status:statuses.every(x=>x==='ok')?'ok':(statuses.some(x=>x==='ok')?'partial':'incomplete'),syncedAt:Date.now()};
+}
+
 export async function onRequest({ request, env, ctx }) {
   const ACCESS_PASSWORD = env.ACCESS_PASSWORD;
   const DELETE_PASSWORD = env.DELETE_PASSWORD;
@@ -1122,7 +1192,7 @@ export async function onRequest({ request, env, ctx }) {
   const SENSITIVE_ACTIONS = [
     'verifyAccess', 'verifyDelete', 'addOpd', 'saveData', 'saveField',
     'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'saveQaApipItem', 'deleteQaApipItem', 'getQaApipChecklistData', 'saveQaApipChecklistItem', 'deleteQaApipChecklistItem', 'deleteOpd', 'addYear', 'deleteYear',
-    'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup'
+    'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getWorkbookEvidenceFiles', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup'
   ];
 
   // KK RTP dan pengaturan folder Evidence RTP wajib melalui POST.
@@ -1263,6 +1333,16 @@ export async function onRequest({ request, env, ctx }) {
         `).bind(String(year)).all();
         const kkPmSummaryMap=new Map();
         for(const q of (kkPmSummaryRows.results||[])) kkPmSummaryMap.set(String(q.opd_id),q);
+        const workbookEvidenceSummaryRows=await env.DB.prepare(`
+          SELECT opd_id,
+                 COUNT(*) AS total_files,
+                 COUNT(DISTINCT evidence_key) AS evidence_groups,
+                 SUM(CASE WHEN verification_status='diterima' THEN 1 ELSE 0 END) AS verified_files,
+                 SUM(CASE WHEN sync_status='done' THEN 1 ELSE 0 END) AS synced_files
+          FROM opd_workbook_evidence_items WHERE year=? GROUP BY opd_id
+        `).bind(String(year)).all();
+        const workbookEvidenceSummaryMap=new Map();
+        for(const q of (workbookEvidenceSummaryRows.results||[])) workbookEvidenceSummaryMap.set(String(q.opd_id),q);
         const levelMap=new Map();
         for(const lr of (levelRows.results||[])){
           const key=`${lr.opd_id}|${lr.subunsur}|${lr.param_id}`;
@@ -1318,7 +1398,11 @@ export async function onRequest({ request, env, ctx }) {
           const pmCompletion=pmTotalItems>0 ? Math.round((pmEvaluated/pmTotalItems)*10000)/100 : 0;
           const pmAvgLevel=pmEvaluated>0 ? Math.round((pmSum/pmEvaluated)*100)/100 : 0;
           const pmStatus=pmCompletion>=100?'Selesai':(pmEvaluated>0?'Proses':'Belum');
-          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,pass:qaPass,fail:qaFail,pending:qaPending,sum:qaPass,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus},nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,nilaiMaturitas:Number(r.nilai_maturitas||0),nilaiKapabilitasApip:Number(r.nilai_kapabilitas_apip||0)};
+          let computedWorkbook={}; try{computedWorkbook=r.computed_workbook_data?JSON.parse(r.computed_workbook_data):{};}catch{computedWorkbook={};}
+          const cv=computedWorkbook?.values||{};
+          const n=(v)=>{const x=Number(v); return Number.isFinite(x)&&x>0?x:null;};
+          const wb=workbookEvidenceSummaryMap.get(String(r.id));
+          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,pass:qaPass,fail:qaFail,pending:qaPending,sum:qaPass,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus},nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,computedWorkbook, nilaiMaturitas:n(cv.nilaiMaturitas),nilaiMRI:n(cv.mri),nilaiIEPK:n(cv.iepk),nilaiKapabilitasApip:n(cv.nilaiKapabilitasApip),mri:n(cv.mri),iepk:n(cv.iepk),workbookEvidenceSummary:{totalFiles:Number(wb?.total_files||0),evidenceGroups:Number(wb?.evidence_groups||0),verifiedFiles:Number(wb?.verified_files||0),syncedFiles:Number(wb?.synced_files||0)}};
         });
         return new Response(JSON.stringify(mapped),{status:200,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate, max-age=0'}});
       }
@@ -1345,21 +1429,14 @@ export async function onRequest({ request, env, ctx }) {
           statements.push(env.DB.prepare(`
             UPDATE opd_data SET
               opd=?,
-              nilai_maturitas=?,
-              nilai_kapabilitas_apip=?,
               evidence=?,
               qa_apip=?,
-              mri=?,
-              iepk=?,
               rtp=?,
               status=?
             WHERE id=? AND year=?
           `).bind(
             sanitizeString(row.opd||''),
-            Math.max(0,Math.min(5,Number(row.nilaiMaturitas??row.nilai_maturitas??0)||0)),
-            Number(row.nilaiKapabilitasApip??row.nilai_kapabilitas_apip??0)||0,
-            row.evidence||'Belum', row.qaApip||'Belum', parseFloat(row.mri)||0,
-            parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum',
+            row.evidence||'Belum', row.qaApip||'Belum', row.rtp||'Belum', row.status||'Belum',
             row.id, year
           ));
         }
@@ -1375,18 +1452,15 @@ export async function onRequest({ request, env, ctx }) {
         const existing=await env.DB.prepare("SELECT id FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(row.id,year).all();
         if(existing.results.length){
           // Existing row: preserve all nested evidence/KK/RTР fields.
-          await env.DB.prepare(`UPDATE opd_data SET opd=?, nilai_maturitas=?, nilai_kapabilitas_apip=?, evidence=?, qa_apip=?, mri=?, iepk=?, rtp=?, status=? WHERE id=? AND year=?`).bind(
+          await env.DB.prepare(`UPDATE opd_data SET opd=?, evidence=?, qa_apip=?, rtp=?, status=? WHERE id=? AND year=?`).bind(
             sanitizeString(row.opd||''),
-            Math.max(0,Math.min(5,Number(row.nilaiMaturitas??row.nilai_maturitas??0)||0)),
-            Number(row.nilaiKapabilitasApip??row.nilai_kapabilitas_apip??0)||0,
-            row.evidence||'Belum', row.qaApip||'Belum', parseFloat(row.mri)||0,
-            parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', row.id, year
+            row.evidence||'Belum', row.qaApip||'Belum', row.rtp||'Belum', row.status||'Belum', row.id, year
           ).run();
         } else {
           const subunsurs=row.subunsurs||{};
           const sa=calculateSAFromSubunsur(subunsurs);
           const strukturStatus=countParameterEvidence(subunsurs)===countTotalParameters()?'Selesai':(countParameterEvidence(subunsurs)>0?'Proses':'Belum');
-          await env.DB.prepare("INSERT INTO opd_data (id,opd,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,evidence,qa_apip,mri,iepk,rtp,status,struktur_proses_status,subunsurs,year,kk_data,kk_pm_data,kk_rtp_data,rtp_evidence,rtp_evidence_folder) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(row.id,sanitizeString(row.opd||''),sa,sa,Math.max(0,Math.min(5,Number(row.nilaiMaturitas??row.nilai_maturitas??0)||0)),Number(row.nilaiKapabilitasApip??row.nilai_kapabilitas_apip??0)||0,row.evidence||'Belum',row.qaApip||'Belum',parseFloat(row.mri)||0,parseFloat(row.iepk)||0,row.rtp||'Belum',row.status||'Belum',strukturStatus,JSON.stringify(subunsurs),year,JSON.stringify(row.kkData||{}),JSON.stringify(row.kkPmData||{}),JSON.stringify(row.kkRtpData||{}),JSON.stringify(Array.isArray(row.rtpEvidence)?row.rtpEvidence:[]),row.rtpEvidenceFolder||'Evidence RTP').run();
+          await env.DB.prepare("INSERT INTO opd_data (id,opd,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,evidence,qa_apip,mri,iepk,rtp,status,struktur_proses_status,subunsurs,year,kk_data,kk_pm_data,kk_rtp_data,rtp_evidence,rtp_evidence_folder) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(row.id,sanitizeString(row.opd||''),sa,sa,0,0,row.evidence||'Belum',row.qaApip||'Belum',0,0,row.rtp||'Belum',row.status||'Belum',strukturStatus,JSON.stringify(subunsurs),year,JSON.stringify(row.kkData||{}),JSON.stringify(row.kkPmData||{}),JSON.stringify(row.kkRtpData||{}),JSON.stringify(Array.isArray(row.rtpEvidence)?row.rtpEvidence:[]),row.rtpEvidenceFolder||'Evidence RTP').run();
         }
         notifyRealtime(env, ctx, year, { action: 'saveRow', opdId: row.id });
         return jsonResponse({status:'success',message:'Data OPD tersimpan'});
@@ -1498,10 +1572,41 @@ export async function onRequest({ request, env, ctx }) {
 
       case 'saveField': {
         const { opdId, field, value } = params;
-        if (field === 'nilaiStrukturProses') throw new Error('Nilai Struktur dan Proses dihitung otomatis dari 43 parameter.');
+        if (field === 'nilaiStrukturProses') throw new Error('Nilai Struktur dan Proses dihitung otomatis dari parameter.');
+        if (['nilaiMaturitas','nilaiKapabilitasApip','mri','iepk'].includes(field)) throw new Error('Nilai Maturitas, MRI, IEPK, dan Kapabilitas APIP hanya berasal dari rumus workbook KK dan tidak dapat diedit manual.');
         const dbField=FIELD_MAP[field];if(!dbField)throw new Error('Field tidak diizinkan: '+field);const cleanValue=['nilaiMaturitas','nilaiKapabilitasApip','mri','iepk'].includes(field)?Math.max(0,Math.min(5,Number(value)||0)):(field==='opd'?sanitizeString(value):String(value||''));await env.DB.prepare(`UPDATE opd_data SET ${dbField} = ? WHERE id = ? AND year = ?`).bind(cleanValue,opdId,year).run();
         notifyRealtime(env, ctx, year, { action: 'saveField', opdId });
         return new Response(JSON.stringify({ status: 'success', message: 'Field tersimpan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      case 'getWorkbookEvidenceFiles': {
+        const opdId=String(params.opdId||'');if(!opdId)throw new Error('ID OPD wajib diisi.');
+        const q=await env.DB.prepare(`SELECT upload_id,evidence_key,target_code,subunsur,param_id,grade,level,file_name,file_type,r2_key,gdrive_id,sync_status,sync_error,verification_status,verification_examiner,verification_note,verification_at,created_at,updated_at FROM opd_workbook_evidence_items WHERE year=? AND opd_id=? ORDER BY subunsur,param_id,CASE grade WHEN 'E' THEN 1 WHEN 'D' THEN 2 WHEN 'C' THEN 3 WHEN 'B' THEN 4 WHEN 'A' THEN 5 ELSE 9 END,created_at`).bind(String(year),opdId).all();
+        const files=(q.results||[]).map(x=>({uploadId:String(x.upload_id),evidenceKey:String(x.evidence_key||''),targetCode:String(x.target_code||''),subunsur:String(x.subunsur||''),paramId:String(x.param_id||''),grade:String(x.grade||''),level:Number(x.level||0),fileName:x.file_name||'File',fileType:x.file_type||'application/octet-stream',url:x.r2_key?`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${x.r2_key}`:null,r2Key:x.r2_key||null,gdriveId:x.gdrive_id||null,syncStatus:x.sync_status||'pending',syncError:x.sync_error||null,verificationStatus:x.verification_status||'',verificationExaminer:x.verification_examiner||'',verificationNote:x.verification_note||'',verificationAt:x.verification_at?Number(x.verification_at):null,createdAt:Number(x.created_at||0),updatedAt:Number(x.updated_at||0)}));
+        return jsonResponse({status:'success',files});
+      }
+      case 'saveWorkbookEvidenceVerification': {
+        const opdId=String(params.opdId||''),uploadId=String(params.uploadId||'');if(!opdId||!uploadId)throw new Error('Identitas evidence tidak lengkap.');
+        const verificationStatus=sanitizeQaText(params.verificationStatus,30),verificationExaminer=sanitizeQaText(params.verificationExaminer,100),verificationNote=sanitizeQaText(params.verificationNote,2000);
+        if(verificationStatus&&!['diterima','diterima_catatan','dikembalikan'].includes(verificationStatus))throw new Error('Status verifikasi tidak valid.');
+        if(!verificationStatus)throw new Error('Status verifikasi wajib dipilih.');
+        if(verificationStatus!=='dikembalikan'&&verificationExaminer.length<2)throw new Error('Nama pemeriksa wajib diisi untuk evidence yang diverifikasi.');
+        if(['diterima_catatan','dikembalikan'].includes(verificationStatus)&&verificationNote.length<2)throw new Error('Catatan verifikasi wajib diisi untuk status tersebut.');
+        const now=Date.now();const res=await env.DB.prepare('UPDATE opd_workbook_evidence_items SET verification_status=?,verification_examiner=?,verification_note=?,verification_at=?,updated_at=? WHERE upload_id=? AND year=? AND opd_id=?').bind(verificationStatus,verificationExaminer,verificationNote,now,now,uploadId,String(year),opdId).run();
+        if(!res.meta?.changes)throw new Error('Evidence tidak ditemukan pada OPD/tahun yang sama.');notifyRealtime(env,ctx,year,{action:'saveWorkbookEvidenceVerification',opdId,uploadId});return jsonResponse({status:'success',uploadId,verificationStatus,verificationExaminer,verificationNote,verificationAt:now});
+      }
+      case 'deleteWorkbookEvidence': {
+        const opdId=String(params.opdId||''),uploadId=String(params.uploadId||'');if(!opdId||!uploadId)throw new Error('Identitas evidence tidak lengkap.');
+        const q=await env.DB.prepare('SELECT * FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uploadId,String(year),opdId).all();const item=q.results?.[0];if(!item)throw new Error('Evidence tidak ditemukan.');
+        if(item.gdrive_id)await deleteGoogleDriveFile(env,item.gdrive_id);if(item.r2_key)await env.EVIDENCE_BUCKET.delete(item.r2_key);
+        await runD1WithRetry(()=>env.DB.prepare('DELETE FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=?').bind(uploadId,String(year),opdId));try{await runD1WithRetry(()=>env.DB.prepare('DELETE FROM evidence_upload_registry WHERE upload_id=?').bind(uploadId));}catch(_){ }try{await runD1WithRetry(()=>env.DB.prepare('DELETE FROM evidence_uploads WHERE upload_id=?').bind(uploadId));}catch(_){ }
+        notifyRealtime(env,ctx,year,{action:'deleteWorkbookEvidence',opdId,uploadId,evidenceKey:item.evidence_key});return jsonResponse({status:'success',uploadId,evidenceKey:item.evidence_key,fileName:item.file_name||'File'});
+      }
+      case 'syncKkComputedValues': {
+        const opdId=String(params.opdId||'');if(!opdId)throw new Error('ID OPD wajib diisi.');const rec=await env.DB.prepare('SELECT opd,kk_data,computed_workbook_data FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(opdId,String(year)).all();if(!rec.results?.length)throw new Error('OPD tidak ditemukan.');const kk=normalizeKkData(rec.results[0].kk_data);
+        if(!kk.workbookSpreadsheetId)return jsonResponse({status:'unavailable',computed:{source:'KKLEAD_SPIP workbook formula cells',status:'unavailable',syncedAt:null,message:'Spreadsheet Kertas Kerja OPD belum dibuat.',values:{nilaiMaturitas:null,mri:null,iepk:null,nilaiKapabilitasApip:null}}});
+        try{const computed=await readWorkbookComputedValues(env,kk.workbookSpreadsheetId);const v=computed.values||{};await runD1WithRetry(()=>env.DB.prepare('UPDATE opd_data SET nilai_maturitas=?,nilai_kapabilitas_apip=?,mri=?,iepk=?,computed_workbook_data=? WHERE id=? AND year=?').bind(Number(v.nilaiMaturitas??0),Number(v.nilaiKapabilitasApip??0),Number(v.mri??0),Number(v.iepk??0),JSON.stringify(computed),opdId,String(year)));notifyRealtime(env,ctx,year,{action:'syncKkComputedValues',opdId,computed});return jsonResponse({status:'success',computed});}
+        catch(err){let old={};try{old=rec.results[0].computed_workbook_data?JSON.parse(rec.results[0].computed_workbook_data):{};}catch{}const computed={...old,status:'error',source:'KKLEAD_SPIP workbook formula cells',error:String(err.message||err),syncedAt:old.syncedAt||null};await runD1WithRetry(()=>env.DB.prepare('UPDATE opd_data SET computed_workbook_data=? WHERE id=? AND year=?').bind(JSON.stringify(computed),opdId,String(year)));return jsonResponse({status:'error',message:computed.error,computed},200);}
       }
 
       case 'getKkPmData': {
@@ -2058,6 +2163,20 @@ export async function onRequest({ request, env, ctx }) {
       }
 
       case 'uploadFile': {
+        const sourceModel=String(params.sourceModel||'legacy');
+        if(sourceModel==='workbook'){
+          const file=params.file,legacyData=params.fileData;if(!file&&!legacyData&&!request.body)throw new Error('File tidak diterima');let bytes=null,fileBody=null,fileName=String(params.fileName||'evidence'),fileType=String(params.fileType||'application/octet-stream');const fileSize=Number(params.fileSize)||0;
+          if(file){fileName=file.name||fileName;fileType=file.type||fileType;if((file.size||0)>10*1024*1024)throw new Error('File > 10MB, terlalu besar!');bytes=await file.arrayBuffer();}else if(legacyData){bytes=decodeBase64File(legacyData,10);}else{if(fileSize>10*1024*1024)throw new Error('File > 10MB, terlalu besar!');fileBody=request.body;}
+          const opdId=String(params.opdId||''),evidenceKey=String(params.evidenceKey||''),targetCode=String(params.targetCode||''),subCode=String(params.subunsur||''),paramId=String(params.paramId||''),grade=String(params.grade||'').toUpperCase(),level=Number(params.level||({A:5,B:4,C:3,D:2,E:1}[grade]||0)),uploadId=String(params.uploadId||crypto.randomUUID());
+          if(!opdId||!evidenceKey)throw new Error('Identitas evidence workbook tidak lengkap.');if(targetCode&&!/^T[1-4]$/.test(targetCode))throw new Error('Target workbook tidak valid.');if(!['A','B','C','D','E'].includes(grade))throw new Error('Grade evidence harus A-E.');
+          const rec=await env.DB.prepare('SELECT opd FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(opdId,String(year)).all();if(!rec.results.length)throw new Error('OPD tidak ditemukan.');const safeOpd=sanitizeString(rec.results[0].opd||params.opdName||'OPD').replace(/[^A-Za-z0-9_. -]/g,'_').substring(0,80)||'OPD';const safeKey=evidenceKey.replace(/[^A-Za-z0-9_.-]/g,'_').substring(0,100);const safeName=sanitizeString(fileName).substring(0,150)||'evidence';const filePath=`kawal_spip/${year}/${safeOpd}/Evidence Struktur & Proses/${safeKey}/${grade}/${uploadId}-${safeName.replace(/[^A-Za-z0-9._ -]/g,'_')}`;const publicUrl=`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;const now=Date.now();
+          const existingReg=(await env.DB.prepare('SELECT * FROM evidence_upload_registry WHERE upload_id=? LIMIT 1').bind(uploadId).all()).results?.[0];if(existingReg&&(String(existingReg.year)!==String(year)||String(existingReg.opd_id)!==opdId||String(existingReg.evidence_key||'')!==evidenceKey||String(existingReg.source_model||'')!=='workbook'))throw new Error('Upload ID sudah terikat ke evidence lain.');
+          if(!existingReg)await runD1WithRetry(()=>env.DB.prepare(`INSERT INTO evidence_upload_registry(upload_id,year,opd_id,subunsur,param_id,level,type,r2_key,sync_status,created_at,updated_at,evidence_key,source_model,target_code,grade) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(uploadId,String(year),opdId,subCode,paramId,String(level),'workbook_evidence',filePath,'pending',now,now,evidenceKey,'workbook',targetCode,grade));
+          const old=(await env.DB.prepare('SELECT * FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uploadId,String(year),opdId).all()).results?.[0];if(old?.gdrive_id)return jsonResponse({status:'success',url:old.r2_key?`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${old.r2_key}`:publicUrl,fileName:old.file_name||safeName,gdriveId:old.gdrive_id,syncStatus:'done',uploadId,r2Key:old.r2_key});
+          if(!old)await runD1WithRetry(()=>env.DB.prepare(`INSERT INTO opd_workbook_evidence_items(upload_id,year,opd_id,evidence_key,target_code,subunsur,param_id,grade,level,file_name,file_type,r2_key,sync_status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(uploadId,String(year),opdId,evidenceKey,targetCode,subCode,paramId,grade,level,safeName,fileType,filePath,'pending',now,now));
+          await env.EVIDENCE_BUCKET.put(filePath,fileBody||bytes,{httpMetadata:{contentType:fileType}});const job={type:'workbook_evidence',uploadId,year:String(year),opdId,opdName:rec.results[0].opd||'OPD',r2Key:filePath,fileName:safeName,fileType,evidenceKey,targetCode,subunsur:subCode,paramId,grade,level};notifyRealtime(env,ctx,year,{action:'uploadWorkbookEvidence',opdId,uploadId,evidenceKey,grade,targetCode});
+          try{const gdriveId=await directGoogleDriveBackup(env,job);await updateWorkbookEvidenceFileStatus(env,job,{gdriveId,syncStatus:'done',syncError:null});await runD1WithRetry(()=>env.DB.prepare('UPDATE evidence_upload_registry SET gdrive_id=?,sync_status=?,updated_at=? WHERE upload_id=?').bind(gdriveId,'done',Date.now(),uploadId));return jsonResponse({status:'success',url:publicUrl,fileName:safeName,gdriveId,syncStatus:'done',uploadId,r2Key:filePath});}catch(err){const msg=String(err.message||err);await updateWorkbookEvidenceFileStatus(env,job,{syncStatus:'retrying',syncError:msg});await runD1WithRetry(()=>env.DB.prepare('UPDATE evidence_upload_registry SET sync_status=?,sync_error=?,updated_at=? WHERE upload_id=?').bind('retrying',msg,Date.now(),uploadId));return jsonResponse({status:'pending',message:'Evidence tersimpan di R2; Google Drive akan di-retry.',url:publicUrl,fileName:safeName,gdriveId:null,syncStatus:'retrying',uploadId,r2Key:filePath,driveError:msg});}
+        }
         assertGoogleDriveConfigured(env);
         const file=params.file;
         const legacyData=params.fileData;
@@ -2282,6 +2401,9 @@ export async function onRequest({ request, env, ctx }) {
           let list=[];try{list=rec.results[0]?.rtp_evidence?JSON.parse(rec.results[0].rtp_evidence):[]}catch{}
           const item=list.find(x=>x&&x.uploadId===uploadId); if(!item) throw new Error('Evidence RTP tidak ditemukan pada OPD/lokasi yang sama');
           job={type:'rtp',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||'',fileName:item.fileName||'evidence',fileType:item.fileType||'application/octet-stream',folderName:item.folderName||rec.results[0].rtp_evidence_folder||'Evidence RTP',gdriveFolderId:rec.results[0].rtp_evidence_folder_id||null};
+        } else if(type==='workbook_evidence') {
+          const q=await env.DB.prepare('SELECT o.opd,e.upload_id,e.evidence_key,e.target_code,e.subunsur,e.param_id,e.grade,e.level,e.file_name,e.file_type,e.r2_key,e.gdrive_id FROM opd_workbook_evidence_items e JOIN opd_data o ON o.id=e.opd_id AND o.year=e.year WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uploadId,targetYear,opdId).all();
+          const item=q.results?.[0];if(!item)throw new Error('Evidence workbook tidak ditemukan pada OPD/lokasi yang sama.');job={type:'workbook_evidence',uploadId,year:targetYear,opdId,opdName:item.opd||'OPD',r2Key:item.r2_key||'',fileName:item.file_name||'evidence',fileType:item.file_type||'application/octet-stream',evidenceKey:item.evidence_key||'',targetCode:item.target_code||'',subunsur:item.subunsur||'',paramId:item.param_id||'',grade:item.grade||'',level:Number(item.level||0)};
         } else {
           const rec=await env.DB.prepare("SELECT opd,subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,targetYear).all();
           if(!rec.results.length) throw new Error('OPD tidak ditemukan');
@@ -2312,6 +2434,7 @@ export async function onRequest({ request, env, ctx }) {
           const gdriveId=await directGoogleDriveBackup(env,job);
           if(job.type==='rtp') await updateRtpFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
           else if(job.type==='report') await updateReportFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
+          else if(job.type==='workbook_evidence') await updateWorkbookEvidenceFileStatus(env,job,{gdriveId,syncStatus:'done',syncError:null});
           else{
             await updateEvidenceFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
             await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET gdrive_id=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=?")
@@ -2322,6 +2445,7 @@ export async function onRequest({ request, env, ctx }) {
         }catch(err){
           if(job.type==='rtp') await updateRtpFileStatus(env,job,{syncStatus:'retrying',syncError:String(err.message||err)});
           else if(job.type==='report') await updateReportFileStatus(env,job,{syncStatus:'retrying',syncError:String(err.message||err)});
+          else if(job.type==='workbook_evidence') await updateWorkbookEvidenceFileStatus(env,job,{syncStatus:'retrying',syncError:String(err.message||err)});
           else{
             await updateEvidenceFileStatus(env,job,{syncStatus:'retrying',syncError:String(err.message||err)});
             await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=?")
@@ -2740,6 +2864,9 @@ export async function onRequest({ request, env, ctx }) {
         const [{ results: qaChecklistItems } = { results: [] }] = await Promise.all([
           env.DB.prepare("SELECT * FROM opd_qa_apip_checklist_items WHERE year = ?").bind(year).all()
         ]);
+        const [{ results: workbookEvidenceItems } = { results: [] }] = await Promise.all([
+          env.DB.prepare("SELECT * FROM opd_workbook_evidence_items WHERE year = ?").bind(year).all()
+        ]);
         const now = new Date();
         const pad = (n) => n.toString().padStart(2, '0');
         const timestamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
@@ -2747,7 +2874,7 @@ export async function onRequest({ request, env, ctx }) {
         // Versioned envelope: old backups were a plain OPD array; restoreBackup
         // below remains backward-compatible while new KK PM workpaper tables are
         // protected in the same backup artifact.
-        const backupPayload = { version: 3, year, opdData: results, kkPmWorkpaperItems: kkPmItems || [], kkPmMeta: kkPmMeta || [], qaApipChecklistItems: qaChecklistItems || [] };
+        const backupPayload = { version: 4, year, opdData: results, kkPmWorkpaperItems: kkPmItems || [], kkPmMeta: kkPmMeta || [], qaApipChecklistItems: qaChecklistItems || [], workbookEvidenceItems: workbookEvidenceItems || [] };
         const data = JSON.stringify(backupPayload);
         await env.EVIDENCE_BUCKET.put(fileName, data, { httpMetadata: { contentType: 'application/json' } });
         if (env.GOOGLE_DRIVE_CLIENT_ID && env.GOOGLE_DRIVE_CLIENT_SECRET && env.GOOGLE_DRIVE_REFRESH_TOKEN && env.GOOGLE_DRIVE_FOLDER_ID) {
@@ -2769,11 +2896,13 @@ export async function onRequest({ request, env, ctx }) {
         const pmItems = Array.isArray(raw?.kkPmWorkpaperItems) ? raw.kkPmWorkpaperItems : [];
         const pmMeta = Array.isArray(raw?.kkPmMeta) ? raw.kkPmMeta : [];
         const qaChecklistItems = Array.isArray(raw?.qaApipChecklistItems) ? raw.qaApipChecklistItems : [];
+        const workbookEvidenceItems = Array.isArray(raw?.workbookEvidenceItems) ? raw.workbookEvidenceItems : [];
         await env.DB.prepare("DELETE FROM opd_data WHERE year = ?").bind(year).run();
         if (!Array.isArray(raw)) {
           await env.DB.prepare("DELETE FROM opd_kk_pm_workpaper_items WHERE year = ?").bind(year).run();
           await env.DB.prepare("DELETE FROM opd_kk_pm_meta WHERE year = ?").bind(year).run();
           await env.DB.prepare("DELETE FROM opd_qa_apip_checklist_items WHERE year = ?").bind(year).run();
+          await env.DB.prepare("DELETE FROM opd_workbook_evidence_items WHERE year = ?").bind(year).run();
         }
         for (const row of data) {
           const subunsurs = row.subunsurs ? (typeof row.subunsurs==='string' ? JSON.parse(row.subunsurs) : row.subunsurs) : {};
@@ -2784,12 +2913,13 @@ export async function onRequest({ request, env, ctx }) {
           const rtpEvidence = row.rtp_evidence || row.rtpEvidence || [];
           const pmSpipReports = row.pm_spip_reports || row.pmSpipReports || [];
           const rrRtpReports = row.rr_rtp_reports || row.rrRtpReports || [];
+          const computedWorkbookData = row.computed_workbook_data || row.computedWorkbook || {};
           const nilaiStrukturProses = Number(row.nilai_struktur_proses ?? row.nilaiStrukturProses ?? sa) || sa;
           const nilaiMaturitas = Math.max(0,Math.min(5,Number(row.nilai_maturitas ?? row.nilaiMaturitas ?? 0)||0));
           const nilaiKapabilitasApip = Number(row.nilai_kapabilitas_apip ?? row.nilaiKapabilitasApip ?? 0)||0;
           const strukturStatus = row.struktur_proses_status || row.strukturProsesStatus || (countParameterEvidence(subunsurs)===countTotalParameters()?'Selesai':(countParameterEvidence(subunsurs)>0?'Proses':'Belum'));
-          await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, nilai_struktur_proses, nilai_maturitas, nilai_kapabilitas_apip, evidence, qa_apip, mri, iepk, rtp, status, struktur_proses_status, subunsurs, year, kk_data, kk_pm_data, kk_rtp_data, rtp_evidence, rtp_evidence_folder, rtp_evidence_folder_id, pm_spip_reports, pm_spip_folder, pm_spip_folder_id, rr_rtp_reports, rr_rtp_folder, rr_rtp_folder_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(row.id, sanitizeString(row.opd||''), sa, nilaiStrukturProses, nilaiMaturitas, nilaiKapabilitasApip, row.evidence||'Belum', row.qa_apip || row.qaApip || 'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', strukturStatus, JSON.stringify(subunsurs), year, JSON.stringify(kkData), JSON.stringify(kkPmData), JSON.stringify(kkRtpData), JSON.stringify(rtpEvidence), row.rtp_evidence_folder || row.rtpEvidenceFolder || 'Evidence RTP', row.rtp_evidence_folder_id || row.rtpEvidenceFolderId || '', JSON.stringify(pmSpipReports), row.pm_spip_folder || row.pmSpipFolder || 'Laporan Hasil PM SPIP', row.pm_spip_folder_id || row.pmSpipFolderId || '', JSON.stringify(rrRtpReports), row.rr_rtp_folder || row.rrRtpFolder || 'Laporan Pemantauan RR_RTP', row.rr_rtp_folder_id || row.rrRtpFolderId || '').run();
+          await env.DB.prepare("INSERT OR REPLACE INTO opd_data (id, opd, sa, nilai_struktur_proses, nilai_maturitas, nilai_kapabilitas_apip, evidence, qa_apip, mri, iepk, rtp, status, struktur_proses_status, subunsurs, year, kk_data, kk_pm_data, kk_rtp_data, rtp_evidence, rtp_evidence_folder, rtp_evidence_folder_id, pm_spip_reports, pm_spip_folder, pm_spip_folder_id, rr_rtp_reports, rr_rtp_folder, rr_rtp_folder_id, computed_workbook_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(row.id, sanitizeString(row.opd||''), sa, nilaiStrukturProses, nilaiMaturitas, nilaiKapabilitasApip, row.evidence||'Belum', row.qa_apip || row.qaApip || 'Belum', parseFloat(row.mri)||0, parseFloat(row.iepk)||0, row.rtp||'Belum', row.status||'Belum', strukturStatus, JSON.stringify(subunsurs), year, JSON.stringify(kkData), JSON.stringify(kkPmData), JSON.stringify(kkRtpData), JSON.stringify(rtpEvidence), row.rtp_evidence_folder || row.rtpEvidenceFolder || 'Evidence RTP', row.rtp_evidence_folder_id || row.rtpEvidenceFolderId || '', JSON.stringify(pmSpipReports), row.pm_spip_folder || row.pmSpipFolder || 'Laporan Hasil PM SPIP', row.pm_spip_folder_id || row.pmSpipFolderId || '', JSON.stringify(rrRtpReports), row.rr_rtp_folder || row.rrRtpFolder || 'Laporan Pemantauan RR_RTP', row.rr_rtp_folder_id || row.rrRtpFolderId || '', typeof computedWorkbookData === 'string' ? computedWorkbookData : JSON.stringify(computedWorkbookData)).run();
         }
         if (pmItems.length) {
           const stmt = env.DB.prepare(`INSERT OR REPLACE INTO opd_kk_pm_workpaper_items(year,opd_id,target,subunsur,param_id,hasil_pengujian,grade_result,aoi_cluster,aoi_desc,cause_cluster,cause_desc,conclusion,note,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
@@ -2807,6 +2937,12 @@ export async function onRequest({ request, env, ctx }) {
           const stmt = env.DB.prepare(`INSERT OR REPLACE INTO opd_qa_apip_checklist_items(year,opd_id,item_id,checklist,note,examiner_name,updated_at) VALUES(?,?,?,?,?,?,?)`);
           for (const q of qaChecklistItems) {
             await stmt.bind(q.year || String(year), q.opd_id, q.item_id, q.checklist || '', q.note || '', q.examiner_name || '', q.updated_at || Date.now()).run();
+          }
+        }
+        if (workbookEvidenceItems.length) {
+          const stmt = env.DB.prepare(`INSERT OR REPLACE INTO opd_workbook_evidence_items(upload_id,year,opd_id,evidence_key,target_code,subunsur,param_id,grade,level,file_name,file_type,r2_key,gdrive_id,sync_status,sync_error,verification_status,verification_examiner,verification_note,verification_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+          for (const e of workbookEvidenceItems) {
+            await stmt.bind(e.upload_id,e.year||String(year),e.opd_id,e.evidence_key||'',e.target_code||'',e.subunsur||'',e.param_id||'',e.grade||'',Number(e.level||0),e.file_name||'',e.file_type||'application/octet-stream',e.r2_key||null,e.gdrive_id||null,e.sync_status||'pending',e.sync_error||null,e.verification_status||'',e.verification_examiner||'',e.verification_note||'',e.verification_at||null,e.created_at||Date.now(),e.updated_at||Date.now()).run();
           }
         }
         return new Response(JSON.stringify({ status: 'success', message: 'Data berhasil dipulihkan dari backup' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
