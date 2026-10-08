@@ -2629,19 +2629,29 @@ async function autoRetryPendingDriveBackups(){
   await Promise.all(workers);
 }
 function removeUploadedFile(opdId, subCode, paramId, level, fileUrl) {
-  const row = rows.find(r => r.id === opdId);
+  const row = rows.find(r => String(r.id) === String(opdId));
   if (!row) return;
-  const files = row.subunsurs[subCode][paramId]['files' + level] || [];
-  const fileObj = files.find(f => f.url === fileUrl);
-  const fileName = fileObj ? fileObj.fileName : 'File';
-  fileToDelete = { 
-    opdId, 
-    subCode, 
-    paramId, 
-    level, 
-    fileUrl, 
-    fileName, 
-    gdriveId: fileObj ? fileObj.gdriveId : null   // <---- TAMBAHKAN INI
+  const holder = row.subunsurs?.[subCode]?.[paramId];
+  const files = Array.isArray(holder?.['files' + level]) ? holder['files' + level] : [];
+  // Support BOTH formats that exist in older data: plain URL strings and
+  // modern file objects {url, fileName, gdriveId, uploadId, ...}.
+  const fileObj = files.find(f =>
+    (typeof f === 'string' && f === fileUrl) ||
+    (f && typeof f === 'object' && f.url === fileUrl)
+  );
+  const fileName = typeof fileObj === 'string'
+    ? (decodeURIComponent(String(fileObj).split('?')[0].split('/').pop() || 'File'))
+    : (fileObj?.fileName || fileObj?.name || 'File');
+  fileToDelete = {
+    opdId,
+    subCode,
+    paramId,
+    level,
+    fileUrl,
+    fileName,
+    gdriveId: (fileObj && typeof fileObj === 'object') ? (fileObj.gdriveId || fileObj.googleDriveId || null) : null,
+    uploadId: (fileObj && typeof fileObj === 'object') ? (fileObj.uploadId || null) : null,
+    r2Key: (fileObj && typeof fileObj === 'object') ? (fileObj.r2Key || null) : null
   };
   document.getElementById('fileDeleteMessage').textContent = `Yakin ingin menghapus file "${fileName}"?`;
   document.getElementById('fileDeleteModal').classList.add('active');
@@ -2668,23 +2678,44 @@ document.getElementById('fileDeleteOk').addEventListener('click', async function
   btnOk.disabled = true;
   btnOk.textContent = '⏳ Menghapus...';
   
-  const { opdId, subCode, paramId, level, fileUrl, gdriveId } = fileToDelete;  // <---- Ambil gdriveId
-  const row = rows.find(r => r.id === opdId);
+  const { opdId, subCode, paramId, level, fileUrl, fileName, gdriveId, uploadId, r2Key } = fileToDelete;
+  const row = rows.find(r => String(r.id) === String(opdId));
+  let deleted = false;
   if (row) {
     try {
-      const result = await callServerWithRetry('deleteFile', { fileUrl, gdriveId, opdId, subunsur: subCode, paramId, level, year: currentYear });  // <---- Kirim gdriveId
-      if (result.status === 'error') { 
-        showWarning('❌ ' + result.message); 
-        return; 
+      const result = await callServerWithRetry('deleteFile', {
+        fileUrl,
+        fileName,
+        gdriveId,
+        uploadId,
+        r2Key,
+        opdId,
+        subunsur: subCode,
+        paramId,
+        level,
+        year: currentYear
+      });
+      if (result.status === 'error') {
+        showWarning('❌ ' + result.message);
+        return;
       }
-      const files = row.subunsurs[subCode][paramId]['files' + level] || [];
-      const index = files.findIndex(f => f.url === fileUrl);
-      if (index > -1) {
-        files.splice(index, 1);
-        renderFileList(row, subCode, paramId, level);
-      }
+      const holder = row.subunsurs?.[subCode]?.[paramId];
+      const files = Array.isArray(holder?.['files' + level]) ? holder['files' + level] : [];
+      const filtered = files.filter(f => !(
+        (typeof f === 'string' && f === fileUrl) ||
+        (f && typeof f === 'object' && (
+          f.url === fileUrl ||
+          (uploadId && f.uploadId === uploadId)
+        ))
+      ));
+      deleted = filtered.length !== files.length;
+      if (holder) holder['files' + level] = filtered;
+      renderFileList(row, subCode, paramId, level);
+      render();
+      if (!deleted) showWarning('✅ File berhasil dihapus dari server, tetapi tampilan lokal sudah disegarkan.');
     } catch (err) {
       showWarning('❌ ' + err.message);
+      return;
     }
   }
   document.getElementById('fileDeleteModal').classList.remove('active');
