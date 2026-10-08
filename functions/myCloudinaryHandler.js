@@ -267,6 +267,12 @@ async function ensureOpdSchema(env){
 }
 
 // ============ KEAMANAN: SANITASI & RATE LIMITING ============
+function decodeSafeFileName(value) {
+  const raw = String(value || '').split('?')[0];
+  const tail = raw.split('/').pop() || 'File';
+  try { return decodeURIComponent(tail); } catch { return tail; }
+}
+
 function sanitizeString(str) {
   return String(str || '')
     .replace(/[<>"'`\\]/g, '')          // Hapus karakter berbahaya XSS
@@ -908,15 +914,33 @@ function notifyRealtime(env, ctx, year, payload = {}) {
 }
 
 async function deleteGoogleDriveFile(env, fileId) {
-  const accessToken = await getGoogleAccessToken(env);
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${accessToken}` }
+  const safeId = String(fileId || '').trim();
+  if (!safeId) return { deleted: false, alreadyMissing: true };
+
+  return withGoogleConcurrency(async () => {
+    const accessToken = await getGoogleAccessToken(env);
+    const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(safeId)}?supportsAllDrives=true`;
+    const response = await fetchWithRetry(url, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` }
+    }, { retries: 3, baseDelay: 500 });
+
+    if (response.status === 404) {
+      // File sudah tidak ada di Drive; dari sisi penghapusan hasil akhirnya sama.
+      return { deleted: true, alreadyMissing: true };
+    }
+
+    if (!response.ok) {
+      const errText = await response.text();
+      const err = new Error(
+        `Gagal hapus file di Google Drive (HTTP ${response.status}): ${errText || response.statusText || 'unknown error'}`
+      );
+      err.status = response.status;
+      throw err;
+    }
+
+    return { deleted: true, alreadyMissing: false };
   });
-  if (!response.ok && response.status !== 404) {
-    const errText = await response.text();
-    throw new Error('Gagal hapus file di Google Drive: ' + errText);
-  }
 }
 
 async function updateGoogleDriveFileContent(env, fileId, fileName, bytes, fileType='application/octet-stream') {
@@ -2251,102 +2275,214 @@ export async function onRequest({ request, env, ctx }) {
 
       case 'deleteFile': {
         const requestedUrl = String(params.fileUrl || '').trim();
-        const cleanUrl = requestedUrl.split('?')[0];
-        const marker = 'r2.dev/';
-        const idx = cleanUrl.indexOf(marker);
-        let filePath = idx !== -1 ? decodeURIComponent(cleanUrl.substring(idx + marker.length)) : '';
-        if (!filePath && params.r2Key) filePath = String(params.r2Key).trim();
+        const requestedCleanUrl = requestedUrl.split('?')[0];
 
-        // Read the authoritative DB copy first. This is critical for legacy
-        // entries such as "File 4" / "File 5" that have no URL/uploadId.
-        // The client now sends the exact array index as a last-resort identity.
+        // Resolve the target against the authoritative D1 copy first.
+        // This is important for legacy files where URL/uploadId may be blank.
         let metadataDeleted = false;
         let deletedFile = null;
         let deletedIndex = -1;
+
         if(params.opdId && params.subunsur && params.paramId && params.level){
           try{
-            const rec=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+            const rec=await env.DB.prepare(
+              "SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1"
+            ).bind(params.opdId,year).all();
+
             if(!rec.results.length) throw new Error('OPD tidak ditemukan.');
+
             let obj={};
             try{obj=rec.results[0].subunsurs?JSON.parse(rec.results[0].subunsurs):{};}catch{obj={};}
+
             const key='files'+String(params.level);
             const holder=obj?.[params.subunsur]?.[params.paramId];
             const arr=holder?.[key];
+
             if(!Array.isArray(arr)) throw new Error('Daftar file evidence tidak ditemukan.');
 
             const wantedUploadId=String(params.uploadId||'').trim();
             const wantedName=String(params.fileName||'').trim();
-            const requestedClean=requestedUrl.split('?')[0];
             const serverIndex=Number.isInteger(Number(params.fileIndex)) ? Number(params.fileIndex) : -1;
 
-            // Prefer stable identities, then exact URL, then the explicit array
-            // index. The final index path is what makes blank-URL legacy files
-            // deletable without guessing which duplicate file is intended.
-            if(wantedUploadId) deletedIndex=arr.findIndex(x=>x&&typeof x==='object'&&String(x.uploadId||'')===wantedUploadId);
-            if(deletedIndex<0 && requestedClean) deletedIndex=arr.findIndex(x=>{
-              const u=typeof x==='string'?x:(x&&typeof x==='object'?x.url:'');
-              return String(u||'').split('?')[0]===requestedClean;
-            });
-            if(deletedIndex<0 && serverIndex>=0 && serverIndex<arr.length) deletedIndex=serverIndex;
-            if(deletedIndex<0 && wantedName && wantedName!=='File'){
-              const matches=arr.map((x,i)=>({x,i})).filter(({x})=>x&&typeof x==='object'&&String(x.fileName||x.name||'').trim()===wantedName);
+            // Stable identity first.
+            if(wantedUploadId){
+              deletedIndex=arr.findIndex(x=>
+                x && typeof x==='object' && String(x.uploadId||'')===wantedUploadId
+              );
+            }
+
+            // Exact URL second.
+            if(deletedIndex<0 && requestedCleanUrl){
+              deletedIndex=arr.findIndex(x=>{
+                const u=typeof x==='string'?x:(x&&typeof x==='object'?x.url:'');
+                return String(u||'').split('?')[0]===requestedCleanUrl;
+              });
+            }
+
+            // Unique filename is safer than trusting a browser-side index when
+            // a legacy object was normalized differently on the client.
+            if(deletedIndex<0 && wantedName){
+              const matches=arr.map((x,i)=>({x,i})).filter(({x})=>{
+                if(typeof x==='string') return decodeSafeFileName(x)===wantedName;
+                return x && typeof x==='object' &&
+                  String(x.fileName||x.name||'').trim()===wantedName;
+              });
               if(matches.length===1) deletedIndex=matches[0].i;
             }
-            if(deletedIndex<0) throw new Error('File yang diminta tidak ditemukan di database. Daftar tidak diubah.');
+
+            // Last resort: explicit array index (needed when legacy rows share
+            // generic names or have no URL/uploadId).
+            if(deletedIndex<0 && serverIndex>=0 && serverIndex<arr.length){
+              deletedIndex=serverIndex;
+            }
+
+            if(deletedIndex<0){
+              throw new Error('File yang diminta tidak ditemukan di database. Daftar tidak diubah.');
+            }
 
             deletedFile=arr[deletedIndex];
             const next=arr.slice(0,deletedIndex).concat(arr.slice(deletedIndex+1));
-            holder[key]=next;
+
             const sa=calculateSAFromSubunsur(obj);
             const sc=countParameterEvidence(obj);
             const st=sc===countTotalParameters()?'Selesai':(sc>0?'Proses':'Belum');
-            await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET subunsurs=?, sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?")
-              .bind(JSON.stringify(obj),sa,sa,st,params.opdId,year).run());
 
-            // Verify the authoritative row after the write. We never report
-            // success if the legacy record is still present.
-            const verify=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
-            let verifyObj={}; try{verifyObj=verify.results?.[0]?.subunsurs?JSON.parse(verify.results[0].subunsurs):{};}catch{verifyObj={};}
+            // External storage is deleted BEFORE changing D1 metadata. That makes
+            // the operation retry-safe: if D1 fails, a second click sees Drive/R2
+            // as already missing and can finish the metadata deletion.
+            const deletedGdriveId=String(
+              (deletedFile && typeof deletedFile==='object'
+                ? (deletedFile.gdriveId || deletedFile.googleDriveId || '')
+                : '') || params.gdriveId || ''
+            ).trim();
+
+            let deletedR2Key=String(
+              (deletedFile && typeof deletedFile==='object' ? (deletedFile.r2Key || '') : '') ||
+              params.r2Key || ''
+            ).trim();
+
+            let filePath='';
+            if(deletedR2Key){
+              filePath=deletedR2Key;
+            }else{
+              const deletedUrl=String(
+                (deletedFile && typeof deletedFile==='object' ? (deletedFile.url || '') : '') ||
+                (typeof deletedFile==='string' ? deletedFile : '') ||
+                requestedCleanUrl
+              ).split('?')[0];
+
+              const marker='r2.dev/';
+              const idx=deletedUrl.indexOf(marker);
+              if(idx!==-1){
+                try{ filePath=decodeURIComponent(deletedUrl.substring(idx+marker.length)); }catch{ filePath=deletedUrl.substring(idx+marker.length); }
+              }
+            }
+
+            if(deletedGdriveId){
+              try{
+                await deleteGoogleDriveFile(env,deletedGdriveId);
+              }catch(err){
+                return jsonResponse({
+                  status:'error',
+                  message:`File belum dihapus karena salinan Google Drive gagal dihapus. ${err.message || err}`,
+                  metadataDeleted:false,
+                  driveDeleted:false,
+                  gdriveId:deletedGdriveId
+                },409);
+              }
+            }
+
+            if(filePath){
+              try{
+                await env.EVIDENCE_BUCKET.delete(filePath);
+              }catch(err){
+                return jsonResponse({
+                  status:'error',
+                  message:`File belum dihapus karena salinan R2 gagal dihapus. ${err.message || err}`,
+                  metadataDeleted:false,
+                  r2Deleted:false,
+                  r2Key:filePath
+                },409);
+              }
+            }
+
+            holder[key]=next;
+            await runD1WithRetry(()=>env.DB.prepare(
+              "UPDATE opd_data SET subunsurs=?, sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?"
+            ).bind(JSON.stringify(obj),sa,sa,st,params.opdId,year));
+
+            // Verify the authoritative row after the write.
+            const verify=await env.DB.prepare(
+              "SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1"
+            ).bind(params.opdId,year).all();
+
+            let verifyObj={};
+            try{
+              verifyObj=verify.results?.[0]?.subunsurs
+                ? JSON.parse(verify.results[0].subunsurs)
+                : {};
+            }catch{verifyObj={};}
+
             const verifyArr=verifyObj?.[params.subunsur]?.[params.paramId]?.[key];
+
             if(Array.isArray(verifyArr) && verifyArr.length !== next.length){
               throw new Error('Database belum mengonfirmasi penghapusan file. Silakan ulangi.');
             }
+
             metadataDeleted=true;
+
+            const deletedUploadId=String(
+              (deletedFile && typeof deletedFile==='object' ? deletedFile.uploadId : '') ||
+              params.uploadId || ''
+            ).trim();
+
+            // Registry cleanup is best-effort after the authoritative metadata
+            // has been removed.
+            if(deletedUploadId){
+              try{
+                await runD1WithRetry(()=>env.DB.prepare(
+                  "DELETE FROM evidence_upload_registry WHERE upload_id=?"
+                ).bind(deletedUploadId).run());
+              }catch(_){}
+              try{
+                await runD1WithRetry(()=>env.DB.prepare(
+                  "DELETE FROM evidence_uploads WHERE upload_id=?"
+                ).bind(deletedUploadId).run());
+              }catch(_){}
+            }
+
+            notifyRealtime(env,ctx,year,{
+              action:'deleteFile',
+              opdId:params.opdId||null,
+              subunsur:params.subunsur||null,
+              paramId:params.paramId||null,
+              level:params.level||null,
+              uploadId:deletedUploadId||null,
+              fileIndex:deletedIndex
+            });
+
+            return jsonResponse({
+              status:'success',
+              metadataDeleted,
+              r2Deleted:!!filePath,
+              driveDeleted:!!deletedGdriveId,
+              fileName: typeof deletedFile==='string'
+                ? decodeSafeFileName(deletedFile)
+                : (deletedFile?.fileName || deletedFile?.name || params.fileName || 'File')
+            });
           }catch(err){
-            console.warn('Metadata evidence gagal diperbarui:',err.message);
-            return jsonResponse({ status:'error', message:err.message || 'Gagal menghapus metadata file.' }, 409);
+            console.warn('Penghapusan evidence gagal:',err.message);
+            return jsonResponse({
+              status:'error',
+              message:err.message || 'Gagal menghapus metadata file.',
+              metadataDeleted:false
+            },409);
           }
         }
 
-        // Work out storage identity from the submitted payload first, then from
-        // the deleted DB record (needed by older records which did not send IDs).
-        const deletedUploadId=String(params.uploadId||deletedFile?.uploadId||'').trim();
-        const deletedGdriveId=String(params.gdriveId||deletedFile?.gdriveId||deletedFile?.googleDriveId||'').trim();
-        if(deletedGdriveId){
-          try{
-            await deleteGoogleDriveFile(env, deletedGdriveId);
-          }catch(err){
-            // The DB record is already removed, but we surface the Drive problem
-            // clearly so the operator knows a cloud copy may remain.
-            return jsonResponse({ status:'error', message:'Metadata sudah dihapus, tetapi file di Google Drive belum dapat dihapus: '+err.message, metadataDeleted:true, driveDeleted:false }, 409);
-          }
-        }
-
-        const deletedR2Key=String(params.r2Key||deletedFile?.r2Key||'').trim();
-        if(!filePath && deletedR2Key) filePath=deletedR2Key;
-        if(filePath) await env.EVIDENCE_BUCKET.delete(filePath);
-
-        // Clean upload registries when a modern upload identity exists. This is
-        // best-effort; deletion of a legacy metadata record must never be blocked
-        // by an already-missing registry row.
-        if(deletedUploadId){
-          try{ await runD1WithRetry(()=>env.DB.prepare("DELETE FROM evidence_upload_registry WHERE upload_id=?").bind(deletedUploadId).run()); }catch(_){ }
-          try{ await runD1WithRetry(()=>env.DB.prepare("DELETE FROM evidence_uploads WHERE upload_id=?").bind(deletedUploadId).run()); }catch(_){ }
-        }
-
-        notifyRealtime(env,ctx,year,{action:'deleteFile',opdId:params.opdId||null,subunsur:params.subunsur||null,paramId:params.paramId||null,level:params.level||null,uploadId:deletedUploadId||null,fileIndex:deletedIndex});
-        return jsonResponse({ status: 'success', metadataDeleted, r2Deleted: !!filePath, driveDeleted: !!deletedGdriveId });
+        throw new Error('Lokasi evidence tidak lengkap.');
       }
+
 
       case 'listBackups': {
         const prefix = `backup_${year}_`;
