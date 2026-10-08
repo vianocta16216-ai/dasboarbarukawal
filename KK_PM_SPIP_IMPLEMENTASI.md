@@ -49,10 +49,10 @@ Modul KK PM **tidak menimpa** nilai-nilai tersebut.
 ## QA APIP dan Struktur & Proses
 QA APIP sekarang mengikuti sheet workbook **CHECKLIST PK** dengan 10 butir: Tahap Persiapan (3), Tahap Pelaksanaan (4), dan Tahap Pelaporan (3). Setiap butir memiliki `Pernyataan`, pilihan `√ / X`, `Keterangan Workbook`, `Catatan APIP`, dan `Pemeriksa`. Storage QA baru dibuat sparse dan terpisah; tabel QA lama 671 item tetap dipertahankan agar data historis tidak terhapus.
 
-Struktur & Proses disinkronkan secara non-destruktif pada parameter inti yang mempunyai padanan langsung dengan workbook KK3.1, memperbarui uraian/kriteria/penjelasan/cara pengujian sambil mempertahankan ID dan storage evidence lama.
+Struktur & Proses pada UI Evidence menggunakan master workbook gabungan KK3.1–KK3.4. Item yang identik lintas T1–T4 memakai satu evidenceKey; item berbeda mempunyai evidenceKey terpisah dan label target T1–T4. Storage evidence baru bersifat additive sehingga storage evidence lama tidak dihapus.
 
 ## Backup
-Backup baru menggunakan envelope versi 3 yang tetap dapat membaca backup lama berbentuk array. Selain `opd_data`, backup baru menyertakan tabel sparse `opd_kk_pm_workpaper_items`, `opd_kk_pm_meta`, dan `opd_qa_apip_checklist_items` sehingga data KK PM dan QA workbook tidak hilang saat restore.
+Backup baru menggunakan envelope versi 4 yang tetap dapat membaca backup lama berbentuk array. Selain `opd_data`, backup baru menyertakan tabel sparse `opd_kk_pm_workpaper_items`, `opd_kk_pm_meta`, dan `opd_qa_apip_checklist_items` sehingga data KK PM dan QA workbook tidak hilang saat restore.
 
 ## Export
 Tombol **Export Excel** menghasilkan satu workbook:
@@ -63,3 +63,6 @@ Tombol **Export Excel** menghasilkan satu workbook:
 - `KK3.4 T4`
 
 Sheet target mempertahankan urutan kolom utama workbook dan menambahkan `Evidence Disarankan` serta `Evidence Struktur & Proses` sebagai kolom kerja aplikasi.
+
+## Optimasi multi-operator dan low-lag
+Master workbook dimuat sekali per browser dan memakai cache statis ber-versi. Dashboard tidak melakukan render ulang setelah sinkronisasi nilai workbook jika tidak ada perubahan nilai. Sinkronisasi Google Sheets dibatasi maksimal dua OPD secara paralel untuk menghindari lonjakan request/API quota.
