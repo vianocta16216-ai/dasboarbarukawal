@@ -2250,32 +2250,69 @@ export async function onRequest({ request, env, ctx }) {
       }
 
       case 'deleteFile': {
-        const cleanUrl = params.fileUrl.split('?')[0];
+        const requestedUrl = String(params.fileUrl || '').trim();
+        const cleanUrl = requestedUrl.split('?')[0];
         const marker = 'r2.dev/';
         const idx = cleanUrl.indexOf(marker);
-        const filePath = idx !== -1 ? decodeURIComponent(cleanUrl.substring(idx + marker.length)) : '';
+        let filePath = idx !== -1 ? decodeURIComponent(cleanUrl.substring(idx + marker.length)) : '';
+        if (!filePath && params.r2Key) filePath = String(params.r2Key).trim();
 
-        // Deletion is ordered Drive -> R2. A Drive failure never destroys the R2 backup.
+        // Deletion is ordered Drive -> R2 -> metadata. A Drive failure never
+        // destroys the R2 backup, so the user can retry safely.
         if (params.gdriveId) {
           try {
-            await deleteGoogleDriveFile(env, params.gdriveId);
+            await deleteGoogleDriveFile(env, String(params.gdriveId).trim());
           } catch (err) {
             return jsonResponse({ status:'error', message:'Gagal hapus di Google Drive. Salinan R2 TETAP dipertahankan: '+err.message });
           }
         }
         if (filePath) await env.EVIDENCE_BUCKET.delete(filePath);
-        if(params.opdId && params.subunsur && params.paramId && params.level && params.fileUrl){
+
+        let metadataDeleted = false;
+        if(params.opdId && params.subunsur && params.paramId && params.level && requestedUrl){
           try{
             const rec=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
             if(rec.results.length){
-              let obj={};try{obj=rec.results[0].subunsurs?JSON.parse(rec.results[0].subunsurs):{};}catch{}
+              let obj={};
+              try{obj=rec.results[0].subunsurs?JSON.parse(rec.results[0].subunsurs):{};}catch{}
               const key='files'+String(params.level);
               const arr=obj?.[params.subunsur]?.[params.paramId]?.[key];
-              if(Array.isArray(arr)){obj[params.subunsur][params.paramId][key]=arr.filter(x=>x.url!==params.fileUrl);const sa=calculateSAFromSubunsur(obj);const sc=countParameterEvidence(obj);const st=sc===countTotalParameters()?'Selesai':(sc>0?'Proses':'Belum');await env.DB.prepare("UPDATE opd_data SET subunsurs=?, sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?").bind(JSON.stringify(obj),sa,sa,st,params.opdId,year).run();}
+              if(Array.isArray(arr)){
+                // IMPORTANT: legacy files are plain URL strings. Newer files are
+                // objects. Match BOTH so old files (e.g. File 4 / File 5) can be deleted.
+                const before=arr.length;
+                obj[params.subunsur][params.paramId][key]=arr.filter(x=>{
+                  if(typeof x==='string') return x !== requestedUrl;
+                  if(x && typeof x==='object'){
+                    if(params.uploadId && String(x.uploadId||'')===String(params.uploadId)) return false;
+                    return String(x.url||'') !== requestedUrl;
+                  }
+                  return true;
+                });
+                metadataDeleted = obj[params.subunsur][params.paramId][key].length !== before;
+                const sa=calculateSAFromSubunsur(obj);
+                const sc=countParameterEvidence(obj);
+                const st=sc===countTotalParameters()?'Selesai':(sc>0?'Proses':'Belum');
+                await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET subunsurs=?, sa=?, nilai_struktur_proses=?, struktur_proses_status=? WHERE id=? AND year=?")
+                  .bind(JSON.stringify(obj),sa,sa,st,params.opdId,year).run());
+              }
             }
-          }catch(err){console.warn('Metadata evidence gagal diperbarui:',err.message);}
+          }catch(err){
+            console.warn('Metadata evidence gagal diperbarui:',err.message);
+            return jsonResponse({ status:'error', message:'File storage sudah dihapus, tetapi metadata belum dapat diperbarui: '+err.message });
+          }
         }
-        return jsonResponse({ status: 'success' });
+
+        // Clean upload registries when a modern upload identity exists. This is
+        // intentionally best-effort so legacy file deletion cannot be blocked by
+        // an already-missing registry row.
+        if(params.uploadId){
+          try{ await runD1WithRetry(()=>env.DB.prepare("DELETE FROM evidence_upload_registry WHERE upload_id=?").bind(String(params.uploadId)).run()); }catch(_){ }
+          try{ await runD1WithRetry(()=>env.DB.prepare("DELETE FROM evidence_uploads WHERE upload_id=?").bind(String(params.uploadId)).run()); }catch(_){ }
+        }
+
+        notifyRealtime(env,ctx,year,{action:'deleteFile',opdId:params.opdId||null,subunsur:params.subunsur||null,paramId:params.paramId||null,level:params.level||null,uploadId:params.uploadId||null});
+        return jsonResponse({ status: 'success', metadataDeleted, r2Deleted: !!filePath });
       }
 
       case 'listBackups': {
