@@ -34,6 +34,14 @@ const KK_TEMPLATE_SHEET_NAMES = [
   'KK 7 INSP',
   'KK 8 INSP'
 ];
+const KK_FULL_TEMPLATE_SHEET_NAMES = ['FAQ','DAFTAR KK','NAMA OPD','CHECKLIST PK','KKLEAD_SPIP','KKLEAD I','KKE 1.1 SASTRA','KKE 1.2 SASTRA OPD','KKE 2.1 SASPRO','KKE 2.2 SASKEG','KKE 2.3 SASSUBKEG','KKLEAD II','KK3.1','KK3.2','KK3.3','KK3.4','KK 4','KKLEAD III','KK 5.1 A','KK 5.1 B ','KK 5.1 C','KK 5.2','KK 6','KK 7','KK 8','Ref PCT','REF','INDIKATOR HASIL'];
+const KK_PM_EXPECTED_FORMULAS = {
+  'KKLEAD_SPIP!I11':'=H16+H50+H64',
+  'KKLEAD_SPIP!I68':'=F83',
+  'KKLEAD_SPIP!I85':'=F104',
+  'KKLEAD_SPIP!I106':"='KKLEAD II'!L35"
+};
+
 
 let schemaReady=false;
 let schemaReadyPromise=null;
@@ -265,9 +273,8 @@ async function ensureOpdSchema(env){
     )`).run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_qa_apip_checklist_opd ON opd_qa_apip_checklist_items(year, opd_id)").run();
 
-    // Dedicated sparse table for Kertas Kerja PM SPIP. PM shares the same
-    // 43-parameter / 671-item master but is stored independently from QA APIP
-    // so concurrent operators cannot overwrite each other's work.
+    // Legacy sparse PM table retained for backward compatibility; the active KK PM workpaper
+    // uses opd_kk_pm_workpaper_items below so concurrent operators update individual parameters.
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS opd_kk_pm_items (
       year TEXT NOT NULL,
       opd_id TEXT NOT NULL,
@@ -546,6 +553,78 @@ function normalizeKkData(raw) {
   }
   return { version: 3, workbookSpreadsheetId: null, workbookUrl: null, workbookName: null, sheets: KK_TEMPLATE_SHEET_NAMES };
 }
+
+function normalizeKkPmData(raw){
+  let data=raw; if(typeof data==='string'){try{data=JSON.parse(data)}catch{data={}}}
+  if(!data||typeof data!=='object')data={};
+  const wb=data.workbook&&typeof data.workbook==='object'?data.workbook:{};
+  return {version:2,workbook:{version:1,workbookSpreadsheetId:wb.workbookSpreadsheetId||null,workbookUrl:wb.workbookUrl||null,workbookName:wb.workbookName||null,templateSpreadsheetId:wb.templateSpreadsheetId||null,sheets:Array.isArray(wb.sheets)?wb.sheets:KK_FULL_TEMPLATE_SHEET_NAMES},cells:data.cells&&typeof data.cells==='object'?data.cells:{}};
+}
+async function ensureKkPmSpreadsheet(env,params){
+  if(!env.GOOGLE_DRIVE_CLIENT_ID||!env.GOOGLE_DRIVE_CLIENT_SECRET||!env.GOOGLE_DRIVE_REFRESH_TOKEN)throw new Error('Google OAuth untuk Spreadsheet PM belum dikonfigurasi');
+  if(!env.GOOGLE_DRIVE_FOLDER_ID)throw new Error('GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi');
+  const accessToken=await getGoogleAccessToken(env);
+  const templateId=extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||env.GOOGLE_SHEETS_TEMPLATE_ID||DEFAULT_KK_TEMPLATE_SPREADSHEET_ID);
+  const tf=await getDriveFile(accessToken,templateId); if(!tf||tf.trashed)throw new Error(`Template Google Spreadsheet PM tidak dapat diakses (${templateId}).`);
+  if(tf.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error(`ID template ${templateId} bukan Google Spreadsheet.`);
+  const yearValue=params.year||'2026',opdName=safeDriveName(params.opd||'OPD Baru');
+  const root=await getOrCreateFolder(accessToken,env.GOOGLE_DRIVE_FOLDER_ID,'Kertas Kerja Spreadsheet');
+  const yearFolder=await getOrCreateFolder(accessToken,root,String(yearValue));
+  const opdFolder=await getOrCreateFolder(accessToken,yearFolder,opdName);
+  const pmFolder=await getOrCreateFolder(accessToken,opdFolder,'Kertas Kerja PM SPIP');
+  const current=normalizeKkPmData(params.currentKkPmData).workbook;
+  if(current.workbookSpreadsheetId){
+    try{
+      const currentCheck=await validateKkPmSpreadsheet(accessToken,current.workbookSpreadsheetId,{checkFormulas:false});
+      if(currentCheck.ok){
+        const ex=await getDriveFile(accessToken,current.workbookSpreadsheetId); if(ex&&!ex.trashed)return{version:2,templateSpreadsheetId:templateId,workbookSpreadsheetId:String(current.workbookSpreadsheetId),workbookUrl:current.workbookUrl||ex.webViewLink||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(current.workbookSpreadsheetId)}/edit`,workbookName:current.workbookName||ex.name||`${opdName} - Kertas Kerja PM SPIP - ${yearValue}`,sheets:(current.sheets&&current.sheets.length===KK_FULL_TEMPLATE_SHEET_NAMES.length)?current.sheets:KK_FULL_TEMPLATE_SHEET_NAMES};
+      }
+    }catch{}
+  }
+  const templateCheck=await validateKkPmSpreadsheet(accessToken,templateId,{checkFormulas:true});
+  if(!templateCheck.ok){
+    const shapeMsg=templateCheck.shapeOk?'':'struktur sheet tidak sama dengan 28 sheet workbook';
+    const formulaMsg=templateCheck.formulaOk?'':`formula inti tidak sama (${templateCheck.formulaMismatches.map(x=>`${x.cell}: ${x.actual||'kosong'} ≠ ${x.expected}`).join('; ')})`;
+    throw new Error(`Template Google Spreadsheet PM belum sesuai workbook sumber: ${[shapeMsg,formulaMsg].filter(Boolean).join(' dan ')}. Set GOOGLE_SHEETS_PM_TEMPLATE_ID ke Google Spreadsheet yang merupakan salinan persis template KK_PK_dan_Evaluasi_SPIP_Pemda_05052026_FORMULA_TEMPLATE.`);
+  }
+  const workbookName=`${opdName} - Kertas Kerja PM SPIP - ${yearValue}`;const copied=await copyDriveFile(accessToken,templateId,workbookName,pmFolder);
+  const copiedCheck=await validateKkPmSpreadsheet(accessToken,copied.id,{checkFormulas:true});
+  if(!copiedCheck.ok)throw new Error('Salinan Spreadsheet PM gagal diverifikasi terhadap workbook sumber.');
+  return{version:2,templateSpreadsheetId:templateId,workbookSpreadsheetId:copied.id,workbookUrl:copied.webViewLink||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(copied.id)}/edit`,workbookName:copied.name||workbookName,sheets:KK_FULL_TEMPLATE_SHEET_NAMES};
+}
+async function getSpreadsheetMetadata(accessToken,spreadsheetId){
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=spreadsheetId,properties(title),sheets(properties(sheetId,title,index,gridProperties(rowCount,columnCount)))`;
+  const res=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${accessToken}`}}, {retries:3,baseDelay:400}); const body=await res.json().catch(()=>({})); if(!res.ok)throw new Error('Gagal membaca metadata workbook: '+JSON.stringify(body));
+  return body;
+}
+
+function normalizeSheetTitle(title){return String(title||'').trim().replace(/\s+/g,' ');}
+function expectedPmSheetOrderMatches(sheets){
+  const actual=(sheets||[]).map(s=>normalizeSheetTitle(s.properties?.title||s.title));
+  const expected=KK_FULL_TEMPLATE_SHEET_NAMES.map(normalizeSheetTitle);
+  return actual.length===expected.length && actual.every((x,i)=>x===expected[i]);
+}
+async function getSpreadsheetFormulaValues(accessToken,spreadsheetId){
+  const qs=Object.keys(KK_PM_EXPECTED_FORMULAS).map(r=>`ranges=${encodeURIComponent(r)}`).join('&');
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchGet?${qs}&valueRenderOption=FORMULA`;
+  const res=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${accessToken}`}}, {retries:3,baseDelay:350});
+  const body=await res.json().catch(()=>({}));
+  if(!res.ok)throw new Error(`Gagal memeriksa formula workbook: ${JSON.stringify(body)}`);
+  const ranges=body.valueRanges||[];
+  const out={}; Object.keys(KK_PM_EXPECTED_FORMULAS).forEach((r,i)=>{out[r]=ranges[i]?.values?.[0]?.[0]??null;}); return out;
+}
+async function validateKkPmSpreadsheet(accessToken,spreadsheetId,{checkFormulas=true}={}){
+  const meta=await getSpreadsheetMetadata(accessToken,spreadsheetId);
+  const shapeOk=expectedPmSheetOrderMatches(meta.sheets||[]);
+  let formulaOk=true,formulas=null,formulaMismatches=[];
+  if(checkFormulas){
+    formulas=await getSpreadsheetFormulaValues(accessToken,spreadsheetId);
+    for(const [cell,expected] of Object.entries(KK_PM_EXPECTED_FORMULAS)){const actual=String(formulas[cell]||'').trim(); if(actual!==expected)formulaMismatches.push({cell,expected,actual});}
+    formulaOk=formulaMismatches.length===0;
+  }
+  return {ok:shapeOk&&formulaOk,shapeOk,formulaOk,formulaMismatches,metadata:meta,formulas};
+}
+
 
 async function ensureKkSpreadsheet(env, params) {
   if (!env.GOOGLE_DRIVE_CLIENT_ID || !env.GOOGLE_DRIVE_CLIENT_SECRET || !env.GOOGLE_DRIVE_REFRESH_TOKEN) {
@@ -1192,7 +1271,7 @@ export async function onRequest({ request, env, ctx }) {
   const SENSITIVE_ACTIONS = [
     'verifyAccess', 'verifyDelete', 'addOpd', 'saveData', 'saveField',
     'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'saveQaApipItem', 'deleteQaApipItem', 'getQaApipChecklistData', 'saveQaApipChecklistItem', 'deleteQaApipChecklistItem', 'deleteOpd', 'addYear', 'deleteYear',
-    'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getWorkbookEvidenceFiles', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup'
+    'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup'
   ];
 
   // KK RTP dan pengaturan folder Evidence RTP wajib melalui POST.
@@ -1607,6 +1686,35 @@ export async function onRequest({ request, env, ctx }) {
         if(!kk.workbookSpreadsheetId)return jsonResponse({status:'unavailable',computed:{source:'KKLEAD_SPIP workbook formula cells',status:'unavailable',syncedAt:null,message:'Spreadsheet Kertas Kerja OPD belum dibuat.',values:{nilaiMaturitas:null,mri:null,iepk:null,nilaiKapabilitasApip:null}}});
         try{const computed=await readWorkbookComputedValues(env,kk.workbookSpreadsheetId);const v=computed.values||{};await runD1WithRetry(()=>env.DB.prepare('UPDATE opd_data SET nilai_maturitas=?,nilai_kapabilitas_apip=?,mri=?,iepk=?,computed_workbook_data=? WHERE id=? AND year=?').bind(Number(v.nilaiMaturitas??0),Number(v.nilaiKapabilitasApip??0),Number(v.mri??0),Number(v.iepk??0),JSON.stringify(computed),opdId,String(year)));notifyRealtime(env,ctx,year,{action:'syncKkComputedValues',opdId,computed});return jsonResponse({status:'success',computed});}
         catch(err){let old={};try{old=rec.results[0].computed_workbook_data?JSON.parse(rec.results[0].computed_workbook_data):{};}catch{}const computed={...old,status:'error',source:'KKLEAD_SPIP workbook formula cells',error:String(err.message||err),syncedAt:old.syncedAt||null};await runD1WithRetry(()=>env.DB.prepare('UPDATE opd_data SET computed_workbook_data=? WHERE id=? AND year=?').bind(JSON.stringify(computed),opdId,String(year)));return jsonResponse({status:'error',message:computed.error,computed},200);}
+      }
+
+      case 'getKkPmSheets': {
+        const rec=await env.DB.prepare("SELECT kk_pm_data, opd FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(String(params.opdId||''),String(year)).all();
+        if(!rec.results?.length)return jsonResponse({status:'error',message:'OPD tidak ditemukan'},404);
+        const data=normalizeKkPmData(rec.results[0].kk_pm_data); let sheets=[]; let needsSync=false;
+        if(data.workbook.workbookSpreadsheetId){try{const token=await getGoogleAccessToken(env);const meta=await getSpreadsheetMetadata(token,data.workbook.workbookSpreadsheetId);sheets=(meta.sheets||[]).map(s=>({sheetId:s.properties?.sheetId,title:s.properties?.title,index:s.properties?.index,rowCount:s.properties?.gridProperties?.rowCount||0,columnCount:s.properties?.gridProperties?.columnCount||0}));needsSync=!expectedPmSheetOrderMatches(meta.sheets||[]);}catch(err){needsSync=true;sheets=Array.isArray(data.workbook.sheets)?data.workbook.sheets.map((x,i)=>({sheetId:null,title:x,index:i})):[];}}
+        else needsSync=true;
+        return jsonResponse({status:'success',kkPmData:data.workbook,sheets,needsSync,expectedSheetCount:KK_FULL_TEMPLATE_SHEET_NAMES.length});
+      }
+
+      case 'createKkPmSheets': {
+        const rec=await env.DB.prepare("SELECT kk_pm_data, opd FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(String(params.opdId||''),String(year)).all();
+        if(!rec.results?.length)return jsonResponse({status:'error',message:'OPD tidak ditemukan'},404);
+        const kkPmRaw=normalizeKkPmData(rec.results[0].kk_pm_data);const wb=await ensureKkPmSpreadsheet(env,{...params,opd:params.opd||rec.results[0].opd,currentKkPmData:kkPmRaw});
+        const accessToken=await getGoogleAccessToken(env);let sheets=[];try{const meta=await getSpreadsheetMetadata(accessToken,wb.workbookSpreadsheetId);if(!expectedPmSheetOrderMatches(meta.sheets||[]))throw new Error('Spreadsheet PM hasil sinkronisasi tidak memiliki 28 sheet workbook sumber.');sheets=(meta.sheets||[]).map(s=>({sheetId:s.properties?.sheetId,title:s.properties?.title,index:s.properties?.index,rowCount:s.properties?.gridProperties?.rowCount||0,columnCount:s.properties?.gridProperties?.columnCount||0}));}catch(err){throw new Error(err.message||'Gagal memverifikasi struktur Spreadsheet PM.');}
+        const compact={version:2,workbook: {...wb,sheets:sheets.length?sheets:wb.sheets},cells:kkPmRaw.cells||{}};
+        await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET kk_pm_data=? WHERE id=? AND year=?").bind(JSON.stringify(compact),String(params.opdId),String(year)));
+        notifyRealtime(env,ctx,year,{action:'createKkPmSheets',opdId:params.opdId});
+        return jsonResponse({status:'success',message:'Spreadsheet KK PM SPIP lengkap berhasil dibuat/disinkronkan',kkPmData:compact.workbook,sheets:compact.workbook.sheets});
+      }
+
+      case 'exportKkPmWorkbook': {
+        const rec=await env.DB.prepare("SELECT kk_pm_data,opd FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(String(params.opdId||''),String(year)).all();
+        if(!rec.results?.length)return jsonResponse({status:'error',message:'OPD tidak ditemukan'},404);
+        const wb=normalizeKkPmData(rec.results[0].kk_pm_data).workbook; if(!wb.workbookSpreadsheetId)throw new Error('Spreadsheet PM belum dibuat. Klik Sinkronkan Workbook terlebih dahulu.');
+        const token=await getGoogleAccessToken(env); const url=`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(wb.workbookSpreadsheetId)}/export?mimeType=${encodeURIComponent('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}`;
+        const res=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${token}`}}, {retries:3,baseDelay:500}); if(!res.ok){const txt=await res.text();throw new Error('Export workbook gagal: '+txt.slice(0,400));}
+        const headers=new Headers({'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':`attachment; filename="${safeDriveName(rec.results[0].opd||'OPD')}-${year}-KK-PM-SPIP-FULL.xlsx"`,'Cache-Control':'no-store'}); return new Response(res.body,{status:200,headers});
       }
 
       case 'getKkPmData': {
