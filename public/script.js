@@ -948,8 +948,8 @@ function computedWorkbookOf(row){
 }
 function computedValueOf(row,key){
   const cv=computedWorkbookOf(row).values||{};
-  const direct=key==='mri' ? (row?.nilaiMRI ?? row?.mri) : key==='iepk' ? (row?.nilaiIEPK ?? row?.iepk) : key==='nilaiKapabilitasApip' ? row?.nilaiKapabilitasApip : key==='nilaiMaturitas' ? row?.nilaiMaturitas : row?.[key];
-  const v=cv[key] ?? direct;
+  const computedKeys=new Set(['nilaiMaturitas','mri','iepk','nilaiKapabilitasApip']);
+  const v=computedKeys.has(key) ? cv[key] : (cv[key] ?? row?.[key]);
   const n=Number(v);
   return Number.isFinite(n)&&n>0?n:null;
 }
@@ -1015,7 +1015,7 @@ async function loadData() {
         row.structureProcessBreakdown = getRowStructureProcessBreakdown(row);
         return row;
       });
-      rows.sort((a,b)=>{ const x=(parseFloat(b.nilaiMaturitas)||0)-(parseFloat(a.nilaiMaturitas)||0); return x || (parseFloat(b.nilaiStrukturProses)||0)-(parseFloat(a.nilaiStrukturProses)||0); });
+      rows.sort((a,b)=>{ const x=(Number(computedValueOf(b,'nilaiMaturitas'))||0)-(Number(computedValueOf(a,'nilaiMaturitas'))||0); return x || (parseFloat(b.nilaiStrukturProses)||0)-(parseFloat(a.nilaiStrukturProses)||0); });
       applyOfflineQueueToRows();
     } else {
       console.warn('Data bukan array, rows diset kosong', data);
@@ -1095,13 +1095,13 @@ function calculateSA(row) {
 function updateKpisLocal(){
   const total = rows.length;
   const avgAll = field => total ? rows.reduce((sum,r)=>sum + (Number(r[field]) || 0),0) / total : 0;
-  const avgFilled = field => { const a=rows.map(r=>Number(r[field])).filter(v=>Number.isFinite(v)&&v>0); return a.length?a.reduce((x,y)=>x+y,0)/a.length:0; };
+  const avgFilled = field => { const a=rows.map(r=>Number(computedValueOf(r,field))).filter(v=>Number.isFinite(v)&&v>0); return a.length?a.reduce((x,y)=>x+y,0)/a.length:0; };
   const pct=(n,d)=>d?Math.round(n/d*100):0;
   const struktur = rows.map(r=>Number(getRowStructureProcessBreakdown(r).value)||0);
-  const maturitas = rows.map(r=>Number(r.nilaiMaturitas)||0).filter(v=>v>0);
-  const mri = rows.map(r=>Number(r.mri)||0).filter(v=>v>0);
-  const iepk = rows.map(r=>Number(r.iepk)||0).filter(v=>v>0);
-  const kap = rows.map(r=>Number(r.nilaiKapabilitasApip)||0).filter(v=>v>0);
+  const maturitas = rows.map(r=>Number(computedValueOf(r,'nilaiMaturitas'))||0).filter(v=>v>0);
+  const mri = rows.map(r=>Number(computedValueOf(r,'mri'))||0).filter(v=>v>0);
+  const iepk = rows.map(r=>Number(computedValueOf(r,'iepk'))||0).filter(v=>v>0);
+  const kap = rows.map(r=>Number(computedValueOf(r,'nilaiKapabilitasApip'))||0).filter(v=>v>0);
   const qaSummaries=rows.map(r=>r.qaApipSummary||{total:10,evaluated:0,na:0,pending:10,sum:0,percentage:0,completion:0,status:'Belum'});
   // KPI is a weighted aggregate across the whole QA scope, not an average of
   // OPD percentages. This prevents a small OPD with one completed item from
@@ -3347,7 +3347,7 @@ let workbookEvidenceFiles=[];
 let workbookEvidenceNav={screen:'unsur',unsur:'',sub:'',groupId:''};
 async function ensureWorkbookEvidenceMasterLoaded(){
   if(workbookEvidenceMaster)return workbookEvidenceMaster;
-  const r=await fetch('/workbook-structure-process-master.json?v=20261008.4',{cache:'force-cache'});
+  const r=await fetch('/workbook-structure-process-master.json?v=20261008.6',{cache:'force-cache'});
   if(!r.ok)throw new Error('Master Struktur & Proses workbook tidak dapat dimuat');
   workbookEvidenceMaster=await r.json();
   if(!workbookEvidenceMaster?.mergedEvidence?.groups?.length)throw new Error('Master merged Evidence workbook tidak valid.');
@@ -3830,7 +3830,7 @@ function qaApipGetState(itemId){return qaApipStateMap.get(qaApipKey(itemId))||{}
 function qaApipSetState(itemId,value){qaApipStateMap.set(qaApipKey(itemId),{...value});}
 async function ensureQaApipMasterLoaded(){
   if(qaApipMaster)return qaApipMaster;
-  const response=await fetch('/qa-apip-workbook-master.json?v=20261008.4',{cache:'force-cache'});
+  const response=await fetch('/qa-apip-workbook-master.json?v=20261008.6',{cache:'force-cache'});
   if(!response.ok)throw new Error(`Master QA APIP workbook tidak dapat dimuat (HTTP ${response.status})`);
   qaApipMaster=await response.json();
   if(!qaApipMaster||!Array.isArray(qaApipMaster.items)||qaApipMaster.items.length!==10)throw new Error('Master QA APIP workbook tidak valid.');
@@ -3920,10 +3920,14 @@ document.getElementById('qaApipClose')?.addEventListener('click',closeQaApipModa
 // blok 5 Grade (A–E), dengan input Hasil Pengujian + Grade Hasil + AoI/Penyebab.
 // Evidence hanya ditarik read-only dari Evidence Struktur & Proses.
 let kkPmMaster=null;
+let kkFullWorkbookManifest=null;
+let kkPmWorkbookData=null;
+let kkPmWorkbookSheets=[];
+let kkPmSelectedSheet='';
 const KK_PM_TOTAL_PARAMETERS=183;
 let kkPmCurrentRow=null;
 let kkPmEditingRowId=null;
-let kkPmTab='summary';
+let kkPmTab='allSheets';
 let kkPmStateMap=new Map();
 let kkPmMetaMap=new Map();
 let kkPmSaveTimers=new Map();
@@ -3962,8 +3966,26 @@ function kkPmEvidenceHtml(row,p,selectedGrade=''){
 function kkPmMasterKey(target,p){return `${target}|${p.subCode}|${p.paramId}`;}
 async function ensureKkPmMasterLoaded(){
   if(kkPmMaster)return kkPmMaster;
-  const r=await fetch('/workbook-structure-process-master.json?v=20261008.4',{cache:'force-cache'}); if(!r.ok)throw new Error('Master KK PM SPIP tidak dapat dimuat');
+  const r=await fetch('/kk-pm-exact-workbook-master.json?v=20261008.6',{cache:'force-cache'}); if(!r.ok)throw new Error('Master KK PM SPIP tidak dapat dimuat');
   kkPmMaster=await r.json(); return kkPmMaster;
+}
+async function ensureKkFullWorkbookManifestLoaded(){
+  if(kkFullWorkbookManifest)return kkFullWorkbookManifest;
+  const r=await fetch('/kk-full-workbook-manifest.json?v=20261008.6',{cache:'force-cache'});
+  if(!r.ok)throw new Error('Manifest seluruh workbook KK tidak dapat dimuat');
+  kkFullWorkbookManifest=await r.json();
+  if(Number(kkFullWorkbookManifest.allSheetCount)!==28||Number(kkFullWorkbookManifest.workpaperSheetCount)!==21)throw new Error('Manifest workbook tidak valid: harus 28 sheet total dan 21 sheet kertas kerja.');
+  return kkFullWorkbookManifest;
+}
+async function loadKkPmWorkbookData(row){
+  let d=await callServerWithRetry('getKkPmSheets',{opdId:row.id,year:currentYear},2);
+  if(d?.needsSync){
+    kkPmSetStatus('⏳ Spreadsheet PM lama belum memakai seluruh 28 sheet workbook. Sistem memperbaiki dan menyalin template exact secara otomatis...');
+    d=await callServerWithRetry('createKkPmSheets',{opdId:row.id,year:currentYear,opd:row.opd||'OPD'},2);
+  }
+  kkPmWorkbookData=d?.kkPmData||{};
+  kkPmWorkbookSheets=Array.isArray(d?.sheets)?d.sheets:[];
+  return d;
 }
 async function loadKkPmData(row){
   const [d,ev]=await Promise.all([callServerWithRetry('getKkPmDataDetailed',{opdId:row.id,year:currentYear},2),callServerWithRetry('getWorkbookEvidenceFiles',{opdId:row.id,year:currentYear},2)]);
@@ -3985,14 +4007,15 @@ function kkPmOverallSummary(){
 }
 function kkPmSummaryCard(label,value,note,cls=''){return `<div class="kk-pm-summary-card ${cls}"><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`;}
 function kkPmUpdateSummary(){
-  if(!kkPmCurrentRow)return; const s=kkPmOverallSummary(); const structure=Number(getRowStructureProcessBreakdown(kkPmCurrentRow).value||0); const maturity=computedValueOf(kkPmCurrentRow,'nilaiMaturitas')||0,mri=computedValueOf(kkPmCurrentRow,'mri')||0,iepk=computedValueOf(kkPmCurrentRow,'iepk')||0,kap=computedValueOf(kkPmCurrentRow,'nilaiKapabilitasApip')||0;
+  if(!kkPmCurrentRow)return; const s=kkPmOverallSummary(); const structure=Number(getRowStructureProcessBreakdown(kkPmCurrentRow).value||0); const maturity=computedValueOf(kkPmCurrentRow,'nilaiMaturitas'),mri=computedValueOf(kkPmCurrentRow,'mri'),iepk=computedValueOf(kkPmCurrentRow,'iepk'),kap=computedValueOf(kkPmCurrentRow,'nilaiKapabilitasApip');
+  const fmt=v=>v==null?'—':v.toFixed(2);
   const el=document.getElementById('kkPmSummary'); if(!el)return;
   el.innerHTML=kkPmSummaryCard('Progress KK PM',`${s.completion.toFixed(2)}%`,`${s.evaluated}/${s.total} parameter telah diberi grade`,'kk-pm-summary-result')+
     kkPmSummaryCard('Rata-rata Level PM',s.avgLevel?s.avgLevel.toFixed(2):'—','A=5 · B=4 · C=3 · D=2 · E=1')+
     kkPmSummaryCard('Evidence Tarikan',String(s.evidence),'file dari Struktur & Proses')+
-    kkPmSummaryCard('Nilai Struktur & Proses',structure.toFixed(2),'nilai existing · tidak ditimpa')+
-    kkPmSummaryCard('Maturitas SPIP',maturity.toFixed(2),'nilai existing')+
-    kkPmSummaryCard('MRI · IEPK · Kap. APIP',`${mri.toFixed(2)} · ${iepk.toFixed(2)} · ${kap.toFixed(2)}`,'nilai existing OPD');
+    kkPmSummaryCard('Nilai Struktur & Proses',structure.toFixed(2),'derived dari Evidence Struktur & Proses')+
+    kkPmSummaryCard('Maturitas SPIP',fmt(maturity),'formula workbook · read-only')+
+    kkPmSummaryCard('MRI · IEPK · Kap. APIP',`${fmt(mri)} · ${fmt(iepk)} · ${fmt(kap)}`,'formula workbook · read-only');
   const rowEl=document.querySelector(`.kk-pm-table-summary[data-id="${CSS.escape(String(kkPmCurrentRow.id||''))}"]`); if(rowEl)rowEl.innerHTML=`${s.completion.toFixed(2)}%<small>${s.evaluated}/${s.total} parameter</small>`;
   kkPmCurrentRow.kkPmSummary={total:s.total,evaluated:s.evaluated,na:0,pending:s.pending,sum:s.avgLevel,percentage:s.completion,completion:s.completion,status:s.completion>=100?'Selesai':(s.evaluated?'Proses':'Belum')};
 }
@@ -4066,10 +4089,34 @@ function kkPmRenderTarget(target){
   <div class="kk-pm-filter-bar"><input id="kkPmSearch" value="${escapeHtml(kkPmFilters.search)}" placeholder="Cari kode / subunsur / parameter..."/><select id="kkPmFilterUnsur"><option value="all">Semua Unsur</option>${['1','2','3','4','5'].map(u=>`<option value="${u}" ${kkPmFilters.unsur===u?'selected':''}>Unsur ${u} · ${escapeHtml(SPIP_UNSUR_INFO[u]?.title||'')}</option>`).join('')}</select><select id="kkPmFilterSub"><option value="all">Semua Subunsur</option>${subs.map(([code,name])=>`<option value="${escapeHtml(code)}" ${kkPmFilters.subunsur===code?'selected':''}>${escapeHtml(code)} · ${escapeHtml(name)}</option>`).join('')}</select><span>${params.length} parameter tampil</span></div>
   <div class="kk-pm-subsections">${[...new Set(params.map(p=>p.subCode))].map(sc=>{const name=params.find(p=>p.subCode===sc)?.subunsur||sc;const ps=params.filter(p=>p.subCode===sc);const ss=kkPmSubSummary(target,sc);return `<details class="kk-pm-subsection" open><summary><span class="kk-pm-sub-code">${escapeHtml(sc)}</span><b>${escapeHtml(name)}</b><small>${ss.evaluated}/${ss.total} dinilai · ${ss.completion.toFixed(0)}% · Avg ${ss.avg?ss.avg.toFixed(2):'—'}</small></summary>${ps.map(p=>kkPmRenderParameter(target,p)).join('')}</details>`;}).join('')}</div>`;
 }
+
+function kkPmWorkbookSheetByName(name){
+  return (kkFullWorkbookManifest?.sheets||[]).find(x=>String(x.sheetName)===String(name));
+}
+function kkPmWorkbookGid(name){
+  return (kkPmWorkbookSheets||[]).find(x=>String(x.title)===String(name))?.sheetId;
+}
+function kkPmWorkbookUrl(name=''){
+  const base=kkPmWorkbookData?.workbookUrl||''; if(!base)return '';
+  const gid=kkPmWorkbookGid(name); return gid ? `${base}#gid=${encodeURIComponent(gid)}` : base;
+}
+function kkPmRenderAllSheets(){
+  const sheets=kkFullWorkbookManifest?.sheets||[];
+  const wb=kkPmWorkbookData||{};
+  const openUrl=kkPmWorkbookUrl(kkPmSelectedSheet||'');
+  const current=kkPmWorkbookSheetByName(kkPmSelectedSheet||'');
+  const sample=current?.sampleRows||[];
+  const preview=current
+    ? `<div class="kk-pm-workbook-preview"><div class="kk-pm-workbook-preview-head"><div><div class="kk-pm-kicker">SHEET ${current.order} / ${sheets.length}</div><h4>${escapeHtml(current.sheetName)}</h4><p>${escapeHtml(current.description||'')}</p></div><div class="kk-pm-preview-actions">${openUrl?`<a class="kk-pm-action-link" href="${escapeHtml(openUrl)}" target="_blank" rel="noopener">↗️ Buka Sheet Ini</a>`:''}</div></div><div class="kk-pm-preview-meta"><span>Jenis <b>${escapeHtml(current.type==='workpaper'?'Kertas Kerja':'Pendukung/Referensi')}</b></span><span>Dimensi <b>${escapeHtml(current.dimension||'')}</b></span><span>Formula <b>${Number(current.formulaCount||0).toLocaleString('id-ID')}</b></span><span>Mode <b>Lazy-load</b></span></div><div class="kk-pm-sample-rows">${sample.map(r=>`<div class="kk-pm-sample-row"><b>Baris ${r.row}</b><div>${(r.cells||[]).map(c=>`<span><em>${escapeHtml(c[0])}</em> ${escapeHtml(String(c[1]).slice(0,220))}</span>`).join('')}</div></div>`).join('')}</div><div class="kk-pm-workbook-note"><b>Seluruh isi dan formula tetap utuh di Spreadsheet sumber.</b> Sheet besar seperti KK 5.2 tidak dimuat seluruh sel ke browser. Dashboard hanya memuat metadata + preview kecil, lalu operator membuka sheet asli saat perlu mengisi/menelusuri seluruh baris. Ini mencegah lag ketika banyak operator aktif.</div></div>`
+    : `<div class="kk-pm-workbook-empty">Pilih sheet dari daftar (mulai dari sheet 1 sampai 28) untuk melihat metadata, preview, dan membuka sheet aslinya.</div>`;
+  const workbookReady=!!wb.workbookUrl;
+  const sheetCards=`<div class="kk-pm-sheet-group"><div class="kk-pm-sheet-group-title">Urutan asli workbook · ${sheets.length} sheet</div>${sheets.map(x=>`<button type="button" class="kk-pm-workbook-sheet-card ${kkPmSelectedSheet===x.sheetName?'active':''}" data-pm-sheet="${escapeHtml(x.sheetName)}"><span class="kk-pm-sheet-order">${x.order}</span><div><b>${escapeHtml(x.sheetName)}</b><strong>${escapeHtml(x.description||'')}</strong><small>${escapeHtml(x.phase||'')} · ${escapeHtml(x.type==='workpaper'?'Kertas Kerja':'Pendukung/Referensi')} · ${escapeHtml(x.dimension||'—')} · ${Number(x.formulaCount||0).toLocaleString('id-ID')} formula</small></div><span class="kk-pm-sheet-arrow">→</span></button>`).join('')}</div>`;
+  return `<div class="kk-pm-sheet-head"><div><div class="kk-pm-kicker">WORKBOOK SINGLE SOURCE OF TRUTH</div><h4>Seluruh Workbook dari Awal sampai Akhir</h4><p>Template <b>KK_PK_dan_Evaluasi_SPIP_Pemda_05052026_FORMULA_TEMPLATE</b> dipertahankan dengan <b>${sheets.length} sheet</b> dalam <b>urutan asli 1–28</b>, termasuk sheet pendukung, lead, penetapan tujuan, struktur & proses, penalti, pencapaian tujuan, QA, dan referensi.</p></div><div class="kk-pm-workbook-overview-actions">${workbookReady?`<a class="kk-pm-action-link" href="${escapeHtml(wb.workbookUrl)}" target="_blank" rel="noopener">↗️ Buka Seluruh Workbook</a>`:'<span class="kk-pm-disabled-link">Spreadsheet PM belum dibuat</span>'}</div></div><div class="kk-pm-workbook-alert"><b>Hubungan data:</b> upload tetap dilakukan melalui <b>Evidence Struktur &amp; Proses</b>. Evidence yang memiliki evidenceKey yang sama akan muncul otomatis di KK PM. Nilai Maturitas SPIP, MRI, IEPK, dan Kapabilitas APIP dibaca dari <b>sel formula workbook KKLEAD_SPIP</b> dan tidak tersedia sebagai input manual.</div><div class="kk-pm-workbook-layout"><div class="kk-pm-workbook-sheet-list">${sheetCards}</div><div class="kk-pm-workbook-detail">${preview}</div></div>`;
+}
 function kkPmRenderModal(){
   if(!kkPmCurrentRow)return; document.querySelectorAll('#kkPmTabs [data-pm-tab]').forEach(b=>b.classList.toggle('active',b.dataset.pmTab===kkPmTab)); kkPmUpdateSummary();
   const c=document.getElementById('kkPmContent'); if(!c)return;
-  if(kkPmTab==='summary')c.innerHTML=kkPmRenderSummary(); else c.innerHTML=kkPmRenderTarget(kkPmTab);
+  if(kkPmTab==='allSheets')c.innerHTML=kkPmRenderAllSheets(); else if(kkPmTab==='summary')c.innerHTML=kkPmRenderSummary(); else c.innerHTML=kkPmRenderTarget(kkPmTab);
 }
 function kkPmReadDomValue(target,sub,paramId,field){return document.querySelector(`#kkPmContent [data-pm-field="${field}"][data-pm-target="${CSS.escape(String(target))}"][data-pm-sub="${CSS.escape(String(sub))}"][data-pm-param="${CSS.escape(String(paramId))}"]`)?.value||'';}
 function kkPmCollectDom(target,sub,paramId){
@@ -4089,6 +4136,15 @@ function kkPmScheduleSave(target,sub,paramId){const key=kkPmStateKey(target,sub,
 function kkPmCollectMeta(target){const out={};document.querySelectorAll(`#kkPmContent [data-pm-meta-target="${CSS.escape(String(target))}"][data-pm-meta]`).forEach(el=>{out[el.dataset.pmMeta]=el.value||'';});return out;}
 function kkPmScheduleMetaSave(target){const key=String(target);clearTimeout(kkPmMetaSaveTimers.get(key));kkPmMetaSaveTimers.set(key,setTimeout(async()=>{kkPmMetaSaveTimers.delete(key);const meta=kkPmCollectMeta(target);kkPmMetaMap.set(key,meta);try{await callServerWithRetry('saveKkPmMeta',{opdId:kkPmCurrentRow.id,year:currentYear,target,...meta},3);kkPmSetStatus('✓ Identitas lembar kerja tersimpan.','success');}catch(err){kkPmSetStatus('❌ Gagal menyimpan identitas: '+(err.message||err),'error');}},500));}
 function kkPmExportCellValue(aoa,rowIndex,col,value,link){if(!link){aoa.push(value);return;} }
+
+async function createKkPmWorkbookForCurrentRow(){
+  if(!kkPmCurrentRow)return; const btn=document.getElementById('kkPmSyncWorkbook'); if(btn)btn.disabled=true; kkPmSetStatus('⏳ Membuat/sinkronkan Spreadsheet PM exact workbook (28 sheet)...');
+  try{const d=await callServerWithRetry('createKkPmSheets',{opdId:kkPmCurrentRow.id,year:currentYear,opd:kkPmCurrentRow.opd||'OPD'},2);kkPmWorkbookData=d?.kkPmData||{};kkPmWorkbookSheets=Array.isArray(d?.sheets)?d.sheets:[];kkPmSetStatus('✓ Spreadsheet PM exact workbook berisi seluruh 28 sheet sudah siap.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('❌ Gagal membuat Spreadsheet PM: '+(err.message||err),'error');}finally{if(btn)btn.disabled=false;}
+}
+async function exportKkPmFullWorkbook(){
+  if(!kkPmCurrentRow)return; kkPmSetStatus('⏳ Menyiapkan export workbook lengkap...');
+  try{const response=await fetch('/myCloudinaryHandler',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'exportKkPmWorkbook',opdId:kkPmCurrentRow.id,year:currentYear})}); if(!response.ok){const tx=await response.text();throw new Error(tx||`HTTP ${response.status}`);} const blob=await response.blob();const name=`${(kkPmCurrentRow.opd||'OPD').replace(/[\\/:*?"<>|]/g,' ').trim().substring(0,65)||'OPD'}-${currentYear}-KK-PM-SPIP-FULL.xlsx`;const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);kkPmSetStatus('✓ Export workbook lengkap berhasil.','success');}catch(err){kkPmSetStatus('❌ Export workbook lengkap gagal: '+(err.message||err),'error');}
+}
 function exportKkPmExcel(){
   if(!kkPmCurrentRow||!window.XLSX||!kkPmMaster)return kkPmSetStatus('Export Excel tidak tersedia.','error');
   try{
@@ -4113,13 +4169,21 @@ function exportKkPmExcel(){
   }catch(err){kkPmSetStatus('❌ Export gagal: '+(err.message||err),'error');}
 }
 async function openKkPmModal(id){
-  const row=rows.find(r=>String(r.id)===String(id)); if(!row)return; kkPmCurrentRow=row;kkPmEditingRowId=row.id;kkPmTab='summary';kkPmFilters={search:'',unsur:'all',subunsur:'all'};const modal=document.getElementById('kkPmModal');if(!modal)return;
-  document.getElementById('kkPmModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;modal.classList.add('active');kkPmSetStatus('Memuat master workbook dan data KK PM SPIP...');
-  try{await Promise.all([ensureKkPmMasterLoaded(),loadKkPmData(row),syncKkComputedValues(row,true)]);kkPmSetStatus('✓ KK PM siap. Struktur KK3.1–KK3.4, evidence terhubung otomatis.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('Gagal memuat KK PM SPIP: '+(err.message||err),'error');}
+  const row=rows.find(r=>String(r.id)===String(id)); if(!row)return; kkPmCurrentRow=row;kkPmEditingRowId=row.id;kkPmTab='allSheets';kkPmSelectedSheet='FAQ';kkPmFilters={search:'',unsur:'all',subunsur:'all'};const modal=document.getElementById('kkPmModal');if(!modal)return;
+  document.getElementById('kkPmModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;modal.classList.add('active');kkPmSetStatus('Memuat workbook lengkap, PM detail, evidence terhubung, dan nilai formula...');
+  try{await Promise.all([ensureKkPmMasterLoaded(),ensureKkFullWorkbookManifestLoaded(),loadKkPmData(row),loadKkPmWorkbookData(row),syncKkComputedValues(row,true)]);kkPmSetStatus('✓ KK PM siap: 28 sheet workbook + PM Struktur & Proses + evidence terhubung + nilai formula.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('Gagal memuat KK PM SPIP: '+(err.message||err),'error');kkPmRenderModal();}
 }
-function closeKkPmModal(){document.getElementById('kkPmModal')?.classList.remove('active');kkPmEditingRowId=null;kkPmCurrentRow=null;kkPmStateMap=new Map();kkPmMetaMap=new Map();kkPmSaveTimers.forEach(t=>clearTimeout(t));kkPmSaveTimers.clear();kkPmMetaSaveTimers.forEach(t=>clearTimeout(t));kkPmMetaSaveTimers.clear();}
+
+function closeKkPmModal(){document.getElementById('kkPmModal')?.classList.remove('active');kkPmEditingRowId=null;kkPmCurrentRow=null;kkPmWorkbookData=null;kkPmWorkbookSheets=[];kkPmSelectedSheet='';kkPmStateMap=new Map();kkPmMetaMap=new Map();kkPmSaveTimers.forEach(t=>clearTimeout(t));kkPmSaveTimers.clear();kkPmMetaSaveTimers.forEach(t=>clearTimeout(t));kkPmMetaSaveTimers.clear();}
 
 document.addEventListener('click',e=>{
+  const sheet=e.target.closest('#kkPmContent [data-pm-sheet]'); if(sheet){kkPmSelectedSheet=sheet.dataset.pmSheet||''; kkPmTab='allSheets'; kkPmRenderModal(); return;}
+  const openW=e.target.closest('#kkPmOpenWorkbook'); if(openW){
+    if(kkPmWorkbookData?.workbookUrl){window.open(kkPmWorkbookData.workbookUrl,'_blank','noopener');} else {kkPmSetStatus('Spreadsheet PM belum dibuat. Gunakan tombol Sinkronkan Workbook terlebih dahulu.','error');}
+    return;
+  }
+  const syncW=e.target.closest('#kkPmSyncWorkbook'); if(syncW){createKkPmWorkbookForCurrentRow(); return;}
+  const expFull=e.target.closest('#kkPmExportFull'); if(expFull){exportKkPmFullWorkbook(); return;}
   const tab=e.target.closest('#kkPmTabs [data-pm-tab]');if(tab){kkPmTab=tab.dataset.pmTab;kkPmFilters={search:'',unsur:'all',subunsur:'all'};kkPmRenderModal();return;}
   const targetBtn=e.target.closest('#kkPmContent [data-pm-tab-target]');if(targetBtn){kkPmTab=targetBtn.dataset.pmTabTarget;kkPmFilters={search:'',unsur:'all',subunsur:'all'};kkPmRenderModal();return;}
   const exp=e.target.closest('#kkPmExport');if(exp){exportKkPmExcel();return;}
