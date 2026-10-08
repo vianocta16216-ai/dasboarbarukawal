@@ -1,3 +1,4 @@
+import { WORKBOOK_T1_CRITERIA } from './workbookStructureSync.js';
 export const SUBUNSUR_DATA = {
   '1.1': {
     label: '1.1 Penegakan Integritas dan Nilai Etika',
@@ -582,3 +583,22 @@ export const SUBUNSUR_DATA = {
     ]
   }
 };
+
+
+// Sinkronisasi non-destruktif terhadap sheet KK3.1 workbook: hanya memperbarui
+// uraian parameter + kriteria/penjelasan/cara pengujian/tahapan grade; struktur
+// evidence existing dan API lama tetap dipertahankan.
+WORKBOOK_T1_CRITERIA.forEach(sync => {
+  const p = SUBUNSUR_DATA?.[sync.subCode]?.params?.find(x => String(x.id) === String(sync.paramId));
+  if (!p) return;
+  p.desc = sync.uraianParameter || p.desc;
+  (p.levels || []).forEach(level => {
+    const g = sync.grades?.[level.grade];
+    if (!g) return;
+    level.desc = g.kriteria || level.desc;
+    level.note = g.stage || level.note;
+    level.kriteria = g.kriteria || level.kriteria || '';
+    level.penjelasan = g.penjelasan || level.penjelasan || '';
+    level.caraPengujian = g.caraPengujian || level.caraPengujian || '';
+  });
+});
