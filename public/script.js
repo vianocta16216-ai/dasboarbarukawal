@@ -2674,65 +2674,79 @@ function closeFileDeleteModal() {
 document.getElementById('fileDeleteCancel')?.addEventListener('click', closeFileDeleteModal);
 
 document.getElementById('fileDeleteOk').addEventListener('click', async function() {
-  if (isDeletingFile) return;
-  if (!fileToDelete) return;
+  if (isDeletingFile || !fileToDelete) return;
   isDeletingFile = true;
   const btnOk = this;
+  const resetDeleteUi = () => {
+    document.getElementById('fileDeleteModal')?.classList.remove('active');
+    fileToDelete = null;
+    isDeletingFile = false;
+    btnOk.disabled = false;
+    btnOk.textContent = 'Ya, Hapus';
+  };
+
   btnOk.disabled = true;
   btnOk.textContent = '⏳ Menghapus...';
-  
+
   const { opdId, subCode, paramId, level, fileUrl, fileName, gdriveId, uploadId, r2Key, fileIndex } = fileToDelete;
   const row = rows.find(r => String(r.id) === String(opdId));
-  let deleted = false;
-  if (row) {
-    try {
-      const result = await callServerWithRetry('deleteFile', {
-        fileUrl,
-        fileName,
-        gdriveId,
-        uploadId,
-        r2Key,
-        fileIndex,
-        opdId,
-        subunsur: subCode,
-        paramId,
-        level,
-        year: currentYear
-      });
-      if (result.status === 'error') {
-        showWarning('❌ ' + result.message);
-        return;
-      }
-      const holder = row.subunsurs?.[subCode]?.[paramId];
-      const files = Array.isArray(holder?.['files' + level]) ? holder['files' + level] : [];
-      const localIndex = Number.isInteger(Number(fileIndex)) ? Number(fileIndex) : -1;
-      if (localIndex >= 0 && localIndex < files.length) {
-        files.splice(localIndex, 1);
-        deleted = true;
-      } else {
-        const filtered = files.filter(f => !(
-          (typeof f === 'string' && f === fileUrl) ||
-          (f && typeof f === 'object' && (
-            f.url === fileUrl ||
-            (uploadId && f.uploadId === uploadId)
-          ))
-        ));
-        deleted = filtered.length !== files.length;
-        if (holder) holder['files' + level] = filtered;
-      }
-      renderFileList(row, subCode, paramId, level);
-      render();
-      if (!deleted) showWarning('✅ File sudah dihapus dari server. Memuat data terbaru...');
-    } catch (err) {
-      showWarning('❌ ' + err.message);
+
+  if (!row) {
+    resetDeleteUi();
+    showWarning('❌ OPD/file tidak ditemukan pada data yang sedang tampil.');
+    return;
+  }
+
+  try {
+    const result = await callServerWithRetry('deleteFile', {
+      fileUrl,
+      fileName,
+      gdriveId,
+      uploadId,
+      r2Key,
+      fileIndex,
+      opdId,
+      subunsur: subCode,
+      paramId,
+      level,
+      year: currentYear
+    }, 3);
+
+    if (result.status === 'error') {
+      throw new Error(result.message || 'Gagal menghapus file.');
+    }
+
+    // Jangan mengandalkan snapshot browser untuk menentukan file yang terhapus.
+    // Ambil ulang data authoritative dari D1 agar file lama/legacy dan
+    // posisi array yang berubah tetap konsisten.
+    await loadData();
+    resetDeleteUi();
+
+    if (result.r2DeleteWarning || result.driveDeleteWarning) {
+      showWarning(
+        '✅ File dihapus dari daftar evidence.' +
+        (result.driveDeleteWarning ? ' Peringatan Google Drive: ' + result.driveDeleteWarning : '') +
+        (result.r2DeleteWarning ? ' Peringatan R2: ' + result.r2DeleteWarning : '')
+      );
+    } else {
+      showWarning('✅ File berhasil dihapus.');
+    }
+  } catch (err) {
+    // Backend versi sebelumnya dapat mengembalikan 409 setelah metadata terhapus.
+    // Tangani partial-delete agar modal tidak terkunci pada "Menghapus...".
+    if (err?.status === 409 && err?.data?.metadataDeleted) {
+      try { await loadData(); } catch {}
+      resetDeleteUi();
+      showWarning(
+        '✅ File sudah dihapus dari daftar evidence, tetapi salinan Google Drive belum terhapus. ' +
+        (err.data?.message || 'Periksa koneksi/akses Google Drive lalu hapus salinan tersebut.')
+      );
       return;
     }
+
+    resetDeleteUi();
+    showWarning('❌ Gagal hapus: ' + (err.message || err));
   }
-  document.getElementById('fileDeleteModal').classList.remove('active');
-  fileToDelete = null;
-  isDeletingFile = false;
-  btnOk.disabled = false;
-  btnOk.textContent = 'Ya, Hapus';
 });
 
 function collectModalChanges() {
