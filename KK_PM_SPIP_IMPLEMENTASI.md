@@ -1,68 +1,76 @@
-# KK PM SPIP — Workbook Aligned (KK3.1–KK3.4)
+# KK PM SPIP — Integrasi Exact Workbook
 
-## Sumber struktur
-Modul KK PM SPIP mengikuti struktur terlihat pada workbook `KK_PK_dan_Evaluasi_SPIP_Pemda_05052026_FORMULA_TEMPLATE`: sheet `KK3.1`, `KK3.2`, `KK3.3`, dan `KK3.4`. Modul tidak menyalin bentuk checklist QA APIP; yang dipakai dari QA hanya pola UX seperti accordion, pencarian, autosave, dan keterhubungan evidence.
+## Prinsip utama
+Workbook `KK_PK_dan_Evaluasi_SPIP_Pemda_05052026_FORMULA_TEMPLATE(4).xlsx` menjadi **single source of truth** untuk bentuk, nama sheet, kriteria, penjelasan, cara pengujian, grade, dan formula. SHA-256 workbook yang dipakai: `0d6144307a164b356d8e666c868d16191799e6358895517a39a8e8aec414b1e8`.
 
-## Struktur target
-- **T1 / KK3.1** — Efektivitas dan Efisiensi Pencapaian Tujuan Organisasi: 43 parameter block.
-- **T2 / KK3.2** — Keandalan Pelaporan Keuangan: 42 parameter block.
-- **T3 / KK3.3** — Pengamanan Aset Negara/Daerah: 43 parameter block.
-- **T4 / KK3.4** — Ketaatan pada Peraturan Perundang-undangan: 55 parameter block.
-- Total: **183 parameter block**.
-- Setiap parameter block memiliki **5 tahapan Grade A–E**, mengikuti urutan workbook.
+KK PM bukan lagi hanya KK3.1–KK3.4. Dashboard menyediakan navigator **seluruh 28 sheet** workbook, terdiri dari **21 sheet Kertas Kerja + 7 sheet Pendukung/Referensi**, sementara PM Struktur & Proses tetap mempunyai tampilan input khusus yang terintegrasi dengan Evidence Struktur & Proses.
 
-## Kolom kerja
-Setiap parameter menampilkan:
-`Kode | Uraian Subunsur | No | Uraian Parameter | Kode Parameter | MRI | IEPK | Grade | Kriteria | Penjelasan | Cara Pengujian | Hasil Pengujian | Grade Hasil | Kluster AoI | Uraian AoI | Kluster Penyebab | Uraian Penyebab | Kesimpulan Akhir`
+## 28 sheet yang dipertahankan
+Urutan workbook tidak diubah: `FAQ`, `DAFTAR KK`, `NAMA OPD`, `CHECKLIST PK`, `KKLEAD_SPIP`, `KKLEAD I`, `KKE 1.1 SASTRA`, `KKE 1.2 SASTRA OPD`, `KKE 2.1 SASPRO`, `KKE 2.2 SASKEG`, `KKE 2.3 SASSUBKEG`, `KKLEAD II`, `KK3.1`, `KK3.2`, `KK3.3`, `KK3.4`, `KK 4`, `KKLEAD III`, `KK 5.1 A`, `KK 5.1 B `, `KK 5.1 C`, `KK 5.2`, `KK 6`, `KK 7`, `KK 8`, `Ref PCT`, `REF`, `INDIKATOR HASIL`.
 
-Field `Kriteria`, `Penjelasan`, dan `Cara Pengujian` merupakan master workbook/read-only. Operator mengisi Hasil Pengujian, Grade Hasil, AoI, Penyebab, dan catatan.
+Sheet besar tetap disimpan dan dikerjakan pada Google Spreadsheet hasil copy template. Dashboard hanya memuat metadata + preview kecil (lazy-load), sehingga tidak memasukkan puluhan/ratusan ribu sel ke DOM browser.
 
-## Tahapan grade dan perhitungan
-- A = Level 5 — Perbaikan Berkelanjutan
-- B = Level 4 — Evaluasi & Tindak Lanjut
-- C = Level 3 — Implementasi
-- D = Level 2 — Komunikasi & Pemahaman
-- E = Level 1 — Kebijakan/Formalitas
+## PM Struktur & Proses
+Sheet target sumber: `KK3.1`, `KK3.2`, `KK3.3`, `KK3.4`.
 
-Nilai parameter mengikuti Grade Hasil yang dipilih. Rata-rata target adalah rata-rata level parameter yang telah dinilai. Progres adalah jumlah parameter block yang memiliki Grade Hasil valid dibagi 183.
+- **T1 / KK3.1:** 43 parameter block — efektivitas dan efisiensi pencapaian tujuan.
+- **T2 / KK3.2:** 42 parameter block — keandalan pelaporan keuangan.
+- **T3 / KK3.3:** 43 parameter block — pengamanan aset negara/daerah.
+- **T4 / KK3.4:** 55 parameter block — ketaatan pada peraturan perundang-undangan.
+- Total: **183 parameter block** dan **915 tahapan Grade A–E**.
 
-## Evidence Structure & Proses
-Evidence **tidak di-upload ulang** di KK PM. Modul membaca evidence yang sudah tersimpan pada Struktur & Proses berdasarkan `subunsur + parameter + level/grade`, lalu menampilkan file sebagai evidence terhubung/read-only. Satu file tetap satu sumber; tidak dibuat salinan metadata di KK PM.
+Kolom kerja mengikuti struktur sumber: `Kode | Subunsur | No | Uraian Parameter | Kode Parameter | MRI | IEPK | Grade | Kriteria | Penjelasan | Cara Pengujian | Hasil Pengujian | Grade Hasil | Kluster AoI | Uraian AoI | Kluster Penyebab | Uraian Penyebab | Kesimpulan Akhir`.
 
-Parameter tambahan yang hanya ada pada T2/T4 tidak dipaksa mengambil evidence dari parameter Struktur & Proses yang tidak identik. Hasilnya ditampilkan kosong sampai operator menilai parameter tersebut secara manual.
+`Kriteria`, `Penjelasan`, dan `Cara Pengujian` bersifat master/read-only. Operator mengisi hasil pengujian dan kesimpulan pada storage sparse aplikasi.
 
-## Multi-operator
-Data KK PM disimpan sparse per:
+## Grade
+- **A = Level 5** — Perbaikan Berkelanjutan
+- **B = Level 4** — Evaluasi & Tindak Lanjut
+- **C = Level 3** — Implementasi
+- **D = Level 2** — Komunikasi & Pemahaman
+- **E = Level 1** — Kebijakan/Formalitas
+
+Progress dihitung dari jumlah parameter block yang sudah memiliki Grade Hasil valid. Rata-rata level dihitung dari level parameter yang sudah dinilai.
+
+## Evidence Struktur & Proses → KK PM
+Master Evidence berasal dari gabungan `KK3.1–KK3.4` dan menghasilkan **55 grup parameter / 111 variant evidenceKey**.
+
+Aturannya:
+1. Bila struktur parameter lintas T1–T4 identik, evidence memakai satu grup/evidenceKey bersama.
+2. Bila berbeda, variant dipisahkan dan diberi label target `T1 · KK3.1`, `T2 · KK3.2`, `T3 · KK3.3`, atau `T4 · KK3.4`.
+3. **Upload hanya dilakukan di Evidence Struktur & Proses.** KK PM tidak meminta upload ulang.
+4. KK PM menarik file berdasarkan `evidenceKey` dan menampilkannya read-only. Satu file tetap satu sumber sehingga tidak terjadi duplikasi upload.
+
+Dengan pola ini, evidence yang sudah diunggah operator lain dapat langsung terlihat pada KK PM selama berada pada OPD/tahun/parameter yang sama.
+
+## QA APIP
+QA APIP tetap terpisah dari PM dan mengikuti sheet `CHECKLIST PK` workbook: **10 butir**, yaitu **3 Persiapan + 4 Pelaksanaan + 3 Pelaporan**. QA tidak dibuat menyerupai KK3.1; pola UX saja yang memanfaatkan accordion, autosave, dan checklist.
+
+## Empat nilai KPI — tidak ada input manual
+Empat nilai di dashboard dibaca dari sel formula workbook `KKLEAD_SPIP`:
+
+- **Nilai Maturitas Penyelenggaraan SPIP** → `I11` → `=H16+H50+H64`
+- **Nilai MRI** → `I68` → `=F83`
+- **Nilai IEPK** → `I85` → `=F104`
+- **Nilai Kapabilitas APIP** → `I106` → `='KKLEAD II'!L35`
+
+Rangkaian dependensi formula utama yang diverifikasi dari workbook juga dicatat di `kk-pm-exact-workbook-master.json`. Server membaca nilai hasil formula melalui Google Sheets API dan menyimpannya sebagai cache **read-only**; fungsi `saveField` menolak perubahan manual pada keempat nilai tersebut.
+
+Saat membuat/sinkronisasi Spreadsheet PM, sistem memverifikasi **28 nama/urutan sheet dan 4 formula inti**. Workbook PM lama yang hanya berisi 19/21 sheet akan dianggap stale dan diganti dengan copy template exact.
+
+## Multi-operator dan low-lag
+Data input PM disimpan sparse dengan primary key:
 `tahun + opd_id + target + subunsur + param_id`.
-Dengan demikian satu operator hanya memperbarui parameter yang sedang dikerjakan dan tidak menimpa seluruh workpaper operator lain. Realtime yang sudah ada tetap memperbarui ringkasan OPD.
 
-## Existing KPIs
-KK PM hanya membaca dan menampilkan sebagai referensi:
-- Nilai Struktur & Proses
-- Nilai Maturitas SPIP
-- MRI
-- IEPK
-- Nilai Kapabilitas APIP
+Dengan demikian satu operator hanya mengubah parameter yang sedang dikerjakan, tanpa menulis ulang seluruh JSON workpaper. Realtime existing tetap dipakai untuk pembaruan status. Sinkronisasi nilai workbook dibatasi concurrency-nya agar tidak membanjiri Google Sheets API.
 
-Modul KK PM **tidak menimpa** nilai-nilai tersebut.
-
-## QA APIP dan Struktur & Proses
-QA APIP sekarang mengikuti sheet workbook **CHECKLIST PK** dengan 10 butir: Tahap Persiapan (3), Tahap Pelaksanaan (4), dan Tahap Pelaporan (3). Setiap butir memiliki `Pernyataan`, pilihan `√ / X`, `Keterangan Workbook`, `Catatan APIP`, dan `Pemeriksa`. Storage QA baru dibuat sparse dan terpisah; tabel QA lama 671 item tetap dipertahankan agar data historis tidak terhapus.
-
-Struktur & Proses pada UI Evidence menggunakan master workbook gabungan KK3.1–KK3.4. Item yang identik lintas T1–T4 memakai satu evidenceKey; item berbeda mempunyai evidenceKey terpisah dan label target T1–T4. Storage evidence baru bersifat additive sehingga storage evidence lama tidak dihapus.
-
-## Backup
-Backup baru menggunakan envelope versi 4 yang tetap dapat membaca backup lama berbentuk array. Selain `opd_data`, backup baru menyertakan tabel sparse `opd_kk_pm_workpaper_items`, `opd_kk_pm_meta`, dan `opd_qa_apip_checklist_items` sehingga data KK PM dan QA workbook tidak hilang saat restore.
+Untuk workbook yang sangat besar (contoh `KK 5.2` memiliki hingga sekitar 150.000 formula pada template), dashboard tidak melakukan fetch seluruh grid. Operator mengklik **Buka Seluruh Workbook** atau **Buka Sheet Ini** untuk pengisian penuh di Google Spreadsheet.
 
 ## Export
-Tombol **Export Excel** menghasilkan satu workbook:
-- `Rekap PM`
-- `KK3.1 T1`
-- `KK3.2 T2`
-- `KK3.3 T3`
-- `KK3.4 T4`
+Ada dua jalur export:
 
-Sheet target mempertahankan urutan kolom utama workbook dan menambahkan `Evidence Disarankan` serta `Evidence Struktur & Proses` sebagai kolom kerja aplikasi.
+- **Export Rekap PM**: rekap + PM Struktur & Proses T1–T4 dari data aplikasi.
+- **Export Workbook Excel**: export langsung workbook PM lengkap **28 sheet** dari Google Spreadsheet sehingga formula, sheet, dan struktur workbook tetap utuh.
 
-## Optimasi multi-operator dan low-lag
-Master workbook dimuat sekali per browser dan memakai cache statis ber-versi. Dashboard tidak melakukan render ulang setelah sinkronisasi nilai workbook jika tidak ada perubahan nilai. Sinkronisasi Google Sheets dibatasi maksimal dua OPD secara paralel untuk menghindari lonjakan request/API quota.
+## Backup/restore
+Tabel sparse PM (`opd_kk_pm_workpaper_items`, `opd_kk_pm_meta`) dan checklist QA (`opd_qa_apip_checklist_items`) ikut dalam backup/restore. Storage legacy PM tetap dipertahankan untuk kompatibilitas dan tidak dihapus.
