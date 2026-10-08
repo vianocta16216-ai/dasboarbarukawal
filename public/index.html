@@ -18,6 +18,7 @@
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="stylesheet" href="/style.css?v=20261008-qa-apip-v2">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -81,7 +82,7 @@
   <div class="panel">
     <div class="panel-head"><h2>🏢 Daftar OPD - Tahun <span id="currentYearLabel">2026</span></h2><p class="status-msg" id="saveStatus"></p></div>
     <p class="desc">Nilai Maturitas diinput manual. Nilai Struktur dan Proses dihitung otomatis dari level 43 parameter. Status Struktur dan Proses serta Kelengkapannya mengikuti progres evidence 43 parameter.</p>
-    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="min-width:220px;">Penjaminan Kualitas / Quality Assurance APIP</th><th style="width:78px;">KK SPIP</th><th style="min-width:145px;">Laporan Hasil PM SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:155px;">Laporan Pemantauan RR_RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="min-width:220px;">Penjaminan Kualitas / Quality Assurance APIP</th><th style="width:78px;">KK SPIP</th><th style="min-width:220px;">KK PM SPIP</th><th style="min-width:145px;">Laporan Hasil PM SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:155px;">Laporan Pemantauan RR_RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
     <div class="empty-state" id="emptyState" style="display:none;">Belum ada OPD. Klik <strong>"Tambah OPD"</strong> untuk memulai.</div>
   </div>
 </div>
@@ -103,6 +104,29 @@
     <div class="qa-apip-status" id="qaApipStatus"></div>
     <div class="qa-apip-body" id="qaApipContent"></div>
     <div class="modal-actions qa-apip-footer"><button id="qaApipCloseFooter">Tutup</button></div>
+  </div>
+</div>
+
+<!-- Modal Kertas Kerja PM SPIP -->
+<div class="modal-overlay kk-pm-overlay" id="kkPmModal">
+  <div class="modal kk-pm-modal">
+    <div class="modal-header kk-pm-modal-header">
+      <div><h3>📝 Kertas Kerja PM SPIP</h3><p class="kk-pm-modal-opd" id="kkPmModalOpdName"></p></div>
+      <button class="modal-close" id="kkPmClose">&times;</button>
+    </div>
+    <div class="kk-pm-summary" id="kkPmSummary"></div>
+    <div class="kk-pm-toolbar">
+      <div class="kk-pm-tabs" id="kkPmTabs">
+        <button type="button" data-pm-tab="petunjuk">📖 Petunjuk</button>
+        <button type="button" data-pm-tab="kk">📝 KK PM SPIP</button>
+        <button type="button" data-pm-tab="rekapParameter">📊 Rekap Parameter</button>
+        <button type="button" data-pm-tab="rekapUnsur">📈 Rekap Unsur</button>
+      </div>
+      <div class="kk-pm-actions"><button type="button" id="kkPmExport" class="kk-pm-action">⬇️ Export Excel</button></div>
+    </div>
+    <div class="kk-pm-status" id="kkPmStatus"></div>
+    <div class="kk-pm-body" id="kkPmContent"></div>
+    <div class="modal-actions kk-pm-footer"><button id="kkPmCloseFooter">Tutup</button></div>
   </div>
 </div>
 
