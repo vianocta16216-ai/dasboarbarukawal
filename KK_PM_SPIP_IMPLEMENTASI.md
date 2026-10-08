@@ -1,44 +1,65 @@
-# KK PM SPIP — Implementasi Terintegrasi
+# KK PM SPIP — Workbook Aligned (KK3.1–KK3.4)
 
-Perubahan ini menambahkan modul **Kertas Kerja PM SPIP** tanpa mengubah sumber data existing untuk Nilai Maturitas, MRI, IEPK, Kapabilitas APIP, dan Nilai Struktur & Proses.
+## Sumber struktur
+Modul KK PM SPIP mengikuti struktur terlihat pada workbook `KK_PK_dan_Evaluasi_SPIP_Pemda_05052026_FORMULA_TEMPLATE`: sheet `KK3.1`, `KK3.2`, `KK3.3`, dan `KK3.4`. Modul tidak menyalin bentuk checklist QA APIP; yang dipakai dari QA hanya pola UX seperti accordion, pencarian, autosave, dan keterhubungan evidence.
 
-## Relasi utama
+## Struktur target
+- **T1 / KK3.1** — Efektivitas dan Efisiensi Pencapaian Tujuan Organisasi: 43 parameter block.
+- **T2 / KK3.2** — Keandalan Pelaporan Keuangan: 42 parameter block.
+- **T3 / KK3.3** — Pengamanan Aset Negara/Daerah: 43 parameter block.
+- **T4 / KK3.4** — Ketaatan pada Peraturan Perundang-undangan: 55 parameter block.
+- Total: **183 parameter block**.
+- Setiap parameter block memiliki **5 tahapan Grade A–E**, mengikuti urutan workbook.
 
-`Evidence Struktur & Proses` → file ditarik read-only → `KK PM SPIP` → penilaian item → rekap parameter → rekap unsur → hasil PM SPIP.
+## Kolom kerja
+Setiap parameter menampilkan:
+`Kode | Uraian Subunsur | No | Uraian Parameter | Kode Parameter | MRI | IEPK | Grade | Kriteria | Penjelasan | Cara Pengujian | Hasil Pengujian | Grade Hasil | Kluster AoI | Uraian AoI | Kluster Penyebab | Uraian Penyebab | Kesimpulan Akhir`
 
-File evidence **tidak diunggah ulang** pada KK PM; satu file dapat dipakai sebagai evidence yang sama pada lokasi parameter/level yang sesuai.
+Field `Kriteria`, `Penjelasan`, dan `Cara Pengujian` merupakan master workbook/read-only. Operator mengisi Hasil Pengujian, Grade Hasil, AoI, Penyebab, dan catatan.
 
-## Master
+## Tahapan grade dan perhitungan
+- A = Level 5 — Perbaikan Berkelanjutan
+- B = Level 4 — Evaluasi & Tindak Lanjut
+- C = Level 3 — Implementasi
+- D = Level 2 — Komunikasi & Pemahaman
+- E = Level 1 — Kebijakan/Formalitas
 
-Master menggunakan **5 unsur, 43 parameter, 671 item, Grade E–A / Level 1–5**. `kk-pm-master.json` mempertahankan seluruh struktur QA APIP existing dan membawa referensi kriteria/penjelasan/cara pengujian dari workbook yang tersedia bila pasangan parameter dapat dipetakan.
+Nilai parameter mengikuti Grade Hasil yang dipilih. Rata-rata target adalah rata-rata level parameter yang telah dinilai. Progres adalah jumlah parameter block yang memiliki Grade Hasil valid dibagi 183.
 
-## Penyimpanan multi-operator
+## Evidence Structure & Proses
+Evidence **tidak di-upload ulang** di KK PM. Modul membaca evidence yang sudah tersimpan pada Struktur & Proses berdasarkan `subunsur + parameter + level/grade`, lalu menampilkan file sebagai evidence terhubung/read-only. Satu file tetap satu sumber; tidak dibuat salinan metadata di KK PM.
 
-Data PM disimpan pada tabel D1 sparse:
+Parameter tambahan yang hanya ada pada T2/T4 tidak dipaksa mengambil evidence dari parameter Struktur & Proses yang tidak identik. Hasilnya ditampilkan kosong sampai operator menilai parameter tersebut secara manual.
 
-`opd_kk_pm_items(year, opd_id, subunsur, param_id, grade, item_no, availability, identity_doc, validity, period_ok, substance, note, score, conclusion, examiner_name, updated_at)`
+## Multi-operator
+Data KK PM disimpan sparse per:
+`tahun + opd_id + target + subunsur + param_id`.
+Dengan demikian satu operator hanya memperbarui parameter yang sedang dikerjakan dan tidak menimpa seluruh workpaper operator lain. Realtime yang sudah ada tetap memperbarui ringkasan OPD.
 
-Kunci utama adalah kombinasi tahun + OPD + subunsur + parameter + grade + nomor item. Penyimpanan per-item menghindari risiko satu browser menimpa keseluruhan data PM dari operator lain.
+## Existing KPIs
+KK PM hanya membaca dan menampilkan sebagai referensi:
+- Nilai Struktur & Proses
+- Nilai Maturitas SPIP
+- MRI
+- IEPK
+- Nilai Kapabilitas APIP
 
-## Rumus nilai item
+Modul KK PM **tidak menimpa** nilai-nilai tersebut.
 
-- 1,0 = Ada + Keabsahan Ya + Periode Ya + Substansi Sesuai
-- 0,5 = Ada tetapi belum memenuhi seluruh syarat
-- 0,0 = Tidak Ada atau Substansi Tidak Sesuai
-- N/A = tidak masuk penyebut
+## QA APIP dan Struktur & Proses
+QA APIP sekarang mengikuti sheet workbook **CHECKLIST PK** dengan 10 butir: Tahap Persiapan (3), Tahap Pelaksanaan (4), dan Tahap Pelaporan (3). Setiap butir memiliki `Pernyataan`, pilihan `√ / X`, `Keterangan Workbook`, `Catatan APIP`, dan `Pemeriksa`. Storage QA baru dibuat sparse dan terpisah; tabel QA lama 671 item tetap dipertahankan agar data historis tidak terhapus.
 
-Persentase PM = `Σ nilai / (jumlah item - N/A) × 100`.
+Struktur & Proses disinkronkan secara non-destruktif pada parameter inti yang mempunyai padanan langsung dengan workbook KK3.1, memperbarui uraian/kriteria/penjelasan/cara pengujian sambil mempertahankan ID dan storage evidence lama.
 
-Grade/Level parameter naik E → D → C → B → A hanya ketika seluruh item yang berlaku pada grade tersebut telah dinilai dan memenuhi ambang 100%.
-
-## Ketahanan fitur existing
-
-- Nilai Struktur & Proses tetap dihitung dari 43 level parameter existing.
-- Nilai Maturitas SPIP, MRI, IEPK, dan Kapabilitas APIP tetap field existing dan tidak ditimpa oleh PM.
-- QA APIP tetap berada pada tabel sendiri dan hanya diselaraskan pada master/kriteria yang sama.
-- `kk_pm_data` legacy tetap dipertahankan untuk kompatibilitas.
-- Realtime menyiarkan perubahan item PM agar ringkasan OPD operator lain ikut terbarui.
+## Backup
+Backup baru menggunakan envelope versi 3 yang tetap dapat membaca backup lama berbentuk array. Selain `opd_data`, backup baru menyertakan tabel sparse `opd_kk_pm_workpaper_items`, `opd_kk_pm_meta`, dan `opd_qa_apip_checklist_items` sehingga data KK PM dan QA workbook tidak hilang saat restore.
 
 ## Export
+Tombol **Export Excel** menghasilkan satu workbook:
+- `Rekap PM`
+- `KK3.1 T1`
+- `KK3.2 T2`
+- `KK3.3 T3`
+- `KK3.4 T4`
 
-Tombol **Export Excel** membuat workbook per OPD/tahun berisi `Rekap PM` dan `KK PM SPIP`, termasuk master item, kriteria, penjelasan, cara pengujian, evidence yang disarankan, file evidence yang ditarik, hasil penilaian, nilai, kesimpulan, catatan, dan pemeriksa.
+Sheet target mempertahankan urutan kolom utama workbook dan menambahkan `Evidence Disarankan` serta `Evidence Struktur & Proses` sebagai kolom kerja aplikasi.
