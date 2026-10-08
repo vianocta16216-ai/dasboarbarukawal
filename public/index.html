@@ -97,9 +97,9 @@
     <div class="qa-apip-summary" id="qaApipSummary"></div>
     <div class="qa-apip-tabs" id="qaApipTabs">
       <button type="button" data-qa-tab="petunjuk">📖 Petunjuk</button>
-      <button type="button" data-qa-tab="kk">🛡️ KK QA APIP</button>
-      <button type="button" data-qa-tab="rekapParameter">📊 Rekap Parameter</button>
-      <button type="button" data-qa-tab="rekapUnsur">📈 Rekap Unsur</button>
+      <button type="button" data-qa-tab="checklist">🛡️ CHECKLIST PK</button>
+      <button type="button" data-qa-tab="rekap">📊 Rekap QA APIP</button>
+      <button type="button" id="qaApipExport">⬇️ Export Excel</button>
     </div>
     <div class="qa-apip-status" id="qaApipStatus"></div>
     <div class="qa-apip-body" id="qaApipContent"></div>
@@ -107,22 +107,29 @@
   </div>
 </div>
 
-<!-- Modal Kertas Kerja PM SPIP -->
+<!-- Modal Kertas Kerja PM SPIP — mengikuti bentuk workbook KK3.1–KK3.4 -->
 <div class="modal-overlay kk-pm-overlay" id="kkPmModal">
   <div class="modal kk-pm-modal">
     <div class="modal-header kk-pm-modal-header">
-      <div><h3>📝 Kertas Kerja PM SPIP</h3><p class="kk-pm-modal-opd" id="kkPmModalOpdName"></p></div>
+      <div>
+        <div class="kk-pm-kicker">KERTAS KERJA PENILAIAN</div>
+        <h3>📝 Kertas Kerja PM SPIP</h3>
+        <p class="kk-pm-modal-opd" id="kkPmModalOpdName"></p>
+      </div>
       <button class="modal-close" id="kkPmClose">&times;</button>
     </div>
     <div class="kk-pm-summary" id="kkPmSummary"></div>
     <div class="kk-pm-toolbar">
       <div class="kk-pm-tabs" id="kkPmTabs">
-        <button type="button" data-pm-tab="petunjuk">📖 Petunjuk</button>
-        <button type="button" data-pm-tab="kk">📝 KK PM SPIP</button>
-        <button type="button" data-pm-tab="rekapParameter">📊 Rekap Parameter</button>
-        <button type="button" data-pm-tab="rekapUnsur">📈 Rekap Unsur</button>
+        <button type="button" data-pm-tab="summary">📊 Ringkasan</button>
+        <button type="button" data-pm-tab="T1">KK 3.1 · T1</button>
+        <button type="button" data-pm-tab="T2">KK 3.2 · T2</button>
+        <button type="button" data-pm-tab="T3">KK 3.3 · T3</button>
+        <button type="button" data-pm-tab="T4">KK 3.4 · T4</button>
       </div>
-      <div class="kk-pm-actions"><button type="button" id="kkPmExport" class="kk-pm-action">⬇️ Export Excel</button></div>
+      <div class="kk-pm-actions">
+        <button type="button" id="kkPmExport" class="kk-pm-action">⬇️ Export Excel</button>
+      </div>
     </div>
     <div class="kk-pm-status" id="kkPmStatus"></div>
     <div class="kk-pm-body" id="kkPmContent"></div>

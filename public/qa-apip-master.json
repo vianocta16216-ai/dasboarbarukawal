@@ -1,7 +1,7 @@
 {
-  "version": "20261008.1",
+  "version": "20261008.2",
   "name": "Kertas Kerja PM SPIP – canonical",
-  "source": "KK_PK_dan_Evaluasi_SPIP_Pemda_05052026_FORMULA_TEMPLATE.xlsx + Master QA APIP",
+  "source": "Kertas Kerja Penjaminan Kualitas / QA APIP diselaraskan dengan KK3.1 workbook KK_PK_dan_Evaluasi_SPIP_Pemda_05052026_FORMULA_TEMPLATE(2).xlsx",
   "thresholdGrade": 1,
   "categoryThresholds": {
     "tinggi": 0.8,
@@ -86,7 +86,7 @@
       "subCode": "1.1",
       "subunsurName": "Penegakan Integritas dan Nilai Etika",
       "paramNo": 1,
-      "paramDesc": "K/L/D menegakkan integritas dan nilai etika dalam melaksanakan tugas dan fungsi organiasi",
+      "paramDesc": "K/L/D menegakkan integritas dan nilai etika dalam melaksanakan tugas dan fungsi organisasi",
       "parameterKey": "1.1-1",
       "grades": [
         {
@@ -254,7 +254,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "K/L/D menegakkan integritas dan nilai etika dalam melaksanakan tugas dan fungsi organisasi"
+      "workbookParamDesc": "K/L/D menegakkan integritas dan nilai etika dalam melaksanakan tugas dan fungsi organisasi",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 11
     },
     {
       "subCode": "1.2",
@@ -424,13 +426,15 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Tugas dan jabatan dalam organisasi dilaksanakan dan diisi oleh SDM yang kompeten"
+      "workbookParamDesc": "Tugas dan jabatan dalam organisasi dilaksanakan dan diisi oleh SDM yang kompeten",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 17
     },
     {
       "subCode": "1.3",
       "subunsurName": "Kepemimpinan yang Kondusif",
       "paramNo": 1,
-      "paramDesc": "Pimpinan K/L/D menciptakan lingkungan kerja yang kondusif untuk mendukung ketaatan terhadap peraturan yang berlaku",
+      "paramDesc": "Pimpinan K/L/D menciptakan lingkungan kerja yang kondusif untuk pencapaian tujuan organisasi",
       "parameterKey": "1.3-1",
       "grades": [
         {
@@ -606,7 +610,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pimpinan K/L/D menciptakan lingkungan kerja yang kondusif untuk pencapaian tujuan organisasi"
+      "workbookParamDesc": "Pimpinan K/L/D menciptakan lingkungan kerja yang kondusif untuk pencapaian tujuan organisasi",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 23
     },
     {
       "subCode": "1.3",
@@ -755,7 +761,7 @@
               "evidence": "Laporan Monitoring/Reviu Penerapan Manajemen Risiko"
             }
           ],
-          "workbookKriteria": "Sudah mengalokasikan sumber daya secara memadai untuk penerapan manajemen risiko pada tingkat operasional unit kerja, strategis unit kerja, dan strategis K/L/D\n",
+          "workbookKriteria": "Sudah mengalokasikan sumber daya secara memadai untuk penerapan manajemen risiko pada tingkat operasional unit kerja, strategis unit kerja, dan strategis K/L/D",
           "workbookPenjelasan": "a. Instansi Pemerintah telah menganggarkan dana implementasi manajemen risiko seperti rapat terkait manajemen risiko, identifikasi dan analisis risiko, penyusunan profil risiko, implementasi RTP, kegiatan monitoring dan reviu  dalam rencana kerja/DPA/DIPA  dan dalam implementasi manajemen risiko tidak terkendala kekurangan dana implementasi ditingkat operasional unit kerja, strategis unit kerja, dan strategis K/L/D\nb. Minimal 70% SDM yang menjadi anggota UPR pada tingkat operasional dan strategis unit kerja serta strategis K/L/D diisi oleh orang yang berkompeten dalam bidang manajemen risiko",
           "workbookCaraPengujian": "W/D/O"
         }
@@ -800,7 +806,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pimpinan K/L/D mengalokasikan sumber daya untuk penerapan manajemen risiko"
+      "workbookParamDesc": "Pimpinan K/L/D mengalokasikan sumber daya untuk penerapan manajemen risiko",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 28
     },
     {
       "subCode": "1.3",
@@ -825,8 +833,8 @@
               "evidence": "Notulen/Notula Rapat yang Memuat Hasil Manajemen Risiko Operasional"
             }
           ],
-          "workbookKriteria": "Sebagian pengambilan keputusan operasional unit kerja telah mempertimbangkan risiko\n",
-          "workbookPenjelasan": "Sebagian keputusan pimpinan instansi maupun pimpinan unit kerja secara umum menggunakan informasi terkait risiko di tingkat operasional ",
+          "workbookKriteria": "Sebagian pengambilan keputusan operasional unit kerja telah mempertimbangkan risiko",
+          "workbookPenjelasan": "Sebagian keputusan pimpinan instansi maupun pimpinan unit kerja secara umum menggunakan informasi terkait risiko di tingkat operasional",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -845,8 +853,8 @@
               "evidence": "Notulen/Notula Rapat Pimpinan/Koordinasi yang Memuat Hasil Manajemen Risiko Operasional"
             }
           ],
-          "workbookKriteria": "Seluruh pengambilan keputusan operasional unit kerja telah mempertimbangkan risiko\n",
-          "workbookPenjelasan": "Seluruh keputusan pimpinan instansi maupun pimpinan unit kerja secara umum menggunakan informasi terkait risiko di tingkat operasional ",
+          "workbookKriteria": "Seluruh pengambilan keputusan operasional unit kerja telah mempertimbangkan risiko",
+          "workbookPenjelasan": "Seluruh keputusan pimpinan instansi maupun pimpinan unit kerja secara umum menggunakan informasi terkait risiko di tingkat operasional",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -869,7 +877,7 @@
               "evidence": "Dokumen Penetapan Prioritas Kegiatan Unit Kerja yang Menggunakan Hasil Penilaian Risiko"
             }
           ],
-          "workbookKriteria": "Seluruh pengambilan keputusan strategis unit kerja dan operasional unit kerja telah mempertimbangkan risiko\n",
+          "workbookKriteria": "Seluruh pengambilan keputusan strategis unit kerja dan operasional unit kerja telah mempertimbangkan risiko",
           "workbookPenjelasan": "Seluruh keputusan pimpinan instansi maupun pimpinan unit kerja secara umum menggunakan informasi terkait risiko di tingkat operasional dan strategis unit kerja",
           "workbookCaraPengujian": "W/D/O"
         },
@@ -893,7 +901,7 @@
               "evidence": "Dokumen Penetapan Prioritas Kegiatan yang Menggunakan Hasil Penilaian Risiko"
             }
           ],
-          "workbookKriteria": "Seluruh pengambilan keputusan strategis K/L/D, strategis unit kerja, dan operasional unit kerja telah mempertimbangkan risiko\n",
+          "workbookKriteria": "Seluruh pengambilan keputusan strategis K/L/D, strategis unit kerja, dan operasional unit kerja telah mempertimbangkan risiko",
           "workbookPenjelasan": "Seluruh keputusan pimpinan instansi maupun pimpinan unit kerja secara umum menggunakan informasi terkait risiko di tingkat operasional unit kerja, strategis unit kerja, dan strategis K/L/D",
           "workbookCaraPengujian": "W/D/O"
         },
@@ -921,7 +929,7 @@
               "evidence": "Bukti Dampak Keputusan terhadap Pencapaian Tujuan/Kinerja"
             }
           ],
-          "workbookKriteria": "Seluruh pengambilan keputusan strategis K/L/D, strategis unit kerja, dan operasional unit kerja telah mempertimbangkan risiko dan memberikan dampak bagi pencapaian tujuan organisasi\n",
+          "workbookKriteria": "Seluruh pengambilan keputusan strategis K/L/D, strategis unit kerja, dan operasional unit kerja telah mempertimbangkan risiko dan memberikan dampak bagi pencapaian tujuan organisasi",
           "workbookPenjelasan": "Seluruh keputusan pimpinan instansi maupun pimpinan unit kerja secara umum menggunakan informasi terkait risiko di tingkat operasional unit kerja, strategis unit kerja, dan strategis K/L/D dan memberikan dampak bagi pencapaian tujuan organisasi",
           "workbookCaraPengujian": "W/D/O"
         }
@@ -966,7 +974,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pimpinan K/L/D menggunakan informasi terkait risiko dalam pengambilan keputusan"
+      "workbookParamDesc": "Pimpinan K/L/D menggunakan informasi terkait risiko dalam pengambilan keputusan",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 33
     },
     {
       "subCode": "1.3",
@@ -1140,7 +1150,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pimpinan K/L/D mendorong penerapan manajemen risiko, melalui penggunaan kinerja penerapan manajemen risiko sebagai indikator penilaian kinerja"
+      "workbookParamDesc": "Pimpinan K/L/D mendorong penerapan manajemen risiko, melalui penggunaan kinerja penerapan manajemen risiko sebagai indikator penilaian kinerja",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 38
     },
     {
       "subCode": "1.4",
@@ -1330,7 +1342,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Struktur organisasi dibentuk dalam rangka mendukung pencapaian sasaran strategis organisasi"
+      "workbookParamDesc": "Struktur organisasi dibentuk dalam rangka mendukung pencapaian sasaran strategis organisasi",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 44
     },
     {
       "subCode": "1.5",
@@ -1432,7 +1446,7 @@
             }
           ],
           "workbookKriteria": "Efisiensi dan efektivitas pelaksanaan wewenang dan tanggung jawab organisasi yang didelegasikan dapat dilihat melalui evaluasi berkala atas pelaksanaan wewenang dan tanggungjawab serta analisis terhadap kualitas hasil pelaksanaan tugas/fungsi yang dilaksanakan (respon stakeholder)",
-          "workbookPenjelasan": "Organisasi melakukan evaluasi atas kebijakan/prosedur terkait  pendelegasian wewenang dan tanggung jawab beserta implementasinya dengan ketentuan sebagai berikut:\na. Telah dilaksanakan evaluasi berkala; \nb. Evaluasi dilaksanakan untuk menangani residual risk;\nc. Tindak lanjut atas hasil evaluasi  telah dilaksanakan.\nd. Menindaklanjuti keluhan/kekurangan kualitas pelaksanaan tugas fungsi yang disampaikan oleh stakeholder. ",
+          "workbookPenjelasan": "Organisasi melakukan evaluasi atas kebijakan/prosedur terkait  pendelegasian wewenang dan tanggung jawab beserta implementasinya dengan ketentuan sebagai berikut:\na. Telah dilaksanakan evaluasi berkala; \nb. Evaluasi dilaksanakan untuk menangani residual risk;\nc. Tindak lanjut atas hasil evaluasi  telah dilaksanakan.\nd. Menindaklanjuti keluhan/kekurangan kualitas pelaksanaan tugas fungsi yang disampaikan oleh stakeholder.",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -1508,7 +1522,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Wewenang dan tanggung jawab diberikan kepada pegawai yang tepat sesuai tingkatannya untuk mendukung efektivitas dan efisiensi pelaksanaan kegiatan dalam rangka percepatan pencapaian tujuan organisasi"
+      "workbookParamDesc": "Wewenang dan tanggung jawab diberikan kepada pegawai yang tepat sesuai tingkatannya untuk mendukung efektivitas dan efisiensi pelaksanaan kegiatan dalam rangka percepatan pencapaian tujuan organisasi",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 50
     },
     {
       "subCode": "1.6",
@@ -1746,7 +1762,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Penerapan kebijakan manajemen dan praktik pembinaan SDM sehingga dapat digunakan secara maksimal untuk mencapai tujuan organisasi"
+      "workbookParamDesc": "Penerapan kebijakan manajemen dan praktik pembinaan SDM sehingga dapat digunakan secara maksimal untuk mencapai tujuan organisasi",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 56
     },
     {
       "subCode": "1.6",
@@ -1936,7 +1954,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pegawai telah mendapatkan fasilitas untuk meningkatkan kompetensi dan keterampilan terkait manajemen risiko "
+      "workbookParamDesc": "Pegawai telah mendapatkan fasilitas untuk meningkatkan kompetensi dan keterampilan terkait manajemen risiko ",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 61
     },
     {
       "subCode": "1.6",
@@ -1962,7 +1982,7 @@
             }
           ],
           "workbookKriteria": "Beberapa pegawai telah memiliki kesadaran pemahaman terkait manajemen risiko",
-          "workbookPenjelasan": "< 20% pegawai sampel menunjukan kesadaran/keaktifan dalam penerapan MR ",
+          "workbookPenjelasan": "< 20% pegawai sampel menunjukan kesadaran/keaktifan dalam penerapan MR",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -2066,7 +2086,7 @@
             }
           ],
           "workbookKriteria": "Seluruh pegawai telah memiliki pemahaman terkait manajemen risiko",
-          "workbookPenjelasan": " 100% pegawai sampel menunjukan kesadaran/keaktifan dalam penerapan MR",
+          "workbookPenjelasan": "100% pegawai sampel menunjukan kesadaran/keaktifan dalam penerapan MR",
           "workbookCaraPengujian": "W/D/O"
         }
       ],
@@ -2110,7 +2130,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pegawai memiliki kesadaran terkait manajemen risiko"
+      "workbookParamDesc": "Pegawai memiliki kesadaran terkait manajemen risiko",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 66
     },
     {
       "subCode": "1.7",
@@ -2135,8 +2157,8 @@
               "evidence": "Laporan Hasil Pengawasan (LHP)"
             }
           ],
-          "workbookKriteria": "Pimpinan organisasi menetapkan mekanisme hubungan kerja/tata cara kerjasama dengan instansi lain",
-          "workbookPenjelasan": "Adanya kebijakan/prosedur yang mengatur pelaksanaan kerjasama dan mekanisme kerja antar unit/organisasi/mitra kerja dalam upaya pencapaian tujuan organisasi. Kebijakan/prosedur tersebut antara lain memuat:\n- lingkup dan hasil kerjasama yang diharapkan;\n- alur komunikasi dan koordinasi;\n- wewenang, tugas, fungsi, hak, dan kewajiban masing-masing pihak;\n- ukuran hasil kerjasama dalam rangka mencapai tujuan organisasi masing-masing.",
+          "workbookKriteria": "Tidak ada praktik yang tetap, tidak ada kapabilitas yang berulang dan tergantung pada kinerja individu",
+          "workbookPenjelasan": "Mengikuti syarat Level 1 Kapabilitas APIP (Initial)",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -2167,8 +2189,8 @@
               "evidence": "Laporan Hasil Pengawasan (LHP)"
             }
           ],
-          "workbookKriteria": "Pubilkasi kebijakan kerjasama organisasi kepada para pihak yang berkepentingan (antara lain subjek, objek, dan penerima manfaat kerjasama)",
-          "workbookPenjelasan": "Kebijakan/prosedur yang mengatur pelaksanaan kerjasama dan mekanisme kerja antar unit/organisasi/mitra kerja telah dikomunikasikan dan dipahami oleh pihak yang berkepentingan.",
+          "workbookKriteria": "Proses audit dilakukan secara tetap (rutin) dan berulang",
+          "workbookPenjelasan": "Mengikuti syarat Level 2 Kapabilitas APIP (Infrastructure)",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -2207,8 +2229,8 @@
               "evidence": "Dokumen Reviu Berjenjang/Quality Assurance, jika ada"
             }
           ],
-          "workbookKriteria": "Masing-masing pihak melaksanakan kegiatan sesuai dengan lingkup kewenangan masing-masing sesuai kebijakan dan ukuran kinerja yang ditetapkan",
-          "workbookPenjelasan": "Organisasi melaksanakan komunikasi, koordinasi, pertukaran data dan informasi dengan unit/organisasi/mitra kerja sesuai dengan kebijakan/prosedur dan kebutuhan dalam rangka pencapaian tujuan organisasi.",
+          "workbookKriteria": "Praktik profesional dan audit internal telah ditetapkan secara seragam",
+          "workbookPenjelasan": "Mengikuti syarat Level 3 Kapabilitas APIP (Integrated)",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -2243,8 +2265,8 @@
               "evidence": "Laporan Pemantauan Tindak Lanjut Hasil Pengawasan"
             }
           ],
-          "workbookKriteria": "Pelaksanaan kebijakan kerjasama organisasi dievaluasi secara berkala",
-          "workbookPenjelasan": "Organisasi melakukan evaluasi atas kebijakan/prosedur pelaksanaan kerjasama dan mekanisme kerja antar unit/organisasi/mitra kerja beserta implementasinya dengan ketentuan sebagai berikut:\na. Telah dilaksanakan evaluasi berkala; \nb. Evaluasi dilaksanakan untuk menangani hambatan koordinasi/kerjasama;\nc. Tindak lanjut atas hasil evaluasi  telah dilaksanakan dengan pembaharuan kebijakan/perubahan pola kerjasama yang diperlukan.",
+          "workbookKriteria": "APIP telah mengintegrasikan semua informasi di seluruh organisasi untuk memperbaiki tata kelola dan manajemen risiko",
+          "workbookPenjelasan": "Mengikuti syarat Level 4 Kapabilitas APIP (Managed)",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -2279,8 +2301,8 @@
               "evidence": "Dokumen inovasi/perbaikan metode pengawasan berdasarkan hasil evaluasi/lesson learned"
             }
           ],
-          "workbookKriteria": "Pelaksanaan hubungan kerja yang baik dengan mitra kerjasama organisasi menghasilkan efektivitas pencapaian tujuan organisasi dan efisiensi penggunaan sumberdaya masing-masing instansi",
-          "workbookPenjelasan": "Pimpinan organisasi telah menjalin hubungan kerja yang baik dengan instansi lain melalui pembagian peran dan ukuran kinerja yang diharapkan dapat saling mendukung kepada tujuan masing-masing. Pembagian peran mendukung pimpinan untuk mengoptimalkan sumber daya yang ada untuk melaksanakan kegiatan sesuai lingkupnya.",
+          "workbookKriteria": "APIP telah menjadi unit yang terus belajar baik dari dalam maupun dari luar organisasi untuk perbaikan berkelanjutan",
+          "workbookPenjelasan": "Mengikuti syarat Level 5 Kapabilitas APIP (Optimizing)",
           "workbookCaraPengujian": "W/D/O"
         }
       ],
@@ -2324,7 +2346,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pengawasan APIP telah dapat memberikan nilai tambah pada perbaikan pengendalian organisasi"
+      "workbookParamDesc": "Pengawasan APIP telah dapat memberikan nilai tambah pada perbaikan pengendalian organisasi",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 72
     },
     {
       "subCode": "1.8",
@@ -2352,7 +2376,10 @@
               "itemNo": 3,
               "evidence": "Surat Keputusan/Surat Tugas Tim Pelaksana Kerja Sama, jika ada"
             }
-          ]
+          ],
+          "workbookKriteria": "Pimpinan organisasi menetapkan mekanisme hubungan kerja/tata cara kerjasama dengan instansi lain",
+          "workbookPenjelasan": "Adanya kebijakan/prosedur yang mengatur pelaksanaan kerjasama dan mekanisme kerja antar unit/organisasi/mitra kerja dalam upaya pencapaian tujuan organisasi. Kebijakan/prosedur tersebut antara lain memuat:\n- lingkup dan hasil kerjasama yang diharapkan;\n- alur komunikasi dan koordinasi;\n- wewenang, tugas, fungsi, hak, dan kewajiban masing-masing pihak;\n- ukuran hasil kerjasama dalam rangka mencapai tujuan organisasi masing-masing.",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "D",
@@ -2377,7 +2404,10 @@
               "itemNo": 4,
               "evidence": "Dokumentasi penyampaian mekanisme kerja sama"
             }
-          ]
+          ],
+          "workbookKriteria": "Pubilkasi kebijakan kerjasama organisasi kepada para pihak yang berkepentingan (antara lain subjek, objek, dan penerima manfaat kerjasama)",
+          "workbookPenjelasan": "Kebijakan/prosedur yang mengatur pelaksanaan kerjasama dan mekanisme kerja antar unit/organisasi/mitra kerja telah dikomunikasikan dan dipahami oleh pihak yang berkepentingan.",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "C",
@@ -2406,7 +2436,10 @@
               "itemNo": 5,
               "evidence": "Laporan hasil kegiatan kerja sama"
             }
-          ]
+          ],
+          "workbookKriteria": "Masing-masing pihak melaksanakan kegiatan sesuai dengan lingkup kewenangan masing-masing sesuai kebijakan dan ukuran kinerja yang ditetapkan",
+          "workbookPenjelasan": "Organisasi melaksanakan komunikasi, koordinasi, pertukaran data dan informasi dengan unit/organisasi/mitra kerja sesuai dengan kebijakan/prosedur dan kebutuhan dalam rangka pencapaian tujuan organisasi.",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "B",
@@ -2435,7 +2468,10 @@
               "itemNo": 5,
               "evidence": "Adendum/Perubahan PKS atau SOP, jika ada"
             }
-          ]
+          ],
+          "workbookKriteria": "Pelaksanaan kebijakan kerjasama organisasi dievaluasi secara berkala",
+          "workbookPenjelasan": "Organisasi melakukan evaluasi atas kebijakan/prosedur pelaksanaan kerjasama dan mekanisme kerja antar unit/organisasi/mitra kerja beserta implementasinya dengan ketentuan sebagai berikut:\na. Telah dilaksanakan evaluasi berkala; \nb. Evaluasi dilaksanakan untuk menangani hambatan koordinasi/kerjasama;\nc. Tindak lanjut atas hasil evaluasi  telah dilaksanakan dengan pembaharuan kebijakan/perubahan pola kerjasama yang diperlukan.",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "A",
@@ -2468,11 +2504,16 @@
               "itemNo": 6,
               "evidence": "Dokumen rencana/pengembangan kerja sama lanjutan"
             }
-          ]
+          ],
+          "workbookKriteria": "Pelaksanaan hubungan kerja yang baik dengan mitra kerjasama organisasi menghasilkan efektivitas pencapaian tujuan organisasi dan efisiensi penggunaan sumberdaya masing-masing instansi",
+          "workbookPenjelasan": "Pimpinan organisasi telah menjalin hubungan kerja yang baik dengan instansi lain melalui pembagian peran dan ukuran kinerja yang diharapkan dapat saling mendukung kepada tujuan masing-masing. Pembagian peran mendukung pimpinan untuk mengoptimalkan sumber daya yang ada untuk melaksanakan kegiatan sesuai lingkupnya.",
+          "workbookCaraPengujian": "W/D/O"
         }
       ],
       "paramId": "1.8.1",
-      "workbookReference": null
+      "workbookReference": null,
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 78
     },
     {
       "subCode": "1.8",
@@ -2496,7 +2537,10 @@
               "itemNo": 2,
               "evidence": "SOP/Pedoman Pengelolaan Risiko Kemitraan/ Kerja Sama, jika ada"
             }
-          ]
+          ],
+          "workbookKriteria": "Instansi Pemerintah telah memiliki kebijakan pengelolaan risiko terkait kemitraan namun belum diterapkan sama sekali",
+          "workbookPenjelasan": "Sudah Jelas",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "D",
@@ -2521,7 +2565,10 @@
               "itemNo": 4,
               "evidence": "Rencana Mitigasi Risiko Kemitraan"
             }
-          ]
+          ],
+          "workbookKriteria": "Instansi Pemerintah telah memiliki kebijakan pengelolaan risiko terkait kemitraan namun belum diterapkan dengan memadai",
+          "workbookPenjelasan": "A. Instansi Pemerintah telah memiliki kebijakan pengelolaan risiko terkait kemitraan.\nB. Kriteria implementasi secara tidak memadai apabila sebagian dari kemitraan utama (yang memiliki peran penting terhadap organisasi) yang telah menerapkan manajemen risiko.",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "C",
@@ -2550,7 +2597,10 @@
               "itemNo": 5,
               "evidence": "Monitoring Pelaksanaan Mitigasi Risiko"
             }
-          ]
+          ],
+          "workbookKriteria": "Instansi Pemerintah telah memiliki kebijakan pengelolaan risiko terkait kemitraan dan telah diterapkan dengan memadai",
+          "workbookPenjelasan": "A. Instansi Pemerintah telah memiliki kebijakan pengelolaan risiko terkait kemitraan.\nB. Kriteria implementasi secara memadai apabila penerapan manajemen risiko telah dilakukan terhadap semua kemitraan yang memiliki peran yang penting dalam organisasi.",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "B",
@@ -2579,7 +2629,10 @@
               "itemNo": 5,
               "evidence": "Notulen/BA Rapat Pengambilan Keputusan yang mempertimbangkan risiko kemitraan, jika ada"
             }
-          ]
+          ],
+          "workbookKriteria": "Instansi Pemerintah telah memiliki kebijakan pengelolaan risiko terkait kemitraan dan penerapannya telah terintegrasi dengan proses bisnis Instansi Pemerintah",
+          "workbookPenjelasan": "A. Instansi Pemerintah telah memiliki kebijakan pengelolaan risiko terkait kemitraan.\nB. Kriteria implementasi adalah sebagai berikut: \n1. Terintegrasi apabila penerapan manajemen risiko: \na. Telah menyatu dalam proses perencanaan kegiatan kemitraan;\nb. Manajemen risiko diterapkan diseluruh kegiatan kemitraan;\nc. Dirancang untuk mengelola seluruh risiko yang muncul\nd. Menginkorporasikan hasil dari manajemen risiko kedalam dokumen kinerja dan pengambilan keputusan.\n2. Kriteria memadai apabila penerapan manajemen risiko telah dilakukan terhadap semua kemitraan yang memiliki peran yang penting dalam organisasi.",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "A",
@@ -2608,11 +2661,16 @@
               "itemNo": 5,
               "evidence": "Dokumen pembelajaran/lesson learned hasil pengelolaan risiko kemitraan, jika ada"
             }
-          ]
+          ],
+          "workbookKriteria": "Instansi Pemerintah telah memiliki kebijakan pengelolaan risiko terkait kemitraan, penerapannya telah terintegrasi dengan proses bisnis Instansi Pemerintah, telah direviu secara berkala dan dijadikan bahan pembelajaran",
+          "workbookPenjelasan": "A. Instansi Pemerintah telah memiliki kebijakan pengelolaan risiko terkait kemitraan, telah dilakukan reviu secara berkala dan hasil reviu dijadikan media pembelajaran.\nB. Kriteria implementasi adalah sebagai berikut: \n1. Terintegrasi apabila penerapan manajemen risiko: \na. Telah menyatu dalam proses perencanaan kegiatan kemitraan;\nb. Manajemen risiko diterapkan diseluruh kegiatan kemitraan;\nc. Dirancang untuk mengelola seluruh risiko yang muncul\nd. Menginkorporasikan hasil dari manajemen risiko kedalam dokumen kinerja dan pengambilan keputusan.\n2. Kriteria memadai apabila penerapan manajemen risiko telah dilakukan terhadap semua kemitraan yang memiliki peran yang penting dalam organisasi.",
+          "workbookCaraPengujian": "W/D/O"
         }
       ],
       "paramId": "1.8.2",
-      "workbookReference": null
+      "workbookReference": null,
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 83
     },
     {
       "subCode": "2.1",
@@ -2818,7 +2876,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "K/L/D telah memiliki Kebijakan Manajemen Risiko"
+      "workbookParamDesc": "K/L/D telah memiliki Kebijakan Manajemen Risiko",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 89
     },
     {
       "subCode": "2.1",
@@ -3008,7 +3068,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Risiko telah teridentifikasi dan  dituangkan dalam register risiko\n"
+      "workbookParamDesc": "Risiko telah teridentifikasi dan  dituangkan dalam register risiko\n",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 94
     },
     {
       "subCode": "2.1",
@@ -3206,7 +3268,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Proses manajemen risiko telah melekat pada proses bisnis K/L/D"
+      "workbookParamDesc": "Proses manajemen risiko telah melekat pada proses bisnis K/L/D",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 99
     },
     {
       "subCode": "2.2",
@@ -3360,7 +3424,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Seluruh risiko telah dianalisis dampak dan tingkat keterjadiannya"
+      "workbookParamDesc": "Seluruh risiko telah dianalisis dampak dan tingkat keterjadiannya",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 105
     },
     {
       "subCode": "2.2",
@@ -3514,7 +3580,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "K/L/D telah menentukan prioritas risiko"
+      "workbookParamDesc": "K/L/D telah menentukan prioritas risiko",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 110
     },
     {
       "subCode": "2.2",
@@ -3644,7 +3712,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "K/L/D telah menentukan rencana tindak pengendalian\n"
+      "workbookParamDesc": "K/L/D telah menentukan rencana tindak pengendalian\n",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 115
     },
     {
       "subCode": "2.2",
@@ -3786,7 +3856,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Tindak pengendalian telah diimplementasikan"
+      "workbookParamDesc": "Tindak pengendalian telah diimplementasikan",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 120
     },
     {
       "subCode": "2.2",
@@ -3812,7 +3884,7 @@
             }
           ],
           "workbookKriteria": "Tindak pengendalian efektif menurunkan sebagian risiko operasional unit kerja",
-          "workbookPenjelasan": "RTP untuk risiko operasional unit kerja mampu menurunkan level risiko sebesar <60%.\n",
+          "workbookPenjelasan": "RTP untuk risiko operasional unit kerja mampu menurunkan level risiko sebesar <60%.",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -3832,7 +3904,7 @@
             }
           ],
           "workbookKriteria": "Tindak pengendalian efektif menurunkan seluruh risiko operasional unit kerja",
-          "workbookPenjelasan": "RTP untuk risiko operasional unit kerja mampu menurunkan level risiko sebesar >60%\n",
+          "workbookPenjelasan": "RTP untuk risiko operasional unit kerja mampu menurunkan level risiko sebesar >60%",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -3948,7 +4020,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Tindak pengendalian efektif menurunkan risiko"
+      "workbookParamDesc": "Tindak pengendalian efektif menurunkan risiko",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 125
     },
     {
       "subCode": "3.1",
@@ -4118,13 +4192,15 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pimpinan K/L/D membandingkan tolok ukur kinerja dengan capaian kinerja secara berkala untuk mengatasi hambatan kinerja, menetapkan strategi perbaikan, dan menilai kinerja suatu unit sampai dengan periode tertentu dalam rangka mengawal pencapaian tujuan organisasi"
+      "workbookParamDesc": "Pimpinan K/L/D membandingkan tolok ukur kinerja dengan capaian kinerja secara berkala untuk mengatasi hambatan kinerja, menetapkan strategi perbaikan, dan menilai kinerja suatu unit sampai dengan periode tertentu dalam rangka mengawal pencapaian tujuan organisasi",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 131
     },
     {
       "subCode": "3.2",
       "subunsurName": "Pembinaan SDM",
       "paramNo": 1,
-      "paramDesc": "Pembinaan SDM dilakukan sesuai peraturan perundangan yang berlaku sehingga setiap pegawai dapat memberikan manfaat optimal dalam pencapaian tujuan organisasi",
+      "paramDesc": "Pembinaan SDM dilakukan sehingga setiap pegawai dapat memberikan manfaat optimal dalam pencapaian tujuan organisasi",
       "parameterKey": "3.2-1",
       "grades": [
         {
@@ -4288,7 +4364,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pembinaan SDM dilakukan sehingga setiap pegawai dapat memberikan manfaat optimal dalam pencapaian tujuan organisasi"
+      "workbookParamDesc": "Pembinaan SDM dilakukan sehingga setiap pegawai dapat memberikan manfaat optimal dalam pencapaian tujuan organisasi",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 137
     },
     {
       "subCode": "3.3",
@@ -4358,7 +4436,7 @@
             }
           ],
           "workbookKriteria": "Kebijakan pengelolaan sistem informasi organisasi digunakan dalam analisis kebutuhan dukungan sistem informasi, kemanfaatan sistem informasi existing, serta struktur pengelola dan pengguna sistem informasi beserta wewenang dan tanggungjawabnya.",
-          "workbookPenjelasan": "Seluruh kebijakan/SOP tentang pengelolaan sistem informasi telah diimplementasikan, antara lain:\na. Sistem informasi yang digunakan telah dianalisis kemanfaatannya bagi pencapaian tujuan organisasi;\nb. Aset-aset yang berhubungan dengan teknologi informasi telah dipetakan dan dicatat serta dianalisis kebutuhannya;\nc. Struktur organisasi pengelola sistem informasi telah menjalankan proses bisnis yang diatur dengan SOP;\nd. Kewenangan dan tanggung jawab pengelola sistem informasi dan pengguna sistem informasi dijalankan sesuai dengan perannya masing-masing.\n",
+          "workbookPenjelasan": "Seluruh kebijakan/SOP tentang pengelolaan sistem informasi telah diimplementasikan, antara lain:\na. Sistem informasi yang digunakan telah dianalisis kemanfaatannya bagi pencapaian tujuan organisasi;\nb. Aset-aset yang berhubungan dengan teknologi informasi telah dipetakan dan dicatat serta dianalisis kebutuhannya;\nc. Struktur organisasi pengelola sistem informasi telah menjalankan proses bisnis yang diatur dengan SOP;\nd. Kewenangan dan tanggung jawab pengelola sistem informasi dan pengguna sistem informasi dijalankan sesuai dengan perannya masing-masing.",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -4446,7 +4524,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pengendalian atas pengelolaan sistem informasi dilakukan untuk memastikan sistem informasi dapat menyajikan data yang akurat dan tepat waktu untuk digunakan oleh pengguna"
+      "workbookParamDesc": "Pengendalian atas pengelolaan sistem informasi dilakukan untuk memastikan sistem informasi dapat menyajikan data yang akurat dan tepat waktu untuk digunakan oleh pengguna",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 143
     },
     {
       "subCode": "3.4",
@@ -4608,13 +4688,15 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pengelolaan BMN/D dilakukan untuk menjamin aset tersedia dan dapat digunakan dengan baik oleh pengguna dalam rangka mendukung kinerja organisasi"
+      "workbookParamDesc": "Pengelolaan BMN/D dilakukan untuk menjamin aset tersedia dan dapat digunakan dengan baik oleh pengguna dalam rangka mendukung kinerja organisasi",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 149
     },
     {
       "subCode": "3.5",
       "subunsurName": "Penetapan dan Reviu atas Indikator dan Ukuran Kinerja",
       "paramNo": 1,
-      "paramDesc": "Kegiatan pengendalian atas penetapan dan reviu atas indikator dan ukuran kinerja dilakukan untuk menjamin keandalan ukuran dan ketepatan penetapan indikator masing-masing unit secara berjenjang dibandingkan dengan IKU organisasi.",
+      "paramDesc": "Kegiatan pengendalian atas penetapan dan reviu atas indikator dan ukuran kinerja dilakukan untuk menjamin keandalan ukuran dan ketepatan penetapan indikator masing-masing unit secara berjenjang dibandingkan dengan IKU organisasi",
       "parameterKey": "3.5-1",
       "grades": [
         {
@@ -4766,7 +4848,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Kegiatan pengendalian atas penetapan dan reviu atas indikator dan ukuran kinerja dilakukan untuk menjamin keandalan ukuran dan ketepatan penetapan indikator masing-masing unit secara berjenjang dibandingkan dengan IKU organisasi"
+      "workbookParamDesc": "Kegiatan pengendalian atas penetapan dan reviu atas indikator dan ukuran kinerja dilakukan untuk menjamin keandalan ukuran dan ketepatan penetapan indikator masing-masing unit secara berjenjang dibandingkan dengan IKU organisasi",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 155
     },
     {
       "subCode": "3.6",
@@ -4928,7 +5012,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Terdapat pemisahan fungsi sehingga seluruh aspek utama transaksi dan kejadian tidak dikendalikan hanya oleh satu orang"
+      "workbookParamDesc": "Terdapat pemisahan fungsi sehingga seluruh aspek utama transaksi dan kejadian tidak dikendalikan hanya oleh satu orang",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 161
     },
     {
       "subCode": "3.7",
@@ -4953,8 +5039,8 @@
               "evidence": "SK Penetapan Pejabat Berwenang"
             }
           ],
-          "workbookKriteria": "Terdapat kebijakan yang mengatur prosedur pembatasan akses terhadap sumber daya yang dimiliki organisasi beserta pencatatannya",
-          "workbookPenjelasan": "Kebijakan telah mengatur:\n- Mekanisme/desain pembatasan akses yang tidak diinginkan terhadap sumber daya\n- Mekanisme/desain pembatasan akses yang tidak diinginkan terhadap pencatatan sumber daya",
+          "workbookKriteria": "Terdapat kebijakan yang mengatur prosedur otorisasi atas transaksi dan kejadian",
+          "workbookPenjelasan": "Kebijakan telah mengatur:\n- Kondisi dan/atau syarat spesifik suatu transaksi atau kejadian dapat diotorisasi\n- Pihak yang berwenang melakukan otorisasi sesuai lingkup otoritasnya",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -4973,8 +5059,8 @@
               "evidence": "Daftar Pejabat Berwenang"
             }
           ],
-          "workbookKriteria": "Kebijakan terkait pembatasan akses terhadap sumber daya dan pencatatannya telah dikomunikasikan dan dipahami oleh pihak yang berkepentingan",
-          "workbookPenjelasan": "- Kebijakan telah dipahami oleh penanggungjawab pengelolaan keuangan dan BMN/BMD\n- Kebijakan telah dikomunikasikan kepada pimpinan (struktural) dan pegawai",
+          "workbookKriteria": "Kebijakan terkait otorisasi atas transaksi dan kejadian telah dikomunikasikan dan dipahami oleh pihak yang berkepentingan",
+          "workbookPenjelasan": "- Kebijakan telah dipahami oleh penanggungjawab pengelolaan keuangan/kegiatan\n- Kebijakan telah dikomunikasikan kepada pimpinan (struktural) dan pegawai",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -4997,8 +5083,8 @@
               "evidence": "Bukti Otorisasi Transaksi"
             }
           ],
-          "workbookKriteria": "Terhadap sumber daya dan pencatatannya telah dilakukan pembatasan akses sesuai dengan ketentuan",
-          "workbookPenjelasan": "- Pencatatan dilaksanakan sesuai ketentuan (peraturan/keputusan, SOP, petunjuk teknis/petunjuk pelaksanaan, dan/atau kebijakan lain)\n- Pembatasan akses dilaksanakan baik pada sumber daya yang dimiliki organisasi maupun terhadap pencatatan atas sumber daya tersebut\n- Pembatasan akses dilakukan dengan mempertimbangkan nilai aset, kemudahan dipindahkan, dan kemudahan ditukarkan\n- Pembatasan akses direviu secara periodik\n- Pembatasan akses dilakukan sebagai upaya untuk menangani risiko yang disebabkan kelemahan alur/prosedur",
+          "workbookKriteria": "Otorisasi atas transaksi dan kejadian telah dilaksanakan sesuai kebijakan/prosedur yang ditetapkan",
+          "workbookPenjelasan": "- Otorisasi dilaksanakan sesuai ketentuan (struktur organisasi, peraturan/keputusan, SOP, petunjuk teknis/petunjuk pelaksanaan, dan/atau kebijakan lain)\n- Fungsi otorisasi dilaksanakan baik pada kegiatan yang terkait dengan keuangan maupun kegiatan teknis operasional organisasi\n- Fungsi otorisasi dilakukan sebagai upaya untuk menangani risiko yang disebabkan kelemahan alur/prosedur",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -5021,8 +5107,8 @@
               "evidence": "Matriks Tindak Lanjut"
             }
           ],
-          "workbookKriteria": "Kebijakan dan implementasi terkait pembatasan akses terhadap sumber daya dan pencatatannya telah dievaluasi sehingga dapat diketahui efektivitasnya",
-          "workbookPenjelasan": "Kebijakan dan implementasi telah dievaluasi dengan ketentuan:\n- Berkala\n- Terdokumentasi\n- Dilakukan untuk menangani residual risk\n- Hasil evaluasi telah ditindak lanjuti \n- Perbaikan telah menghasilkan kinerja yang lebih baik",
+          "workbookKriteria": "Kebijakan dan implementasi terkait otorisasi atas transaksi dan kejadian telah dievaluasi sehingga dapat diketahui efektivitasnya",
+          "workbookPenjelasan": "Kebijakan dan implementasi telah dievaluasi dengan ketentuan:\n- Berkala .\n- Terdokumentasi\n- Dilakukan untuk menangani residual risk\n- Hasil evaluasi telah ditindak lanjuti \n- Perbaikan telah menghasilkan kinerja yang lebih baik",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -5045,8 +5131,8 @@
               "evidence": "Dokumen Perbaikan SOP/Mekanisme Otorisasi"
             }
           ],
-          "workbookKriteria": "Pembatasan akses terhadap sumber daya dan pencatatannya telah diperbaiki secara berkelanjutan dan secara optimal mampu mendukung pencapaian tujuan organisasi",
-          "workbookPenjelasan": "- Proses pembatasan akses telah mampu menyesuaikan dengan perubahan lingkungan strategis\n- Proses pembatasan akses secara efektif mampu memitigasi risiko penggunaan secara tidak sah dan penyalahgunaan wewenang\n- Menghasilkan zero significant fraudulent/dangerous intrusion",
+          "workbookKriteria": "Proses otorisasi atas transaksi dan kejadian telah diperbaiki secara berkelanjutan dan secara optimal mampu mendukung pencapaian tujuan organisasi",
+          "workbookPenjelasan": "- Fungsi otorisasi telah mampu menyesuaikan dengan perubahan lingkungan strategis\n- Fungsi otorisasi secara efektif mampu memitigasi risiko kolusi dan penyalahgunaan wewenang\n- Fungsi otorisasi mampu membuat pelaksanaan program dan kegiatan lebih efektif dalam mencapai tujuan organisasi",
           "workbookCaraPengujian": "W/D/O"
         }
       ],
@@ -5090,7 +5176,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Terdapat proses untuk memastikan transaksi dan kejadian penting hanya dapat diotorisasi ketika memenuhi persyaratan dan dilakukan oleh pihak yang memiliki kewenangan"
+      "workbookParamDesc": "Terdapat proses untuk memastikan transaksi dan kejadian penting hanya dapat diotorisasi ketika memenuhi persyaratan dan dilakukan oleh pihak yang memiliki kewenangan",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 167
     },
     {
       "subCode": "3.8",
@@ -5110,7 +5198,10 @@
               "itemNo": 1,
               "evidence": "Kebijakan/SOP Pencatatan Transaksi dan Kejadian"
             }
-          ]
+          ],
+          "workbookKriteria": "Terdapat kebijakan yang mengatur prosedur pencatatan atas transaksi dan kejadian",
+          "workbookPenjelasan": "Kebijakan telah mengatur:\n- Mekanisme pencatatan untuk seluruh siklus transaksi dan kejadian yang mencakup otorisasi, pelaksanaan, pemrosesan, dan klasifikasi akhir\n- Klasifikasi yang jelas untuk seluruh transaksi dan kejadian\n- Tenggat waktu pencatatan seluruh transaksi dan kejadian",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "D",
@@ -5127,7 +5218,10 @@
               "itemNo": 2,
               "evidence": "Daftar Petugas/Pengelola Pencatatan"
             }
-          ]
+          ],
+          "workbookKriteria": "Kebijakan terkait pencatatan atas transaksi dan kejadian telah dikomunikasikan dan dipahami oleh pihak yang berkepentingan",
+          "workbookPenjelasan": "- Kebijakan telah dipahami oleh penanggungjawab pengelolaan keuangan/kegiatan\n- Kebijakan telah dikomunikasikan kepada pimpinan (struktural) dan pegawai",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "C",
@@ -5148,7 +5242,10 @@
               "itemNo": 3,
               "evidence": "Bukti Pencatatan Transaksi"
             }
-          ]
+          ],
+          "workbookKriteria": "Pencatatan atas transaksi dan kejadian telah dilaksanakan sesuai kebijakan/prosedur yang ditetapkan",
+          "workbookPenjelasan": "- Pencatatan dilaksanakan sesuai ketentuan (peraturan/keputusan, SOP, petunjuk teknis/petunjuk pelaksanaan, dan/atau kebijakan lain)\n- Pencatatan dilaksanakan baik pada kegiatan yang terkait dengan keuangan (akuntansi keuangan dan BMN/BMD) maupun kegiatan teknis operasional organisasi\n- Fungsi pencatatan dilakukan sebagai upaya untuk menangani risiko yang disebabkan kelemahan alur/prosedur",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "B",
@@ -5169,7 +5266,10 @@
               "itemNo": 3,
               "evidence": "Matriks Tindak Lanjut"
             }
-          ]
+          ],
+          "workbookKriteria": "Kebijakan dan implementasi terkait pencatatan atas transaksi dan kejadian telah dievaluasi sehingga dapat diketahui efektivitasnya",
+          "workbookPenjelasan": "Kebijakan dan implementasi telah dievaluasi dengan ketentuan:\n- Berkala .\n- Terdokumentasi\n- Dilakukan untuk menangani residual risk\n- Hasil evaluasi telah ditindak lanjuti \n- Perbaikan telah menghasilkan kinerja yang lebih baik",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "A",
@@ -5190,11 +5290,16 @@
               "itemNo": 3,
               "evidence": "Bukti Perbaikan Sistem/Prosedur Pencatatan"
             }
-          ]
+          ],
+          "workbookKriteria": "Pencatatan atas transaksi dan kejadian telah diperbaiki secara berkelanjutan dan secara optimal mampu mendukung pencapaian tujuan organisasi",
+          "workbookPenjelasan": "- Proses pencatatan telah mampu menyesuaikan dengan perubahan lingkungan strategis\n- Proses pencatatan secara efektif mampu memitigasi risiko manipulasi transaksi dan penyalahgunaan wewenang\n- Proses pencatatan mampu menghasilkan informasi yang relevan, bernilai, dan berguna bagi manajemen dalam mengendalikan operasi dan mengambil keputusan",
+          "workbookCaraPengujian": "W/D/O"
         }
       ],
       "paramId": "3.8.1",
-      "workbookReference": null
+      "workbookReference": null,
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 173
     },
     {
       "subCode": "3.9",
@@ -5218,7 +5323,10 @@
               "itemNo": 2,
               "evidence": "SK Penetapan Hak Akses"
             }
-          ]
+          ],
+          "workbookKriteria": "Terdapat kebijakan yang mengatur prosedur pembatasan akses terhadap sumber daya yang dimiliki organisasi beserta pencatatannya",
+          "workbookPenjelasan": "Kebijakan telah mengatur:\n- Mekanisme/desain pembatasan akses yang tidak diinginkan terhadap sumber daya\n- Mekanisme/desain pembatasan akses yang tidak diinginkan terhadap pencatatan sumber daya",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "D",
@@ -5235,7 +5343,10 @@
               "itemNo": 2,
               "evidence": "Daftar Pengguna yang Memiliki Akses"
             }
-          ]
+          ],
+          "workbookKriteria": "Kebijakan terkait pembatasan akses terhadap sumber daya dan pencatatannya telah dikomunikasikan dan dipahami oleh pihak yang berkepentingan",
+          "workbookPenjelasan": "- Kebijakan telah dipahami oleh penanggungjawab pengelolaan keuangan dan BMN/BMD\n- Kebijakan telah dikomunikasikan kepada pimpinan (struktural) dan pegawai",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "C",
@@ -5256,7 +5367,10 @@
               "itemNo": 3,
               "evidence": "Log Akses Sistem/Daftar Akses Sumber Daya"
             }
-          ]
+          ],
+          "workbookKriteria": "Terhadap sumber daya dan pencatatannya telah dilakukan pembatasan akses sesuai dengan ketentuan",
+          "workbookPenjelasan": "- Pencatatan dilaksanakan sesuai ketentuan (peraturan/keputusan, SOP, petunjuk teknis/petunjuk pelaksanaan, dan/atau kebijakan lain)\n- Pembatasan akses dilaksanakan baik pada sumber daya yang dimiliki organisasi maupun terhadap pencatatan atas sumber daya tersebut\n- Pembatasan akses dilakukan dengan mempertimbangkan nilai aset, kemudahan dipindahkan, dan kemudahan ditukarkan\n- Pembatasan akses direviu secara periodik\n- Pembatasan akses dilakukan sebagai upaya untuk menangani risiko yang disebabkan kelemahan alur/prosedur",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "B",
@@ -5277,7 +5391,10 @@
               "itemNo": 3,
               "evidence": "Matriks Tindak Lanjut"
             }
-          ]
+          ],
+          "workbookKriteria": "Kebijakan dan implementasi terkait pembatasan akses terhadap sumber daya dan pencatatannya telah dievaluasi sehingga dapat diketahui efektivitasnya",
+          "workbookPenjelasan": "Kebijakan dan implementasi telah dievaluasi dengan ketentuan:\n- Berkala\n- Terdokumentasi\n- Dilakukan untuk menangani residual risk\n- Hasil evaluasi telah ditindak lanjuti \n- Perbaikan telah menghasilkan kinerja yang lebih baik",
+          "workbookCaraPengujian": "W/D/O"
         },
         {
           "grade": "A",
@@ -5298,11 +5415,16 @@
               "itemNo": 3,
               "evidence": "Bukti Pengendalian Akses"
             }
-          ]
+          ],
+          "workbookKriteria": "Pembatasan akses terhadap sumber daya dan pencatatannya telah diperbaiki secara berkelanjutan dan secara optimal mampu mendukung pencapaian tujuan organisasi",
+          "workbookPenjelasan": "- Proses pembatasan akses telah mampu menyesuaikan dengan perubahan lingkungan strategis\n- Proses pembatasan akses secara efektif mampu memitigasi risiko penggunaan secara tidak sah dan penyalahgunaan wewenang\n- Menghasilkan zero significant fraudulent/dangerous intrusion",
+          "workbookCaraPengujian": "W/D/O"
         }
       ],
       "paramId": "3.9.1",
-      "workbookReference": null
+      "workbookReference": null,
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 179
     },
     {
       "subCode": "3.10",
@@ -5460,7 +5582,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Terdapat pertanggungjawaban seseorang atau unit organisasi dalam mengelola sumber daya yang diberikan/dikuasakan kepadanya dalam rangka pencapaian tujuan organisasi"
+      "workbookParamDesc": "Terdapat pertanggungjawaban seseorang atau unit organisasi dalam mengelola sumber daya yang diberikan/dikuasakan kepadanya dalam rangka pencapaian tujuan organisasi",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 185
     },
     {
       "subCode": "3.11",
@@ -5618,7 +5742,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Terdapat pengelolaan, pemeliharaan, dan pendokumentasian secara berkala yang mencakup seluruh SPI serta transaksi dan kejadian penting yang dilaksanakan secara lengkap dan akurat untuk memfasilitasi penelusuran transaksi, kejadian, dan informasi terkait"
+      "workbookParamDesc": "Terdapat pengelolaan, pemeliharaan, dan pendokumentasian secara berkala yang mencakup seluruh SPI serta transaksi dan kejadian penting yang dilaksanakan secara lengkap dan akurat untuk memfasilitasi penelusuran transaksi, kejadian, dan informasi terkait",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 191
     },
     {
       "subCode": "4.1",
@@ -5716,7 +5842,7 @@
             }
           ],
           "workbookKriteria": "Klasifikasi informasi telah dievaluasi dan ditindaklanjuti sehingga dapat disajikan dengan tepat waktu, andal, dan relevan",
-          "workbookPenjelasan": "- Informasi produk, standar, prosedur layanan/pelaksanaan tugas fungsi dan pengaduan telah dievaluasi dan ditindaklanjuti sehingga:\na. Jelas klasifikasi informasi;\nb. Jelas prosedur pengelolaan informasi;\nc. Disajikan tepat waktu, andal, dan relevan.\n\n- Informasi layanan internal (keuangan, kepegawaian, umum, dsb) telah dievaluasi dan ditindaklanjuti sehingga:\na. Jelas klasifikasi informasi;\nb. Jelas prosedur pengelolaan informasi;\nc. Disajikan tepat waktu, andal, dan relevan.\n\n- Informasi manajemen kinerja (rencana kinerja, capaian kinerja, dsb) telah dievaluasi dan ditindaklanjuti sehingga:\na. Jelas klasifikasi informasi;\nb. Jelas prosedur pengelolaan informasi;\nc. Disajikan tepat waktu, andal, dan relevan. ",
+          "workbookPenjelasan": "- Informasi produk, standar, prosedur layanan/pelaksanaan tugas fungsi dan pengaduan telah dievaluasi dan ditindaklanjuti sehingga:\na. Jelas klasifikasi informasi;\nb. Jelas prosedur pengelolaan informasi;\nc. Disajikan tepat waktu, andal, dan relevan.\n\n- Informasi layanan internal (keuangan, kepegawaian, umum, dsb) telah dievaluasi dan ditindaklanjuti sehingga:\na. Jelas klasifikasi informasi;\nb. Jelas prosedur pengelolaan informasi;\nc. Disajikan tepat waktu, andal, dan relevan.\n\n- Informasi manajemen kinerja (rencana kinerja, capaian kinerja, dsb) telah dievaluasi dan ditindaklanjuti sehingga:\na. Jelas klasifikasi informasi;\nb. Jelas prosedur pengelolaan informasi;\nc. Disajikan tepat waktu, andal, dan relevan.",
           "workbookCaraPengujian": "W/D/O"
         },
         {
@@ -5784,7 +5910,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Tersedianya informasi yang relevan untuk kebutuhan internal dan eksternal"
+      "workbookParamDesc": "Tersedianya informasi yang relevan untuk kebutuhan internal dan eksternal",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 197
     },
     {
       "subCode": "4.1",
@@ -5946,7 +6074,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pimpinan K/L/D membangun sistem pengaduan"
+      "workbookParamDesc": "Pimpinan K/L/D membangun sistem pengaduan",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 202
     },
     {
       "subCode": "4.1",
@@ -6104,7 +6234,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Strategi dan kebijakan manajemen risiko telah dikomunikasikan."
+      "workbookParamDesc": "Strategi dan kebijakan manajemen risiko telah dikomunikasikan.",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 207
     },
     {
       "subCode": "4.1",
@@ -6258,7 +6390,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Register risiko dan rencana tindak pengendalian telah dikomunikasikan ke pihak terkait"
+      "workbookParamDesc": "Register risiko dan rencana tindak pengendalian telah dikomunikasikan ke pihak terkait",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 212
     },
     {
       "subCode": "4.2",
@@ -6420,13 +6554,15 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Terlaksananya komunikasi yang efektif dengan internal dan eksternal"
+      "workbookParamDesc": "Terlaksananya komunikasi yang efektif dengan internal dan eksternal",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 218
     },
     {
       "subCode": "5.1",
       "subunsurName": "Pemantauan Berkelanjutan",
       "paramNo": 1,
-      "paramDesc": "Pimpinan organisasi/penanggungjawab program dan kegiatan/penanggungjawab operasional mengevaluasi secara berkala pengendalian intern yang telah dilakukan dalam rangka mencapai tujuan organisasi",
+      "paramDesc": "Pimpinan K/L/D/penanggungjawab program dan kegiatan/penanggungjawab operasional mengevaluasi secara berkala pengendalian intern yang telah dilakukan dalam rangka mencapai tujuan organisasi.",
       "parameterKey": "5.1-1",
       "grades": [
         {
@@ -6590,7 +6726,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pimpinan K/L/D/penanggungjawab program dan kegiatan/penanggungjawab operasional mengevaluasi secara berkala pengendalian intern yang telah dilakukan dalam rangka mencapai tujuan organisasi."
+      "workbookParamDesc": "Pimpinan K/L/D/penanggungjawab program dan kegiatan/penanggungjawab operasional mengevaluasi secara berkala pengendalian intern yang telah dilakukan dalam rangka mencapai tujuan organisasi.",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 224
     },
     {
       "subCode": "5.1",
@@ -6760,7 +6898,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Proses manajemen risiko telah direviu "
+      "workbookParamDesc": "Proses manajemen risiko telah direviu ",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 229
     },
     {
       "subCode": "5.1",
@@ -6930,7 +7070,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Pemantauan/monitoring terhadap risiko telah dilakukan "
+      "workbookParamDesc": "Pemantauan/monitoring terhadap risiko telah dilakukan ",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 234
     },
     {
       "subCode": "5.2",
@@ -7100,7 +7242,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Evaluasi terpisah dilakukan oleh pegawai dengan keahlian tertentu yang disyaratkan dan dapat melibatkan APIP atau auditor eksternal untuk menilai kinerja sistem pengendalian intern, mengidentifikasi kelemahan pengendalian, menentukan penyebab dari kegagalan aktivitas pengendalian, serta pengaruhnya terhadap pencapaian tujuan instansi."
+      "workbookParamDesc": "Evaluasi terpisah dilakukan oleh pegawai dengan keahlian tertentu yang disyaratkan dan dapat melibatkan APIP atau auditor eksternal untuk menilai kinerja sistem pengendalian intern, mengidentifikasi kelemahan pengendalian, menentukan penyebab dari kegagalan aktivitas pengendalian, serta pengaruhnya terhadap pencapaian tujuan instansi.",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 240
     },
     {
       "subCode": "5.2",
@@ -7278,7 +7422,9 @@
         }
       },
       "workbookSubunsurName": "",
-      "workbookParamDesc": "Terdapat reviu independen terhadap proses manajemen risiko"
+      "workbookParamDesc": "Terdapat reviu independen terhadap proses manajemen risiko",
+      "workbookSheet": "KK3.1",
+      "workbookParamRow": 245
     }
   ]
 }

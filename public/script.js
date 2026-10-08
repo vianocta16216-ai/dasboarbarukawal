@@ -105,7 +105,7 @@ function connectRealtime() {
       if (msg.type === 'data-changed' && String(msg.year) === String(currentYear)) {
         // QA APIP is stored in a sparse table. Update only its OPD summary so a QA
         // edit from another user does not force all viewers to reload the full dataset.
-        if ((msg.action === 'saveQaApipItem' || msg.action === 'deleteQaApipItem') && msg.opdId && msg.summary) {
+        if ((msg.action === 'saveQaApipChecklistItem' || msg.action === 'deleteQaApipChecklistItem' || msg.action === 'saveQaApipItem' || msg.action === 'deleteQaApipItem') && msg.opdId && msg.summary) {
           const row = rows.find(r => String(r.id) === String(msg.opdId));
           if (row) {
             row.qaApipSummary = msg.summary;
@@ -953,7 +953,7 @@ async function loadData() {
     rows = [];
     if (Array.isArray(data)) {
       rows = data.map(r => {
-        const row = { ...r, nilaiMaturitas:Number(r.nilaiMaturitas ?? r.nilai_maturitas ?? 0) || 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, kkPmData:r.kkPmData||{},kkPmSummary:r.kkPmSummary||{total:671,evaluated:0,na:0,pending:671,sum:0,percentage:0,completion:0,status:'Belum'}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', pmSpipReports:Array.isArray(r.pmSpipReports)?r.pmSpipReports:[], pmSpipFolder:r.pmSpipFolder||'Laporan Hasil PM SPIP', rrRtpReports:Array.isArray(r.rrRtpReports)?r.rrRtpReports:[], rrRtpFolder:r.rrRtpFolder||'Laporan Pemantauan RR_RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
+        const row = { ...r, nilaiMaturitas:Number(r.nilaiMaturitas ?? r.nilai_maturitas ?? 0) || 0, nilaiKapabilitasApip:r.nilaiKapabilitasApip ?? r.nilai_kapabilitas_apip ?? 0, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', mri:r.mri||0, iepk:r.iepk||0, kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, kkPmData:r.kkPmData||{},kkPmSummary:r.kkPmSummary||{total:183,evaluated:0,na:0,pending:183,sum:0,percentage:0,completion:0,status:'Belum'}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', pmSpipReports:Array.isArray(r.pmSpipReports)?r.pmSpipReports:[], pmSpipFolder:r.pmSpipFolder||'Laporan Hasil PM SPIP', rrRtpReports:Array.isArray(r.rrRtpReports)?r.rrRtpReports:[], rrRtpFolder:r.rrRtpFolder||'Laporan Pemantauan RR_RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
         const bd = getRowStructureProcessBreakdown(row);
         row.nilaiStrukturProses = bd.value;
         row.sa = row.nilaiStrukturProses;
@@ -1046,11 +1046,11 @@ function updateKpisLocal(){
   const mri = rows.map(r=>Number(r.mri)||0).filter(v=>v>0);
   const iepk = rows.map(r=>Number(r.iepk)||0).filter(v=>v>0);
   const kap = rows.map(r=>Number(r.nilaiKapabilitasApip)||0).filter(v=>v>0);
-  const qaSummaries=rows.map(r=>r.qaApipSummary||{total:671,evaluated:0,na:0,pending:671,sum:0,percentage:0,completion:0,status:'Belum'});
+  const qaSummaries=rows.map(r=>r.qaApipSummary||{total:10,evaluated:0,na:0,pending:10,sum:0,percentage:0,completion:0,status:'Belum'});
   // KPI is a weighted aggregate across the whole QA scope, not an average of
   // OPD percentages. This prevents a small OPD with one completed item from
   // pulling the overall KPI to 100%.
-  const qaTotalItems=qaSummaries.reduce((sum,s)=>sum+Math.max(0,Number(s.total||671)-Number(s.na||0)),0);
+  const qaTotalItems=qaSummaries.reduce((sum,s)=>sum+Math.max(0,Number(s.total||10)-Number(s.na||0)),0);
   const qaScoreSum=qaSummaries.reduce((sum,s)=>sum+(Number(s.sum)||0),0);
   const qaApip=qaTotalItems?Math.round((qaScoreSum/qaTotalItems)*10000)/100:0;
   const qaApipFilled=qaSummaries.filter(s=>Number(s.evaluated||0)+Number(s.na||0)>0).length;
@@ -1164,9 +1164,9 @@ function render() {
         <td><span class="badge ${strukturStatus==='Selesai'?'badge-lengkap':(strukturStatus==='Proses'?'badge-sebagian':'badge-kosong')}">${strukturStatus}</span></td>
         <td><span class="badge ${badgeClass}" title="Jumlah parameter dengan evidence pada 43 parameter">${badgeLabel}</span></td>
         <td><div class="evidence-cell"><button class="btn-detail" data-id="${r.id}" title="Evidence Struktur dan Proses">📁</button><span class="structure-evidence-summary" data-id="${r.id}">${getRowStructureVerificationSummary(r).percentage.toFixed(0)}%<small>${getRowStructureVerificationSummary(r).total} file</small></span></div></td>
-        <td><div class="qa-apip-table-cell"><button class="btn-qa-apip" data-id="${r.id}" title="Penjaminan Kualitas / Quality Assurance APIP">🛡️</button><span class="qa-apip-table-summary" data-id="${r.id}">${Number(r.qaApipSummary?.percentage||0).toFixed(2)}%<small>${Number(r.qaApipSummary?.evaluated||0)}/${Number(r.qaApipSummary?.total||671)} item · ${Number(r.qaApipSummary?.evidenceFiles||0)} file</small></span></div></td>
+        <td><div class="qa-apip-table-cell"><button class="btn-qa-apip" data-id="${r.id}" title="Penjaminan Kualitas / Quality Assurance APIP">🛡️</button><span class="qa-apip-table-summary" data-id="${r.id}">${Number(r.qaApipSummary?.percentage||0).toFixed(2)}%<small>${Number(r.qaApipSummary?.checked??r.qaApipSummary?.evaluated??0)}/${Number(r.qaApipSummary?.total||10)} item · ${Number(r.qaApipSummary?.evidenceFiles||0)} file</small></span></div></td>
         <td><button class="btn-kk" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja SPIP">📊</button></td>
-        <td><div class="kk-pm-table-cell"><button class="btn-kk-pm-spip" data-id="${r.id}" title="Buka Kertas Kerja PM SPIP">📝</button><span class="kk-pm-table-summary" data-id="${r.id}">${Number(r.kkPmSummary?.percentage||0).toFixed(2)}%<small>${Number(r.kkPmSummary?.evaluated||0)}/${Number(r.kkPmSummary?.total||671)} item</small></span></div></td>
+        <td><div class="kk-pm-table-cell"><button class="btn-kk-pm-spip" data-id="${r.id}" title="Buka Kertas Kerja PM SPIP">📝</button><span class="kk-pm-table-summary" data-id="${r.id}">${Number(r.kkPmSummary?.percentage||0).toFixed(2)}%<small>${Number(r.kkPmSummary?.evaluated||0)}/${Number(r.kkPmSummary?.total||183)} parameter</small></span></div></td>
         <td><button class="btn-report-pm" data-id="${r.id}" title="Upload Laporan Hasil PM SPIP">📄</button><div class="report-count pm">${Array.isArray(r.pmSpipReports)?r.pmSpipReports.length:0}</div></td>
         <td><button class="btn-kk-rtp" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja RTP">📋</button></td>
         <td><button class="btn-report-rr" data-id="${r.id}" title="Upload Laporan Pemantauan RR_RTP">📄</button><div class="report-count rr">${Array.isArray(r.rrRtpReports)?r.rrRtpReports.length:0}</div></td>
@@ -1344,14 +1344,14 @@ function showChart(type) {
     // dengan KPI Verifikasi Dokumen per OPD. Tidak memakai pie/doughnut.
     const chartData=[...rows].map(r=>({
       row:r,
-      summary:r.qaApipSummary||{percentage:0,evaluated:0,na:0,total:671,evidenceFiles:0}
+      summary:r.qaApipSummary||{percentage:0,evaluated:0,checked:0,na:0,total:10,evidenceFiles:0}
     }));
     chartData.sort((a,b)=>(Number(b.summary.percentage)||0)-(Number(a.summary.percentage)||0));
     labels=chartData.map(x=>x.row.opd||'OPD Tanpa Nama');
     data=chartData.map(x=>Math.round(Math.max(0,Math.min(100,Number(x.summary.percentage)||0))*100)/100);
     qaMeta=chartData.map(x=>({
-      total:Number(x.summary.total)||671,
-      evaluated:Number(x.summary.evaluated)||0,
+      total:Number(x.summary.total)||10,
+      evaluated:Number(x.summary.checked??x.summary.evaluated)||0,
       na:Number(x.summary.na)||0,
       evidenceFiles:Number(x.summary.evidenceFiles)||0
     }));
@@ -1573,7 +1573,7 @@ function showChart(type) {
             padding:10,
             callbacks:{
               label:function(context){
-                const m=qaMeta[context.dataIndex]||{total:671,evaluated:0,na:0,evidenceFiles:0};
+                const m=qaMeta[context.dataIndex]||{total:10,evaluated:0,checked:0,na:0,evidenceFiles:0};
                 return ` ${Number(context.parsed.x||0).toFixed(2)}% · ${m.evaluated}/${m.total} item dinilai · ${m.evidenceFiles} file evidence`;
               }
             }
@@ -3609,303 +3609,359 @@ document.getElementById('rtpEvidenceRefresh')?.addEventListener('click',()=>{if(
 
 // ============================================================
 // PENJAMINAN KUALITAS / QUALITY ASSURANCE APIP
-// Master 671 item berasal dari workbook QA yang diberikan pengguna.
-// File evidence ditarik read-only dari Evidence Struktur & Proses pada
-// pasangan Subunsur + Parameter + Level yang sama. Data QA disimpan sparse
-// di tabel D1 terpisah agar getData tetap ringan untuk banyak pengguna.
+// QA APIP mengikuti sheet CHECKLIST PK workbook: 10 butir (Persiapan, Pelaksanaan, Pelaporan).
+// Evidence Struktur & Proses tetap dibaca read-only sebagai referensi agregat.
+// Storage checklist baru sparse di D1; storage QA lama dipertahankan untuk kompatibilitas.
 // ============================================================
-let qaApipMaster=null;
-let qaApipEditingRowId=null;
-let qaApipStateMap=new Map();
-let qaApipTab='kk';
-let qaApipNav={unsur:null,sub:null,paramKey:null};
-const qaApipSaveTimers=new Map();
-
-function qaApipSetStatus(msg,type=''){
-  const el=document.getElementById('qaApipStatus');
-  if(!el)return;
-  el.textContent=msg||'';
-  el.className='qa-apip-status'+(type?' '+type:'');
-  el.style.display=msg?'block':'none';
-}
-function qaApipKey(sub,paramId,grade,itemNo){return `${sub}|${paramId}|${grade}|${itemNo}`;}
-function qaApipMasterParamKey(p){return `${p.subCode}|${p.paramId||`${p.subCode}.${p.paramNo}`}`;}
-function qaApipFindParam(key){return (qaApipMaster?.parameters||[]).find(p=>qaApipMasterParamKey(p)===String(key));}
-function qaApipGradeLabel(g){return `${g.grade} · Level ${g.level}`;}
-function qaApipParseFiles(raw){
-  if(Array.isArray(raw))return raw;
-  if(typeof raw==='string'){try{const p=JSON.parse(raw);return Array.isArray(p)?p:[]}catch(_){return[]}}
-  if(raw&&typeof raw==='object'){if(Array.isArray(raw.files))return raw.files;return Object.values(raw).filter(v=>typeof v==='string'||(v&&typeof v==='object'));}
+// Evidence helper shared by QA APIP and KK PM. These helpers only read the
+// existing Structure & Process file arrays; they never upload/copy/delete files.
+function qaApipParseFiles(value){
+  if(Array.isArray(value)) return value.filter(Boolean);
+  if(typeof value==='string' && value.trim()){try{const x=JSON.parse(value);return Array.isArray(x)?x.filter(Boolean):[];}catch{}}
   return [];
 }
 function qaApipLinkedFiles(row,subCode,paramId,level){
-  const raw=row?.subunsurs?.[subCode]?.[paramId]?.['files'+level];
-  return qaApipParseFiles(raw);
+  const item=row?.subunsurs?.[subCode]?.[paramId];
+  return qaApipParseFiles(item?.['files'+level]);
 }
-function qaApipFileUrl(file){
-  if(typeof file==='string')return file;
-  if(file?.url)return file.url;
-  if(file?.gdriveId)return `https://drive.google.com/file/d/${encodeURIComponent(file.gdriveId)}/view`;
-  return '';
-}
-function qaApipFileName(file,index){
-  if(typeof file==='string'){const s=file.split('?')[0].split('/');return decodeURIComponent(s[s.length-1]||`File ${index+1}`);}
-  return file?.fileName||file?.name||`File ${index+1}`;
-}
-function qaApipScore(st){
-  const k=String(st?.availability||''); const m=String(st?.validity||''); const n=String(st?.periodOk||''); const o=String(st?.substance||'');
-  if(!k||k==='N/A')return null;
-  if(k==='Tidak Ada')return 0;
-  if(!o)return null;
-  if(o==='Tidak Sesuai')return 0;
-  return m==='Ya'&&n==='Ya'&&o==='Sesuai'?1:0.5;
-}
-function qaApipConclusion(st){
-  const score=qaApipScore(st);
-  if(String(st?.availability||'')==='N/A')return 'N/A';
-  if(score===null)return 'Belum dinilai';
-  if(score===1)return 'Memenuhi';
-  if(score===0.5)return 'Memenuhi Sebagian';
-  return 'Tidak Memenuhi';
-}
-function qaApipScoreText(st){const v=qaApipScore(st);return v===null?'—':v.toFixed(1);}
-function qaApipStatusOptions(cur,values){return `<option value="">— Pilih —</option>${values.map(v=>`<option value="${escapeHtml(v)}" ${String(cur||'')===v?'selected':''}>${escapeHtml(v)}</option>`).join('')}`;}
-function qaApipStateFromServer(item){return {availability:item?.availability||'',identityDoc:item?.identityDoc||'',validity:item?.validity||'',periodOk:item?.periodOk||'',substance:item?.substance||'',note:item?.note||'',score:item?.score===null?null:Number(item.score),conclusion:item?.conclusion||'',examinerName:item?.examinerName||'',updatedAt:item?.updatedAt||0};}
-function qaApipGetState(sub,param,grade,itemNo){return qaApipStateMap.get(qaApipKey(sub,param,grade,itemNo))||{};}
-function qaApipSetState(sub,param,grade,itemNo,st){qaApipStateMap.set(qaApipKey(sub,param,grade,itemNo),{...st,score:qaApipScore(st),conclusion:qaApipConclusion(st)});}
-function qaApipBuildParamSummary(p){
-  const pid=p.paramId||`${p.subCode}.${p.paramNo}`;
-  // IMPORTANT: the QA percentage must NOT use only the items that have been
-  // evaluated as the denominator. Otherwise the first completed item becomes
-  // 100%. The denominator is the full QA scope for this parameter (all items,
-  // excluding only items explicitly marked N/A).
-  const out={total:0,na:0,evaluated:0,pending:0,sum:0,grades:{},linkedEvidenceFiles:0};
-  p.grades.forEach(g=>{
-    let total=0,na=0,evaluated=0,sum=0;
-    g.items.forEach(item=>{
-      total++;
-      const st=qaApipGetState(p.subCode,pid,g.grade,item.itemNo);
-      const score=qaApipScore(st);
-      if(String(st.availability||'')==='N/A')na++;
-      if(score!==null){evaluated++;sum+=score;}
+function qaApipFileUrl(file){return String(file?.url||file?.webViewLink||file?.driveUrl||'');}
+function qaApipFileName(file,index=0){return String(file?.fileName||file?.name||`Evidence ${index+1}`);}
+function countStructureEvidenceFiles(subunsurs){
+  let total=0;const source=subunsurs||{};
+  Object.keys(SUBUNSUR_DATA||{}).forEach(subCode=>{
+    (SUBUNSUR_DATA[subCode]?.params||[]).forEach(p=>{
+      const item=source?.[subCode]?.[p.id];
+      for(let lv=1;lv<=5;lv++) total+=qaApipParseFiles(item?.['files'+lv]).length;
     });
-    // A grade is measured against all of its applicable items, not just the
-    // rows already filled in, so one completed row cannot show 100% for a
-    // three-item grade.
-    const applicable=Math.max(0,total-na);
-    out.total+=total; out.na+=na; out.evaluated+=evaluated; out.sum+=sum;
-    out.grades[g.grade]={total,na,evaluated,sum,applicable,percentage:applicable?Math.round((sum/applicable)*10000)/100:null,pending:Math.max(0,total-na-evaluated)};
   });
-  out.pending=Math.max(0,out.total-out.na-out.evaluated);
-  const applicableAll=Math.max(0,out.total-out.na);
-  out.percentage=applicableAll?Math.round((out.sum/applicableAll)*10000)/100:null;
-  const threshold=Number(qaApipMaster?.thresholdGrade??1);
-  let level=0;
-  const order=qaApipMaster?.gradeOrder||['E','D','C','B','A'];
-  for(const grade of order){
-    const gs=out.grades[grade];
-    // A grade is achieved only when all applicable items of that grade have
-    // been assessed and the grade percentage reaches the configured threshold.
-    if(gs && gs.applicable>0 && gs.pending===0 && Number(gs.percentage||0)>=threshold*100) level++;
-    else break;
-  }
-  out.level=level;
-  out.grade=level===0?'< E':(order[level-1]||'A');
-  if(level>=order.length) out.nextGrade='Seluruh grade terpenuhi';
-  else {
-    const next=order[level];
-    const nextSummary=out.grades[next];
-    const pendingNext=Number(nextSummary?.pending||0);
-    out.nextGrade=`Lengkapi evidence Grade ${next}${pendingNext>0?` (${pendingNext} item belum dinilai)`:''}`;
-  }
-  return out;
+  return total;
 }
-function qaApipAllParamSummaries(){return (qaApipMaster?.parameters||[]).map(p=>({p,summary:qaApipBuildParamSummary(p)}));}
-function qaApipGroupSummary(params){
-  let totalParams=0,totalItems=0,na=0,evaluated=0,sum=0,level3=0;
-  params.forEach(p=>{const s=qaApipBuildParamSummary(p);totalParams++;totalItems+=s.total;na+=s.na;evaluated+=s.evaluated;sum+=s.sum;if(s.level>=3)level3++;});
-  const applicable=Math.max(0,totalItems-na);
-  const percentage=applicable?Math.round((sum/applicable)*10000)/100:null;
-  let category='Belum dinilai'; if(percentage!==null) category=percentage>=80?'Tinggi':percentage>=60?'Cukup':percentage>=40?'Kurang':'Rendah';
-  return {totalParams,totalItems,na,evaluated,pending:Math.max(0,totalItems-na-evaluated),sum,percentage,level3,category};
+let qaApipMaster=null;
+let qaApipCurrentRow=null;
+let qaApipEditingRowId=null;
+let qaApipStateMap=new Map();
+let qaApipSaveTimers=new Map();
+let qaApipTab='checklist';
+
+function qaApipSetStatus(msg,type=''){
+  const el=document.getElementById('qaApipStatus');if(!el)return;
+  el.textContent=msg||'';el.className='qa-apip-status'+(type?' '+type:'');el.style.display=msg?'block':'none';
 }
-function qaApipOverallSummary(){
-  const all=qaApipAllParamSummaries();
-  return qaApipGroupSummary(all.map(x=>x.p));
-}
-function updateQaApipTableSummary(row,summary){
-  const s=summary||row?.qaApipSummary||{};
-  const el=document.querySelector(`.qa-apip-table-summary[data-id="${CSS.escape(String(row?.id||''))}"]`);
-  if(el)el.innerHTML=`${Number(s.percentage||0).toFixed(2)}%<small>${Number(s.evaluated||0)}/${Number(s.total||671)} item · ${Number(s.evidenceFiles||0)} file</small>`;
-}
+function qaApipKey(itemId){return String(itemId||'');}
+function qaApipGetState(itemId){return qaApipStateMap.get(qaApipKey(itemId))||{};}
+function qaApipSetState(itemId,value){qaApipStateMap.set(qaApipKey(itemId),{...value});}
 async function ensureQaApipMasterLoaded(){
   if(qaApipMaster)return qaApipMaster;
-  const response=await fetch('/kk-pm-master.json?v=20261008',{cache:'force-cache'});
-  if(!response.ok)throw new Error(`Master QA APIP tidak dapat dimuat (HTTP ${response.status})`);
+  const response=await fetch('/qa-apip-workbook-master.json?v=20261008.3',{cache:'no-store'});
+  if(!response.ok)throw new Error(`Master QA APIP workbook tidak dapat dimuat (HTTP ${response.status})`);
   qaApipMaster=await response.json();
-  if(!qaApipMaster||!Array.isArray(qaApipMaster.parameters)||qaApipMaster.parameters.length!==43)throw new Error('Master QA APIP tidak valid.');
+  if(!qaApipMaster||!Array.isArray(qaApipMaster.items)||qaApipMaster.items.length!==10)throw new Error('Master QA APIP workbook tidak valid.');
   return qaApipMaster;
 }
 async function loadQaApipData(row){
-  const d=await callServerWithRetry('getQaApipData',{opdId:row.id,year:currentYear},2);
+  const d=await callServerWithRetry('getQaApipChecklistData',{opdId:row.id,year:currentYear},2);
   qaApipStateMap=new Map();
-  (Array.isArray(d?.items)?d.items:[]).forEach(item=>qaApipSetState(item.subunsur,item.paramId,item.grade,item.itemNo,qaApipStateFromServer(item)));
+  (Array.isArray(d?.items)?d.items:[]).forEach(x=>qaApipSetState(x.itemId,{checklist:x.checklist||'',note:x.note||'',examinerName:x.examinerName||'',updatedAt:Number(x.updatedAt||0)}));
   return d;
 }
+function qaApipSummary(){
+  const items=qaApipMaster?.items||[];let checked=0,pass=0,fail=0;
+  items.forEach(it=>{const x=qaApipGetState(it.id);if(x.checklist==='√'){checked++;pass++;}else if(x.checklist==='X'){checked++;fail++;}});
+  const total=items.length||10,pending=Math.max(0,total-checked),percentage=Math.round(pass/total*10000)/100,completion=Math.round(checked/total*10000)/100;
+  const status=completion>=100?'Selesai':(completion>0?'Proses':'Belum');
+  return {total,checked,evaluated:checked,pass,fail,na:0,pending,percentage,completion,status};
+}
+function updateQaApipTableSummary(row,summary){
+  const s=summary||row?.qaApipSummary||{};const el=document.querySelector(`.qa-apip-table-summary[data-id="${CSS.escape(String(row?.id||''))}"]`);
+  if(el)el.innerHTML=`${Number(s.percentage||0).toFixed(2)}%<small>${Number(s.checked||0)}/${Number(s.total||10)} butir · ${Number(s.pass||0)} √</small>`;
+}
 function qaApipUpdateModalSummary(row){
-  const s=qaApipOverallSummary();
-  const linked=row?.qaApipSummary||{};
-  const evaluated=s.evaluated; const total=s.totalItems; const na=s.na; const pending=s.pending;
-  const el=document.getElementById('qaApipSummary'); if(!el)return;
-  const pct=s.percentage===null?0:Number(s.percentage||0);
-  el.innerHTML=`<div class="qa-summary-card qa-summary-result"><span>Hasil QA APIP</span><strong>${pct.toFixed(2)}%</strong><small>Σ nilai ÷ ${Math.max(0,total-na)} item berlaku</small></div><div class="qa-summary-card"><span>Jumlah Item</span><strong>${total}</strong><small>Master QA APIP</small></div><div class="qa-summary-card"><span>Belum Dinilai</span><strong>${pending}</strong><small>${na} item N/A</small></div><div class="qa-summary-card"><span>Progress Pengisian</span><strong>${Math.round(((evaluated+na)/Math.max(1,total))*100)}%</strong><small>${evaluated+na}/${total} item diproses · ${Number(linked.evidenceFiles||0)} file evidence</small></div>`;
-  row.qaApipSummary={...(row.qaApipSummary||{}),total:total,evaluated,na,pending,sum:s.sum,percentage:pct,completion:Math.round(((evaluated+na)/Math.max(1,total))*10000)/100,evidenceFiles:Number(linked.evidenceFiles||0),status:(evaluated+na>=total?'Selesai':(evaluated+na>0?'Proses':'Belum'))};
-  updateQaApipTableSummary(row,row.qaApipSummary);
+  const s=qaApipSummary();const sp=getRowStructureProcessBreakdown(row||qaApipCurrentRow);const linked=countStructureEvidenceFiles(row?.subunsurs||{});
+  const el=document.getElementById('qaApipSummary');if(!el)return;
+  el.innerHTML=`<div class="qa-summary-card qa-summary-result"><span>Hasil QA APIP</span><strong>${s.percentage.toFixed(2)}%</strong><small>${s.pass} dari ${s.total} butir = √</small></div><div class="qa-summary-card"><span>Total Butir</span><strong>${s.total}</strong><small>CHECKLIST PK workbook</small></div><div class="qa-summary-card"><span>Progress</span><strong>${s.completion.toFixed(0)}%</strong><small>${s.checked}/${s.total} butir diproses</small></div><div class="qa-summary-card"><span>√ / X / Pending</span><strong>${s.pass} / ${s.fail} / ${s.pending}</strong><small>status QA</small></div><div class="qa-summary-card"><span>Evidence Struktur & Proses</span><strong>${linked}</strong><small>file terhubung · read-only</small></div><div class="qa-summary-card"><span>Nilai Struktur & Proses</span><strong>${Number(sp?.value||0).toFixed(2)}</strong><small>nilai existing · tidak ditimpa</small></div>`;
+  updateQaApipTableSummary(row,s);if(row)row.qaApipSummary={...s,evidenceFiles:linked};
 }
 function renderQaApipPetunjuk(){
-  const m=qaApipMaster; const instructions=m.instructions||[];
-  return `<div class="qa-sheet-head"><div><div class="qa-kicker">PENJAMINAN KUALITAS APIP</div><h4>Petunjuk Pengisian</h4><p>Konsep ini mengikuti workbook <b>${escapeHtml(m.source||'template QA')}</b>. Master berisi <b>${Number(m.itemsTotal||671)}</b> item untuk <b>${Number(m.parameterTotal||43)}</b> parameter.</p></div><div class="qa-threshold-box"><span>Ambang grade</span><strong>${Number(m.thresholdGrade||1)*100}%</strong></div></div><div class="qa-instruction-table-wrap"><table class="qa-instruction-table"><thead><tr><th>Kolom</th><th>Bagian</th><th>Petunjuk</th></tr></thead><tbody>${instructions.map(x=>`<tr><td><b>${escapeHtml(x.kode)}</b></td><td>${escapeHtml(x.judul)}</td><td>${escapeHtml(x.isi)}</td></tr>`).join('')}</tbody></table></div><div class="qa-formula-box"><b>Rumus Nilai Item:</b> 1 = Ada + Sah + Periode sesuai + Substansi Sesuai; 0,5 = Ada tetapi belum sepenuhnya terpenuhi; 0 = Tidak Ada atau Substansi Tidak Sesuai. Item N/A tidak masuk penyebut, sedangkan item yang belum dinilai tetap masuk penyebut. <br><b>Rumus %:</b> Σ Nilai ÷ jumlah seluruh item QA yang berlaku (total item dikurangi N/A). Item yang belum dinilai tetap menjadi bagian penyebut, sehingga satu item tidak dapat langsung menghasilkan 100%.</div>`;
+  return `<div class="qa-sheet-head"><div><div class="qa-kicker">CHECKLIST PK</div><h4>Petunjuk Penjaminan Kualitas / Quality Assurance APIP</h4><p>Isi mengikuti sheet <b>CHECKLIST PK</b> pada workbook. QA APIP bukan penilaian Grade A–E; Grade A–E tetap berada di workpaper Struktur & Proses/KK PM SPIP.</p></div></div><div class="qa-workbook-note"><b>Metode pengisian:</b> pilih √ apabila pernyataan terpenuhi dan X apabila belum terpenuhi. Persentase QA = jumlah √ ÷ 10 × 100. Bukti Struktur & Proses tetap menjadi sumber evidence dan tidak di-upload ulang pada QA.</div>`;
 }
-function renderQaApipNavCard({title,code,meta,sub,kind,active=false,extra=''}){
-  return `<button type="button" class="qa-nav-card${active?' active':''}" data-qa-nav-kind="${kind}" data-qa-nav-value="${escapeHtml(String(sub??code))}"><span class="qa-nav-code">${escapeHtml(String(code||''))}</span><strong>${escapeHtml(String(title||''))}</strong><span class="qa-nav-meta">${escapeHtml(String(meta||''))}</span>${extra}</button>`;
+function renderQaApipChecklist(){
+  const items=qaApipMaster?.items||[];const phaseOrder=['Tahap Persiapan','Tahap Pelaksanaan','Tahap Pelaporan'];
+  let html=`<div class="qa-sheet-head"><div><div class="qa-kicker">FORM PENJAMINAN KUALITAS</div><h4>Form Penjaminan Kualitas atas Penilaian Penyelenggaraan SPIP</h4><p>Susunan, pernyataan, dan keterangan mengikuti workbook. Input disimpan per OPD/item sehingga aman untuk banyak operator.</p></div></div><div class="qa-checklist-table-wrap"><table class="qa-workbook-checklist"><thead><tr><th>No</th><th>Aspek Penilaian</th><th>Pernyataan</th><th>Checklist (√ / X)</th><th>Keterangan Workbook</th><th>Catatan APIP</th><th>Pemeriksa</th><th>Status</th></tr></thead><tbody>`;
+  phaseOrder.forEach(phase=>{
+    const ps=items.filter(x=>x.phase===phase);html+=`<tr class="qa-phase-row"><th colspan="8">${escapeHtml(phase)}</th></tr>`;
+    ps.forEach(it=>{const st=qaApipGetState(it.id);const isFail=st.checklist==='X';html+=`<tr class="qa-checklist-row" data-qa-item="${escapeHtml(it.id)}"><td>${escapeHtml(it.no)}</td><td class="qa-left"><b>${escapeHtml(it.aspect)}</b></td><td class="qa-left">${escapeHtml(it.statement)}</td><td><select data-qa-field="checklist" data-qa-item="${escapeHtml(it.id)}"><option value="">—</option><option value="√" ${st.checklist==='√'?'selected':''}>√ Terpenuhi</option><option value="X" ${isFail?'selected':''}>X Belum Terpenuhi</option></select></td><td class="qa-left qa-keterangan">${escapeHtml(it.keterangan||'')}</td><td><textarea data-qa-field="note" data-qa-item="${escapeHtml(it.id)}" rows="3" placeholder="Catatan / hasil konfirmasi...">${escapeHtml(st.note||'')}</textarea></td><td><input data-qa-field="examinerName" data-qa-item="${escapeHtml(it.id)}" value="${escapeHtml(st.examinerName||'')}" placeholder="Nama pemeriksa"></td><td><span class="qa-check-status ${st.checklist==='√'?'pass':isFail?'fail':''}">${st.checklist==='√'?'✓ Terpenuhi':isFail?'✕ Belum Terpenuhi':'Belum diisi'}</span></td></tr>`;});
+  });
+  html+=`</tbody></table></div>`;return html;
 }
-function renderQaApipKk(){
-  const params=qaApipMaster.parameters||[];
-  const unsurs=['1','2','3','4','5'];
-  const subCodes=[...new Set(params.map(p=>p.subCode))].sort(compareSpipCode);
-  let body='';
-  if(!qaApipNav.unsur){
-    body=`<div class="qa-sheet-head"><div><div class="qa-kicker">KK QA APIP</div><h4>1. Pilih Unsur SPIP</h4><p>Pemisahan 5 Unsur → Sub-Unsur → Parameter menjaga layar tetap ringan. Detail hanya dirender saat dibuka.</p></div></div><div class="qa-nav-grid">${unsurs.map(code=>{const ps=params.filter(p=>String(p.subCode).split('.')[0]===code);const s=qaApipGroupSummary(ps);const label=SPIP_UNSUR_INFO[code]?.title||`Unsur ${code}`;return renderQaApipNavCard({title:label,code:`UNSUR ${code}`,meta:`${ps.length} parameter · ${s.totalItems} item`,sub:code,kind:'unsur',extra:`<span class="qa-nav-percent">${s.percentage===null?'0':s.percentage.toFixed(0)}%</span>`});}).join('')}</div>`;
-  }else if(!qaApipNav.sub){
-    const code=String(qaApipNav.unsur); const subs=subCodes.filter(x=>String(x).split('.')[0]===code);
-    body=`<div class="qa-breadcrumb"><button data-qa-back="unsur">← 5 Unsur</button><span>›</span><b>Unsur ${escapeHtml(code)}</b></div><div class="qa-sheet-head"><div><div class="qa-kicker">UNSUR ${escapeHtml(code)}</div><h4>${escapeHtml(SPIP_UNSUR_INFO[code]?.title||'Sub-Unsur')}</h4><p>Pilih Sub-Unsur yang ingin diberi penjaminan kualitas.</p></div></div><div class="qa-nav-grid">${subs.map(sc=>{const ps=params.filter(p=>p.subCode===sc);const s=qaApipGroupSummary(ps);return renderQaApipNavCard({title:(SUBUNSUR_DATA[sc]?.label||sc).replace(String(sc),'').trim(),code:sc,meta:`${ps.length} parameter · ${s.totalItems} item`,sub:sc,kind:'sub',extra:`<span class="qa-nav-percent">${s.percentage===null?'0':s.percentage.toFixed(0)}%</span>`});}).join('')}</div>`;
-  }else if(!qaApipNav.paramKey){
-    const sc=qaApipNav.sub; const ps=params.filter(p=>p.subCode===sc).sort((a,b)=>Number(a.paramNo)-Number(b.paramNo));
-    body=`<div class="qa-breadcrumb"><button data-qa-back="unsur">← 5 Unsur</button><span>›</span><button data-qa-back="sub">Sub-Unsur ${escapeHtml(sc)}</button></div><div class="qa-sheet-head"><div><div class="qa-kicker">SUB-UNSUR ${escapeHtml(sc)}</div><h4>${escapeHtml(SUBUNSUR_DATA[sc]?.label||sc)}</h4><p>Pilih parameter untuk membuka tabel KK QA APIP.</p></div></div><div class="qa-parameter-list">${ps.map(p=>{const s=qaApipBuildParamSummary(p);return `<button class="qa-parameter-card" type="button" data-qa-nav-kind="param" data-qa-nav-value="${encodeURIComponent(qaApipMasterParamKey(p))}"><div><span class="qa-nav-code">Parameter ${escapeHtml(String(p.paramNo))}</span><strong>${escapeHtml(p.paramDesc)}</strong><small>${s.total} item · ${s.evaluated} dinilai · ${s.pending} belum dinilai</small></div><span class="qa-parameter-score">${s.percentage===null?'0':s.percentage.toFixed(0)}%</span></button>`;}).join('')}</div>`;
-  }else{
-    const p=qaApipFindParam(qaApipNav.paramKey); if(!p){qaApipNav.paramKey=null;return renderQaApipKk();}
-    body=renderQaApipParameterDetail(p);
-  }
-  return body;
+function renderQaApipRekap(){
+  const items=qaApipMaster?.items||[];const phases=[...new Set(items.map(x=>x.phase))];const s=qaApipSummary();
+  return `<div class="qa-sheet-head"><div><div class="qa-kicker">REKAP QA APIP</div><h4>Rekapitulasi Hasil Penjaminan Kualitas</h4><p>Perhitungan otomatis mengikuti 10 butir pada CHECKLIST PK.</p></div><div class="qa-param-score-box"><span>Nilai QA APIP</span><strong>${s.percentage.toFixed(2)}%</strong><small>${s.pass} √ · ${s.fail} X · ${s.pending} pending</small></div></div><div class="qa-table-wrap"><table class="qa-rekap-unsur-table"><thead><tr><th>Tahap</th><th>Total</th><th>√</th><th>X</th><th>Pending</th><th>Progress</th><th>Hasil Tahap</th></tr></thead><tbody>${phases.map(phase=>{const ps=items.filter(x=>x.phase===phase);let checked=0,pass=0,fail=0;ps.forEach(it=>{const c=qaApipGetState(it.id).checklist;if(c){checked++;if(c==='√')pass++;else fail++;}});const pct=Math.round(pass/ps.length*10000)/100;const comp=Math.round(checked/ps.length*10000)/100;return `<tr><td class="qa-left"><b>${escapeHtml(phase)}</b></td><td>${ps.length}</td><td>${pass}</td><td>${fail}</td><td>${ps.length-checked}</td><td>${comp.toFixed(2)}%</td><td>${pct.toFixed(2)}%</td></tr>`;}).join('')}</tbody><tfoot><tr><th>TOTAL</th><th>${s.total}</th><th>${s.pass}</th><th>${s.fail}</th><th>${s.pending}</th><th>${s.completion.toFixed(2)}%</th><th>${s.percentage.toFixed(2)}%</th></tr></tfoot></table></div><div class="qa-workbook-note"><b>Rekonsiliasi:</b> QA APIP membaca nilai existing Struktur & Proses, Maturitas SPIP, MRI, IEPK, dan Kapabilitas APIP sebagai referensi saja; tidak menimpa nilai-nilai tersebut.</div>`;
 }
-function renderQaApipParameterDetail(p){
-  const sum=qaApipBuildParamSummary(p);
-  const pid=p.paramId||`${p.subCode}.${p.paramNo}`;
-  let html=`<div class="qa-breadcrumb"><button data-qa-back="unsur">← Unsur</button><span>›</span><button data-qa-back="sub">Sub-Unsur ${escapeHtml(p.subCode)}</button><span>›</span><button data-qa-back="param">Parameter ${escapeHtml(String(p.paramNo))}</button></div><div class="qa-sheet-head"><div><div class="qa-kicker">${escapeHtml(p.parameterKey||`${p.subCode}-${p.paramNo}`)}</div><h4>${escapeHtml(p.workbookReference?.paramDesc||p.paramDesc)}</h4><p>File pada kolom <b>Evidence Struktur & Proses</b> ditarik otomatis berdasarkan Sub-Unsur + Parameter + Level. Tidak ada duplikasi file di penyimpanan QA.</p></div><div class="qa-param-score-box"><span>% Pemenuhan Parameter</span><strong>${sum.percentage===null?'0':sum.percentage.toFixed(2)}%</strong><small>Grade ${escapeHtml(sum.grade)} · Level ${sum.level}</small></div></div>`;
-  html+=p.grades.map((g,idx)=>{
-    const gs=sum.grades[g.grade]||{}; const wr=p.workbookReference?.grades?.[g.grade]||{}; const wbK=wr.kriteria||g.kriteria||''; const wbP=wr.penjelasan||g.penjelasan||g.fokus||''; const wbC=wr.caraPengujian||g.caraPengujian||'';
-    const rows=g.items.map(item=>{
-      const st=qaApipGetState(p.subCode,pid,g.grade,item.itemNo);
-      const files=qaApipLinkedFiles(qaApipCurrentRow,p.subCode,pid,g.level);
-      const fileHtml=files.length?`<div class="qa-file-stack">${files.map((f,i)=>{const u=qaApipFileUrl(f);const name=qaApipFileName(f,i);return u?`<a href="${escapeHtml(u)}" target="_blank" rel="noopener" title="Buka file">📎 ${escapeHtml(name)}</a>`:`<span>📎 ${escapeHtml(name)}</span>`;}).join('')}</div><small class="qa-file-count">${files.length} file tarikan</small>`:'<span class="qa-no-file">Belum ada file pada Evidence Struktur & Proses</span>';
-      return `<tr class="qa-item-row" data-qa-sub="${escapeHtml(p.subCode)}" data-qa-param="${escapeHtml(p.paramId||`${p.subCode}.${p.paramNo}`)}" data-qa-grade="${escapeHtml(g.grade)}" data-qa-item="${escapeHtml(String(item.itemNo))}"><td class="qa-item-no">${escapeHtml(String(item.itemNo))}</td><td><span class="qa-grade-badge grade-${escapeHtml(g.grade)}">${escapeHtml(g.grade)}</span></td><td><div class="qa-stage"><b>${escapeHtml(g.tahapan||qaApipGradeLabel(g))}</b><span><b>Kriteria:</b> ${escapeHtml(wbK)}</span><small><b>Penjelasan:</b> ${escapeHtml(wbP)}</small><small><b>Cara Pengujian:</b> ${escapeHtml(wbC)}</small></div></td><td><div class="qa-suggested">${escapeHtml(item.evidence||'')}</div></td><td>${fileHtml}</td><td><select data-qa-field="availability">${qaApipStatusOptions(st.availability,['Ada','Tidak Ada','N/A'])}</select></td><td><input type="text" maxlength="500" data-qa-field="identityDoc" value="${escapeHtml(st.identityDoc||'')}" placeholder="Judul / nomor / tanggal"></td><td><select data-qa-field="validity">${qaApipStatusOptions(st.validity,['Ya','Tidak'])}</select></td><td><select data-qa-field="periodOk">${qaApipStatusOptions(st.periodOk,['Ya','Tidak'])}</select></td><td><select data-qa-field="substance">${qaApipStatusOptions(st.substance,['Sesuai','Sebagian','Tidak Sesuai'])}</select></td><td><textarea maxlength="1000" data-qa-field="note" placeholder="Catatan QA...">${escapeHtml(st.note||'')}</textarea></td><td class="qa-score"><b>${qaApipScoreText(st)}</b></td><td class="qa-conclusion"><span class="qa-conclusion-badge">${escapeHtml(st.conclusion||qaApipConclusion(st))}</span></td></tr>`;
-    }).join('');
-    return `<details class="qa-grade-section" ${idx===0?'open':''}><summary><div><span class="qa-grade-badge grade-${g.grade}">${g.grade}</span><strong>${escapeHtml(g.tahapan||'')}</strong><small>${g.items.length} item · ${gs.evaluated||0} dinilai · ${gs.percentage===null?'—':gs.percentage.toFixed(2)+'%'}</small></div><span>›</span></summary><div class="qa-table-wrap"><table class="qa-item-table"><thead><tr><th>No</th><th>Grade</th><th>Kriteria / Fokus Pembuktian</th><th>Nama Evidence yang Disarankan</th><th>File Evidence Struktur & Proses</th><th>Ketersediaan</th><th>Identitas Dokumen</th><th>Keabsahan</th><th>Periode</th><th>Substansi</th><th>Catatan QA</th><th>Nilai</th><th>Kesimpulan</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;
-  }).join('');
-  return html;
+async function saveQaApipChecklistFromDom(rowEl){
+  if(!rowEl||!qaApipCurrentRow)return;const itemId=String(rowEl.dataset.qaItem||'');
+  const get=f=>rowEl.querySelector(`[data-qa-field="${f}"]`)?.value||'';const checklist=get('checklist'),note=get('note'),examinerName=get('examinerName');
+  qaApipSetState(itemId,{...qaApipGetState(itemId),checklist,note,examinerName,updatedAt:Date.now()});qaApipSetStatus('⏳ Menyimpan perubahan QA APIP...');
+  try{const d=await callServerWithRetry('saveQaApipChecklistItem',{opdId:qaApipCurrentRow.id,year:currentYear,itemId,checklist,note,examinerName},3);if(d?.item)qaApipSetState(itemId,d.item);qaApipUpdateModalSummary(qaApipCurrentRow);qaApipSetStatus('✓ QA APIP tersimpan otomatis.','success');}catch(err){qaApipSetStatus('❌ Gagal menyimpan QA APIP: '+(err.message||err),'error');}
 }
-function renderQaApipRekapParameter(){
-  const rows=qaApipAllParamSummaries();
-  const t=qaApipOverallSummary();
-  return `<div class="qa-sheet-head"><div><div class="qa-kicker">REKAP PARAMETER</div><h4>Rekapitulasi Persentase Hasil QA APIP per Parameter</h4><p>Jumlah item mengikuti master 671 item dan seluruh file ditarik dari Evidence Struktur & Proses.</p></div><div class="qa-param-score-box"><span>Total Hasil QA APIP</span><strong>${t.percentage===null?'0':t.percentage.toFixed(2)}%</strong><small>${t.evaluated} item dinilai</small></div></div><div class="qa-table-wrap qa-summary-table-wrap"><table class="qa-rekap-table"><thead><tr><th>No</th><th>Kode Subunsur</th><th>Uraian Subunsur</th><th>No Par.</th><th>Uraian Parameter</th><th>Jml Item</th><th>Item N/A</th><th>Item Dinilai</th><th>Belum Dinilai</th><th>% Grade E</th><th>% Grade D</th><th>% Grade C</th><th>% Grade B</th><th>% Grade A</th><th>% Pemenuhan Parameter</th><th>Grade Indikatif</th><th>Level Indikatif</th><th>Grade berikutnya yang perlu dilengkapi</th></tr></thead><tbody>${rows.map((x,i)=>{const s=x.summary;const gp=g=>s.grades[g]?.percentage===null?'—':s.grades[g].percentage.toFixed(2)+'%';return `<tr><td>${i+1}</td><td>${escapeHtml(x.p.subCode)}</td><td>${escapeHtml(x.p.subunsurName)}</td><td>${escapeHtml(String(x.p.paramNo))}</td><td class="qa-left">${escapeHtml(x.p.paramDesc)}</td><td>${s.total}</td><td>${s.na}</td><td>${s.evaluated}</td><td>${s.pending}</td><td>${gp('E')}</td><td>${gp('D')}</td><td>${gp('C')}</td><td>${gp('B')}</td><td>${gp('A')}</td><td><b>${s.percentage===null?'—':s.percentage.toFixed(2)+'%'}</b></td><td>${escapeHtml(s.grade)}</td><td>${s.level}</td><td class="qa-left">${escapeHtml(s.nextGrade)}</td></tr>`;}).join('')}</tbody><tfoot><tr><th colspan="5">TOTAL / RATA-RATA OPD</th><th>${t.totalItems}</th><th>${t.na}</th><th>${t.evaluated}</th><th>${t.pending}</th><th colspan="5"></th><th>${t.percentage===null?'—':t.percentage.toFixed(2)+'%'}</th><th></th><th></th><th></th></tr></tfoot></table></div>`;
+function scheduleQaApipSave(rowEl){if(!rowEl)return;const key=String(rowEl.dataset.qaItem||'');clearTimeout(qaApipSaveTimers.get(key));qaApipSaveTimers.set(key,setTimeout(()=>{qaApipSaveTimers.delete(key);saveQaApipChecklistFromDom(rowEl);},500));}
+function exportQaApipExcel(){
+  if(!qaApipCurrentRow||!window.XLSX||!qaApipMaster)return qaApipSetStatus('Export Excel QA APIP tidak tersedia.','error');
+  try{
+    const s=qaApipSummary();const wb=XLSX.utils.book_new();
+    const recap=[['PENJAMINAN KUALITAS / QUALITY ASSURANCE APIP',''],['OPD',qaApipCurrentRow.opd||''],['Tahun',currentYear],[],['Tahap','Total','√','X','Pending','Progress','Hasil']];
+    ['Tahap Persiapan','Tahap Pelaksanaan','Tahap Pelaporan'].forEach(phase=>{const items=(qaApipMaster.items||[]).filter(x=>x.phase===phase);let c=0,p=0,f=0;items.forEach(it=>{const v=qaApipGetState(it.id).checklist;if(v){c++;if(v==='√')p++;else f++;}});recap.push([phase,items.length,p,f,items.length-c,Math.round(c/items.length*10000)/100,Math.round(p/items.length*10000)/100]);});
+    recap.push([],['TOTAL',s.total,s.pass,s.fail,s.pending,s.completion,s.percentage]);const ws1=XLSX.utils.aoa_to_sheet(recap);ws1['!cols']=[{wch:28},{wch:12},{wch:8},{wch:8},{wch:10},{wch:14},{wch:14}];XLSX.utils.book_append_sheet(wb,ws1,'Rekap QA APIP');
+    const rows=[['NO','ASPEK PENILAIAN','PERNYATAAN','CHECKLIST (√ / X)','KETERANGAN','CATATAN APIP','PEMERIKSA']];
+    ['Tahap Persiapan','Tahap Pelaksanaan','Tahap Pelaporan'].forEach(phase=>{rows.push([phase,'','','','','','']);(qaApipMaster.items||[]).filter(x=>x.phase===phase).forEach(it=>{const st=qaApipGetState(it.id);rows.push([it.no,it.aspect,it.statement,st.checklist||'',it.keterangan||'',st.note||'',st.examinerName||'']);});});
+    const ws2=XLSX.utils.aoa_to_sheet(rows);ws2['!freeze']={xSplit:0,ySplit:1};ws2['!cols']=[{wch:8},{wch:34},{wch:78},{wch:18},{wch:75},{wch:42},{wch:24}];XLSX.utils.book_append_sheet(wb,ws2,'CHECKLIST PK');
+    const safe=(qaApipCurrentRow.opd||'OPD').replace(/[\\/:*?"<>|]/g,' ').trim().substring(0,65)||'OPD';XLSX.writeFile(wb,`${safe}-${currentYear}-QA-APIP-CHECKLIST-PK.xlsx`);qaApipSetStatus('✓ Export QA APIP berhasil.','success');
+  }catch(err){qaApipSetStatus('❌ Export QA APIP gagal: '+(err.message||err),'error');}
 }
-function renderQaApipRekapUnsur(){
-  const params=qaApipMaster.parameters||[]; let html=`<div class="qa-sheet-head"><div><div class="qa-kicker">REKAP UNSUR</div><h4>Rekapitulasi Hasil QA APIP per Unsur dan Sub-Unsur</h4><p>Kolom jumlah parameter, jumlah item, item dinilai, Σ nilai, persentase, Level 3 dan kategori dihitung otomatis dari data QA yang terhubung ke Evidence Struktur & Proses.</p></div></div><div class="qa-table-wrap qa-summary-table-wrap"><table class="qa-rekap-unsur-table"><thead><tr><th>Kode</th><th>Unsur / Subunsur</th><th>Jml Parameter</th><th>Jml Item Evidence</th><th>Item N/A</th><th>Item Dinilai</th><th>Σ Nilai</th><th>% Hasil QA APIP</th><th>Parameter ≥ Level 3</th><th>Kategori</th></tr></thead><tbody>`;
-  ['1','2','3','4','5'].forEach(code=>{const group=params.filter(p=>String(p.subCode).split('.')[0]===code);const gs=qaApipGroupSummary(group);const label=SPIP_UNSUR_INFO[code]?.title||`Unsur ${code}`;html+=`<tr class="qa-unsur-row"><td>${code}</td><td class="qa-left"><b>Unsur ${code}. ${escapeHtml(label)}</b></td><td>${gs.totalParams}</td><td>${gs.totalItems}</td><td>${gs.na}</td><td>${gs.evaluated}</td><td>${gs.sum.toFixed(1)}</td><td>${gs.percentage===null?'—':gs.percentage.toFixed(2)+'%'}</td><td>${gs.level3}</td><td><span class="qa-category ${gs.category.toLowerCase().replace(/\s+/g,'-')}">${gs.category}</span></td></tr>`;group.map(p=>({p,s:qaApipBuildParamSummary(p)})).forEach(x=>{const s=x.s;const cat=s.percentage===null?'Belum dinilai':s.percentage>=80?'Tinggi':s.percentage>=60?'Cukup':s.percentage>=40?'Kurang':'Rendah';html+=`<tr><td>${escapeHtml(x.p.subCode)}</td><td class="qa-left">${escapeHtml(x.p.subunsurName)}</td><td>1</td><td>${s.total}</td><td>${s.na}</td><td>${s.evaluated}</td><td>${s.sum.toFixed(1)}</td><td>${s.percentage===null?'—':s.percentage.toFixed(2)+'%'}</td><td>${s.level>=3?1:0}</td><td><span class="qa-category ${cat.toLowerCase()}">${cat}</span></td></tr>`;});});
-  const t=qaApipOverallSummary(); html+=`<tr class="qa-total-row"><th colspan="2">TOTAL OPD</th><th>${t.totalParams}</th><th>${t.totalItems}</th><th>${t.na}</th><th>${t.evaluated}</th><th>${t.sum.toFixed(1)}</th><th>${t.percentage===null?'—':t.percentage.toFixed(2)+'%'}</th><th>${t.level3}</th><th><span class="qa-category ${(t.category||'').toLowerCase()}">${t.category}</span></th></tr></tbody></table></div>`;return html;
-}
-let qaApipCurrentRow=null;
 function renderQaApipModal(){
-  const row=qaApipCurrentRow; if(!row)return;
-  document.querySelectorAll('#qaApipTabs [data-qa-tab]').forEach(btn=>btn.classList.toggle('active',btn.dataset.qaTab===qaApipTab));
-  qaApipUpdateModalSummary(row);
-  const content=document.getElementById('qaApipContent');if(!content)return;
-  if(qaApipTab==='petunjuk')content.innerHTML=renderQaApipPetunjuk();
-  else if(qaApipTab==='kk')content.innerHTML=renderQaApipKk();
-  else if(qaApipTab==='rekapParameter')content.innerHTML=renderQaApipRekapParameter();
-  else content.innerHTML=renderQaApipRekapUnsur();
+  const row=qaApipCurrentRow;if(!row)return;document.querySelectorAll('#qaApipTabs [data-qa-tab]').forEach(b=>b.classList.toggle('active',b.dataset.qaTab===qaApipTab));qaApipUpdateModalSummary(row);const c=document.getElementById('qaApipContent');if(!c)return;
+  if(qaApipTab==='petunjuk')c.innerHTML=renderQaApipPetunjuk();else if(qaApipTab==='rekap')c.innerHTML=renderQaApipRekap();else c.innerHTML=renderQaApipChecklist();
 }
 async function openQaApipModal(id){
-  const row=rows.find(r=>String(r.id)===String(id)); if(!row)return;
-  qaApipCurrentRow=row; qaApipEditingRowId=row.id; qaApipTab='kk'; qaApipNav={unsur:null,sub:null,paramKey:null};
-  const modal=document.getElementById('qaApipModal'); if(!modal)return;
-  document.getElementById('qaApipModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;
-  modal.classList.add('active'); qaApipSetStatus('Memuat master dan data QA APIP...');
-  try{await Promise.all([ensureQaApipMasterLoaded(),loadQaApipData(row)]);qaApipSetStatus('✓ Data siap. Persentase dihitung terhadap seluruh item QA yang berlaku; file Evidence Struktur & Proses ditarik otomatis.','success');renderQaApipModal();}
-  catch(err){qaApipSetStatus('Gagal memuat QA APIP: '+(err.message||err),'error');}
+  const row=rows.find(r=>String(r.id)===String(id));if(!row)return;qaApipCurrentRow=row;qaApipEditingRowId=row.id;qaApipTab='checklist';const modal=document.getElementById('qaApipModal');if(!modal)return;document.getElementById('qaApipModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;modal.classList.add('active');qaApipSetStatus('Memuat CHECKLIST PK workbook...');
+  try{await Promise.all([ensureQaApipMasterLoaded(),loadQaApipData(row)]);qaApipSetStatus('✓ CHECKLIST PK siap.','success');renderQaApipModal();}catch(err){qaApipSetStatus('Gagal memuat QA APIP: '+(err.message||err),'error');}
 }
 function closeQaApipModal(){document.getElementById('qaApipModal')?.classList.remove('active');qaApipEditingRowId=null;qaApipCurrentRow=null;qaApipStateMap=new Map();qaApipSaveTimers.forEach(t=>clearTimeout(t));qaApipSaveTimers.clear();}
-async function saveQaApipRowFromDom(tr){
-  if(!tr||!qaApipCurrentRow)return;
-  const sub=String(tr.dataset.qaSub||''),paramId=String(tr.dataset.qaParam||''),grade=String(tr.dataset.qaGrade||''),itemNo=Number(tr.dataset.qaItem||0);
-  const get=f=>tr.querySelector(`[data-qa-field="${f}"]`)?.value||'';
-  const payload={opdId:qaApipCurrentRow.id,year:currentYear,subunsur:sub,paramId,grade,itemNo,availability:get('availability'),identityDoc:get('identityDoc'),validity:get('validity'),periodOk:get('periodOk'),substance:get('substance'),note:get('note'),examinerName:'',evidenceCount:qaApipLinkedFiles(qaApipCurrentRow,sub,paramId,grade==='E'?1:grade==='D'?2:grade==='C'?3:grade==='B'?4:grade==='A'?5:0).length};
-  qaApipSetState(sub,paramId,grade,itemNo,payload);
-  qaApipSetStatus('⏳ Menyimpan perubahan QA APIP...');
-  try{
-    const d=await callServerWithRetry('saveQaApipItem',payload,3);
-    qaApipSetState(sub,paramId,grade,itemNo,d.item||payload);
-    const scoreEl=tr.querySelector('.qa-score');if(scoreEl)scoreEl.innerHTML=`<b>${qaApipScoreText(d.item||payload)}</b>`;
-    const conEl=tr.querySelector('.qa-conclusion');if(conEl)conEl.innerHTML=`<span class="qa-conclusion-badge">${escapeHtml(d.item?.conclusion||qaApipConclusion(d.item||payload))}</span>`;
-    if(d.summary)qaApipCurrentRow.qaApipSummary=d.summary;
-    qaApipUpdateModalSummary(qaApipCurrentRow);qaApipSetStatus('✓ Tersimpan otomatis.','success');
-  }catch(err){qaApipSetStatus('❌ Gagal menyimpan: '+(err.message||err),'error');}
-}
-function scheduleQaApipSave(tr){
-  if(!tr)return;const key=qaApipKey(tr.dataset.qaSub,tr.dataset.qaParam,tr.dataset.qaGrade,tr.dataset.qaItem);clearTimeout(qaApipSaveTimers.get(key));qaApipSaveTimers.set(key,setTimeout(()=>{qaApipSaveTimers.delete(key);saveQaApipRowFromDom(tr);},500));
-}
 
-// QA modal event handlers. They are delegated so the 671-row master never
-// needs 671 individual listeners.
 document.addEventListener('click',e=>{
   const tab=e.target.closest('#qaApipTabs [data-qa-tab]');if(tab){qaApipTab=tab.dataset.qaTab;renderQaApipModal();return;}
-  const card=e.target.closest('#qaApipContent [data-qa-nav-kind]');if(card){const kind=card.dataset.qaNavKind;const value=decodeURIComponent(card.dataset.qaNavValue||'');if(kind==='unsur')qaApipNav={unsur:value,sub:null,paramKey:null};else if(kind==='sub')qaApipNav={unsur:String(value).split('.')[0],sub:value,paramKey:null};else if(kind==='param')qaApipNav.paramKey=value;renderQaApipModal();return;}
-  const back=e.target.closest('#qaApipContent [data-qa-back]');if(back){const b=back.dataset.qaBack;if(b==='unsur')qaApipNav={unsur:null,sub:null,paramKey:null};else if(b==='sub')qaApipNav={unsur:qaApipNav.unsur,sub:null,paramKey:null};else if(b==='param')qaApipNav={unsur:qaApipNav.unsur,sub:qaApipNav.sub,paramKey:null};renderQaApipModal();return;}
+  const exp=e.target.closest('#qaApipExport');if(exp){exportQaApipExcel();return;}
   const qbtn=e.target.closest('.btn-qa-apip');if(qbtn){openQaApipModal(qbtn.dataset.id);return;}
 });
-document.addEventListener('change',e=>{const f=e.target.closest('#qaApipContent [data-qa-field]');if(f&&f.tagName==='SELECT')scheduleQaApipSave(f.closest('.qa-item-row'));});
-document.addEventListener('blur',e=>{const f=e.target.closest?.('#qaApipContent [data-qa-field]');if(f&&['INPUT','TEXTAREA'].includes(f.tagName))scheduleQaApipSave(f.closest('.qa-item-row'));},true);
-document.getElementById('qaApipClose')?.addEventListener('click',closeQaApipModal);
-document.getElementById('qaApipCloseFooter')?.addEventListener('click',closeQaApipModal);
+document.addEventListener('change',e=>{const f=e.target.closest('#qaApipContent [data-qa-field]');if(f) scheduleQaApipSave(f.closest('.qa-checklist-row'));});
+document.addEventListener('blur',e=>{const f=e.target.closest?.('#qaApipContent [data-qa-field]');if(f) scheduleQaApipSave(f.closest('.qa-checklist-row'));},true);
+document.getElementById('qaApipClose')?.addEventListener('click',closeQaApipModal);document.getElementById('qaApipCloseFooter')?.addEventListener('click',closeQaApipModal);
 
-// ===== KERTAS KERJA PM SPIP =====
+// ===== KERTAS KERJA PM SPIP — WORKBOOK SHAPE KK3.1–KK3.4 =====
+// PM tidak menggunakan bentuk checklist QA APIP. Master dan alur mengikuti
+// sheet KK3.1, KK3.2, KK3.3, KK3.4 pada workbook: satu parameter = satu
+// blok 5 Grade (A–E), dengan input Hasil Pengujian + Grade Hasil + AoI/Penyebab.
+// Evidence hanya ditarik read-only dari Evidence Struktur & Proses.
+let kkPmMaster=null;
 let kkPmCurrentRow=null;
 let kkPmEditingRowId=null;
+let kkPmTab='summary';
 let kkPmStateMap=new Map();
-let kkPmTab='kk';
-let kkPmNav={unsur:null,sub:null,paramKey:null};
-const kkPmSaveTimers=new Map();
-function kkPmKey(sub,param,grade,itemNo){return `${sub}|${param}|${grade}|${itemNo}`;}
-function kkPmFindParam(key){return (qaApipMaster?.parameters||[]).find(p=>qaApipMasterParamKey(p)===String(key));}
-function kkPmGetState(sub,param,grade,itemNo){return kkPmStateMap.get(kkPmKey(sub,param,grade,itemNo))||{};}
-function kkPmSetState(sub,param,grade,itemNo,st){kkPmStateMap.set(kkPmKey(sub,param,grade,itemNo),{...st,score:qaApipScore(st),conclusion:qaApipConclusion(st)});}
-function kkPmLinkedFiles(row,subCode,paramId,level){return qaApipLinkedFiles(row,subCode,paramId,level);}
-function kkPmParamSummary(p){
-  const pid=p.paramId||`${p.subCode}.${p.paramNo}`; const out={total:0,na:0,evaluated:0,pending:0,sum:0,grades:{}};
-  (p.grades||[]).forEach(g=>{let total=0,na=0,evaluated=0,sum=0;(g.items||[]).forEach(item=>{total++;const st=kkPmGetState(p.subCode,pid,g.grade,item.itemNo);const sc=qaApipScore(st);if(st.availability==='N/A')na++;if(sc!==null){evaluated++;sum+=sc;}});const applicable=Math.max(0,total-na);out.total+=total;out.na+=na;out.evaluated+=evaluated;out.sum+=sum;out.grades[g.grade]={total,na,evaluated,sum,applicable,percentage:applicable?Math.round((sum/applicable)*10000)/100:null,pending:Math.max(0,total-na-evaluated)};});
-  out.pending=Math.max(0,out.total-out.na-out.evaluated);const applicableAll=Math.max(0,out.total-out.na);out.percentage=applicableAll?Math.round((out.sum/applicableAll)*10000)/100:null;const threshold=Number(qaApipMaster?.thresholdGrade??1);const order=qaApipMaster?.gradeOrder||['E','D','C','B','A'];let level=0;for(const grade of order){const gs=out.grades[grade];if(gs&&gs.applicable>0&&gs.pending===0&&Number(gs.percentage||0)>=threshold*100)level++;else break;}out.level=level;out.grade=level===0?'< E':(order[level-1]||'A');out.nextGrade=level>=order.length?'Seluruh grade terpenuhi':`Lengkapi evidence Grade ${order[level]}${Number(out.grades[order[level]]?.pending||0)>0?` (${out.grades[order[level]].pending} item belum dinilai)`:''}`;return out;
-}
-function kkPmAllSummaries(){return (qaApipMaster?.parameters||[]).map(p=>({p,summary:kkPmParamSummary(p)}));}
-function kkPmOverallSummary(){const all=kkPmAllSummaries();let total=0,na=0,evaluated=0,sum=0;all.forEach(x=>{total+=x.summary.total;na+=x.summary.na;evaluated+=x.summary.evaluated;sum+=x.summary.sum;});const applicable=Math.max(0,total-na);return{totalParams:all.length,totalItems:total,na,evaluated,pending:Math.max(0,total-na-evaluated),sum,percentage:applicable?Math.round((sum/applicable)*10000)/100:null};}
-function updateKkPmTableSummary(row,summary){const s=summary||row?.kkPmSummary||{};const el=document.querySelector(`.kk-pm-table-summary[data-id="${CSS.escape(String(row?.id||''))}"]`);if(el)el.innerHTML=`${Number(s.percentage||0).toFixed(2)}%<small>${Number(s.evaluated||0)}/${Number(s.total||671)} item</small>`;}
-function kkPmSetStatus(msg,type=''){const el=document.getElementById('kkPmStatus');if(!el)return;el.textContent=msg||'';el.className='kk-pm-status'+(type?' '+type:'');el.style.display=msg?'block':'none';}
-async function loadKkPmData(row){const d=await callServerWithRetry('getKkPmDataDetailed',{opdId:row.id,year:currentYear},2);kkPmStateMap=new Map();(Array.isArray(d?.items)?d.items:[]).forEach(item=>kkPmSetState(item.subunsur,item.paramId,item.grade,item.itemNo,{availability:item.availability||'',identityDoc:item.identityDoc||'',validity:item.validity||'',periodOk:item.periodOk||'',substance:item.substance||'',note:item.note||'',score:item.score===null?null:Number(item.score),conclusion:item.conclusion||'',examinerName:item.examinerName||'',updatedAt:item.updatedAt||0}));return d;}
-function kkPmGradeInfo(g){const ref=(g.workbookGrade||g.workbook||null);const k=(g.workbookKriteria||ref?.kriteria||g.kriteria||'');const p=(g.workbookPenjelasan||ref?.penjelasan||g.penjelasan||'');const c=(g.workbookCaraPengujian||ref?.caraPengujian||g.caraPengujian||'');return{k,p,c};}
-function renderKkPmPetunjuk(){const m=qaApipMaster||{};const instructions=m.instructions||[];return `<div class="kk-pm-sheet-head"><div><div class="kk-pm-kicker">KERTAS KERJA PM SPIP</div><h4>Petunjuk Pengisian</h4><p>Master PM menggunakan basis yang sama dengan <b>43 parameter dan 671 item</b> pada Penjaminan Kualitas / Quality Assurance APIP serta diperkaya referensi dari workbook ${escapeHtml(m.source||'KK_PK_dan_Evaluasi_SPIP_Pemda_05052026_FORMULA_TEMPLATE.xlsx')}.</p></div><div class="qa-threshold-box"><span>Ambang grade</span><strong>${Number(m.thresholdGrade||1)*100}%</strong></div></div><div class="kk-pm-instruction"><table><thead><tr><th>Kode</th><th>Bagian</th><th>Petunjuk</th></tr></thead><tbody>${instructions.map(x=>`<tr><td><b>${escapeHtml(x.kode)}</b></td><td>${escapeHtml(x.judul)}</td><td>${escapeHtml(x.isi)}</td></tr>`).join('')}</tbody></table></div><div class="kk-pm-formula"><b>Rumus Nilai Item:</b> 1 = Ada + Keabsahan Ya + Periode Ya + Substansi Sesuai; 0,5 = Ada tetapi tidak seluruh syarat terpenuhi; 0 = Tidak Ada atau Tidak Sesuai; N/A tidak masuk penyebut. <b>Nilai Struktur & Proses tetap berasal dari 43 level parameter</b> dan tidak ditimpa oleh Nilai PM.</div>`;}
-function renderKkPmKk(){const m=qaApipMaster;const params=m?.parameters||[];let body='';if(!kkPmNav.unsur){body=`<div class="kk-pm-sheet-head"><div><div class="kk-pm-kicker">5 UNSUR SPIP</div><h4>Pilih Unsur</h4><p>Setiap unsur dapat dibuka sampai Sub-Unsur → Parameter → Grade E–A. File evidence hanya ditarik dari Evidence Struktur & Proses.</p></div></div><div class="kk-pm-nav-grid">${['1','2','3','4','5'].map(code=>{const ps=params.filter(p=>String(p.subCode).startsWith(code+'.'));const tot=ps.reduce((a,p)=>a+kkPmParamSummary(p).total,0);const ev=ps.reduce((a,p)=>a+kkPmParamSummary(p).evaluated,0);const pct=tot?Math.round(ev/tot*100):0;const label=SPIP_UNSUR_INFO[code]?.title||`Unsur ${code}`;return `<button class="kk-pm-nav-card" data-pm-nav-kind="unsur" data-pm-nav-value="${code}"><span class="qa-nav-code">UNSUR ${code}</span><strong>${escapeHtml(label)}</strong><span class="kk-pm-nav-meta">${ps.length} parameter · ${tot} item · ${ev} dinilai</span><span class="kk-pm-nav-percent">${pct}%</span></button>`;}).join('')}</div>`;return body;}const sc=kkPmNav.sub;if(!sc){const ps=params.filter(p=>String(p.subCode).startsWith(String(kkPmNav.unsur)+'.'));return `<div class="kk-pm-breadcrumb"><button data-pm-back="unsur">← 5 Unsur</button></div><div class="kk-pm-sheet-head"><div><div class="kk-pm-kicker">SUB-UNSUR</div><h4>Unsur ${escapeHtml(kkPmNav.unsur)}</h4><p>Pilih Sub-Unsur untuk membuka parameter PM SPIP.</p></div></div><div class="kk-pm-nav-grid">${[...new Set(ps.map(p=>p.subCode))].map(code=>{const p0=ps.find(p=>p.subCode===code);const sm=ps.filter(p=>p.subCode===code).reduce((a,p)=>{const s=kkPmParamSummary(p);return{total:a.total+1,items:a.items+s.total,ev:a.ev+s.evaluated};},{total:0,items:0,ev:0});return `<button class="kk-pm-nav-card" data-pm-nav-kind="sub" data-pm-nav-value="${encodeURIComponent(code)}"><span class="qa-nav-code">${escapeHtml(code)}</span><strong>${escapeHtml(p0?.subunsurName||SUBUNSUR_DATA[code]?.label||code)}</strong><span class="kk-pm-nav-meta">${sm.total} parameter · ${sm.items} item · ${sm.ev} dinilai</span><span class="kk-pm-nav-percent">${sm.items?Math.round(sm.ev/sm.items*100):0}%</span></button>`;}).join('')}</div>`;}const p=kkPmFindParam(kkPmNav.paramKey||'');if(!p){const ps=params.filter(p=>String(p.subCode)===String(sc));return `<div class="kk-pm-breadcrumb"><button data-pm-back="unsur">← 5 Unsur</button><span>›</span><button data-pm-back="sub">Sub-Unsur ${escapeHtml(sc)}</button></div><div class="kk-pm-sheet-head"><div><div class="kk-pm-kicker">PARAMETER</div><h4>Pilih Parameter</h4><p>43 parameter menggunakan master yang sama dengan QA APIP.</p></div></div><div class="kk-pm-parameter-list">${ps.map(x=>{const s=kkPmParamSummary(x);return `<button class="kk-pm-parameter-card" data-pm-nav-kind="param" data-pm-nav-value="${encodeURIComponent(qaApipMasterParamKey(x))}"><div><span class="qa-nav-code">Parameter ${escapeHtml(String(x.paramNo))}</span><strong>${escapeHtml(x.paramDesc)}</strong><small>${s.total} item · ${s.evaluated} dinilai · ${s.pending} belum dinilai</small></div><span class="kk-pm-parameter-score">${s.percentage===null?'0':s.percentage.toFixed(0)}%</span></button>`;}).join('')}</div>`;}return renderKkPmParameterDetail(p);}
-function renderKkPmParameterDetail(p){const pid=p.paramId||`${p.subCode}.${p.paramNo}`;const sum=kkPmParamSummary(p);let html=`<div class="kk-pm-breadcrumb"><button data-pm-back="unsur">← 5 Unsur</button><span>›</span><button data-pm-back="sub">Sub-Unsur ${escapeHtml(p.subCode)}</button><span>› Parameter ${escapeHtml(String(p.paramNo))}</span></div><div class="kk-pm-sheet-head"><div><div class="kk-pm-kicker">${escapeHtml(p.parameterKey||pid)}</div><h4>${escapeHtml(p.paramDesc)}</h4><p>${escapeHtml(p.subunsurName||SUBUNSUR_DATA[p.subCode]?.label||'')} · ${sum.total} item PM · ${sum.evaluated} dinilai · ${sum.pending} belum dinilai</p></div><div class="qa-param-score-box"><span>Hasil Parameter</span><strong>${sum.percentage===null?'0':sum.percentage.toFixed(2)}%</strong><small>Grade ${escapeHtml(sum.grade)} · Level ${sum.level}</small></div></div>`;html+=(p.grades||[]).map((g,idx)=>{const gs=sum.grades[g.grade]||{};const gi=kkPmGradeInfo(g);const rows=(g.items||[]).map(item=>{const st=kkPmGetState(p.subCode,pid,g.grade,item.itemNo);const files=kkPmLinkedFiles(kkPmCurrentRow,p.subCode,pid,g.level);const fileHtml=files.length?`<div class="kk-pm-file-stack">${files.map((f,i)=>{const u=qaApipFileUrl(f);const name=qaApipFileName(f,i);return u?`<a href="${escapeHtml(u)}" target="_blank" rel="noopener">📎 ${escapeHtml(name)}</a>`:`<span>📎 ${escapeHtml(name)}</span>`;}).join('')}</div><small class="kk-pm-file-count">${files.length} file tarikan</small>`:'<span class="kk-pm-no-file">Belum ada file pada Evidence Struktur & Proses</span>';return `<tr class="kk-pm-item-row" data-pm-sub="${escapeHtml(p.subCode)}" data-pm-param="${escapeHtml(pid)}" data-pm-grade="${escapeHtml(g.grade)}" data-pm-item="${escapeHtml(String(item.itemNo))}"><td>${escapeHtml(String(item.itemNo))}</td><td><span class="qa-grade-badge grade-${escapeHtml(g.grade)}">${escapeHtml(g.grade)}</span></td><td><div class="kk-pm-stage"><b>${escapeHtml(g.tahapan||qaApipGradeLabel(g))}</b><span><b>Kriteria:</b> ${escapeHtml(gi.k)}</span><small><b>Penjelasan:</b> ${escapeHtml(gi.p)}</small><small><b>Cara Pengujian:</b> ${escapeHtml(gi.c)}</small></div></td><td><div class="kk-pm-evidence">${escapeHtml(item.evidence||'')}</div></td><td>${fileHtml}</td><td><select data-pm-field="availability">${qaApipStatusOptions(st.availability,['Ada','Tidak Ada','N/A'])}</select></td><td><input type="text" maxlength="500" data-pm-field="identityDoc" value="${escapeHtml(st.identityDoc||'')}" placeholder="Judul / nomor / tanggal"></td><td><select data-pm-field="validity">${qaApipStatusOptions(st.validity,['Ya','Tidak'])}</select></td><td><select data-pm-field="periodOk">${qaApipStatusOptions(st.periodOk,['Ya','Tidak'])}</select></td><td><select data-pm-field="substance">${qaApipStatusOptions(st.substance,['Sesuai','Sebagian','Tidak Sesuai'])}</select></td><td><textarea maxlength="1000" data-pm-field="note" placeholder="Catatan PM SPIP...">${escapeHtml(st.note||'')}</textarea></td><td><input type="text" maxlength="100" data-pm-field="examinerName" value="${escapeHtml(st.examinerName||'')}" placeholder="Pemeriksa"></td><td class="kk-pm-score"><b>${qaApipScoreText(st)}</b></td><td class="kk-pm-conclusion"><span class="kk-pm-conclusion-badge">${escapeHtml(st.conclusion||qaApipConclusion(st))}</span></td></tr>`;}).join('');return `<details class="kk-pm-grade-section" ${idx===0?'open':''}><summary><div><span class="qa-grade-badge grade-${g.grade}">${g.grade}</span><strong>${escapeHtml(g.tahapan||'')}</strong><small>${g.items.length} item · ${gs.evaluated||0} dinilai · ${gs.percentage===null?'—':gs.percentage.toFixed(2)+'%'}</small></div><span>›</span></summary><div class="kk-pm-table-wrap"><table class="kk-pm-item-table"><thead><tr><th>No</th><th>Grade</th><th>Kriteria · Penjelasan · Cara Pengujian</th><th>Evidence yang Disarankan</th><th>File Evidence Struktur & Proses</th><th>Ketersediaan</th><th>Identitas Dokumen</th><th>Keabsahan</th><th>Periode</th><th>Substansi</th><th>Catatan PM</th><th>Pemeriksa</th><th>Nilai</th><th>Kesimpulan</th></tr></thead><tbody>${rows}</tbody></table></div></details>`;}).join('');return html;}
-function renderKkPmRekapParameter(){const rows=kkPmAllSummaries();const t=kkPmOverallSummary();return `<div class="kk-pm-sheet-head"><div><div class="kk-pm-kicker">REKAP PARAMETER</div><h4>Rekapitulasi Hasil PM SPIP per Parameter</h4><p>Denominator seluruh 671 item berlaku dikurangi item yang eksplisit N/A. Nilai parameter menunjukkan persentase pemenuhan aktual.</p></div><div class="qa-param-score-box"><span>Total PM SPIP</span><strong>${t.percentage===null?'0':t.percentage.toFixed(2)}%</strong><small>${t.evaluated} dinilai · ${t.pending} pending</small></div></div><div class="kk-pm-summary-wrap"><table><thead><tr><th>No</th><th>Kode Subunsur</th><th>Subunsur</th><th>No. Parameter</th><th>Parameter</th><th>Item</th><th>N/A</th><th>Dinilai</th><th>Pending</th><th>% E</th><th>% D</th><th>% C</th><th>% B</th><th>% A</th><th>% Parameter</th><th>Grade</th><th>Level</th></tr></thead><tbody>${rows.map((x,i)=>{const s=x.summary;const gp=g=>s.grades[g]?.percentage===null?'—':s.grades[g].percentage.toFixed(2)+'%';return `<tr><td>${i+1}</td><td>${escapeHtml(x.p.subCode)}</td><td class="pm-left">${escapeHtml(x.p.subunsurName)}</td><td>${escapeHtml(String(x.p.paramNo))}</td><td class="pm-left">${escapeHtml(x.p.paramDesc)}</td><td>${s.total}</td><td>${s.na}</td><td>${s.evaluated}</td><td>${s.pending}</td><td>${gp('E')}</td><td>${gp('D')}</td><td>${gp('C')}</td><td>${gp('B')}</td><td>${gp('A')}</td><td><b>${s.percentage===null?'—':s.percentage.toFixed(2)+'%'}</b></td><td>${escapeHtml(s.grade)}</td><td>${s.level}</td></tr>`;}).join('')}</tbody><tfoot><tr class="kk-pm-total-row"><th colspan="5">TOTAL OPD</th><th>${t.totalItems}</th><th>${t.na}</th><th>${t.evaluated}</th><th>${t.pending}</th><th colspan="5"></th><th>${t.percentage===null?'—':t.percentage.toFixed(2)+'%'}</th><th></th><th></th></tr></tfoot></table></div>`;}
-function renderKkPmRekapUnsur(){const params=qaApipMaster.parameters||[];let html=`<div class="kk-pm-sheet-head"><div><div class="kk-pm-kicker">REKAP UNSUR</div><h4>Rekapitulasi Hasil PM SPIP per Unsur dan Sub-Unsur</h4><p>Ringkasan otomatis dari data 43 parameter / 671 item dan evidence Struktur & Proses yang ditarik langsung.</p></div></div><div class="kk-pm-summary-wrap"><table><thead><tr><th>Kode</th><th>Unsur / Subunsur</th><th>Parameter</th><th>Item</th><th>N/A</th><th>Dinilai</th><th>Σ Nilai</th><th>% PM</th><th>Parameter Level ≥ 3</th><th>Kategori</th></tr></thead><tbody>`;['1','2','3','4','5'].forEach(code=>{const group=params.filter(p=>String(p.subCode).split('.')[0]===code);let totalParams=0,totalItems=0,na=0,ev=0,sum=0,l3=0;group.forEach(p=>{const s=kkPmParamSummary(p);totalParams++;totalItems+=s.total;na+=s.na;ev+=s.evaluated;sum+=s.sum;if(s.level>=3)l3++;});const applicable=Math.max(0,totalItems-na);const pct=applicable?sum/applicable*100:null;const cat=pct===null?'Belum dinilai':pct>=80?'Tinggi':pct>=60?'Cukup':pct>=40?'Kurang':'Rendah';html+=`<tr><td>${code}</td><td class="pm-left"><b>Unsur ${code}. ${escapeHtml(SPIP_UNSUR_INFO[code]?.title||'')}</b></td><td>${totalParams}</td><td>${totalItems}</td><td>${na}</td><td>${ev}</td><td>${sum.toFixed(1)}</td><td>${pct===null?'—':pct.toFixed(2)+'%'}</td><td>${l3}</td><td>${cat}</td></tr>`;group.forEach(p=>{const s=kkPmParamSummary(p);const pc=s.percentage===null?null:s.percentage;const c2=pc===null?'Belum dinilai':pc>=80?'Tinggi':pc>=60?'Cukup':pc>=40?'Kurang':'Rendah';html+=`<tr><td>${escapeHtml(p.subCode)}</td><td class="pm-left">${escapeHtml(p.subunsurName)}</td><td>1</td><td>${s.total}</td><td>${s.na}</td><td>${s.evaluated}</td><td>${s.sum.toFixed(1)}</td><td>${pc===null?'—':pc.toFixed(2)+'%'}</td><td>${s.level>=3?1:0}</td><td>${c2}</td></tr>`;});});const t=kkPmOverallSummary();html+=`<tr class="kk-pm-total-row"><th colspan="2">TOTAL OPD</th><th>${t.totalParams}</th><th>${t.totalItems}</th><th>${t.na}</th><th>${t.evaluated}</th><th>${t.sum.toFixed(1)}</th><th>${t.percentage===null?'—':t.percentage.toFixed(2)+'%'}</th><th>${params.filter(p=>kkPmParamSummary(p).level>=3).length}</th><th></th></tr></tbody></table></div>`;return html;}
-function kkPmUpdateSummary(){const row=kkPmCurrentRow;if(!row)return;const t=kkPmOverallSummary();const s=row.kkPmSummary||{};const linked=Number(row?.qaApipSummary?.evidenceFiles||0);const structure=Number(getRowStructureProcessBreakdown(row).value||0);const pmScore=t.percentage===null?0:Number(t.percentage||0);const pmLevel=Math.max(0,Math.min(5,Number((t.evaluated>0?0:0))));const maturity=Number(row.nilaiMaturitas||0),mri=Number(row.mri||0),iepk=Number(row.iepk||0),kap=Number(row.nilaiKapabilitasApip||0);const pct=t.percentage===null?0:t.percentage;const completion=Math.round(((t.evaluated+t.na)/Math.max(1,t.totalItems))*10000)/100;document.getElementById('kkPmSummary').innerHTML=`<div class="kk-pm-summary-card kk-pm-summary-result"><span>Nilai / % PM SPIP</span><strong>${pmScore.toFixed(2)}%</strong><small>Σ nilai ÷ item berlaku</small></div><div class="kk-pm-summary-card"><span>Progress</span><strong>${completion.toFixed(2)}%</strong><small>${t.evaluated+t.na}/${t.totalItems} item</small></div><div class="kk-pm-summary-card"><span>Parameter</span><strong>${t.totalParams}</strong><small>master aktif</small></div><div class="kk-pm-summary-card"><span>Evidence Tarikan</span><strong>${linked}</strong><small>dari Struktur & Proses</small></div><div class="kk-pm-summary-card"><span>Struktur & Proses</span><strong>${structure.toFixed(2)}</strong><small>tidak ditimpa PM</small></div><div class="kk-pm-summary-card"><span>Maturitas SPIP</span><strong>${maturity.toFixed(2)}</strong><small>nilai existing</small></div><div class="kk-pm-summary-card"><span>MRI · IEPK · Kap. APIP</span><strong>${mri.toFixed(2)} · ${iepk.toFixed(2)} · ${kap.toFixed(2)}</strong><small>nilai existing</small></div>`;row.kkPmSummary={...(row.kkPmSummary||{}),total:t.totalItems,evaluated:t.evaluated,na:t.na,pending:t.pending,sum:t.sum,percentage:pct,completion,status:(t.evaluated+t.na>=t.totalItems?'Selesai':(t.evaluated+t.na>0?'Proses':'Belum'))};updateKkPmTableSummary(row,row.kkPmSummary);}
-function renderKkPmModal(){const content=document.getElementById('kkPmContent');if(!content||!kkPmCurrentRow)return;document.querySelectorAll('#kkPmTabs [data-pm-tab]').forEach(b=>b.classList.toggle('active',b.dataset.pmTab===kkPmTab));kkPmUpdateSummary();if(kkPmTab==='petunjuk')content.innerHTML=renderKkPmPetunjuk();else if(kkPmTab==='kk')content.innerHTML=renderKkPmKk();else if(kkPmTab==='rekapParameter')content.innerHTML=renderKkPmRekapParameter();else content.innerHTML=renderKkPmRekapUnsur();}
-async function openKkPmModal(id){const row=rows.find(r=>String(r.id)===String(id));if(!row)return;kkPmCurrentRow=row;kkPmEditingRowId=row.id;kkPmTab='kk';kkPmNav={unsur:null,sub:null,paramKey:null};const modal=document.getElementById('kkPmModal');if(!modal)return;kkPmDirty=true;document.getElementById('kkPmModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;modal.classList.add('active');kkPmSetStatus('Memuat master dan data KK PM SPIP...');try{await Promise.all([ensureQaApipMasterLoaded(),loadKkPmData(row)]);kkPmSetStatus('✓ Data siap. Evidence Struktur & Proses ditarik otomatis; perubahan disimpan per item.','success');renderKkPmModal();}catch(err){kkPmSetStatus('Gagal memuat KK PM SPIP: '+(err.message||err),'error');}}
-function closeKkPmModal(){document.getElementById('kkPmModal')?.classList.remove('active');kkPmEditingRowId=null;kkPmCurrentRow=null;kkPmStateMap=new Map();kkPmSaveTimers.forEach(t=>clearTimeout(t));kkPmSaveTimers.clear();kkPmDirty=false;}
-async function saveKkPmRowFromDom(tr){if(!tr||!kkPmCurrentRow)return;const sub=String(tr.dataset.pmSub||''),paramId=String(tr.dataset.pmParam||''),grade=String(tr.dataset.pmGrade||''),itemNo=Number(tr.dataset.pmItem||0);const get=f=>tr.querySelector(`[data-pm-field="${f}"]`)?.value||'';const level=grade==='E'?1:grade==='D'?2:grade==='C'?3:grade==='B'?4:grade==='A'?5:0;const payload={opdId:kkPmCurrentRow.id,year:currentYear,subunsur:sub,paramId,grade,itemNo,availability:get('availability'),identityDoc:get('identityDoc'),validity:get('validity'),periodOk:get('periodOk'),substance:get('substance'),note:get('note'),examinerName:get('examinerName'),evidenceCount:kkPmLinkedFiles(kkPmCurrentRow,sub,paramId,level).length};const prev={...kkPmGetState(sub,paramId,grade,itemNo),...payload};kkPmSetState(sub,paramId,grade,itemNo,prev);const sc=qaApipScore(prev),con=qaApipConclusion(prev);const scoreEl=tr.querySelector('.kk-pm-score');if(scoreEl)scoreEl.innerHTML=`<b>${qaApipScoreText(prev)}</b>`;const conEl=tr.querySelector('.kk-pm-conclusion');if(conEl)conEl.innerHTML=`<span class="kk-pm-conclusion-badge">${escapeHtml(con)}</span>`;try{const d=await callServerWithRetry('saveKkPmItem',payload,2);if(d?.item)kkPmSetState(sub,paramId,grade,itemNo,d.item);if(d?.summary)kkPmCurrentRow.kkPmSummary=d.summary;kkPmUpdateSummary();kkPmSetStatus('✓ Tersimpan otomatis.','success');}catch(err){kkPmSetStatus('❌ Gagal menyimpan: '+(err.message||err),'error');}}
-function scheduleKkPmSave(tr){if(!tr)return;const key=kkPmKey(tr.dataset.pmSub,tr.dataset.pmParam,tr.dataset.pmGrade,tr.dataset.pmItem);clearTimeout(kkPmSaveTimers.get(key));kkPmSaveTimers.set(key,setTimeout(()=>{kkPmSaveTimers.delete(key);saveKkPmRowFromDom(tr);},500));}
-function exportKkPmExcel(){if(!kkPmCurrentRow||!window.XLSX){kkPmSetStatus('Export Excel tidak tersedia. Pastikan pustaka XLSX termuat.','error');return;}const m=qaApipMaster;const items=[];(m.parameters||[]).forEach(p=>(p.grades||[]).forEach(g=>(g.items||[]).forEach(item=>{const pid=p.paramId||`${p.subCode}.${p.paramNo}`,st=kkPmGetState(p.subCode,pid,g.grade,item.itemNo),gi=kkPmGradeInfo(g),files=kkPmLinkedFiles(kkPmCurrentRow,p.subCode,pid,g.level);items.push([kkPmCurrentRow.opd||'',currentYear,p.subCode,p.subunsurName,p.paramNo,p.paramDesc,g.grade,g.level,g.tahapan||'',gi.k,gi.p,gi.c,item.evidence||'',files.map((f,i)=>qaApipFileName(f,i)).join(' | '),st.availability||'',st.identityDoc||'',st.validity||'',st.periodOk||'',st.substance||'',qaApipScoreText(st),st.conclusion||qaApipConclusion(st),st.note||'',st.examinerName||'']);})));const t=kkPmOverallSummary();const recap=[["OPD",kkPmCurrentRow.opd||'',"Tahun",currentYear],["Nilai PM SPIP (%)",t.percentage===null?0:t.percentage],["Nilai Struktur & Proses",Number(getRowStructureProcessBreakdown(kkPmCurrentRow).value||0)],["Nilai Maturitas SPIP",Number(kkPmCurrentRow.nilaiMaturitas||0)],["MRI",Number(kkPmCurrentRow.mri||0)],["IEPK",Number(kkPmCurrentRow.iepk||0)],["Nilai Kapabilitas APIP",Number(kkPmCurrentRow.nilaiKapabilitasApip||0)],["Total Parameter",t.totalParams],["Total Item",t.totalItems],["Item Dinilai",t.evaluated],["Item N/A",t.na],["Item Pending",t.pending],["Σ Nilai",t.sum]];const wb=XLSX.utils.book_new();const ws1=XLSX.utils.aoa_to_sheet(recap);const headers=['OPD','Tahun','Kode Subunsur','Subunsur','No Parameter','Parameter','Grade','Level','Tahapan','Kriteria','Penjelasan','Cara Pengujian','Evidence Disarankan','File Evidence Struktur & Proses','Ketersediaan','Identitas Dokumen','Keabsahan','Periode','Substansi','Nilai','Kesimpulan','Catatan PM','Pemeriksa'];const ws2=XLSX.utils.aoa_to_sheet([headers,...items]);XLSX.utils.book_append_sheet(wb,ws1,'Rekap PM');XLSX.utils.book_append_sheet(wb,ws2,'KK PM SPIP');ws1['!cols']=[{wch:28},{wch:18},{wch:28},{wch:18}];ws2['!cols']=headers.map((h,i)=>({wch:[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22][i]&&[2,8,12,26,12,50,8,8,18,55,60,18,45,38,14,28,14,14,16,10,20,34,20][i]||16}));const safe=(kkPmCurrentRow.opd||'OPD').replace(/[\\/:*?"<>|]/g,' ').trim().substring(0,70)||'OPD';XLSX.writeFile(wb,`${safe}-${currentYear}-KK-PM-SPIP.xlsx`);kkPmSetStatus('✓ File Excel berhasil dibuat.','success');}
+let kkPmMetaMap=new Map();
+let kkPmSaveTimers=new Map();
+let kkPmMetaSaveTimers=new Map();
+let kkPmFilters={search:'',unsur:'all',subunsur:'all'};
+const KK_PM_TARGETS=['T1','T2','T3','T4'];
+const KK_PM_GRADE_LEVEL={A:5,B:4,C:3,D:2,E:1};
+const KK_PM_GRADE_STAGE={A:'A – Perbaikan Berkelanjutan',B:'B – Evaluasi & Tindak Lanjut',C:'C – Implementasi',D:'D – Komunikasi & Pemahaman',E:'E – Kebijakan/Formalitas'};
 
-document.addEventListener('click',e=>{const tab=e.target.closest('#kkPmTabs [data-pm-tab]');if(tab){kkPmTab=tab.dataset.pmTab;renderKkPmModal();return;}const card=e.target.closest('#kkPmContent [data-pm-nav-kind]');if(card){const kind=card.dataset.pmNavKind;const val=decodeURIComponent(card.dataset.pmNavValue||'');if(kind==='unsur')kkPmNav={unsur:val,sub:null,paramKey:null};else if(kind==='sub')kkPmNav={unsur:String(val).split('.')[0],sub:val,paramKey:null};else if(kind==='param')kkPmNav={unsur:kkPmFindParam(val)?.subCode?.split('.')[0]||kkPmNav.unsur,sub:kkPmFindParam(val)?.subCode||kkPmNav.sub,paramKey:val};renderKkPmModal();return;}const back=e.target.closest('#kkPmContent [data-pm-back]');if(back){const b=back.dataset.pmBack;if(b==='unsur')kkPmNav={unsur:null,sub:null,paramKey:null};else if(b==='sub')kkPmNav={unsur:kkPmNav.unsur,sub:null,paramKey:null};renderKkPmModal();return;}const btn=e.target.closest('.btn-kk-pm-spip');if(btn){openKkPmModal(btn.dataset.id);return;}if(e.target.closest('#kkPmExport')){exportKkPmExcel();return;}});
-document.addEventListener('change',e=>{const f=e.target.closest('#kkPmContent [data-pm-field]');if(f&&f.tagName==='SELECT')scheduleKkPmSave(f.closest('.kk-pm-item-row'));});document.addEventListener('blur',e=>{const f=e.target.closest?.('#kkPmContent [data-pm-field]');if(f&&['INPUT','TEXTAREA'].includes(f.tagName))scheduleKkPmSave(f.closest('.kk-pm-item-row'));},true);
+function kkPmSetStatus(msg,type=''){
+  const el=document.getElementById('kkPmStatus'); if(!el)return;
+  el.textContent=msg||''; el.className='kk-pm-status'+(type?' '+type:''); el.style.display=msg?'block':'none';
+}
+function kkPmStateKey(target,sub,paramId){return `${target}|${sub}|${paramId}`;}
+function kkPmGetState(target,sub,paramId){return kkPmStateMap.get(kkPmStateKey(target,sub,paramId))||{};}
+function kkPmSetState(target,sub,paramId,value){kkPmStateMap.set(kkPmStateKey(target,sub,paramId),{...value});}
+function kkPmMetaKey(target){return String(target||'');}
+function kkPmGetMeta(target){return kkPmMetaMap.get(kkPmMetaKey(target))||{};}
+function kkPmGradeText(g){return g?`${g} · Level ${KK_PM_GRADE_LEVEL[g]}`:'—';}
+function kkPmTarget(target){return (kkPmMaster?.targets||[]).find(t=>t.code===target);}
+function kkPmParamCount(target){return Number(kkPmTarget(target)?.parameterCount||0);}
+function kkPmParamList(target){return kkPmTarget(target)?.parameters||[];}
+function kkPmLinkedFilesForParam(row,p){
+  const out=[]; const seen=new Set();
+  (p?.grades||[]).forEach(g=>{
+    const level=Number(g.level||0); if(!level)return;
+    const files=qaApipLinkedFiles(row,p.subCode,p.paramId,level);
+    files.forEach((file,i)=>{
+      const url=qaApipFileUrl(file); const id=file?.uploadId||file?.gdriveId||url||`${p.paramId}-${g.grade}-${i}`;
+      if(seen.has(id))return; seen.add(id);
+      out.push({file,grade:g.grade,level,url,name:qaApipFileName(file,out.length)});
+    });
+  });
+  return out;
+}
+function kkPmEvidenceHtml(row,p,selectedGrade=''){
+  const files=kkPmLinkedFilesForParam(row,p);
+  if(!files.length)return `<div class="kk-pm-evidence-empty">Belum ada file yang terhubung dari <b>Evidence Struktur &amp; Proses</b> untuk parameter ini.</div>`;
+  return `<div class="kk-pm-evidence-list">${files.map(f=>{const name=escapeHtml(f.name);const href=f.url?escapeHtml(f.url):'';const active=selectedGrade===f.grade?' active':'';return `<div class="kk-pm-evidence-item${active}"><span class="kk-pm-evidence-grade">${escapeHtml(f.grade)}</span><span>${href?`<a href="${href}" target="_blank" rel="noopener">${name}</a>`:name}</span></div>`;}).join('')}</div>`;
+}
+function kkPmMasterKey(target,p){return `${target}|${p.subCode}|${p.paramId}`;}
+async function ensureKkPmMasterLoaded(){
+  if(kkPmMaster)return kkPmMaster;
+  const r=await fetch('/kk-pm-workpaper-master.json',{cache:'no-store'}); if(!r.ok)throw new Error('Master KK PM SPIP tidak dapat dimuat');
+  kkPmMaster=await r.json(); return kkPmMaster;
+}
+async function loadKkPmData(row){
+  const d=await callServerWithRetry('getKkPmDataDetailed',{opdId:row.id,year:currentYear},2);
+  kkPmStateMap=new Map(); kkPmMetaMap=new Map();
+  (Array.isArray(d?.items)?d.items:[]).forEach(item=>kkPmSetState(item.target,item.subunsur,item.paramId,{hasilPengujian:item.hasilPengujian||'',gradeResult:item.gradeResult||'',aoiCluster:item.aoiCluster||'',aoiDesc:item.aoiDesc||'',causeCluster:item.causeCluster||'',causeDesc:item.causeDesc||'',conclusion:item.conclusion||'',note:item.note||'',updatedBy:item.updatedBy||'',updatedAt:Number(item.updatedAt||0)}));
+  (Array.isArray(d?.meta)?d.meta:[]).forEach(item=>kkPmMetaMap.set(kkPmMetaKey(item.target),{sectorFocus:item.sectorFocus||'',preparedBy:item.preparedBy||'',preparedDate:item.preparedDate||'',reviewedBy:item.reviewedBy||'',reviewedDate:item.reviewedDate||'',approvedBy:item.approvedBy||'',approvedDate:item.approvedDate||'',updatedAt:Number(item.updatedAt||0)}));
+  return d;
+}
+function kkPmTargetSummary(target){
+  const ps=kkPmParamList(target); let evaluated=0,sum=0; const dist={A:0,B:0,C:0,D:0,E:0}; let evidence=0;
+  ps.forEach(p=>{const st=kkPmGetState(target,p.subCode,p.paramId); const g=String(st.gradeResult||'').toUpperCase(); if(KK_PM_GRADE_LEVEL[g]){evaluated++; sum+=KK_PM_GRADE_LEVEL[g]; dist[g]++;} evidence+=kkPmLinkedFilesForParam(kkPmCurrentRow,p).length;});
+  const total=ps.length; const completion=total?Math.round(evaluated/total*10000)/100:0; const avg= evaluated?Math.round(sum/evaluated*100)/100:0;
+  return {target,total,evaluated,pending:Math.max(0,total-evaluated),completion,avgLevel:avg,avgPercent:Math.round(avg/5*10000)/100,dist,evidence};
+}
+function kkPmOverallSummary(){
+  const arr=KK_PM_TARGETS.map(kkPmTargetSummary); const total=arr.reduce((a,x)=>a+x.total,0); const evaluated=arr.reduce((a,x)=>a+x.evaluated,0); const pending=total-evaluated; const sum=arr.reduce((a,x)=>a+x.avgLevel*x.evaluated,0); const avg=evaluated?sum/evaluated:0;
+  return {targets:arr,total,evaluated,pending,completion:total?Math.round(evaluated/total*10000)/100:0,avgLevel:Math.round(avg*100)/100,avgPercent:Math.round(avg/5*10000)/100,evidence:arr.reduce((a,x)=>a+x.evidence,0)};
+}
+function kkPmSummaryCard(label,value,note,cls=''){return `<div class="kk-pm-summary-card ${cls}"><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`;}
+function kkPmUpdateSummary(){
+  if(!kkPmCurrentRow)return; const s=kkPmOverallSummary(); const structure=Number(getRowStructureProcessBreakdown(kkPmCurrentRow).value||0); const maturity=Number(kkPmCurrentRow.nilaiMaturitas||0),mri=Number(kkPmCurrentRow.mri||0),iepk=Number(kkPmCurrentRow.iepk||0),kap=Number(kkPmCurrentRow.nilaiKapabilitasApip||0);
+  const el=document.getElementById('kkPmSummary'); if(!el)return;
+  el.innerHTML=kkPmSummaryCard('Progress KK PM',`${s.completion.toFixed(2)}%`,`${s.evaluated}/${s.total} parameter telah diberi grade`,'kk-pm-summary-result')+
+    kkPmSummaryCard('Rata-rata Level PM',s.avgLevel?s.avgLevel.toFixed(2):'—','A=5 · B=4 · C=3 · D=2 · E=1')+
+    kkPmSummaryCard('Evidence Tarikan',String(s.evidence),'file dari Struktur & Proses')+
+    kkPmSummaryCard('Nilai Struktur & Proses',structure.toFixed(2),'nilai existing · tidak ditimpa')+
+    kkPmSummaryCard('Maturitas SPIP',maturity.toFixed(2),'nilai existing')+
+    kkPmSummaryCard('MRI · IEPK · Kap. APIP',`${mri.toFixed(2)} · ${iepk.toFixed(2)} · ${kap.toFixed(2)}`,'nilai existing OPD');
+  const rowEl=document.querySelector(`.kk-pm-table-summary[data-id="${CSS.escape(String(kkPmCurrentRow.id||''))}"]`); if(rowEl)rowEl.innerHTML=`${s.completion.toFixed(2)}%<small>${s.evaluated}/${s.total} parameter</small>`;
+  kkPmCurrentRow.kkPmSummary={total:s.total,evaluated:s.evaluated,na:0,pending:s.pending,sum:s.avgLevel,percentage:s.completion,completion:s.completion,status:s.completion>=100?'Selesai':(s.evaluated?'Proses':'Belum')};
+}
+function kkPmMetaForm(target){
+  const m=kkPmGetMeta(target);
+  return `<div class="kk-pm-meta-card"><div class="kk-pm-meta-title"><b>Identitas lembar kerja</b><span>mengikuti bagian atas sheet KK3.x</span></div><div class="kk-pm-meta-grid">
+    <label>Sektor/Fokus<input data-pm-meta="sectorFocus" data-pm-meta-target="${target}" value="${escapeHtml(m.sectorFocus||'')}"></label>
+    <label>Disusun oleh<input data-pm-meta="preparedBy" data-pm-meta-target="${target}" value="${escapeHtml(m.preparedBy||'')}"></label>
+    <label>Tanggal<input type="date" data-pm-meta="preparedDate" data-pm-meta-target="${target}" value="${escapeHtml(m.preparedDate||'')}"></label>
+    <label>Direviu oleh<input data-pm-meta="reviewedBy" data-pm-meta-target="${target}" value="${escapeHtml(m.reviewedBy||'')}"></label>
+    <label>Tanggal<input type="date" data-pm-meta="reviewedDate" data-pm-meta-target="${target}" value="${escapeHtml(m.reviewedDate||'')}"></label>
+    <label>Disetujui oleh<input data-pm-meta="approvedBy" data-pm-meta-target="${target}" value="${escapeHtml(m.approvedBy||'')}"></label>
+    <label>Tanggal<input type="date" data-pm-meta="approvedDate" data-pm-meta-target="${target}" value="${escapeHtml(m.approvedDate||'')}"></label>
+  </div></div>`;
+}
+function kkPmRenderSummary(){
+  const s=kkPmOverallSummary();
+  return `<div class="kk-pm-sheet-head"><div><div class="kk-pm-kicker">WORKBOOK-BASED PM</div><h4>Ringkasan Kertas Kerja PM SPIP</h4><p>Struktur mengikuti <b>KK3.1–KK3.4</b> pada workbook. QA APIP hanya menjadi pola interaksi; isi/kriteria PM berasal dari workbook.</p></div></div>
+  <div class="kk-pm-target-grid">${s.targets.map(x=>`<button type="button" class="kk-pm-target-card" data-pm-tab-target="${x.target}"><span>${x.target} · ${kkPmTarget(x.target)?.sheet||''}</span><b>${x.evaluated}/${x.total}</b><small>${x.completion.toFixed(2)}% selesai · Avg level ${x.avgLevel?x.avgLevel.toFixed(2):'—'}</small><div class="kk-pm-progress"><i style="width:${x.completion}%"></i></div></button>`).join('')}</div>
+  ${KK_PM_TARGETS.map(t=>kkPmMetaForm(t)).join('')}
+  <div class="kk-pm-reconcile"><div class="kk-pm-reconcile-head"><b>Rekonsiliasi nilai OPD</b><span>referensi existing — KK PM tidak menimpa nilai ini</span></div><div class="kk-pm-reconcile-grid">
+    ${kkPmSummaryCard('Nilai Struktur & Proses',Number(getRowStructureProcessBreakdown(kkPmCurrentRow).value||0).toFixed(2),'derived dari level 43 parameter existing')}
+    ${kkPmSummaryCard('Nilai Maturitas SPIP',Number(kkPmCurrentRow.nilaiMaturitas||0).toFixed(2),'nilai existing OPD')}
+    ${kkPmSummaryCard('MRI',Number(kkPmCurrentRow.mri||0).toFixed(2),'nilai existing OPD')}
+    ${kkPmSummaryCard('IEPK',Number(kkPmCurrentRow.iepk||0).toFixed(2),'nilai existing OPD')}
+    ${kkPmSummaryCard('Kapabilitas APIP',Number(kkPmCurrentRow.nilaiKapabilitasApip||0).toFixed(2),'nilai existing OPD')}
+  </div></div>
+  <div class="kk-pm-instruction"><b>Alur utama:</b> pilih KK3.x → Subunsur → parameter → baca 5 Grade A–E → isi Hasil Pengujian + Grade Hasil + AoI/Penyebab → evidence Struktur & Proses muncul otomatis → kesimpulan dan rekap diperbarui otomatis.</div>`;
+}
+function kkPmRenderGradeRows(p,st){
+  return `<div class="kk-pm-grade-table-wrap"><table class="kk-pm-grade-table"><thead><tr><th>Grade</th><th>Kriteria</th><th>Penjelasan</th><th>Cara Pengujian</th><th>Evidence yang Disarankan</th></tr></thead><tbody>${(p.grades||[]).map(g=>`<tr class="${st.gradeResult===g.grade?'is-selected':''}"><td><span class="kk-pm-grade-pill grade-${g.grade}">${g.grade}</span><b>Level ${g.level}</b><small>${escapeHtml(g.stage||KK_PM_GRADE_STAGE[g.grade]||'')}</small></td><td>${escapeHtml(g.kriteria||'')}</td><td>${escapeHtml(g.penjelasan||'')}</td><td><span class="kk-pm-test-badge">${escapeHtml(g.caraPengujian||'W/D/O')}</span></td><td><ul>${(Array.isArray(g.evidenceDisarankan)?g.evidenceDisarankan:[]).map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul></td></tr>`).join('')}</tbody></table></div>`;
+}
+function kkPmRenderParameter(target,p){
+  const st=kkPmGetState(target,p.subCode,p.paramId); const files=kkPmLinkedFilesForParam(kkPmCurrentRow,p); const structureKey=`${p.subCode}|${p.paramId}`; const structureLevel=Number(kkPmCurrentRow.parameterLevels?.[structureKey]||0);
+  return `<details class="kk-pm-param-card"><summary><span class="kk-pm-param-no">${escapeHtml(p.subCode)} · ${escapeHtml(String(p.no))}</span><span class="kk-pm-param-desc">${escapeHtml(p.uraianParameter)}</span><span class="kk-pm-param-meta">${st.gradeResult?`Grade ${escapeHtml(st.gradeResult)} · Level ${KK_PM_GRADE_LEVEL[st.gradeResult]}`:'Belum dinilai'} · Evidence ${files.length}${structureLevel?` · S&P ${structureLevel}`:''}</span></summary>
+    <div class="kk-pm-param-body">
+      <div class="kk-pm-workbook-line"><span><b>Kode</b> ${escapeHtml(p.subCode)}</span><span><b>Subunsur</b> ${escapeHtml(p.subunsur)}</span><span><b>No</b> ${escapeHtml(String(p.no))}</span><span><b>Kode Parameter</b> ${escapeHtml(p.kodeParameter||'')}</span><span><b>MRI</b> ${escapeHtml(p.mri||'-')}</span><span><b>IEPK</b> ${escapeHtml(p.iepk||'-')}</span><span><b>Level S&P existing</b> ${structureLevel||'—'}</span></div>
+      <div class="kk-pm-param-title"><b>Uraian Parameter</b><p>${escapeHtml(p.uraianParameter)}</p></div>
+      ${kkPmRenderGradeRows(p,st)}
+      <div class="kk-pm-input-grid">
+        <label class="kk-pm-span-2"><b>Hasil Pengujian</b><textarea rows="4" data-pm-field="hasilPengujian" data-pm-target="${target}" data-pm-sub="${escapeHtml(p.subCode)}" data-pm-param="${escapeHtml(p.paramId)}">${escapeHtml(st.hasilPengujian||'')}</textarea></label>
+        <label><b>Grade Hasil</b><select data-pm-field="gradeResult" data-pm-target="${target}" data-pm-sub="${escapeHtml(p.subCode)}" data-pm-param="${escapeHtml(p.paramId)}"><option value="">— Pilih —</option>${['A','B','C','D','E'].map(g=>`<option value="${g}" ${st.gradeResult===g?'selected':''}>${g} · Level ${KK_PM_GRADE_LEVEL[g]}</option>`).join('')}</select></label>
+        <label><b>Kluster AoI</b><input data-pm-field="aoiCluster" data-pm-target="${target}" data-pm-sub="${escapeHtml(p.subCode)}" data-pm-param="${escapeHtml(p.paramId)}" value="${escapeHtml(st.aoiCluster||'')}"></label>
+        <label class="kk-pm-span-2"><b>Uraian AoI</b><textarea rows="2" data-pm-field="aoiDesc" data-pm-target="${target}" data-pm-sub="${escapeHtml(p.subCode)}" data-pm-param="${escapeHtml(p.paramId)}">${escapeHtml(st.aoiDesc||'')}</textarea></label>
+        <label><b>Kluster Penyebab</b><input data-pm-field="causeCluster" data-pm-target="${target}" data-pm-sub="${escapeHtml(p.subCode)}" data-pm-param="${escapeHtml(p.paramId)}" value="${escapeHtml(st.causeCluster||'')}"></label>
+        <label class="kk-pm-span-2"><b>Uraian Penyebab</b><textarea rows="2" data-pm-field="causeDesc" data-pm-target="${target}" data-pm-sub="${escapeHtml(p.subCode)}" data-pm-param="${escapeHtml(p.paramId)}">${escapeHtml(st.causeDesc||'')}</textarea></label>
+        <label class="kk-pm-span-2"><b>Catatan</b><textarea rows="2" data-pm-field="note" data-pm-target="${target}" data-pm-sub="${escapeHtml(p.subCode)}" data-pm-param="${escapeHtml(p.paramId)}">${escapeHtml(st.note||'')}</textarea></label>
+      </div>
+      <div class="kk-pm-linked-panel"><div class="kk-pm-linked-head"><b>Evidence Struktur &amp; Proses — Tarikan Otomatis</b><span>${files.length} file</span></div>${kkPmEvidenceHtml(kkPmCurrentRow,p,st.gradeResult||'')}<div class="kk-pm-linked-note">File ini <b>read-only</b>. Upload/replacement tetap dilakukan di kolom Evidence Struktur dan Proses agar satu sumber file digunakan oleh semua workpaper.</div></div>
+      <div class="kk-pm-auto-conclusion"><span>Kesimpulan Akhir</span><strong>${escapeHtml(st.gradeResult?`Grade ${st.gradeResult} · Level ${KK_PM_GRADE_LEVEL[st.gradeResult]} · ${KK_PM_GRADE_STAGE[st.gradeResult]}`:'Belum ditetapkan')}</strong></div>
+    </div></details>`;
+}
+function kkPmSubSummary(target,subCode){
+  const ps=kkPmParamList(target).filter(p=>p.subCode===subCode);let evaluated=0,sum=0;
+  ps.forEach(p=>{const g=String(kkPmGetState(target,p.subCode,p.paramId).gradeResult||'').toUpperCase();if(KK_PM_GRADE_LEVEL[g]){evaluated++;sum+=KK_PM_GRADE_LEVEL[g];}});
+  return {total:ps.length,evaluated,pending:Math.max(0,ps.length-evaluated),avg:evaluated?Math.round(sum/evaluated*100)/100:0,completion:ps.length?Math.round(evaluated/ps.length*10000)/100:0};
+}
+function kkPmUnsurCode(subCode){return String(subCode||'').split('.')[0];}
+function kkPmRenderTarget(target){
+  const t=kkPmTarget(target); if(!t)return '<div class="kk-pm-empty">Master target tidak ditemukan.</div>';
+  const params=(t.parameters||[]).filter(p=>{
+    if(kkPmFilters.unsur!=='all'&&kkPmUnsurCode(p.subCode)!==kkPmFilters.unsur)return false;
+    if(kkPmFilters.subunsur!=='all'&&p.subCode!==kkPmFilters.subunsur)return false;
+    if(kkPmFilters.search){const q=kkPmFilters.search.toLowerCase();const hay=`${p.subCode} ${p.subunsur} ${p.paramId} ${p.uraianParameter}`.toLowerCase();if(!hay.includes(q))return false;}
+    return true;
+  });
+  const subs=[...new Map((t.parameters||[]).map(p=>[p.subCode,p.subunsur])).entries()];
+  const summary=kkPmTargetSummary(target);
+  return `<div class="kk-pm-sheet-head"><div><div class="kk-pm-kicker">${escapeHtml(t.sheet||target)}</div><h4>${escapeHtml(t.title||'Penilaian Struktur dan Proses')}</h4><p>${summary.evaluated}/${summary.total} parameter selesai · Rata-rata level ${summary.avgLevel?summary.avgLevel.toFixed(2):'—'} · ${summary.evidence} evidence terhubung</p></div></div>
+  ${kkPmMetaForm(target)}
+  <div class="kk-pm-filter-bar"><input id="kkPmSearch" value="${escapeHtml(kkPmFilters.search)}" placeholder="Cari kode / subunsur / parameter..."/><select id="kkPmFilterUnsur"><option value="all">Semua Unsur</option>${['1','2','3','4','5'].map(u=>`<option value="${u}" ${kkPmFilters.unsur===u?'selected':''}>Unsur ${u} · ${escapeHtml(SPIP_UNSUR_INFO[u]?.title||'')}</option>`).join('')}</select><select id="kkPmFilterSub"><option value="all">Semua Subunsur</option>${subs.map(([code,name])=>`<option value="${escapeHtml(code)}" ${kkPmFilters.subunsur===code?'selected':''}>${escapeHtml(code)} · ${escapeHtml(name)}</option>`).join('')}</select><span>${params.length} parameter tampil</span></div>
+  <div class="kk-pm-subsections">${[...new Set(params.map(p=>p.subCode))].map(sc=>{const name=params.find(p=>p.subCode===sc)?.subunsur||sc;const ps=params.filter(p=>p.subCode===sc);const ss=kkPmSubSummary(target,sc);return `<details class="kk-pm-subsection" open><summary><span class="kk-pm-sub-code">${escapeHtml(sc)}</span><b>${escapeHtml(name)}</b><small>${ss.evaluated}/${ss.total} dinilai · ${ss.completion.toFixed(0)}% · Avg ${ss.avg?ss.avg.toFixed(2):'—'}</small></summary>${ps.map(p=>kkPmRenderParameter(target,p)).join('')}</details>`;}).join('')}</div>`;
+}
+function kkPmRenderModal(){
+  if(!kkPmCurrentRow)return; document.querySelectorAll('#kkPmTabs [data-pm-tab]').forEach(b=>b.classList.toggle('active',b.dataset.pmTab===kkPmTab)); kkPmUpdateSummary();
+  const c=document.getElementById('kkPmContent'); if(!c)return;
+  if(kkPmTab==='summary')c.innerHTML=kkPmRenderSummary(); else c.innerHTML=kkPmRenderTarget(kkPmTab);
+}
+function kkPmReadDomValue(target,sub,paramId,field){return document.querySelector(`#kkPmContent [data-pm-field="${field}"][data-pm-target="${CSS.escape(String(target))}"][data-pm-sub="${CSS.escape(String(sub))}"][data-pm-param="${CSS.escape(String(paramId))}"]`)?.value||'';}
+function kkPmCollectDom(target,sub,paramId){
+  const get=f=>kkPmReadDomValue(target,sub,paramId,f); return {hasilPengujian:get('hasilPengujian'),gradeResult:get('gradeResult').toUpperCase(),aoiCluster:get('aoiCluster'),aoiDesc:get('aoiDesc'),causeCluster:get('causeCluster'),causeDesc:get('causeDesc'),note:get('note')};
+}
+async function kkPmSaveParameter(target,sub,paramId){
+  if(!kkPmCurrentRow)return; const data=kkPmCollectDom(target,sub,paramId); const p=kkPmParamList(target).find(x=>x.subCode===sub&&x.paramId===paramId); if(!p)return;
+  const level=KK_PM_GRADE_LEVEL[data.gradeResult]||0; const prev={...kkPmGetState(target,sub,paramId),...data,conclusion:data.gradeResult?`Grade ${data.gradeResult} · Level ${level}`:'Belum ditetapkan',updatedAt:Date.now()}; kkPmSetState(target,sub,paramId,prev);
+  const card=document.querySelector(`.kk-pm-param-card details`); // no-op; state drives re-render on the next blur/change if needed
+  try{
+    kkPmSetStatus('⏳ Menyimpan perubahan KK PM SPIP...');
+    const d=await callServerWithRetry('saveKkPmItem',{opdId:kkPmCurrentRow.id,year:currentYear,target,subunsur:sub,paramId,...data,updatedBy:''},3);
+    if(d?.item)kkPmSetState(target,sub,paramId,d.item); kkPmSetStatus('✓ Tersimpan otomatis.','success'); kkPmUpdateSummary();
+  }catch(err){kkPmSetStatus('❌ Gagal menyimpan KK PM: '+(err.message||err),'error');}
+}
+function kkPmScheduleSave(target,sub,paramId){const key=kkPmStateKey(target,sub,paramId);clearTimeout(kkPmSaveTimers.get(key));kkPmSaveTimers.set(key,setTimeout(()=>{kkPmSaveTimers.delete(key);kkPmSaveParameter(target,sub,paramId);},500));}
+function kkPmCollectMeta(target){const out={};document.querySelectorAll(`#kkPmContent [data-pm-meta-target="${CSS.escape(String(target))}"][data-pm-meta]`).forEach(el=>{out[el.dataset.pmMeta]=el.value||'';});return out;}
+function kkPmScheduleMetaSave(target){const key=String(target);clearTimeout(kkPmMetaSaveTimers.get(key));kkPmMetaSaveTimers.set(key,setTimeout(async()=>{kkPmMetaSaveTimers.delete(key);const meta=kkPmCollectMeta(target);kkPmMetaMap.set(key,meta);try{await callServerWithRetry('saveKkPmMeta',{opdId:kkPmCurrentRow.id,year:currentYear,target,...meta},3);kkPmSetStatus('✓ Identitas lembar kerja tersimpan.','success');}catch(err){kkPmSetStatus('❌ Gagal menyimpan identitas: '+(err.message||err),'error');}},500));}
+function kkPmExportCellValue(aoa,rowIndex,col,value,link){if(!link){aoa.push(value);return;} }
+function exportKkPmExcel(){
+  if(!kkPmCurrentRow||!window.XLSX||!kkPmMaster)return kkPmSetStatus('Export Excel tidak tersedia.','error');
+  try{
+    const wb=XLSX.utils.book_new(); const s=kkPmOverallSummary();
+    const recap=[['KERTAS KERJA PM SPIP',''],['OPD',kkPmCurrentRow.opd||''],['Tahun',currentYear],[],['Target','Total Parameter','Dinilai','Pending','Progress','Rata-rata Level','Evidence Terhubung'],...s.targets.map(x=>[x.target,x.total,x.evaluated,x.pending,x.completion,x.avgLevel||'',x.evidence])];
+    recap.push([],['Nilai Existing','Nilai'],['Nilai Struktur & Proses',Number(getRowStructureProcessBreakdown(kkPmCurrentRow).value||0)],['Nilai Maturitas SPIP',Number(kkPmCurrentRow.nilaiMaturitas||0)],['MRI',Number(kkPmCurrentRow.mri||0)],['IEPK',Number(kkPmCurrentRow.iepk||0)],['Nilai Kapabilitas APIP',Number(kkPmCurrentRow.nilaiKapabilitasApip||0)]);
+    const wsRecap=XLSX.utils.aoa_to_sheet(recap);wsRecap['!cols']=[{wch:24},{wch:18},{wch:14},{wch:14},{wch:14},{wch:18},{wch:24}];wsRecap['!freeze']={xSplit:0,ySplit:5};XLSX.utils.book_append_sheet(wb,wsRecap,'Rekap PM');
+    KK_PM_TARGETS.forEach(target=>{
+      const rowsOut=[['OPD',kkPmCurrentRow.opd||'','Tahun',currentYear,'Target',target],[],['Kode','Uraian Subunsur','No','Uraian Parameter','Kode Parameter','MRI','IEPK','Grade','Kriteria','Penjelasan','Cara Pengujian','Hasil Pengujian','Grade Hasil','Kluster AoI','Uraian AoI','Kluster Penyebab','Uraian Penyebab','Kesimpulan Akhir','Evidence Disarankan','Evidence Struktur & Proses']];
+      kkPmParamList(target).forEach(p=>{
+        const st=kkPmGetState(target,p.subCode,p.paramId);
+        (p.grades||[]).forEach((g,i)=>{
+          const files=kkPmLinkedFilesForParam(kkPmCurrentRow,p).filter(f=>f.grade===g.grade);
+          const evidence=Array.isArray(g.evidenceDisarankan)?g.evidenceDisarankan.join(' | '):'';
+          const links=files.map(f=>f.url||f.name).join(' | ');
+          rowsOut.push([p.subCode,p.subunsur,p.no,p.uraianParameter,p.kodeParameter||'',p.mri||'-',p.iepk||'-',g.grade,g.kriteria||'',g.penjelasan||'',g.caraPengujian||'',i===0?st.hasilPengujian||'':'',i===0?st.gradeResult||'':'',i===0?st.aoiCluster||'':'',i===0?st.aoiDesc||'':'',i===0?st.causeCluster||'':'',i===0?st.causeDesc||'':'',i===0?(st.gradeResult?`Grade ${st.gradeResult} · Level ${KK_PM_GRADE_LEVEL[st.gradeResult]}`:''):'',evidence,links]);
+        });
+      });
+      const ws=XLSX.utils.aoa_to_sheet(rowsOut);ws['!freeze']={xSplit:0,ySplit:3};ws['!cols']=[{wch:10},{wch:32},{wch:8},{wch:62},{wch:16},{wch:8},{wch:8},{wch:8},{wch:60},{wch:68},{wch:18},{wch:55},{wch:12},{wch:20},{wch:35},{wch:20},{wch:35},{wch:24},{wch:45},{wch:42}];XLSX.utils.book_append_sheet(wb,ws,`KK3.${target.slice(1)} ${target}`);
+    });
+    const safe=(kkPmCurrentRow.opd||'OPD').replace(/[\\/:*?"<>|]/g,' ').trim().substring(0,65)||'OPD'; XLSX.writeFile(wb,`${safe}-${currentYear}-KK-PM-SPIP.xlsx`);kkPmSetStatus('✓ Export Excel berhasil: Rekap + KK3.1–KK3.4.','success');
+  }catch(err){kkPmSetStatus('❌ Export gagal: '+(err.message||err),'error');}
+}
+async function openKkPmModal(id){
+  const row=rows.find(r=>String(r.id)===String(id)); if(!row)return; kkPmCurrentRow=row;kkPmEditingRowId=row.id;kkPmTab='summary';kkPmFilters={search:'',unsur:'all',subunsur:'all'};const modal=document.getElementById('kkPmModal');if(!modal)return;
+  document.getElementById('kkPmModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;modal.classList.add('active');kkPmSetStatus('Memuat master workbook dan data KK PM SPIP...');
+  try{await Promise.all([ensureKkPmMasterLoaded(),loadKkPmData(row)]);kkPmSetStatus('✓ KK PM siap. Struktur KK3.1–KK3.4, evidence terhubung otomatis.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('Gagal memuat KK PM SPIP: '+(err.message||err),'error');}
+}
+function closeKkPmModal(){document.getElementById('kkPmModal')?.classList.remove('active');kkPmEditingRowId=null;kkPmCurrentRow=null;kkPmStateMap=new Map();kkPmMetaMap=new Map();kkPmSaveTimers.forEach(t=>clearTimeout(t));kkPmSaveTimers.clear();kkPmMetaSaveTimers.forEach(t=>clearTimeout(t));kkPmMetaSaveTimers.clear();}
+
+document.addEventListener('click',e=>{
+  const tab=e.target.closest('#kkPmTabs [data-pm-tab]');if(tab){kkPmTab=tab.dataset.pmTab;kkPmFilters={search:'',unsur:'all',subunsur:'all'};kkPmRenderModal();return;}
+  const targetBtn=e.target.closest('#kkPmContent [data-pm-tab-target]');if(targetBtn){kkPmTab=targetBtn.dataset.pmTabTarget;kkPmFilters={search:'',unsur:'all',subunsur:'all'};kkPmRenderModal();return;}
+  const exp=e.target.closest('#kkPmExport');if(exp){exportKkPmExcel();return;}
+  const btn=e.target.closest('.btn-kk-pm-spip');if(btn){openKkPmModal(btn.dataset.id);return;}
+});
+document.addEventListener('change',e=>{
+  const field=e.target.closest('#kkPmContent [data-pm-field]');if(field){kkPmScheduleSave(field.dataset.pmTarget,field.dataset.pmSub,field.dataset.pmParam);return;}
+  const meta=e.target.closest('#kkPmContent [data-pm-meta]');if(meta){kkPmScheduleMetaSave(meta.dataset.pmMetaTarget);return;}
+  if(e.target.id==='kkPmFilterUnsur'||e.target.id==='kkPmFilterSub'){
+    if(e.target.id==='kkPmFilterUnsur'){kkPmFilters.unsur=e.target.value;kkPmFilters.subunsur='all';}else kkPmFilters.subunsur=e.target.value;kkPmRenderModal();
+  }
+});
+document.addEventListener('blur',e=>{
+  const field=e.target.closest?.('#kkPmContent [data-pm-field]');if(field){kkPmScheduleSave(field.dataset.pmTarget,field.dataset.pmSub,field.dataset.pmParam);return;}
+  const meta=e.target.closest?.('#kkPmContent [data-pm-meta]');if(meta)kkPmScheduleMetaSave(meta.dataset.pmMetaTarget);
+},true);
+document.addEventListener('input',e=>{if(e.target.id==='kkPmSearch'){kkPmFilters.search=e.target.value||'';clearTimeout(window.__kkPmSearchTimer);window.__kkPmSearchTimer=setTimeout(()=>kkPmRenderModal(),180);}});
 document.getElementById('kkPmClose')?.addEventListener('click',closeKkPmModal);document.getElementById('kkPmCloseFooter')?.addEventListener('click',closeKkPmModal);
 
 document.addEventListener('click',function(e){
