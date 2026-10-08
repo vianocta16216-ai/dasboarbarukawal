@@ -239,6 +239,31 @@ async function ensureOpdSchema(env){
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_qa_apip_opd ON opd_qa_apip_items(year, opd_id)").run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_qa_apip_param ON opd_qa_apip_items(year, opd_id, subunsur, param_id)").run();
 
+    // Dedicated sparse table for Kertas Kerja PM SPIP. PM shares the same
+    // 43-parameter / 671-item master but is stored independently from QA APIP
+    // so concurrent operators cannot overwrite each other's work.
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS opd_kk_pm_items (
+      year TEXT NOT NULL,
+      opd_id TEXT NOT NULL,
+      subunsur TEXT NOT NULL,
+      param_id TEXT NOT NULL,
+      grade TEXT NOT NULL,
+      item_no INTEGER NOT NULL,
+      availability TEXT NOT NULL DEFAULT '',
+      identity_doc TEXT NOT NULL DEFAULT '',
+      validity TEXT NOT NULL DEFAULT '',
+      period_ok TEXT NOT NULL DEFAULT '',
+      substance TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      score REAL,
+      conclusion TEXT NOT NULL DEFAULT '',
+      examiner_name TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(year, opd_id, subunsur, param_id, grade, item_no)
+    )`).run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_kk_pm_opd ON opd_kk_pm_items(year, opd_id)").run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_kk_pm_param ON opd_kk_pm_items(year, opd_id, subunsur, param_id)").run();
+
     // One-time backfill from the legacy subunsurs JSON so existing Level selections are preserved.
     try {
       const rowsForBackfill = await env.DB.prepare("SELECT id, year, subunsurs FROM opd_data").all();
@@ -1151,6 +1176,16 @@ export async function onRequest({ request, env, ctx }) {
         `).bind(String(year)).all();
         const qaSummaryMap=new Map();
         for(const q of (qaSummaryRows.results||[])) qaSummaryMap.set(String(q.opd_id),q);
+        const kkPmSummaryRows=await env.DB.prepare(`
+          SELECT opd_id,
+                 COUNT(*) AS stored_items,
+                 SUM(CASE WHEN score IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_items,
+                 SUM(CASE WHEN availability='N/A' THEN 1 ELSE 0 END) AS na_items,
+                 COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) AS sum_score
+          FROM opd_kk_pm_items WHERE year=? GROUP BY opd_id
+        `).bind(String(year)).all();
+        const kkPmSummaryMap=new Map();
+        for(const q of (kkPmSummaryRows.results||[])) kkPmSummaryMap.set(String(q.opd_id),q);
         const levelMap=new Map();
         for(const lr of (levelRows.results||[])){
           const key=`${lr.opd_id}|${lr.subunsur}|${lr.param_id}`;
@@ -1199,7 +1234,17 @@ export async function onRequest({ request, env, ctx }) {
           const qaPercentage=qaApplicableItems>0 ? Math.round((qaSum/qaApplicableItems)*10000)/100 : 0;
           const qaCompletion=qaTotalItems>0 ? Math.round(((qaEvaluated+qaNa)/qaTotalItems)*10000)/100 : 0;
           const qaStatus=qaCompletion>=100?'Selesai':(qaCompletion>0?'Proses':'Belum');
-          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,evaluated:qaEvaluated,na:qaNa,pending:qaPending,sum:qaSum,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,nilaiMaturitas:Number(r.nilai_maturitas||0),nilaiKapabilitasApip:Number(r.nilai_kapabilitas_apip||0)};
+          const pm=kkPmSummaryMap.get(String(r.id));
+          const pmEvaluated=Number(pm?.evaluated_items||0);
+          const pmNa=Number(pm?.na_items||0);
+          const pmSum=Number(pm?.sum_score||0);
+          const pmTotalItems=671;
+          const pmPending=Math.max(0,pmTotalItems-pmEvaluated-pmNa);
+          const pmApplicable=Math.max(0,pmTotalItems-pmNa);
+          const pmPercentage=pmApplicable>0 ? Math.round((pmSum/pmApplicable)*10000)/100 : 0;
+          const pmCompletion=pmTotalItems>0 ? Math.round(((pmEvaluated+pmNa)/pmTotalItems)*10000)/100 : 0;
+          const pmStatus=pmCompletion>=100?'Selesai':(pmCompletion>0?'Proses':'Belum');
+          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,evaluated:qaEvaluated,na:qaNa,pending:qaPending,sum:qaSum,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:pmNa,pending:pmPending,sum:pmSum,percentage:pmPercentage,completion:pmCompletion,status:pmStatus},nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,nilaiMaturitas:Number(r.nilai_maturitas||0),nilaiKapabilitasApip:Number(r.nilai_kapabilitas_apip||0)};
         });
         return new Response(JSON.stringify(mapped),{status:200,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate, max-age=0'}});
       }
@@ -1406,6 +1451,67 @@ export async function onRequest({ request, env, ctx }) {
         await env.DB.prepare("UPDATE opd_data SET kk_pm_data=? WHERE id=? AND year=?").bind(serialized, params.opdId, year).run();
         notifyRealtime(env, ctx, year, { action: 'saveKkPmData', opdId: params.opdId });
         return jsonResponse({ status: 'success', message: 'Kertas Kerja PM tersimpan', kkPmData: compact });
+      }
+
+      case 'getKkPmDataDetailed': {
+        const opdId=String(params.opdId||'');
+        if(!opdId) throw new Error('ID OPD wajib diisi');
+        const q=await env.DB.prepare(`SELECT subunsur,param_id,grade,item_no,availability,identity_doc,validity,period_ok,substance,note,score,conclusion,examiner_name,updated_at
+          FROM opd_kk_pm_items WHERE year=? AND opd_id=? ORDER BY subunsur,param_id,CASE grade WHEN 'E' THEN 1 WHEN 'D' THEN 2 WHEN 'C' THEN 3 WHEN 'B' THEN 4 WHEN 'A' THEN 5 ELSE 9 END,item_no`).bind(String(year),opdId).all();
+        const items=(q.results||[]).map(x=>({subunsur:String(x.subunsur),paramId:String(x.param_id),grade:String(x.grade),itemNo:Number(x.item_no),availability:x.availability||'',identityDoc:x.identity_doc||'',validity:x.validity||'',periodOk:x.period_ok||'',substance:x.substance||'',note:x.note||'',score:x.score===null?null:Number(x.score),conclusion:x.conclusion||'',examinerName:x.examiner_name||'',updatedAt:Number(x.updated_at||0)}));
+        return jsonResponse({status:'success',items});
+      }
+
+      case 'saveKkPmItem': {
+        const opdId=String(params.opdId||'');
+        const subunsur=String(params.subunsur||'');
+        const paramId=String(params.paramId||'');
+        const grade=String(params.grade||'').toUpperCase();
+        const itemNo=Number(params.itemNo);
+        if(!opdId || !validQaItemLocation(subunsur,paramId,grade,itemNo)) throw new Error('Identitas item KK PM SPIP tidak valid.');
+        const availability=sanitizeQaText(params.availability,30);
+        const identityDoc=sanitizeQaText(params.identityDoc,500);
+        const validity=sanitizeQaText(params.validity,10);
+        const periodOk=sanitizeQaText(params.periodOk,10);
+        const substance=sanitizeQaText(params.substance,30);
+        const note=sanitizeQaText(params.note,1000);
+        const examinerName=sanitizeQaText(params.examinerName,100);
+        const score=calculateQaApipScore({availability,validity,periodOk,substance});
+        const conclusion=calculateQaApipConclusion({availability,score});
+        const now=Date.now();
+        const isEmpty=!availability&&!identityDoc&&!validity&&!periodOk&&!substance&&!note&&!examinerName;
+        if(isEmpty){
+          await env.DB.prepare("DELETE FROM opd_kk_pm_items WHERE year=? AND opd_id=? AND subunsur=? AND param_id=? AND grade=? AND item_no=?").bind(String(year),opdId,subunsur,paramId,grade,itemNo).run();
+        }else{
+          await env.DB.prepare(`INSERT INTO opd_kk_pm_items(year,opd_id,subunsur,param_id,grade,item_no,availability,identity_doc,validity,period_ok,substance,note,score,conclusion,examiner_name,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(year,opd_id,subunsur,param_id,grade,item_no) DO UPDATE SET
+              availability=excluded.availability, identity_doc=excluded.identity_doc, validity=excluded.validity,
+              period_ok=excluded.period_ok, substance=excluded.substance, note=excluded.note,
+              score=excluded.score, conclusion=excluded.conclusion, examiner_name=excluded.examiner_name, updated_at=excluded.updated_at`).bind(
+              String(year),opdId,subunsur,paramId,grade,itemNo,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,now
+            ).run();
+        }
+        const q=await env.DB.prepare(`SELECT SUM(CASE WHEN score IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_items,
+              SUM(CASE WHEN availability='N/A' THEN 1 ELSE 0 END) AS na_items,
+              COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) AS sum_score
+          FROM opd_kk_pm_items WHERE year=? AND opd_id=?`).bind(String(year),opdId).all();
+        const qr=q.results?.[0]||{}; const evaluated=Number(qr.evaluated_items||0); const na=Number(qr.na_items||0); const sum=Number(qr.sum_score||0); const total=671;
+        const pending=Math.max(0,total-evaluated-na); const applicable=Math.max(0,total-na);
+        const percentage=applicable?Math.round((sum/applicable)*10000)/100:0; const completion=Math.round(((evaluated+na)/total)*10000)/100;
+        const pmStatus=completion>=100?'Selesai':(completion>0?'Proses':'Belum');
+        notifyRealtime(env,ctx,year,{action:'saveKkPmItem',opdId,subunsur,paramId,grade,itemNo,summary:{total,evaluated,na,pending,sum,percentage,completion,status:pmStatus}});
+        return jsonResponse({status:'success',item:{subunsur,paramId,grade,itemNo,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now},summary:{total,evaluated,na,pending,sum,percentage,completion,status:pmStatus}});
+      }
+
+      case 'deleteKkPmItem': {
+        const opdId=String(params.opdId||''); const subunsur=String(params.subunsur||''); const paramId=String(params.paramId||''); const grade=String(params.grade||'').toUpperCase(); const itemNo=Number(params.itemNo);
+        if(!opdId || !validQaItemLocation(subunsur,paramId,grade,itemNo)) throw new Error('Identitas item KK PM SPIP tidak valid.');
+        await env.DB.prepare("DELETE FROM opd_kk_pm_items WHERE year=? AND opd_id=? AND subunsur=? AND param_id=? AND grade=? AND item_no=?").bind(String(year),opdId,subunsur,paramId,grade,itemNo).run();
+        const q=await env.DB.prepare(`SELECT SUM(CASE WHEN score IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_items,SUM(CASE WHEN availability='N/A' THEN 1 ELSE 0 END) AS na_items,COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) AS sum_score FROM opd_kk_pm_items WHERE year=? AND opd_id=?`).bind(String(year),opdId).all();
+        const qr=q.results?.[0]||{}; const evaluated=Number(qr.evaluated_items||0); const na=Number(qr.na_items||0); const sum=Number(qr.sum_score||0); const total=671; const pending=Math.max(0,total-evaluated-na); const applicable=Math.max(0,total-na); const percentage=applicable?Math.round((sum/applicable)*10000)/100:0; const completion=Math.round(((evaluated+na)/total)*10000)/100; const pmStatus=completion>=100?'Selesai':(completion>0?'Proses':'Belum'); const summary={total,evaluated,na,pending,sum,percentage,completion,status:pmStatus};
+        notifyRealtime(env,ctx,year,{action:'deleteKkPmItem',opdId,subunsur,paramId,grade,itemNo,summary});
+        return jsonResponse({status:'success',message:'Item KK PM SPIP dikosongkan',summary});
       }
 
       case 'getKkSheets': {
