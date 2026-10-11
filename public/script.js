@@ -651,12 +651,28 @@ function getRtpEvidenceVerificationSummary(row) {
 // Persentase dihitung berdasarkan JUMLAH DOKUMEN, bukan rata-rata persentase OPD:
 // dokumen terverifikasi / seluruh dokumen yang di-upload x 100.
 function getRowDocumentVerificationSummary(row) {
-  const structureFiles = getAllStructureEvidenceFiles(row);
+  // Use the active upload registry for Structure & Process evidence. The legacy
+  // subunsurs JSON may contain files carried over from older workflows/years and
+  // must not inflate the dashboard-wide current upload count.
+  const workbookSummary = row?.workbookEvidenceSummary || {};
+  const structureTotal = Math.max(0, Number(workbookSummary.totalFiles) || 0);
+  const structureReviewedRaw = Number(workbookSummary.reviewedFiles ?? workbookSummary.verifiedFiles) || 0;
+  const structureReviewed = Math.min(structureTotal, Math.max(0, structureReviewedRaw));
   const rtpFiles = Array.isArray(row?.rtpEvidence) ? row.rtpEvidence : [];
-  const summary = getFileVerificationSummary([...structureFiles, ...rtpFiles]);
+  const rtpSummary = getFileVerificationSummary(rtpFiles);
+  const total = structureTotal + rtpSummary.total;
+  const verified = structureReviewed + rtpSummary.verified;
+  const accepted = (Number(workbookSummary.verifiedFiles) || 0) + rtpSummary.accepted;
+  const withNotes = rtpSummary.withNotes + (Number(workbookSummary.withNotesFiles) || 0);
+  const returned = rtpSummary.returned + (Number(workbookSummary.returnedFiles) || 0);
+  const summary = {
+    total, verified, accepted, withNotes, returned,
+    percentage: total ? Math.round((verified / total) * 10000) / 100 : 0,
+    progress: total ? Math.round((verified / total) * 10000) / 100 : 0
+  };
   return {
     ...summary,
-    documentPercentage: summary.total ? Math.round((summary.verified / summary.total) * 10000) / 100 : 0
+    documentPercentage: total ? Math.round((verified / total) * 10000) / 100 : 0
   };
 }
 
@@ -958,19 +974,23 @@ function computedDisplay(row,key){
 }
 function computedTitle(row,key){
   const cv=computedWorkbookOf(row); const cell=cv?.cells?.[key] || ({nilaiMaturitas:'KKLEAD_SPIP!I11',mri:'KKLEAD_SPIP!I68',iepk:'KKLEAD_SPIP!I85',nilaiKapabilitasApip:'KKLEAD_SPIP!I106'}[key]||'');
-  return (cv?.status==='ok'?`Otomatis dari formula workbook · ${cell}`:(cv?.error?`Belum tersinkron: ${cv.error}`:`Belum tersinkron · sumber ${cell}`));
+  const source=cv?.source||'formula workbook';
+  return (cv?.status==='ok'?`Otomatis dari ${source} · ${cell}`:(cv?.error?`Belum tersinkron: ${cv.error}`:`Belum tersinkron · sumber ${source} · ${cell}`));
 }
 async function syncKkComputedValues(row, silent=false){
   if(!row?.id)return null;
   try{
     const res=await callServerWithRetry('syncKkComputedValues',{opdId:row.id,year:currentYear},2);
     if(res?.computed){
+      const before={nilaiMaturitas:row.nilaiMaturitas,mri:row.mri,iepk:row.iepk,nilaiKapabilitasApip:row.nilaiKapabilitasApip,source:row.computedWorkbook?.source,spreadsheetId:row.computedWorkbook?.spreadsheetId,status:row.computedWorkbook?.status};
       row.computedWorkbook=res.computed;
       const v=res.computed.values||{};
       row.nilaiMaturitas=Number.isFinite(Number(v.nilaiMaturitas))&&Number(v.nilaiMaturitas)>0?Number(v.nilaiMaturitas):null;
       row.mri=Number.isFinite(Number(v.mri))&&Number(v.mri)>0?Number(v.mri):null;
       row.iepk=Number.isFinite(Number(v.iepk))&&Number(v.iepk)>0?Number(v.iepk):null;
       row.nilaiKapabilitasApip=Number.isFinite(Number(v.nilaiKapabilitasApip))&&Number(v.nilaiKapabilitasApip)>0?Number(v.nilaiKapabilitasApip):null;
+      const changed=['nilaiMaturitas','mri','iepk','nilaiKapabilitasApip'].some(k=>Number(before[k]??0)!==Number(row[k]??0)) || before.source!==res.computed.source || before.spreadsheetId!==res.computed.spreadsheetId || before.status!==res.computed.status;
+      if(changed&&!silent){render();updateKpisLocal();}
       return res.computed;
     }
   }catch(err){ if(!silent) console.warn('Sinkronisasi nilai workbook gagal:',err); }
@@ -983,11 +1003,11 @@ async function backgroundSyncKkComputedValues(){
   try{
     // Batasi dua OPD sekaligus agar tidak menekan API Google Sheets/Cloudflare saat dashboard besar.
     for(let i=0;i<rows.length;i+=2){
-      const chunk=rows.slice(i,i+2).filter(r=>r?.kkData?.workbookSpreadsheetId || r?.kkData?.spreadsheetId);
+      const chunk=rows.slice(i,i+2).filter(r=>r?.kkPmData?.workbook?.workbookSpreadsheetId || r?.kkPmData?.workbookSpreadsheetId || r?.kkData?.workbookSpreadsheetId || r?.kkData?.spreadsheetId);
       if(!chunk.length)continue;
-      const before=chunk.map(r=>({id:r.id,vals:{nilaiMaturitas:r.nilaiMaturitas,mri:r.mri,iepk:r.iepk,nilaiKapabilitasApip:r.nilaiKapabilitasApip}}));
+      const before=chunk.map(r=>({id:r.id,vals:{nilaiMaturitas:r.nilaiMaturitas,mri:r.mri,iepk:r.iepk,nilaiKapabilitasApip:r.nilaiKapabilitasApip},source:r.computedWorkbook?.source,spreadsheetId:r.computedWorkbook?.spreadsheetId,status:r.computedWorkbook?.status}));
       await Promise.all(chunk.map(r=>syncKkComputedValues(r,true)));
-      const changed=chunk.some(r=>{const b=before.find(x=>x.id===r.id)?.vals||{};return ['nilaiMaturitas','mri','iepk','nilaiKapabilitasApip'].some(k=>Number(b[k]??0)!==Number(r[k]??0));});
+      const changed=chunk.some(r=>{const b=before.find(x=>x.id===r.id)||{};return ['nilaiMaturitas','mri','iepk','nilaiKapabilitasApip'].some(k=>Number(b.vals?.[k]??0)!==Number(r[k]??0)) || b.source!==r.computedWorkbook?.source || b.spreadsheetId!==r.computedWorkbook?.spreadsheetId || b.status!==r.computedWorkbook?.status;});
       if(changed){ render(); updateKpisLocal(); }
     }
   }finally{computedSyncBusy=false;}
@@ -1008,7 +1028,7 @@ async function loadData() {
     rows = [];
     if (Array.isArray(data)) {
       rows = data.map(r => {
-        const row = { ...r, nilaiMaturitas:(r.nilaiMaturitas??null), nilaiKapabilitasApip:(r.nilaiKapabilitasApip??null), mri:(r.nilaiMRI??r.mri??null), iepk:(r.nilaiIEPK??r.iepk??null), computedWorkbook:r.computedWorkbook||{}, workbookEvidenceSummary:r.workbookEvidenceSummary||{totalFiles:0,evidenceGroups:0,verifiedFiles:0,syncedFiles:0}, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, kkPmData:r.kkPmData||{},kkPmSummary:r.kkPmSummary||{total:183,evaluated:0,na:0,pending:183,sum:0,percentage:0,completion:0,status:'Belum'}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', pmSpipReports:Array.isArray(r.pmSpipReports)?r.pmSpipReports:[], pmSpipFolder:r.pmSpipFolder||'Laporan Hasil PM SPIP', rrRtpReports:Array.isArray(r.rrRtpReports)?r.rrRtpReports:[], rrRtpFolder:r.rrRtpFolder||'Laporan Pemantauan RR_RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
+        const row = { ...r, nilaiMaturitas:(r.nilaiMaturitas??null), nilaiKapabilitasApip:(r.nilaiKapabilitasApip??null), mri:(r.nilaiMRI??r.mri??null), iepk:(r.nilaiIEPK??r.iepk??null), computedWorkbook:r.computedWorkbook||{}, workbookEvidenceSummary:r.workbookEvidenceSummary||{totalFiles:0,evidenceGroups:0,verifiedFiles:0,reviewedFiles:0,syncedFiles:0}, rtp:r.rtp||'Belum', status:r.status||'Belum', evidence:r.evidence||'Belum', qaApip:r.qaApip||'Belum', kkData:r.kkData||{}, kkRtpData:r.kkRtpData||{}, kkPmData:r.kkPmData||{},kkPmSummary:r.kkPmSummary||{total:183,evaluated:0,na:0,pending:183,sum:0,percentage:0,completion:0,status:'Belum'}, rtpEvidence:Array.isArray(r.rtpEvidence)?r.rtpEvidence:[], rtpEvidenceFolder:r.rtpEvidenceFolder||'Evidence RTP', pmSpipReports:Array.isArray(r.pmSpipReports)?r.pmSpipReports:[], pmSpipFolder:r.pmSpipFolder||'Laporan Hasil PM SPIP', rrRtpReports:Array.isArray(r.rrRtpReports)?r.rrRtpReports:[], rrRtpFolder:r.rrRtpFolder||'Laporan Pemantauan RR_RTP', strukturProsesStatus:r.strukturProsesStatus||'Belum' };
         const bd = getRowStructureProcessBreakdown(row);
         row.nilaiStrukturProses = bd.value;
         row.sa = row.nilaiStrukturProses;
@@ -3358,6 +3378,21 @@ async function loadWorkbookEvidenceFiles(row){
   workbookEvidenceFiles=Array.isArray(res?.files)?res.files:[];
   return workbookEvidenceFiles;
 }
+function refreshWorkbookEvidenceCountsOnRow(row){
+  if(!row)return;
+  const files=Array.isArray(workbookEvidenceFiles)?workbookEvidenceFiles:[];
+  const summary=row.workbookEvidenceSummary||{};
+  summary.totalFiles=files.length;
+  summary.evidenceGroups=new Set(files.map(f=>String(f.evidenceKey||''))).size;
+  summary.verifiedFiles=files.filter(f=>f.verificationStatus==='diterima').length;
+  summary.reviewedFiles=files.filter(f=>['diterima','diterima_catatan','dikembalikan'].includes(String(f.verificationStatus||''))).length;
+  summary.withNotesFiles=files.filter(f=>f.verificationStatus==='diterima_catatan').length;
+  summary.returnedFiles=files.filter(f=>f.verificationStatus==='dikembalikan').length;
+  summary.syncedFiles=files.filter(f=>f.syncStatus==='done').length;
+  row.workbookEvidenceSummary=summary;
+  render();
+  updateKpisLocal();
+}
 function wbGroups(){return workbookEvidenceMaster?.mergedEvidence?.groups||[];}
 function wbGroupById(id){return wbGroups().find(g=>g.groupId===id)||null;}
 function wbFilesForKey(key){return workbookEvidenceFiles.filter(f=>String(f.evidenceKey||'')===String(key));}
@@ -3438,17 +3473,18 @@ async function wbUploadSelected(input){
   }
   input.value='';
   await loadWorkbookEvidenceFiles(workbookEvidenceRow); wbRender();
-  const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id)); if(row){row.workbookEvidenceSummary=row.workbookEvidenceSummary||{totalFiles:0,evidenceGroups:0,verifiedFiles:0,syncedFiles:0};row.workbookEvidenceSummary.totalFiles=workbookEvidenceFiles.length;row.workbookEvidenceSummary.evidenceGroups=new Set(workbookEvidenceFiles.map(f=>f.evidenceKey)).size;row.workbookEvidenceSummary.verifiedFiles=workbookEvidenceFiles.filter(f=>f.verificationStatus==='diterima').length;render();updateKpisLocal();}
+  const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));
+  if(row)refreshWorkbookEvidenceCountsOnRow(row);
 }
 async function wbVerify(uploadId){
   const st=document.querySelector(`[data-wb-ver-status="${CSS.escape(uploadId)}"]`);const ex=document.querySelector(`[data-wb-ver-examiner="${CSS.escape(uploadId)}"]`);const note=document.querySelector(`[data-wb-ver-note="${CSS.escape(uploadId)}"]`);if(!st||!ex||!note)return;
-  try{await callServerWithRetry('saveWorkbookEvidenceVerification',{opdId:workbookEvidenceRow.id,year:currentYear,uploadId,verificationStatus:st.value,verificationExaminer:ex.value.trim(),verificationNote:note.value.trim()},3);await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();}
+  try{await callServerWithRetry('saveWorkbookEvidenceVerification',{opdId:workbookEvidenceRow.id,year:currentYear,uploadId,verificationStatus:st.value,verificationExaminer:ex.value.trim(),verificationNote:note.value.trim()},3);await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));if(row)refreshWorkbookEvidenceCountsOnRow(row);}
   catch(err){alert('Gagal menyimpan verifikasi: '+(err.message||err));}
 }
-async function wbRetry(uploadId){try{await callServerWithRetry('retryDriveBackup',{type:'workbook_evidence',opdId:workbookEvidenceRow.id,year:currentYear,uploadId},3);await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();}catch(err){alert('Retry Drive gagal: '+(err.message||err));}}
+async function wbRetry(uploadId){try{await callServerWithRetry('retryDriveBackup',{type:'workbook_evidence',opdId:workbookEvidenceRow.id,year:currentYear,uploadId},3);await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));if(row)refreshWorkbookEvidenceCountsOnRow(row);}catch(err){alert('Retry Drive gagal: '+(err.message||err));}}
 async function wbDelete(uploadId){
   if(!confirm('Hapus evidence ini? File R2/Google Drive dan tautan di KK PM akan dihapus.'))return;
-  try{await callServerWithRetry('deleteWorkbookEvidence',{opdId:workbookEvidenceRow.id,year:currentYear,uploadId},3);await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();}catch(err){alert('Gagal menghapus evidence: '+(err.message||err));}
+  try{await callServerWithRetry('deleteWorkbookEvidence',{opdId:workbookEvidenceRow.id,year:currentYear,uploadId},3);await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));if(row)refreshWorkbookEvidenceCountsOnRow(row);}catch(err){alert('Gagal menghapus evidence: '+(err.message||err));}
 }
 
 document.addEventListener('click',e=>{
@@ -4138,8 +4174,23 @@ function kkPmScheduleMetaSave(target){const key=String(target);clearTimeout(kkPm
 function kkPmExportCellValue(aoa,rowIndex,col,value,link){if(!link){aoa.push(value);return;} }
 
 async function createKkPmWorkbookForCurrentRow(){
-  if(!kkPmCurrentRow)return; const btn=document.getElementById('kkPmSyncWorkbook'); if(btn)btn.disabled=true; kkPmSetStatus('⏳ Membuat/sinkronkan Spreadsheet PM exact workbook (28 sheet)...');
-  try{const d=await callServerWithRetry('createKkPmSheets',{opdId:kkPmCurrentRow.id,year:currentYear,opd:kkPmCurrentRow.opd||'OPD'},2);kkPmWorkbookData=d?.kkPmData||{};kkPmWorkbookSheets=Array.isArray(d?.sheets)?d.sheets:[];kkPmSetStatus('✓ Spreadsheet PM exact workbook berisi seluruh 28 sheet sudah siap.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('❌ Gagal membuat Spreadsheet PM: '+(err.message||err),'error');}finally{if(btn)btn.disabled=false;}
+  if(!kkPmCurrentRow)return;
+  const btn=document.getElementById('kkPmSyncWorkbook');
+  if(btn)btn.disabled=true;
+  kkPmSetStatus('⏳ Membuat/sinkronkan Spreadsheet PM exact workbook (28 sheet)...');
+  try{
+    const d=await callServerWithRetry('createKkPmSheets',{opdId:kkPmCurrentRow.id,year:currentYear,opd:kkPmCurrentRow.opd||'OPD'},2);
+    kkPmWorkbookData=d?.kkPmData||{};
+    kkPmWorkbookSheets=Array.isArray(d?.sheets)?d.sheets:[];
+    kkPmCurrentRow.kkPmData={...(kkPmCurrentRow.kkPmData||{}),workbook:kkPmWorkbookData};
+    // Sync computed formula values immediately after creating/synchronizing the PM workbook.
+    await syncKkComputedValues(kkPmCurrentRow,false);
+    render();
+    updateKpisLocal();
+    kkPmSetStatus('✓ Spreadsheet PM siap; empat nilai formula sudah dibaca ulang dari workbook ini.','success');
+    kkPmRenderModal();
+  }catch(err){kkPmSetStatus('❌ Gagal membuat/sinkronkan Spreadsheet PM: '+(err.message||err),'error');}
+  finally{if(btn)btn.disabled=false;}
 }
 async function exportKkPmFullWorkbook(){
   if(!kkPmCurrentRow)return; kkPmSetStatus('⏳ Menyiapkan export workbook lengkap...');
@@ -4171,7 +4222,7 @@ function exportKkPmExcel(){
 async function openKkPmModal(id){
   const row=rows.find(r=>String(r.id)===String(id)); if(!row)return; kkPmCurrentRow=row;kkPmEditingRowId=row.id;kkPmTab='allSheets';kkPmSelectedSheet='FAQ';kkPmFilters={search:'',unsur:'all',subunsur:'all'};const modal=document.getElementById('kkPmModal');if(!modal)return;
   document.getElementById('kkPmModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;modal.classList.add('active');kkPmSetStatus('Memuat workbook lengkap, PM detail, evidence terhubung, dan nilai formula...');
-  try{await Promise.all([ensureKkPmMasterLoaded(),ensureKkFullWorkbookManifestLoaded(),loadKkPmData(row),loadKkPmWorkbookData(row),syncKkComputedValues(row,true)]);kkPmSetStatus('✓ KK PM siap: 28 sheet workbook + PM Struktur & Proses + evidence terhubung + nilai formula.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('Gagal memuat KK PM SPIP: '+(err.message||err),'error');kkPmRenderModal();}
+  try{await Promise.all([ensureKkPmMasterLoaded(),ensureKkFullWorkbookManifestLoaded(),loadKkPmData(row),loadKkPmWorkbookData(row),syncKkComputedValues(row,false)]);kkPmSetStatus('✓ KK PM siap: 28 sheet workbook + PM Struktur & Proses + evidence terhubung + nilai formula.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('Gagal memuat KK PM SPIP: '+(err.message||err),'error');kkPmRenderModal();}
 }
 
 function closeKkPmModal(){document.getElementById('kkPmModal')?.classList.remove('active');kkPmEditingRowId=null;kkPmCurrentRow=null;kkPmWorkbookData=null;kkPmWorkbookSheets=[];kkPmSelectedSheet='';kkPmStateMap=new Map();kkPmMetaMap=new Map();kkPmSaveTimers.forEach(t=>clearTimeout(t));kkPmSaveTimers.clear();kkPmMetaSaveTimers.forEach(t=>clearTimeout(t));kkPmMetaSaveTimers.clear();}
