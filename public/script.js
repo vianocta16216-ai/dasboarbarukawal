@@ -575,23 +575,47 @@ const VERIFICATION_LABELS = Object.freeze({
 
 function normalizeVerification(raw) {
   const v = raw && typeof raw === 'object' ? raw : {};
-  const status = Object.prototype.hasOwnProperty.call(VERIFICATION_LABELS, String(v.status || '')) ? String(v.status || '') : '';
+  // Evidence workbook stores its status at verificationStatus, while legacy/RTP
+  // evidence stores it inside verification.status. Accept both formats.
+  const rawStatus = v.status ?? v.verificationStatus ?? v.verification_status ?? '';
+  const status = Object.prototype.hasOwnProperty.call(VERIFICATION_LABELS, String(rawStatus || '')) ? String(rawStatus || '') : '';
   return {
-    examinerName: String(v.examinerName || v.namaPemeriksa || '').trim(),
-    note: String(v.note || v.catatanPemeriksa || '').trim(),
+    examinerName: String(v.examinerName || v.namaPemeriksa || v.verificationExaminer || v.verification_examiner || '').trim(),
+    note: String(v.note || v.catatanPemeriksa || v.verificationNote || v.verification_note || '').trim(),
     status,
-    verifiedAt: v.verifiedAt || null,
-    updatedAt: v.updatedAt || null
+    verifiedAt: v.verifiedAt || v.verificationAt || v.verification_at || null,
+    updatedAt: v.updatedAt || v.updated_at || null
   };
 }
 
+// Count actual file records only. Empty objects/status-only placeholders must not
+// inflate the dashboard denominator. Older records with a URL or filename remain valid.
+function isUploadedDocumentRecord(file) {
+  if (typeof file === 'string') return file.trim().length > 0;
+  if (!file || typeof file !== 'object' || Array.isArray(file)) return false;
+  const identityFields = ['uploadId','upload_id','url','fileUrl','file_url','r2Key','r2_key','gdriveId','gdrive_id','filePath','file_path','path'];
+  if (identityFields.some(key => String(file[key] || '').trim() && String(file[key]).trim() !== '#')) return true;
+  const name = String(file.fileName || file.file_name || file.name || '').trim();
+  return Boolean(name && !/^file$/i.test(name));
+}
+
+function verificationStatusLabel(status) {
+  return VERIFICATION_LABELS[String(status || '')] || VERIFICATION_LABELS[''];
+}
+function verificationStatusClass(status) {
+  return ['diterima','diterima_catatan','dikembalikan'].includes(String(status || '')) ? String(status) : 'pending';
+}
+function verificationScoreFromStatus(status) {
+  return Math.round((Number(VERIFICATION_WEIGHTS[String(status || '')] || 0)) * 100);
+}
+
 function getVerificationScore(file) {
-  const v = normalizeVerification(file?.verification);
-  return Math.round((Number(VERIFICATION_WEIGHTS[v.status] || 0)) * 100);
+  const v = normalizeVerification(file?.verification || file);
+  return verificationScoreFromStatus(v.status);
 }
 
 function getFileVerificationSummary(files) {
-  const arr = Array.isArray(files) ? files.filter(Boolean) : [];
+  const arr = Array.isArray(files) ? files.filter(isUploadedDocumentRecord) : [];
   const summary = {
     total: arr.length,
     verified: 0,
@@ -604,7 +628,7 @@ function getFileVerificationSummary(files) {
   if (!arr.length) return summary;
   let scoreSum = 0;
   arr.forEach(file => {
-    const v = normalizeVerification(file?.verification);
+    const v = normalizeVerification(file?.verification || file);
     const status = v.status;
     const verified = ['diterima','diterima_catatan','dikembalikan'].includes(status);
     if (verified) summary.verified++;
@@ -651,9 +675,9 @@ function getRtpEvidenceVerificationSummary(row) {
 // Persentase dihitung berdasarkan JUMLAH DOKUMEN, bukan rata-rata persentase OPD:
 // dokumen terverifikasi / seluruh dokumen yang di-upload x 100.
 function getRowDocumentVerificationSummary(row) {
-  // Use the active upload registry for Structure & Process evidence. The legacy
-  // subunsurs JSON may contain files carried over from older workflows/years and
-  // must not inflate the dashboard-wide current upload count.
+  // Dashboard aggregate is based on uploaded workbook files registered by the
+  // server, plus real Evidence RTP file records. Legacy parameter placeholders
+  // and empty JSON objects are excluded from the denominator.
   const workbookSummary = row?.workbookEvidenceSummary || {};
   const structureTotal = Math.max(0, Number(workbookSummary.totalFiles) || 0);
   const structureReviewedRaw = Number(workbookSummary.reviewedFiles ?? workbookSummary.verifiedFiles) || 0;
@@ -662,11 +686,13 @@ function getRowDocumentVerificationSummary(row) {
   const rtpSummary = getFileVerificationSummary(rtpFiles);
   const total = structureTotal + rtpSummary.total;
   const verified = structureReviewed + rtpSummary.verified;
-  const accepted = (Number(workbookSummary.verifiedFiles) || 0) + rtpSummary.accepted;
-  const withNotes = rtpSummary.withNotes + (Number(workbookSummary.withNotesFiles) || 0);
-  const returned = rtpSummary.returned + (Number(workbookSummary.returnedFiles) || 0);
+  const accepted = Math.min(structureTotal, Number(workbookSummary.verifiedFiles) || 0) + rtpSummary.accepted;
+  const withNotes = Math.min(structureTotal, Number(workbookSummary.withNotesFiles) || 0) + rtpSummary.withNotes;
+  const returned = Math.min(structureTotal, Number(workbookSummary.returnedFiles) || 0) + rtpSummary.returned;
   const summary = {
     total, verified, accepted, withNotes, returned,
+    structureTotal, structureReviewed,
+    rtpTotal: rtpSummary.total, rtpReviewed: rtpSummary.verified,
     percentage: total ? Math.round((verified / total) * 10000) / 100 : 0,
     progress: total ? Math.round((verified / total) * 10000) / 100 : 0
   };
@@ -677,10 +703,10 @@ function getRowDocumentVerificationSummary(row) {
 }
 
 function verificationStatusOptions(current='') {
-  return `<option value="" ${current === '' ? 'selected' : ''}>Belum Diverifikasi</option>
-    <option value="diterima" ${current === 'diterima' ? 'selected' : ''}>Diterima</option>
-    <option value="diterima_catatan" ${current === 'diterima_catatan' ? 'selected' : ''}>Diterima dengan Catatan</option>
-    <option value="dikembalikan" ${current === 'dikembalikan' ? 'selected' : ''}>Dikembalikan</option>`;
+  return `<option value="" style="background:#f8fafc;color:#475569" ${current === '' ? 'selected' : ''}>Belum Diverifikasi · 0%</option>
+    <option value="diterima" style="background:#f0fdf4;color:#166534" ${current === 'diterima' ? 'selected' : ''}>Diterima · 100%</option>
+    <option value="diterima_catatan" style="background:#fffbeb;color:#92400e" ${current === 'diterima_catatan' ? 'selected' : ''}>Diterima dengan Catatan · 75%</option>
+    <option value="dikembalikan" style="background:#fff7f7;color:#b91c1c" ${current === 'dikembalikan' ? 'selected' : ''}>Dikembalikan · 0%</option>`;
 }
 
 function formatVerificationDate(value) {
@@ -1131,11 +1157,13 @@ function updateKpisLocal(){
   const qaApip=qaTotalItems?Math.round((qaScoreSum/qaTotalItems)*10000)/100:0;
   const qaApipFilled=qaSummaries.filter(s=>Number(s.evaluated||0)+Number(s.na||0)>0).length;
   const qaEvidenceFiles=rows.reduce((sum,r)=>sum+Number(r.qaApipSummary?.evidenceFiles||0),0);
-  const status=rows.filter(r=>r.status==='Selesai').length, rtp=rows.filter(r=>r.rtp==='Selesai').length, ev=rows.filter(r=>Array.isArray(r.rtpEvidence)&&r.rtpEvidence.length).length;
+  const status=rows.filter(r=>r.status==='Selesai').length, rtp=rows.filter(r=>r.rtp==='Selesai').length, ev=rows.filter(r=>getFileVerificationSummary(r.rtpEvidence).total>0).length;
 
   const documentSummaries = rows.map(getRowDocumentVerificationSummary);
   const totalDocuments = documentSummaries.reduce((sum,s)=>sum+s.total,0);
   const verifiedDocuments = documentSummaries.reduce((sum,s)=>sum+s.verified,0);
+  const structureDocuments = documentSummaries.reduce((sum,s)=>sum+s.structureTotal,0);
+  const rtpDocuments = documentSummaries.reduce((sum,s)=>sum+s.rtpTotal,0);
   const verificationDocumentsPct = pct(verifiedDocuments,totalDocuments);
 
   applyKpis({
@@ -1145,12 +1173,12 @@ function updateKpisLocal(){
     rataIEPK:avgFilled('iepk'),
     rataKapabilitasApip:avgFilled('nilaiKapabilitasApip'),
     qaApip:Math.round(qaApip*100)/100, qaApipFilled, qaEvidenceFiles, statusSelesai:pct(status,total), rtpSelesai:pct(rtp,total), evidenceRtp:pct(ev,total),
-    verifikasiDokumen:verificationDocumentsPct, totalDocuments, verifiedDocuments,
+    verifikasiDokumen:verificationDocumentsPct, totalDocuments, verifiedDocuments, structureDocuments, rtpDocuments,
     total, strukturCount:total, maturitasCount:maturitas.length, mriCount:mri.length, iepkCount:iepk.length, kapabilitasCount:kap.length,
     statusSelesaiCount:status,rtpSelesaiCount:rtp,evidenceRtpCount:ev
   });
 }
-function applyKpis(k){const t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;},b=(id,v)=>{const e=document.getElementById(id);if(e)e.style.width=Math.max(0,Math.min(100,v))+'%';};t('kpiStrukturProses',k.rataStrukturProses.toFixed(2));b('kpiStrukturProsesBar',k.rataStrukturProses/5*100);t('kpiStrukturProsesNote',k.total+' OPD');t('kpiMaturitas',k.rataMaturitas.toFixed(2));b('kpiMaturitasBar',k.rataMaturitas/5*100);t('kpiMaturitasNote',k.maturitasCount+' OPD terisi');t('kpiMRI',k.rataMRI.toFixed(2));b('kpiMRIBar',k.rataMRI/5*100);t('kpiMRINote',k.mriCount+' OPD terisi');t('kpiIEPK',k.rataIEPK.toFixed(2));b('kpiIEPKBar',k.rataIEPK/5*100);t('kpiIEPKNote',k.iepkCount+' OPD terisi');t('kpiKapabilitasApip',k.rataKapabilitasApip.toFixed(2));b('kpiKapabilitasApipBar',k.rataKapabilitasApip/5*100);t('kpiKapabilitasApipNote',k.kapabilitasCount+' OPD terisi');t('kpiQaApip',Number(k.qaApip||0).toFixed(2)+'%');b('kpiQaApipBar',k.qaApip);t('kpiQaApipNote',k.qaEvidenceFiles+' dokumen evidence · '+k.qaApipFilled+' dari '+k.total+' OPD terisi');t('kpiStatusSelesai',k.statusSelesai+'%');b('kpiStatusSelesaiBar',k.statusSelesai);t('kpiStatusSelesaiNote',k.statusSelesaiCount+' dari '+k.total+' OPD');t('kpiRtpSelesai',k.rtpSelesai+'%');b('kpiRtpSelesaiBar',k.rtpSelesai);t('kpiRtpSelesaiNote',k.rtpSelesaiCount+' dari '+k.total+' OPD');t('kpiEvidenceRtp',k.evidenceRtp+'%');b('kpiEvidenceRtpBar',k.evidenceRtp);t('kpiEvidenceRtpNote',k.evidenceRtpCount+' dari '+k.total+' OPD');t('kpiVerifikasiDokumen',k.verifikasiDokumen+'%');b('kpiVerifikasiDokumenBar',k.verifikasiDokumen);t('kpiVerifikasiDokumenNote',k.verifiedDocuments+' dari '+k.totalDocuments+' dokumen');}
+function applyKpis(k){const t=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;},b=(id,v)=>{const e=document.getElementById(id);if(e)e.style.width=Math.max(0,Math.min(100,v))+'%';};t('kpiStrukturProses',k.rataStrukturProses.toFixed(2));b('kpiStrukturProsesBar',k.rataStrukturProses/5*100);t('kpiStrukturProsesNote',k.total+' OPD');t('kpiMaturitas',k.rataMaturitas.toFixed(2));b('kpiMaturitasBar',k.rataMaturitas/5*100);t('kpiMaturitasNote',k.maturitasCount+' OPD terisi');t('kpiMRI',k.rataMRI.toFixed(2));b('kpiMRIBar',k.rataMRI/5*100);t('kpiMRINote',k.mriCount+' OPD terisi');t('kpiIEPK',k.rataIEPK.toFixed(2));b('kpiIEPKBar',k.rataIEPK/5*100);t('kpiIEPKNote',k.iepkCount+' OPD terisi');t('kpiKapabilitasApip',k.rataKapabilitasApip.toFixed(2));b('kpiKapabilitasApipBar',k.rataKapabilitasApip/5*100);t('kpiKapabilitasApipNote',k.kapabilitasCount+' OPD terisi');t('kpiQaApip',Number(k.qaApip||0).toFixed(2)+'%');b('kpiQaApipBar',k.qaApip);t('kpiQaApipNote',k.qaEvidenceFiles+' dokumen evidence · '+k.qaApipFilled+' dari '+k.total+' OPD terisi');t('kpiStatusSelesai',k.statusSelesai+'%');b('kpiStatusSelesaiBar',k.statusSelesai);t('kpiStatusSelesaiNote',k.statusSelesaiCount+' dari '+k.total+' OPD');t('kpiRtpSelesai',k.rtpSelesai+'%');b('kpiRtpSelesaiBar',k.rtpSelesai);t('kpiRtpSelesaiNote',k.rtpSelesaiCount+' dari '+k.total+' OPD');t('kpiEvidenceRtp',k.evidenceRtp+'%');b('kpiEvidenceRtpBar',k.evidenceRtp);t('kpiEvidenceRtpNote',k.evidenceRtpCount+' dari '+k.total+' OPD');t('kpiVerifikasiDokumen',k.verifikasiDokumen+'%');b('kpiVerifikasiDokumenBar',k.verifikasiDokumen);t('kpiVerifikasiDokumenNote',`${k.verifiedDocuments} dari ${k.totalDocuments} dokumen · Struktur & Proses ${k.structureDocuments||0} · RTP ${k.rtpDocuments||0}`);}
 
 // ====== SAVE DATA ======
 function debounceSave() {
@@ -1232,7 +1260,7 @@ function render() {
         <td><button class="btn-report-pm" data-id="${r.id}" title="Upload Laporan Hasil PM SPIP">📄</button><div class="report-count pm">${Array.isArray(r.pmSpipReports)?r.pmSpipReports.length:0}</div></td>
         <td><button class="btn-kk-rtp" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja RTP">📋</button></td>
         <td><button class="btn-report-rr" data-id="${r.id}" title="Upload Laporan Pemantauan RR_RTP">📄</button><div class="report-count rr">${Array.isArray(r.rrRtpReports)?r.rrRtpReports.length:0}</div></td>
-        <td><div class="evidence-cell"><button class="btn-rtp-evidence" data-id="${r.id}" title="Upload Evidence RTP / Verifikasi Inspektorat">📤</button><span class="rtp-evidence-summary" data-id="${r.id}">${getRtpEvidenceVerificationSummary(r).percentage.toFixed(0)}%<small>${Array.isArray(r.rtpEvidence)?r.rtpEvidence.length:0} file</small></span></div></td>
+        <td><div class="evidence-cell"><button class="btn-rtp-evidence" data-id="${r.id}" title="Upload Evidence RTP / Verifikasi Inspektorat">📤</button><span class="rtp-evidence-summary" data-id="${r.id}">${getRtpEvidenceVerificationSummary(r).percentage.toFixed(0)}%<small>${getRtpEvidenceVerificationSummary(r).total} file</small></span></div></td>
         <td><button class="del-btn" data-id="${r.id}" title="Hapus">&times;</button></td>
       </tr>`;
     }).join('');
@@ -3380,14 +3408,14 @@ async function loadWorkbookEvidenceFiles(row){
 }
 function refreshWorkbookEvidenceCountsOnRow(row){
   if(!row)return;
-  const files=Array.isArray(workbookEvidenceFiles)?workbookEvidenceFiles:[];
+  const files=(Array.isArray(workbookEvidenceFiles)?workbookEvidenceFiles:[]).filter(isUploadedDocumentRecord);
   const summary=row.workbookEvidenceSummary||{};
   summary.totalFiles=files.length;
-  summary.evidenceGroups=new Set(files.map(f=>String(f.evidenceKey||''))).size;
-  summary.verifiedFiles=files.filter(f=>f.verificationStatus==='diterima').length;
-  summary.reviewedFiles=files.filter(f=>['diterima','diterima_catatan','dikembalikan'].includes(String(f.verificationStatus||''))).length;
-  summary.withNotesFiles=files.filter(f=>f.verificationStatus==='diterima_catatan').length;
-  summary.returnedFiles=files.filter(f=>f.verificationStatus==='dikembalikan').length;
+  summary.evidenceGroups=new Set(files.map(f=>String(f.evidenceKey||'')).filter(Boolean)).size;
+  summary.verifiedFiles=files.filter(f=>normalizeVerification(f).status==='diterima').length;
+  summary.reviewedFiles=files.filter(f=>['diterima','diterima_catatan','dikembalikan'].includes(normalizeVerification(f).status)).length;
+  summary.withNotesFiles=files.filter(f=>normalizeVerification(f).status==='diterima_catatan').length;
+  summary.returnedFiles=files.filter(f=>normalizeVerification(f).status==='dikembalikan').length;
   summary.syncedFiles=files.filter(f=>f.syncStatus==='done').length;
   row.workbookEvidenceSummary=summary;
   render();
@@ -3395,21 +3423,61 @@ function refreshWorkbookEvidenceCountsOnRow(row){
 }
 function wbGroups(){return workbookEvidenceMaster?.mergedEvidence?.groups||[];}
 function wbGroupById(id){return wbGroups().find(g=>g.groupId===id)||null;}
-function wbFilesForKey(key){return workbookEvidenceFiles.filter(f=>String(f.evidenceKey||'')===String(key));}
+function wbFilesForKey(key){return workbookEvidenceFiles.filter(f=>isUploadedDocumentRecord(f)&&String(f.evidenceKey||'')===String(key));}
 function wbSummaryForGroups(groups){
   const keys=new Set(groups.flatMap(g=>g.evidenceKeys||[]));
-  const files=workbookEvidenceFiles.filter(f=>keys.has(String(f.evidenceKey||'')));
+  const files=workbookEvidenceFiles.filter(f=>isUploadedDocumentRecord(f)&&keys.has(String(f.evidenceKey||'')));
   const verified=files.filter(f=>f.verificationStatus==='diterima').length;
-  return {files:files.length,verified,groups:groups.filter(g=>files.some(f=>(g.evidenceKeys||[]).includes(String(f.evidenceKey||'')))).length};
+  const reviewed=files.filter(f=>['diterima','diterima_catatan','dikembalikan'].includes(normalizeVerification(f).status)).length;
+  return {files:files.length,verified:reviewed,groups:groups.filter(g=>files.some(f=>(g.evidenceKeys||[]).includes(String(f.evidenceKey||'')))).length};
 }
 function wbTargetsForGroup(g){
   return (g?.variants||[]).flatMap(v=>v.targetLabels||[]).filter(Boolean);
 }
 function wbGradeEntries(v){return Object.values(v?.grades||{}).sort((a,b)=>({A:1,B:2,C:3,D:4,E:5}[a.grade]-({A:1,B:2,C:3,D:4,E:5}[b.grade])));}
 function wbEvidenceFileHtml(file){
-  const url=file?.url||''; const name=escapeHtml(file?.fileName||'Evidence'); const status=file?.syncStatus==='done'?'✓ Drive':file?.syncStatus==='retrying'?'⟳ retry':'R2';
-  const ver=file?.verificationStatus==='diterima'?'Diterima':file?.verificationStatus==='diterima_catatan'?'Diterima + catatan':file?.verificationStatus==='dikembalikan'?'Dikembalikan':'Belum diverifikasi';
-  return `<div class="wb-evidence-file" data-wb-file-id="${escapeHtml(file.uploadId||'')}"><div class="wb-evidence-file-main"><span class="wb-evidence-file-name">${url?`<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${name}</a>`:name}</span><span class="wb-evidence-file-meta">${escapeHtml(status)} · ${escapeHtml(ver)}${file.verificationExaminer?` · ${escapeHtml(file.verificationExaminer)}`:''}</span></div><div class="wb-evidence-file-actions"><button type="button" data-wb-action="retry" data-upload-id="${escapeHtml(file.uploadId||'')}">↻ Retry</button><button type="button" data-wb-action="delete" data-upload-id="${escapeHtml(file.uploadId||'')}">🗑 Hapus</button></div><details class="wb-verification"><summary>Penjaminan/Verifikasi</summary><div class="wb-verification-grid"><select data-wb-ver-status="${escapeHtml(file.uploadId||'')}">${verificationStatusOptions(file.verificationStatus||'')}</select><input data-wb-ver-examiner="${escapeHtml(file.uploadId||'')}" value="${escapeHtml(file.verificationExaminer||'')}" placeholder="Nama pemeriksa"><textarea data-wb-ver-note="${escapeHtml(file.uploadId||'')}" placeholder="Catatan pemeriksa">${escapeHtml(file.verificationNote||'')}</textarea><button type="button" data-wb-action="verify" data-upload-id="${escapeHtml(file.uploadId||'')}">Simpan Verifikasi</button></div></details></div>`;
+  const url=file?.url||'';
+  const name=escapeHtml(file?.fileName||'Evidence');
+  const syncStatus=file?.syncStatus==='done'?'Tersinkron ke Drive':file?.syncStatus==='retrying'?'Perlu sinkron ulang':'Tersimpan di R2';
+  const status=normalizeVerification(file).status;
+  const statusClass=verificationStatusClass(status);
+  const score=getVerificationScore(file);
+  const uploadId=escapeHtml(file.uploadId||'');
+  const retryButton=file?.syncStatus==='done'?'':`<button type="button" class="wb-action-retry" data-wb-action="retry" data-upload-id="${uploadId}" aria-label="Ulangi sinkronisasi Google Drive" title="Ulangi sinkronisasi Google Drive">↻ Ulangi Sinkronisasi</button>`;
+  return `<div class="wb-evidence-file is-${statusClass}" data-wb-file-id="${uploadId}">
+    <div class="wb-evidence-file-main">
+      <span class="wb-evidence-file-name">${url?`<a href="${escapeHtml(url)}" target="_blank" rel="noopener">📎 ${name}</a>`:`📎 ${name}`}</span>
+      <div class="wb-evidence-file-badges"><span class="wb-sync-pill ${file?.syncStatus==='done'?'is-synced':file?.syncStatus==='retrying'?'is-retry':'is-pending'}">${escapeHtml(syncStatus)}</span><span class="wb-verification-pill" data-wb-status-pill>${escapeHtml(verificationStatusLabel(status))}</span><span class="wb-score-badge" data-wb-score>Skor ${score}%</span></div>
+    </div>
+    <div class="wb-verification-meter" role="progressbar" aria-label="Skor verifikasi dokumen" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${score}"><span data-wb-score-fill style="width:${score}%"></span></div>
+    <div class="wb-evidence-file-actions">${retryButton}<button type="button" class="wb-action-delete" data-wb-action="delete" data-upload-id="${uploadId}" aria-label="Hapus file evidence" title="Hapus file evidence">🗑 Hapus File</button></div>
+    <details class="wb-verification"><summary>🛡️ Penjaminan / Verifikasi Inspektorat</summary><div class="wb-verification-grid">
+      <label>Hasil Verifikasi<select class="wb-verify-status is-${statusClass}" data-wb-ver-status="${uploadId}">${verificationStatusOptions(status)}</select></label>
+      <label>Nama Pemeriksa<input type="text" maxlength="100" data-wb-ver-examiner="${uploadId}" value="${escapeHtml(file.verificationExaminer||'')}" placeholder="Ketik nama pemeriksa"></label>
+      <label class="wb-verification-note-label">Catatan Pemeriksa<textarea maxlength="2000" data-wb-ver-note="${uploadId}" placeholder="Catatan, alasan pengembalian, atau koreksi yang perlu ditindaklanjuti">${escapeHtml(file.verificationNote||'')}</textarea></label>
+      <button type="button" class="wb-action-save" data-wb-action="verify" data-upload-id="${uploadId}">💾 Simpan Verifikasi</button>
+    </div></details>
+  </div>`;
+}
+
+function updateWorkbookVerificationPreview(select){
+  const card=select?.closest('.wb-evidence-file');
+  if(!card)return;
+  const status=select.value||'';
+  const statusClass=verificationStatusClass(status);
+  const score=verificationScoreFromStatus(status);
+  card.classList.remove('is-pending','is-diterima','is-diterima_catatan','is-dikembalikan');
+  card.classList.add(`is-${statusClass}`);
+  select.classList.remove('is-pending','is-diterima','is-diterima_catatan','is-dikembalikan');
+  select.classList.add(`is-${statusClass}`);
+  const label=card.querySelector('[data-wb-status-pill]');
+  const scoreLabel=card.querySelector('[data-wb-score]');
+  const fill=card.querySelector('[data-wb-score-fill]');
+  const meter=card.querySelector('.wb-verification-meter');
+  if(label)label.textContent=verificationStatusLabel(status);
+  if(scoreLabel)scoreLabel.textContent=`Skor ${score}%`;
+  if(fill)fill.style.width=`${score}%`;
+  if(meter)meter.setAttribute('aria-valuenow',String(score));
 }
 function wbGradeCardHtml(group,variant,g){
   const files=wbFilesForKey(variant.variantKey).filter(f=>String(f.grade||'')===String(g.grade));
@@ -3427,7 +3495,7 @@ function wbRenderUnsur(){
 }
 function wbRenderRoot(){
   const groups=wbGroups();
-  return `<div class="wb-root-head"><div><div class="kk-pm-kicker">WORKBOOK SINGLE SOURCE OF TRUTH</div><h4>Evidence Struktur dan Proses</h4><p>55 grup parameter gabungan dari KK3.1–KK3.4. Item identik digabung; item berbeda diberi label T1–T4. Upload hanya dilakukan di sini dan otomatis ditarik ke KK PM SPIP.</p></div><div class="wb-root-stat"><b>${workbookEvidenceFiles.length}</b><span>file</span><small>${workbookEvidenceFiles.filter(f=>f.verificationStatus==='diterima').length} terverifikasi</small></div></div><div class="wb-unsur-grid">${Object.values(SPIP_UNSUR_INFO).map(info=>{const gs=groups.filter(g=>String(g.subCode).split('.')[0]===info.code);const ss=wbSummaryForGroups(gs);return `<button type="button" class="wb-unsur-card" data-wb-nav="unsur" data-wb-unsur="${info.code}"><span>${info.icon}</span><b>UNSUR ${info.code}</b><strong>${escapeHtml(info.title)}</strong><small>${gs.length} grup · ${ss.files} file · ${ss.verified} terverifikasi</small></button>`;}).join('')}</div>`;
+  return `<div class="wb-root-head"><div><div class="kk-pm-kicker">WORKBOOK SINGLE SOURCE OF TRUTH</div><h4>Evidence Struktur dan Proses</h4><p>55 grup parameter gabungan dari KK3.1–KK3.4. Item identik digabung; item berbeda diberi label T1–T4. Upload hanya dilakukan di sini dan otomatis ditarik ke KK PM SPIP. Bobot skor: Diterima 100%, Diterima dengan Catatan 75%, Dikembalikan 0%.</p></div><div class="wb-root-stat"><b>${workbookEvidenceFiles.filter(isUploadedDocumentRecord).length}</b><span>file diunggah</span><small>${workbookEvidenceFiles.filter(f=>isUploadedDocumentRecord(f)&&['diterima','diterima_catatan','dikembalikan'].includes(normalizeVerification(f).status)).length} sudah diverifikasi</small></div></div><div class="wb-unsur-grid">${Object.values(SPIP_UNSUR_INFO).map(info=>{const gs=groups.filter(g=>String(g.subCode).split('.')[0]===info.code);const ss=wbSummaryForGroups(gs);return `<button type="button" class="wb-unsur-card" data-wb-nav="unsur" data-wb-unsur="${info.code}"><span>${info.icon}</span><b>UNSUR ${info.code}</b><strong>${escapeHtml(info.title)}</strong><small>${gs.length} grup · ${ss.files} file · ${ss.verified} terverifikasi</small></button>`;}).join('')}</div>`;
 }
 function wbRenderSub(){
   const groups=wbGroups().filter(g=>g.subCode===workbookEvidenceNav.sub);
@@ -3502,7 +3570,7 @@ document.addEventListener('click',e=>{
   const action=e.target.closest('#subunsurContainer [data-wb-action]');
   if(action){const uploadId=action.dataset.uploadId;if(action.dataset.wbAction==='verify')wbVerify(uploadId);else if(action.dataset.wbAction==='retry')wbRetry(uploadId);else if(action.dataset.wbAction==='delete')wbDelete(uploadId);}
 });
-document.addEventListener('change',e=>{const input=e.target.closest('#subunsurContainer [data-wb-file]');if(input)wbUploadSelected(input).catch(err=>alert(err.message||err));});
+document.addEventListener('change',e=>{const statusSelect=e.target.closest('#subunsurContainer [data-wb-ver-status]');if(statusSelect){updateWorkbookVerificationPreview(statusSelect);return;}const input=e.target.closest('#subunsurContainer [data-wb-file]');if(input)wbUploadSelected(input).catch(err=>alert(err.message||err));});
 
 // ====== MODAL CLOSE EDIT ======
 document.getElementById('modalClose').addEventListener('click', closeEditModal);
