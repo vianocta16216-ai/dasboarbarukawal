@@ -1249,15 +1249,15 @@ function parseWorkbookScalar(value){
   const s=String(value).trim();if(!s||/^#(DIV\/0!|VALUE!|REF!|N\/A|NAME\?|NUM!|NULL!)/i.test(s)||/lengkapi\s+kk/i.test(s))return{value:null,status:'incomplete',raw:s};
   const n=Number(s.replace(',','.'));if(Number.isFinite(n))return{value:Math.max(0,Math.min(5,n)),status:'ok',raw:s};return{value:null,status:'incomplete',raw:s};
 }
-async function readWorkbookComputedValues(env,spreadsheetId){
+async function readWorkbookComputedValues(env,spreadsheetId,sourceInfo={}){
   const token=await getGoogleAccessToken(env);const ranges=['KKLEAD_SPIP!I11','KKLEAD_SPIP!I68','KKLEAD_SPIP!I85','KKLEAD_SPIP!I106'];
   const qs=ranges.map(r=>`ranges=${encodeURIComponent(r)}`).join('&');const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchGet?${qs}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
   const res=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${token}`}}, {retries:3,baseDelay:500});const body=await res.json().catch(()=>({}));
-  if(!res.ok){const msg=JSON.stringify(body||{});if(res.status===403&&/scope|permission|insufficient/i.test(msg))throw new Error('Akses Google Sheets belum memiliki scope spreadsheet readonly. Tambahkan scope Google Sheets readonly pada OAuth refresh token.');throw new Error(`Gagal membaca nilai formula workbook: ${msg}`);}
+  if(!res.ok){const msg=JSON.stringify(body||{});if(res.status===403&&/scope|permission|insufficient/i.test(msg))throw new Error('Akses Google Sheets belum memiliki scope spreadsheet readonly. Tambahkan scope Google Sheets readonly pada OAuth refresh token.');throw new Error(`Gagal membaca nilai formula workbook ${sourceInfo.workbookName||spreadsheetId}: ${msg}`);}
   const vals=(body.valueRanges||[]).map(x=>x.values?.[0]?.[0]);
   const parsed={nilaiMaturitas:parseWorkbookScalar(vals[0]),mri:parseWorkbookScalar(vals[1]),iepk:parseWorkbookScalar(vals[2]),nilaiKapabilitasApip:parseWorkbookScalar(vals[3])};
   const statuses=Object.values(parsed).map(x=>x.status);
-  return{source:'KKLEAD_SPIP workbook formula cells',sheet:'KKLEAD_SPIP',cells:{nilaiMaturitas:'I11',mri:'I68',iepk:'I85',nilaiKapabilitasApip:'I106'},values:Object.fromEntries(Object.entries(parsed).map(([k,v])=>[k,v.value])),raw:Object.fromEntries(Object.entries(parsed).map(([k,v])=>[k,v.raw??null])),status:statuses.every(x=>x==='ok')?'ok':(statuses.some(x=>x==='ok')?'partial':'incomplete'),syncedAt:Date.now()};
+  return{source:sourceInfo.source||'KK PM SPIP workbook formula cells',spreadsheetId,spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`,workbookName:sourceInfo.workbookName||null,sheet:'KKLEAD_SPIP',cells:{nilaiMaturitas:'I11',mri:'I68',iepk:'I85',nilaiKapabilitasApip:'I106'},values:Object.fromEntries(Object.entries(parsed).map(([k,v])=>[k,v.value])),raw:Object.fromEntries(Object.entries(parsed).map(([k,v])=>[k,v.raw??null])),status:statuses.every(x=>x==='ok')?'ok':(statuses.some(x=>x==='ok')?'partial':'incomplete'),syncedAt:Date.now()};
 }
 
 export async function onRequest({ request, env, ctx }) {
@@ -1417,6 +1417,9 @@ export async function onRequest({ request, env, ctx }) {
                  COUNT(*) AS total_files,
                  COUNT(DISTINCT evidence_key) AS evidence_groups,
                  SUM(CASE WHEN verification_status='diterima' THEN 1 ELSE 0 END) AS verified_files,
+                 SUM(CASE WHEN verification_status IN ('diterima','diterima_catatan','dikembalikan') THEN 1 ELSE 0 END) AS reviewed_files,
+                 SUM(CASE WHEN verification_status='diterima_catatan' THEN 1 ELSE 0 END) AS with_notes_files,
+                 SUM(CASE WHEN verification_status='dikembalikan' THEN 1 ELSE 0 END) AS returned_files,
                  SUM(CASE WHEN sync_status='done' THEN 1 ELSE 0 END) AS synced_files
           FROM opd_workbook_evidence_items WHERE year=? GROUP BY opd_id
         `).bind(String(year)).all();
@@ -1481,7 +1484,7 @@ export async function onRequest({ request, env, ctx }) {
           const cv=computedWorkbook?.values||{};
           const n=(v)=>{const x=Number(v); return Number.isFinite(x)&&x>0?x:null;};
           const wb=workbookEvidenceSummaryMap.get(String(r.id));
-          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,pass:qaPass,fail:qaFail,pending:qaPending,sum:qaPass,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus},nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,computedWorkbook, nilaiMaturitas:n(cv.nilaiMaturitas),nilaiMRI:n(cv.mri),nilaiIEPK:n(cv.iepk),nilaiKapabilitasApip:n(cv.nilaiKapabilitasApip),mri:n(cv.mri),iepk:n(cv.iepk),workbookEvidenceSummary:{totalFiles:Number(wb?.total_files||0),evidenceGroups:Number(wb?.evidence_groups||0),verifiedFiles:Number(wb?.verified_files||0),syncedFiles:Number(wb?.synced_files||0)}};
+          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,pass:qaPass,fail:qaFail,pending:qaPending,sum:qaPass,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus},nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,computedWorkbook, nilaiMaturitas:n(cv.nilaiMaturitas),nilaiMRI:n(cv.mri),nilaiIEPK:n(cv.iepk),nilaiKapabilitasApip:n(cv.nilaiKapabilitasApip),mri:n(cv.mri),iepk:n(cv.iepk),workbookEvidenceSummary:{totalFiles:Number(wb?.total_files||0),evidenceGroups:Number(wb?.evidence_groups||0),verifiedFiles:Number(wb?.verified_files||0),reviewedFiles:Number(wb?.reviewed_files||0),withNotesFiles:Number(wb?.with_notes_files||0),returnedFiles:Number(wb?.returned_files||0),syncedFiles:Number(wb?.synced_files||0)}};
         });
         return new Response(JSON.stringify(mapped),{status:200,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate, max-age=0'}});
       }
@@ -1682,10 +1685,39 @@ export async function onRequest({ request, env, ctx }) {
         notifyRealtime(env,ctx,year,{action:'deleteWorkbookEvidence',opdId,uploadId,evidenceKey:item.evidence_key});return jsonResponse({status:'success',uploadId,evidenceKey:item.evidence_key,fileName:item.file_name||'File'});
       }
       case 'syncKkComputedValues': {
-        const opdId=String(params.opdId||'');if(!opdId)throw new Error('ID OPD wajib diisi.');const rec=await env.DB.prepare('SELECT opd,kk_data,computed_workbook_data FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(opdId,String(year)).all();if(!rec.results?.length)throw new Error('OPD tidak ditemukan.');const kk=normalizeKkData(rec.results[0].kk_data);
-        if(!kk.workbookSpreadsheetId)return jsonResponse({status:'unavailable',computed:{source:'KKLEAD_SPIP workbook formula cells',status:'unavailable',syncedAt:null,message:'Spreadsheet Kertas Kerja OPD belum dibuat.',values:{nilaiMaturitas:null,mri:null,iepk:null,nilaiKapabilitasApip:null}}});
-        try{const computed=await readWorkbookComputedValues(env,kk.workbookSpreadsheetId);const v=computed.values||{};await runD1WithRetry(()=>env.DB.prepare('UPDATE opd_data SET nilai_maturitas=?,nilai_kapabilitas_apip=?,mri=?,iepk=?,computed_workbook_data=? WHERE id=? AND year=?').bind(Number(v.nilaiMaturitas??0),Number(v.nilaiKapabilitasApip??0),Number(v.mri??0),Number(v.iepk??0),JSON.stringify(computed),opdId,String(year)));notifyRealtime(env,ctx,year,{action:'syncKkComputedValues',opdId,computed});return jsonResponse({status:'success',computed});}
-        catch(err){let old={};try{old=rec.results[0].computed_workbook_data?JSON.parse(rec.results[0].computed_workbook_data):{};}catch{}const computed={...old,status:'error',source:'KKLEAD_SPIP workbook formula cells',error:String(err.message||err),syncedAt:old.syncedAt||null};await runD1WithRetry(()=>env.DB.prepare('UPDATE opd_data SET computed_workbook_data=? WHERE id=? AND year=?').bind(JSON.stringify(computed),opdId,String(year)));return jsonResponse({status:'error',message:computed.error,computed},200);}
+        const opdId=String(params.opdId||'');
+        if(!opdId)throw new Error('ID OPD wajib diisi.');
+        const rec=await env.DB.prepare('SELECT opd,kk_data,kk_pm_data,computed_workbook_data FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(opdId,String(year)).all();
+        if(!rec.results?.length)throw new Error('OPD tidak ditemukan.');
+        const saved=rec.results[0];
+        const kkPm=normalizeKkPmData(saved.kk_pm_data).workbook;
+        const kk=normalizeKkData(saved.kk_data);
+        // The dashboard's four formula values belong to the workbook shown in "KK PM SPIP".
+        // Prefer that workbook; read the older "KK SPIP" workbook only for legacy OPDs
+        // that have not created a PM workbook yet.
+        const usePm=Boolean(kkPm.workbookSpreadsheetId);
+        const spreadsheetId=extractSpreadsheetId(kkPm.workbookSpreadsheetId||kk.workbookSpreadsheetId);
+        const workbookName=usePm?(kkPm.workbookName||'KK PM SPIP'):(kk.workbookName||'KK SPIP');
+        if(!spreadsheetId){
+          return jsonResponse({status:'unavailable',computed:{source:'KK PM SPIP workbook formula cells',status:'unavailable',syncedAt:null,message:'Spreadsheet KK PM SPIP belum dibuat/disinkronkan untuk OPD ini.',values:{nilaiMaturitas:null,mri:null,iepk:null,nilaiKapabilitasApip:null}}});
+        }
+        try{
+          const computed=await readWorkbookComputedValues(env,spreadsheetId,{source:usePm?'KK PM SPIP · formula workbook cells':'KK SPIP (legacy fallback) · formula workbook cells',workbookName});
+          const v=computed.values||{};
+          // Keep existing numeric columns if a formula cell is temporarily blank/error, but
+          // never present an old cached result as current: computed_workbook_data is replaced.
+          await runD1WithRetry(()=>env.DB.prepare('UPDATE opd_data SET nilai_maturitas=COALESCE(?,nilai_maturitas),nilai_kapabilitas_apip=COALESCE(?,nilai_kapabilitas_apip),mri=COALESCE(?,mri),iepk=COALESCE(?,iepk),computed_workbook_data=? WHERE id=? AND year=?').bind(v.nilaiMaturitas,v.nilaiKapabilitasApip,v.mri,v.iepk,JSON.stringify(computed),opdId,String(year)));
+          notifyRealtime(env,ctx,year,{action:'syncKkComputedValues',opdId,computed});
+          return jsonResponse({status:'success',computed});
+        }catch(err){
+          let old={};try{old=saved.computed_workbook_data?JSON.parse(saved.computed_workbook_data):{};}catch{}
+          // If the source workbook changed, do not surface cached scores read from the old workbook.
+          const sameWorkbook=String(old.spreadsheetId||'')===String(spreadsheetId);
+          const emptyValues={nilaiMaturitas:null,mri:null,iepk:null,nilaiKapabilitasApip:null};
+          const computed={...(sameWorkbook?old:{}),status:'error',source:usePm?'KK PM SPIP workbook formula cells':'KK SPIP (legacy fallback) · formula workbook cells',spreadsheetId,spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`,values:sameWorkbook&&old.values?old.values:emptyValues,error:String(err.message||err),syncedAt:sameWorkbook?(old.syncedAt||null):null};
+          await runD1WithRetry(()=>env.DB.prepare('UPDATE opd_data SET computed_workbook_data=? WHERE id=? AND year=?').bind(JSON.stringify(computed),opdId,String(year)));
+          return jsonResponse({status:'error',message:computed.error,computed},200);
+        }
       }
 
       case 'getKkPmSheets': {
