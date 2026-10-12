@@ -44,7 +44,13 @@ Aturannya:
 Dengan pola ini, evidence yang sudah diunggah operator lain dapat langsung terlihat pada KK PM selama berada pada OPD/tahun/parameter yang sama.
 
 ## QA APIP
-QA APIP tetap terpisah dari PM dan mengikuti sheet `CHECKLIST PK` workbook: **10 butir**, yaitu **3 Persiapan + 4 Pelaksanaan + 3 Pelaporan**. QA tidak dibuat menyerupai KK3.1; pola UX saja yang memanfaatkan accordion, autosave, dan checklist.
+QA APIP tetap terpisah dari PM, tetapi modul Penjaminan Kualitas kini mengikuti file `Template_Penjaminan_Kualitas_QA_APIP_KAWAL_SPIP.xlsx` (4 sheet: `Petunjuk`, `KK Penjaminan Kualitas`, `Rekap Parameter`, `Rekap Unsur`). Master web berisi 671 item QA dan 43 parameter. Form dipaginasi 35 item per halaman untuk mengurangi beban browser; unggahan diambil read-only dari Evidence Struktur & Proses per OPD/tahun. Ekspor memakai template XLSX asli dan mengubah hanya sel input agar rumus serta format tetap terjaga.
+
+Kolom `File Evidence (Tarikan Evidence Struktur & Proses)` di QA bersifat baca-saja. File diambil dari tabel `opd_workbook_evidence_items` yang juga dipakai kolom `Evidence Struktur dan Proses`, dengan pencocokan kode subunsur + parameter + Grade dan label target `T1=KK3.1`, `T2=KK3.2`, `T3=KK3.3`, `T4=KK3.4`. Tidak ada upload/tabs evidence baru pada QA.
+
+Penilaian memakai kolom Ketersediaan, Identitas Dokumen, Keabsahan, Periode Sesuai, Substansi, dan Catatan. Nilai dan kesimpulan item mengikuti formula template. Export memakai workbook template empat sheet, mengisi tarikan file pada kolom K dan input L:Q serta mempertahankan rumus Nilai/Kesimpulan/Rekap.
+
+Penyimpanan tetap menggunakan tabel sparse `opd_qa_apip_items` dengan kunci tahun + OPD + subunsur + parameter + grade + nomor item. Tabel checklist 10 butir lama tetap ada hanya untuk kompatibilitas dan tidak digunakan oleh tampilan QA baru.
 
 ## Empat nilai KPI — tidak ada input manual
 Empat nilai di dashboard dibaca dari sel formula workbook `KKLEAD_SPIP`:
