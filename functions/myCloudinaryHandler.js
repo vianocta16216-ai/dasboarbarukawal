@@ -364,6 +364,8 @@ async function ensureOpdSchema(env){
     )`).run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_wbe_location ON opd_workbook_evidence_items(year,opd_id,evidence_key,grade)").run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_wbe_opd ON opd_workbook_evidence_items(year,opd_id,updated_at)").run();
+    // Lookup index for QA APIP's exact linkage: OPD/year + subunsur + parameter + grade + T1-T4.
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_wbe_qa_lookup ON opd_workbook_evidence_items(year,opd_id,subunsur,param_id,grade,target_code,created_at)").run();
 
     // One-time backfill from the legacy subunsurs JSON so existing Level selections are preserved.
     try {
