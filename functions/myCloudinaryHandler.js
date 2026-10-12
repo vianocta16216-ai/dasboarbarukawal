@@ -259,8 +259,8 @@ async function ensureOpdSchema(env){
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_qa_apip_opd ON opd_qa_apip_items(year, opd_id)").run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_qa_apip_param ON opd_qa_apip_items(year, opd_id, subunsur, param_id)").run();
 
-    // Workbook-aligned QA checklist. The legacy 671-item table is retained
-    // for backward compatibility; the new QA UI uses this 10-item sparse table.
+    // Legacy 10-item checklist table retained only for backward compatibility.
+    // The active QA APIP UI uses opd_qa_apip_items with 671 template-aligned items.
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS opd_qa_apip_checklist_items (
       year TEXT NOT NULL,
       opd_id TEXT NOT NULL,
@@ -1396,10 +1396,13 @@ export async function onRequest({ request, env, ctx }) {
         const levelRows=await env.DB.prepare("SELECT opd_id,subunsur,param_id,level FROM opd_parameter_levels_v2 WHERE year=?").bind(String(year)).all();
         const qaSummaryRows=await env.DB.prepare(`
           SELECT opd_id,
-                 COUNT(*) AS checked_items,
-                 SUM(CASE WHEN checklist='√' THEN 1 ELSE 0 END) AS pass_items,
-                 SUM(CASE WHEN checklist='X' THEN 1 ELSE 0 END) AS fail_items
-          FROM opd_qa_apip_checklist_items WHERE year=? GROUP BY opd_id
+                 SUM(CASE WHEN score IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_items,
+                 SUM(CASE WHEN availability='N/A' THEN 1 ELSE 0 END) AS na_items,
+                 COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) AS sum_score,
+                 SUM(CASE WHEN score=1 THEN 1 ELSE 0 END) AS pass_items,
+                 SUM(CASE WHEN score=0.5 THEN 1 ELSE 0 END) AS partial_items,
+                 SUM(CASE WHEN score=0 THEN 1 ELSE 0 END) AS fail_items
+          FROM opd_qa_apip_items WHERE year=? GROUP BY opd_id
         `).bind(String(year)).all();
         const qaSummaryMap=new Map();
         for(const q of (qaSummaryRows.results||[])) qaSummaryMap.set(String(q.opd_id),q);
@@ -1464,16 +1467,21 @@ export async function onRequest({ request, env, ctx }) {
           const strukturNilai=totalParams?Math.round((sumLevels/totalParams)*100)/100:0;
           const strukturEvidenceCount=countParameterEvidence(subunsurs);
           const strukturStatus=strukturEvidenceCount===totalParams?'Selesai':(strukturEvidenceCount>0?'Proses':'Belum');
-          const qaEvidenceFiles=countStructureEvidenceFiles(subunsurs);
+          const wb=workbookEvidenceSummaryMap.get(String(r.id));
+          const qaEvidenceFiles=Number(wb?.total_files||0);
           const q=qaSummaryMap.get(String(r.id));
-          const qaChecked=Number(q?.checked_items||0);
+          const qaEvaluated=Number(q?.evaluated_items||0);
+          const qaNa=Number(q?.na_items||0);
+          const qaSum=Number(q?.sum_score||0);
           const qaPass=Number(q?.pass_items||0);
+          const qaPartial=Number(q?.partial_items||0);
           const qaFail=Number(q?.fail_items||0);
-          const qaTotalItems=10;
+          const qaTotalItems=671;
+          const qaChecked=qaEvaluated+qaNa;
           const qaPending=Math.max(0,qaTotalItems-qaChecked);
-          const qaPercentage=Math.round((qaPass/qaTotalItems)*10000)/100;
+          const qaPercentage=qaEvaluated?Math.round((qaSum/qaEvaluated)*10000)/100:0;
           const qaCompletion=Math.round((qaChecked/qaTotalItems)*10000)/100;
-          const qaStatus=qaCompletion>=100?'Selesai':(qaCompletion>0?'Proses':'Belum');
+          const qaStatus=qaCompletion>=100?'Selesai':(qaChecked>0?'Proses':'Belum');
           const pm=kkPmSummaryMap.get(String(r.id));
           const pmEvaluated=Number(pm?.evaluated_items||0);
           const pmSum=Number(pm?.sum_levels||0);
@@ -1485,8 +1493,7 @@ export async function onRequest({ request, env, ctx }) {
           let computedWorkbook={}; try{computedWorkbook=r.computed_workbook_data?JSON.parse(r.computed_workbook_data):{};}catch{computedWorkbook={};}
           const cv=computedWorkbook?.values||{};
           const n=(v)=>{const x=Number(v); return Number.isFinite(x)&&x>0?x:null;};
-          const wb=workbookEvidenceSummaryMap.get(String(r.id));
-          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,pass:qaPass,fail:qaFail,pending:qaPending,sum:qaPass,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus},nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,computedWorkbook, nilaiMaturitas:n(cv.nilaiMaturitas),nilaiMRI:n(cv.mri),nilaiIEPK:n(cv.iepk),nilaiKapabilitasApip:n(cv.nilaiKapabilitasApip),mri:n(cv.mri),iepk:n(cv.iepk),workbookEvidenceSummary:{totalFiles:Number(wb?.total_files||0),evidenceGroups:Number(wb?.evidence_groups||0),verifiedFiles:Number(wb?.verified_files||0),reviewedFiles:Number(wb?.reviewed_files||0),withNotesFiles:Number(wb?.with_notes_files||0),returnedFiles:Number(wb?.returned_files||0),syncedFiles:Number(wb?.synced_files||0)}};
+          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,evaluated:qaEvaluated,na:qaNa,pass:qaPass,partial:qaPartial,fail:qaFail,pending:qaPending,sum:qaSum,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus},nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,computedWorkbook, nilaiMaturitas:n(cv.nilaiMaturitas),nilaiMRI:n(cv.mri),nilaiIEPK:n(cv.iepk),nilaiKapabilitasApip:n(cv.nilaiKapabilitasApip),mri:n(cv.mri),iepk:n(cv.iepk),workbookEvidenceSummary:{totalFiles:Number(wb?.total_files||0),evidenceGroups:Number(wb?.evidence_groups||0),verifiedFiles:Number(wb?.verified_files||0),reviewedFiles:Number(wb?.reviewed_files||0),withNotesFiles:Number(wb?.with_notes_files||0),returnedFiles:Number(wb?.returned_files||0),syncedFiles:Number(wb?.synced_files||0)}};
         });
         return new Response(JSON.stringify(mapped),{status:200,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate, max-age=0'}});
       }
@@ -2185,19 +2192,23 @@ export async function onRequest({ request, env, ctx }) {
         const q=await env.DB.prepare(`SELECT COUNT(*) AS stored_items,
               SUM(CASE WHEN score IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_items,
               SUM(CASE WHEN availability='N/A' THEN 1 ELSE 0 END) AS na_items,
-              COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) AS sum_score
+              COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) AS sum_score,
+              SUM(CASE WHEN score=1 THEN 1 ELSE 0 END) AS pass_items,
+              SUM(CASE WHEN score=0.5 THEN 1 ELSE 0 END) AS partial_items,
+              SUM(CASE WHEN score=0 THEN 1 ELSE 0 END) AS fail_items
           FROM opd_qa_apip_items WHERE year=? AND opd_id=?`).bind(String(year),opdId).all();
         const qr=q.results?.[0]||{}; const evaluated=Number(qr.evaluated_items||0); const na=Number(qr.na_items||0); const sum=Number(qr.sum_score||0); const total=671;
         const pending=Math.max(0,total-evaluated-na);
-        const applicable=Math.max(0,total-na);
-        const percentage=applicable?Math.round((sum/applicable)*10000)/100:0;
+        const percentage=evaluated?Math.round((sum/evaluated)*10000)/100:0;
         const completion=Math.round(((evaluated+na)/total)*10000)/100;
-        const evRec=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,String(year)).all();
-        let evidenceFiles=0; try{evidenceFiles=countStructureEvidenceFiles(evRec.results?.[0]?.subunsurs?JSON.parse(evRec.results[0].subunsurs):{});}catch{}
-        const qaStatus=completion>=100?'Selesai':(completion>0?'Proses':'Belum');
-        await env.DB.prepare("UPDATE opd_data SET qa_apip=? WHERE id=? AND year=?").bind(qaStatus,opdId,year).run();
-        notifyRealtime(env,ctx,year,{action:'saveQaApipItem',opdId,subunsur,paramId,grade,itemNo,summary:{total,evaluated,na,pending,sum,percentage,completion,evidenceFiles,status:qaStatus}});
-        return jsonResponse({status:'success',item:{subunsur,paramId,grade,itemNo,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now},summary:{total,evaluated,na,pending,sum,percentage,completion,evidenceFiles,status:qaStatus}});
+        const pass=Number(qr.pass_items||0),partial=Number(qr.partial_items||0),fail=Number(qr.fail_items||0);
+        const evidenceCount=await env.DB.prepare("SELECT COUNT(DISTINCT upload_id) AS n FROM opd_workbook_evidence_items WHERE year=? AND opd_id=? AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>''").bind(String(year),opdId).first();
+        const evidenceFiles=Number(evidenceCount?.n||0),checked=evaluated+na;
+        const qaStatus=completion>=100?'Selesai':(checked>0?'Proses':'Belum');
+        await env.DB.prepare("UPDATE opd_data SET qa_apip=? WHERE id=? AND year=?").bind(qaStatus,opdId,String(year)).run();
+        const summary={total,evaluated,na,checked,pass,partial,fail,pending,sum,percentage,completion,evidenceFiles,status:qaStatus};
+        notifyRealtime(env,ctx,year,{action:'saveQaApipItem',opdId,subunsur,paramId,grade,itemNo,item:{subunsur,paramId,grade,itemNo,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now},summary});
+        return jsonResponse({status:'success',item:{subunsur,paramId,grade,itemNo,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now},summary});
       }
 
       case 'deleteQaApipItem': {
@@ -2207,19 +2218,22 @@ export async function onRequest({ request, env, ctx }) {
         const q=await env.DB.prepare(`SELECT
               SUM(CASE WHEN score IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_items,
               SUM(CASE WHEN availability='N/A' THEN 1 ELSE 0 END) AS na_items,
-              COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) AS sum_score
+              COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) AS sum_score,
+              SUM(CASE WHEN score=1 THEN 1 ELSE 0 END) AS pass_items,
+              SUM(CASE WHEN score=0.5 THEN 1 ELSE 0 END) AS partial_items,
+              SUM(CASE WHEN score=0 THEN 1 ELSE 0 END) AS fail_items
           FROM opd_qa_apip_items WHERE year=? AND opd_id=?`).bind(String(year),opdId).all();
         const qr=q.results?.[0]||{}; const evaluated=Number(qr.evaluated_items||0); const na=Number(qr.na_items||0); const sum=Number(qr.sum_score||0); const total=671;
         const pending=Math.max(0,total-evaluated-na);
-        const applicable=Math.max(0,total-na);
-        const percentage=applicable?Math.round((sum/applicable)*10000)/100:0;
+        const percentage=evaluated?Math.round((sum/evaluated)*10000)/100:0;
         const completion=Math.round(((evaluated+na)/total)*10000)/100;
-        const evRec=await env.DB.prepare("SELECT subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,String(year)).all();
-        let evidenceFiles=0; try{evidenceFiles=countStructureEvidenceFiles(evRec.results?.[0]?.subunsurs?JSON.parse(evRec.results[0].subunsurs):{});}catch{}
-        const qaStatus=completion>=100?'Selesai':(completion>0?'Proses':'Belum');
-        await env.DB.prepare("UPDATE opd_data SET qa_apip=? WHERE id=? AND year=?").bind(qaStatus,opdId,year).run();
-        const summary={total,evaluated,na,pending,sum,percentage,completion,evidenceFiles,status:qaStatus};
-        notifyRealtime(env,ctx,year,{action:'deleteQaApipItem',opdId,subunsur,paramId,grade,itemNo,summary});
+        const pass=Number(qr.pass_items||0),partial=Number(qr.partial_items||0),fail=Number(qr.fail_items||0);
+        const evidenceCount=await env.DB.prepare("SELECT COUNT(DISTINCT upload_id) AS n FROM opd_workbook_evidence_items WHERE year=? AND opd_id=? AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>''").bind(String(year),opdId).first();
+        const evidenceFiles=Number(evidenceCount?.n||0),checked=evaluated+na;
+        const qaStatus=completion>=100?'Selesai':(checked>0?'Proses':'Belum');
+        await env.DB.prepare("UPDATE opd_data SET qa_apip=? WHERE id=? AND year=?").bind(qaStatus,opdId,String(year)).run();
+        const summary={total,evaluated,na,checked,pass,partial,fail,pending,sum,percentage,completion,evidenceFiles,status:qaStatus};
+        notifyRealtime(env,ctx,year,{action:'deleteQaApipItem',opdId,subunsur,paramId,grade,itemNo,deleted:true,summary});
         return jsonResponse({status:'success',summary});
       }
 
