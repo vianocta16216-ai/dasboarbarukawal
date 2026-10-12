@@ -1273,7 +1273,7 @@ export async function onRequest({ request, env, ctx }) {
   const SENSITIVE_ACTIONS = [
     'verifyAccess', 'verifyDelete', 'addOpd', 'saveData', 'saveField',
     'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'saveQaApipItem', 'deleteQaApipItem', 'getQaApipChecklistData', 'saveQaApipChecklistItem', 'deleteQaApipChecklistItem', 'deleteOpd', 'addYear', 'deleteYear',
-    'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup'
+    'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup'
   ];
 
   // KK RTP dan pengaturan folder Evidence RTP wajib melalui POST.
@@ -1281,7 +1281,7 @@ export async function onRequest({ request, env, ctx }) {
     try {
       const contentType=request.headers.get('content-type')||'';
       // Binary upload mode: metadata stays in the query string; the request body is the file stream.
-      if(action==='uploadFile' || action==='uploadRtpEvidence' || action==='replaceEvidenceFile' || action==='replaceRtpEvidence' || action==='uploadReportFile'){
+      if(action==='uploadFile' || action==='uploadRtpEvidence' || action==='replaceEvidenceFile' || action==='replaceRtpEvidence' || action==='replaceWorkbookEvidenceFile' || action==='uploadReportFile'){
         url.searchParams.forEach((value,key)=>{params[key]=value;});
         params.fileType=params.fileType||contentType||'application/octet-stream';
         params.fileName=params.fileName||request.headers.get('X-File-Name')||'evidence';
@@ -1678,6 +1678,64 @@ export async function onRequest({ request, env, ctx }) {
         const files=(q.results||[]).map(x=>({uploadId:String(x.upload_id),evidenceKey:String(x.evidence_key||''),targetCode:String(x.target_code||''),subunsur:String(x.subunsur||''),paramId:String(x.param_id||''),grade:String(x.grade||''),level:Number(x.level||0),fileName:x.file_name||'File',fileType:x.file_type||'application/octet-stream',url:x.r2_key?`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${x.r2_key}`:null,r2Key:x.r2_key||null,gdriveId:x.gdrive_id||null,syncStatus:x.sync_status||'pending',syncError:x.sync_error||null,verificationStatus:x.verification_status||'',verificationExaminer:x.verification_examiner||'',verificationNote:x.verification_note||'',verificationAt:x.verification_at?Number(x.verification_at):null,createdAt:Number(x.created_at||0),updatedAt:Number(x.updated_at||0)}));
         return jsonResponse({status:'success',files});
       }
+      case 'replaceWorkbookEvidenceFile': {
+        assertGoogleDriveConfigured(env);
+        const opdId=String(params.opdId||'');
+        const uploadId=String(params.uploadId||'');
+        if(!opdId||!uploadId)throw new Error('Identitas file evidence pengganti tidak lengkap.');
+        const file=params.file;const legacyData=params.fileData;
+        if(!file&&!legacyData&&!request.body)throw new Error('File pengganti tidak diterima.');
+        let bytes=null;let fileType=String(params.fileType||'application/octet-stream');let fileName=sanitizeString(params.fileName||'evidence').substring(0,150)||'evidence';
+        if(file){
+          if(Number(file.size||0)>10*1024*1024)throw new Error('File lebih dari 10 MB.');
+          fileName=sanitizeString(file.name||fileName).substring(0,150)||'evidence';fileType=file.type||fileType;bytes=new Uint8Array(await file.arrayBuffer());
+        }else if(legacyData){
+          bytes=decodeBase64File(legacyData,10);
+        }else{
+          const sizeHint=Number(params.fileSize)||0;if(sizeHint>10*1024*1024)throw new Error('File lebih dari 10 MB.');
+          bytes=new Uint8Array(await request.arrayBuffer());
+        }
+        if(!bytes?.byteLength)throw new Error('File pengganti kosong atau tidak dapat dibaca.');
+        if(bytes.byteLength>10*1024*1024)throw new Error('File lebih dari 10 MB.');
+        if(!/^[a-zA-Z0-9!#$&^_.+-]+\/[a-zA-Z0-9!#$&^_.+-]+$/.test(fileType))fileType='application/octet-stream';
+        const q=await env.DB.prepare('SELECT * FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uploadId,String(year),opdId).all();
+        const item=q.results?.[0];if(!item)throw new Error('Evidence tidak ditemukan pada OPD/tahun yang sama.');
+        if(normalizeVerificationStatus(item.verification_status)!=='dikembalikan')throw new Error('Penggantian hanya tersedia untuk file dengan status verifikasi Dikembalikan.');
+        if(!item.r2_key)throw new Error('Lokasi file R2 tidak ditemukan.');
+        const previousObject=await env.EVIDENCE_BUCKET.get(item.r2_key);if(!previousObject)throw new Error('File lama di R2 tidak ditemukan.');
+        const previousBytes=new Uint8Array(await previousObject.arrayBuffer());
+        const previousContentType=previousObject.httpMetadata?.contentType||item.file_type||'application/octet-stream';
+        const previousName=item.file_name||'evidence';const previousDriveId=String(item.gdrive_id||'').trim();
+        let gdriveId=previousDriveId;let driveEffect='none';let r2Updated=false;
+        try{
+          await env.EVIDENCE_BUCKET.put(item.r2_key,bytes,{httpMetadata:{contentType:fileType}});r2Updated=true;
+          if(gdriveId){
+            try{
+              const accessToken=await getGoogleAccessToken(env);const currentDrive=await getDriveFile(accessToken,gdriveId);
+              if(currentDrive&&!currentDrive.trashed){await updateGoogleDriveFileContent(env,gdriveId,fileName,bytes,fileType);driveEffect='updated_existing';}
+              else gdriveId='';
+            }catch(err){if(Number(err?.status)===404)gdriveId='';else throw err;}
+          }
+          if(!gdriveId){
+            const job={type:'workbook_evidence',uploadId,year:String(year),opdId,opdName:'OPD',r2Key:item.r2_key,fileName,fileType,evidenceKey:item.evidence_key,targetCode:item.target_code,subunsur:item.subunsur,paramId:item.param_id,grade:item.grade,level:item.level};
+            gdriveId=await directGoogleDriveBackup(env,job);driveEffect='created_new';
+          }
+          const now=Date.now();
+          const updated=await runD1WithRetry(()=>env.DB.prepare(`UPDATE opd_workbook_evidence_items SET file_name=?,file_type=?,gdrive_id=?,sync_status='done',sync_error=NULL,verification_status='',verification_examiner='',verification_note='',verification_at=NULL,updated_at=? WHERE upload_id=? AND year=? AND opd_id=? AND LOWER(TRIM(COALESCE(verification_status,'')))='dikembalikan'`).bind(fileName,fileType,gdriveId,now,uploadId,String(year),opdId));
+          if(!updated.meta?.changes)throw new Error('Status file berubah saat penggantian diproses. Muat ulang daftar evidence sebelum mencoba lagi.');
+          try{await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET gdrive_id=?,r2_key=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=?").bind(gdriveId,item.r2_key,now,uploadId));}catch(_){}
+          try{await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_uploads SET gdrive_id=?,r2_key=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=?").bind(gdriveId,item.r2_key,now,uploadId));}catch(_){}
+          const fileRecord={uploadId,evidenceKey:String(item.evidence_key||''),targetCode:String(item.target_code||''),subunsur:String(item.subunsur||''),paramId:String(item.param_id||''),grade:String(item.grade||''),level:Number(item.level||0),fileName,fileType,url:`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${item.r2_key}`,r2Key:item.r2_key,gdriveId,syncStatus:'done',syncError:null,verificationStatus:'',verificationExaminer:'',verificationNote:'',verificationAt:null,createdAt:Number(item.created_at||0),updatedAt:now};
+          notifyRealtime(env,ctx,year,{action:'replaceWorkbookEvidenceFile',opdId,uploadId,evidenceKey:item.evidence_key,targetCode:item.target_code,grade:item.grade,storage:'R2 + Google Drive'});
+          return jsonResponse({status:'success',message:'File pengganti memperbarui record, tautan R2 dan file Google Drive yang sama.',file:fileRecord});
+        }catch(err){
+          if(r2Updated)await env.EVIDENCE_BUCKET.put(item.r2_key,previousBytes,{httpMetadata:{contentType:previousContentType}}).catch(()=>{});
+          if(driveEffect==='updated_existing'&&previousDriveId)await updateGoogleDriveFileContent(env,previousDriveId,previousName,previousBytes,previousContentType).catch(()=>{});
+          else if(driveEffect==='created_new'&&gdriveId)await deleteGoogleDriveFile(env,gdriveId).catch(()=>{});
+          throw err;
+        }
+      }
+
       case 'saveWorkbookEvidenceVerification': {
         const opdId=String(params.opdId||''),uploadId=String(params.uploadId||'');if(!opdId||!uploadId)throw new Error('Identitas evidence tidak lengkap.');
         const verificationStatus=sanitizeQaText(params.verificationStatus,30),verificationExaminer=sanitizeQaText(params.verificationExaminer,100),verificationNote=sanitizeQaText(params.verificationNote,2000);
