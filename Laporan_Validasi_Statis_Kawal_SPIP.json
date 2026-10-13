@@ -13,22 +13,35 @@
     "password_unique": true,
     "all_opd_accounts_match_master": true,
     "all_passwords_at_least_16_chars": true,
-    "auditor_action_allowlist_present": true
+    "auditor_action_allowlist_present": true,
+    "auth_password_pbkdf2_iterations": 100000,
+    "auth_password_pbkdf2_runtime_limit_guard": true,
+    "legacy_bootstrap_hash_migration_guarded": true,
+    "wrong_password_rejected_in_helper_test": true,
+    "manual_password_reset_not_overwritten_in_migration_test": true
   },
   "production_checks_not_run": [
-    "D1 rows and permissions",
-    "actual login against Cloudflare",
+    "D1 account hash iteration counts and bindings in production",
+    "actual login against deployed Cloudflare Pages and production D1",
     "Google Sheets OAuth read/write",
     "R2 upload/download permission",
     "Google Drive backup",
     "cross-OPD rejection tests",
-    "live workbook IDs"
+    "live workbook IDs",
+    "login test for all 32 accounts after deployment"
   ],
   "notes": [
     "User-provided list has 27 OPDs; app default master has an additional BPKAD, so account JSON contains 28 Operator OPD accounts.",
     "Secret JSON is minified and intentionally omits optional enabled and OPD displayName fields to fit Cloudflare 5 KB value limit. The parser defaults enabled to true and display name to username.",
     "Credentials in the separate JSON/CSV are initial passwords; treat both files as confidential.",
     "Cloudflare D1, real Google Sheets/Drive OAuth, R2 access and all workbook identifiers still require live production acceptance tests.",
-    "Role Auditor diubah menjadi allowlist API eksplisit; role lain tetap memakai aturan akses sesuai cakupannya."
+    "Role Auditor diubah menjadi allowlist API eksplisit; role lain tetap memakai aturan akses sesuai cakupannya.",
+    "Login 500 reproduced from user recording was caused by PBKDF2 requesting 120000 iterations while Cloudflare Workers supports up to 100000 per operation. Patch uses 100000 and safely upgrades untouched bootstrap hashes on matching initial-password login."
+  ],
+  "local_tests_run": [
+    "JavaScript syntax checks passed for myCloudinaryHandler.js and project function scripts",
+    "All JSON files parsed successfully",
+    "PBKDF2 helper tests passed for password create/verify and unsupported iteration handling",
+    "Legacy bootstrap migration test passed; explicitly reset password records are not overwritten"
   ]
 }

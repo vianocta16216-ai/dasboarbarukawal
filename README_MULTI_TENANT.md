@@ -11,6 +11,7 @@
 - `PANDUAN_PERBAIKAN_AKUN_LHE_VERIFIKASI_ENV_CLOUDFLARE.md` — env vars, bindings, deployment dan uji penerimaan.
 - `Panduan_Perbaikan_Kawal_SPIP.md` — ringkasan konfigurasi Cloudflare.
 - `database/diagnostic_queries.sql` — query SELECT read-only untuk audit D1 setelah deployment.
+- `PERBAIKAN_LOGIN_PBKDF2_CLOUDFLARE.md` — diagnosis dan langkah pemulihan login akibat batas iterasi PBKDF2 Cloudflare Workers.
 - `CHECKLIST_VALIDASI_TARIKAN_DATA_28_OPD.csv` — checklist pengujian live per akun/OPD.
 - `KAWAL_SPIP_USERS_JSON.example.json` — contoh format dengan placeholder, bukan kredensial yang dapat login.
 
