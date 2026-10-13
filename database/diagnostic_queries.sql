@@ -61,3 +61,22 @@ ORDER BY year, opd_id, source_year, status;
 SELECT year, stage, status, COUNT(*) AS jumlah
 FROM evidence_verification_audit
 GROUP BY year, stage, status ORDER BY year, stage, status;
+
+-- 10) Status kompatibilitas hash password untuk diagnosis login. READ ONLY.
+-- Hash lama >100000 perlu dimigrasikan sebelum akun itu dapat memverifikasi password di Workers.
+SELECT role,
+       COUNT(*) AS total_akun,
+       SUM(CASE WHEN enabled=1 THEN 1 ELSE 0 END) AS aktif,
+       SUM(CASE WHEN enabled=0 THEN 1 ELSE 0 END) AS nonaktif,
+       SUM(CASE WHEN password_iterations > 100000 THEN 1 ELSE 0 END) AS hash_lama_perlu_diperiksa,
+       SUM(CASE WHEN password_iterations <= 100000 THEN 1 ELSE 0 END) AS hash_kompatibel
+FROM auth_users
+GROUP BY role ORDER BY role;
+
+-- 11) Username/status hash untuk menemukan akun yang belum kompatibel.
+-- Tidak menampilkan password, salt, ataupun password_hash.
+SELECT username, role, enabled, password_iterations,
+       CASE WHEN password_changed_at = created_at THEN 'bootstrap/default'
+            ELSE 'pernah diubah/reset' END AS status_password
+FROM auth_users
+ORDER BY role, username;
