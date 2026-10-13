@@ -35,6 +35,37 @@ const KK_TEMPLATE_SHEET_NAMES = [
   'KK 8 INSP'
 ];
 const KK_FULL_TEMPLATE_SHEET_NAMES = ['FAQ','DAFTAR KK','NAMA OPD','CHECKLIST PK','KKLEAD_SPIP','KKLEAD I','KKE 1.1 SASTRA','KKE 1.2 SASTRA OPD','KKE 2.1 SASPRO','KKE 2.2 SASKEG','KKE 2.3 SASSUBKEG','KKLEAD II','KK3.1','KK3.2','KK3.3','KK3.4','KK 4','KKLEAD III','KK 5.1 A','KK 5.1 B ','KK 5.1 C','KK 5.2','KK 6','KK 7','KK 8','Ref PCT','REF','INDIKATOR HASIL'];
+const KK_PM_2026_SHEET_NAMES = ['FAQ','DAFTAR KK','NAMA OPD','KKLEAD_SPIP','KKLEAD I','KKE 1.1 SASTRA','KKE 1.2 SASTRA OPD','KKE 2.1 SASPRO','KKE 2.2 SASKEG','KKE 2.3 SASSUBKEG','KKLEAD II','KK3.1','KK3.2','KK3.3','KK3.4','KKLEAD III','KK 5.1 A','KK 5.1 B ','KK 5.1 C','KK 5.2','KK 6','KK 7','KK 8','Ref PCT','REF','INDIKATOR HASIL'];
+const MAHULU_DEFAULT_OPDS = [
+  'INSPEKTORAT',
+  'DINAS PEKERJAAN UMUM DAN PENATAAN RUANG, PERUMAHAN DAN KAWASAN PEMUKIMAN',
+  'SATUAN POLISI PAMONG PRAJA',
+  'BADAN PENANGGULANGAN BENCANA DAERAH',
+  'DINAS SOSIAL, PEMBERDAYAAN PEREMPUAN DAN PERLINDUNGAN ANAK',
+  'DINAS KETAHANAN PANGAN DAN PERTANIAN',
+  'DINAS LINGKUNGAN HIDUP',
+  'DINAS KEPENDUDUKAN DAN PENCATATAN SIPIL',
+  'DINAS PEMBERDAYAAN MASYARAKAT DAN PEMERINTAHAN KAMPUNG',
+  'DINAS PERHUBUNGAN',
+  'DINAS KOMUNIKASI DAN INFORMATIKA, STATISTIK DAN PERSANDIAN',
+  'DINAS PENANAMAN MODAL DAN PELAYANAN TERPADU SATU PINTU',
+  'SEKRETARIAT DAERAH',
+  'SEKRETARIAT DPRD',
+  'BADAN PERENCANAAN PEMBANGUNAN, PENELITIAN DAN PENGEMBANGAN DAERAH',
+  'BADAN PENDAPATAN DAERAH',
+  'BADAN KEPEGAWAIAN DAN PENGEMBANGAN SUMBER DAYA MANUSIA',
+  'BADAN PENGELOLA PERBATASAN DAERAH',
+  'KECAMATAN LONG APARI',
+  'KECAMATAN LONG PAHANGAI',
+  'KECAMATAN LONG BAGUN',
+  'KECAMATAN LAHAM',
+  'KECAMATAN LONG HUBUNG',
+  'BADAN KESATUAN BANGSA DAN POLITIK',
+  'PUSKESMAS LONG BAGUN',
+  'DINAS KESEHATAN, PENGENDALIAN PENDUDUK DAN KELUARGA BERENCANA',
+  'DINAS PARIWISATA, PEMUDA DAN OLAHRAGA',
+  'BADAN PENGELOLA KEUANGAN DAN ASET DAERAH (BPKAD)'
+];
 const KK_PM_EXPECTED_FORMULAS = {
   'KKLEAD_SPIP!I11':'=H16+H50+H64',
   'KKLEAD_SPIP!I68':'=F83',
@@ -42,6 +73,178 @@ const KK_PM_EXPECTED_FORMULAS = {
   'KKLEAD_SPIP!I106':"='KKLEAD II'!L35"
 };
 
+
+function normalizeAssessmentOrgName(value){
+  return String(value?.opd||value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim();
+}
+function assessmentOrgProfile(value){
+  const n=normalizeAssessmentOrgName(value);
+  if(n.includes('INSPEKTORAT'))return 'INSPEKTORAT';
+  if(n.includes('BPKAD')||(n.includes('PENGELOLA KEUANGAN')&&n.includes('ASET DAERAH')))return 'BPKAD';
+  if(n.includes('BP4D')||n.includes('BAPPELITBANGDA')||(n.includes('BADAN PERENCANAAN PEMBANGUNAN')&&n.includes('PENELITIAN')&&n.includes('PENGEMBANGAN')))return 'BP4D';
+  return 'OPD';
+}
+function assessmentAllowedTargets(value){
+  const profile=assessmentOrgProfile(value);
+  if(profile==='BPKAD')return ['T1','T2','T3'];
+  if(profile==='INSPEKTORAT')return ['T1','T4'];
+  return ['T1'];
+}
+async function assertAssessmentTargetAllowed(env,year,opdId,target){
+  const code=String(target||'').toUpperCase();
+  const row=(await env.DB.prepare('SELECT opd FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(String(opdId||''),String(year)).all()).results?.[0];
+  if(!row)throw new Error('OPD tidak ditemukan.');
+  const allowed=assessmentAllowedTargets(row.opd);
+  if(!allowed.includes(code))throw new Error(`${code} tidak tersedia untuk ${row.opd}. Target yang berlaku: ${allowed.join(', ')}.`);
+  return row.opd;
+}
+async function assertAssessmentInputEditable(env,year,opdId){
+  const row=(await env.DB.prepare('SELECT opd,assessment_status FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(String(opdId||''),String(year)).all()).results?.[0];
+  if(!row)throw new Error('OPD tidak ditemukan.');
+  const status=String(row.assessment_status||'Belum Mengisi');
+  if(status==='Proses Review'||status==='Selesai Verifikasi')throw new Error(`Input mandiri ${row.opd} terkunci karena status ${status}. Minta Inspektorat membuka kembali status pengisian sebelum mengubah data.`);
+  if(status==='Belum Mengisi'){
+    await env.DB.prepare("UPDATE opd_data SET assessment_status='Proses Pengisian',assessment_status_updated_at=? WHERE id=? AND year=? AND assessment_status='Belum Mengisi'").bind(Date.now(),String(opdId),String(year)).run();
+  }
+  return row.opd;
+}
+function getPmSheetProfile(sheets){
+  const actual=(sheets||[]).map(s=>normalizeSheetTitle(s.properties?.title||s.title));
+  const match=expected=>actual.length===expected.length&&actual.every((x,i)=>x===normalizeSheetTitle(expected[i]));
+  if(match(KK_PM_2026_SHEET_NAMES))return 'PM_2026';
+  if(match(KK_FULL_TEMPLATE_SHEET_NAMES))return 'LEGACY_PK_28';
+  return null;
+}
+async function readLiveKkMasterRows(env,masterKind='PK'){
+  const kind=String(masterKind||'PK').toUpperCase()==='PM'?'PM':'PK';
+  const mappings=kind==='PM'
+    ?{T1:'KK3.1',T2:'KK3.2',T3:'KK3.3',T4:'KK3.4'}
+    :{T1:'KK3.1 OPD',T2:'KK3.2 BPKAD AKUN',T3:'KK3.3 BPKAD ASET',T4:'KK3.4 (INSPEKTORAT)'};
+  const spreadsheetId=extractSpreadsheetId(kind==='PM'
+    ?(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||'')
+    :(env.GOOGLE_SHEETS_PK_MASTER_ID||env.GOOGLE_SHEETS_PK_TEMPLATE_ID||env.GOOGLE_SHEETS_TEMPLATE_ID||''));
+  if(!spreadsheetId)return{live:false,masterKind:kind,message:kind==='PM'?'GOOGLE_SHEETS_PM_TEMPLATE_ID belum diatur.':'GOOGLE_SHEETS_PK_MASTER_ID belum diatur; aplikasi memakai snapshot master yang disertakan.'};
+  const cacheKey=`${kind}:${spreadsheetId}`;const now=Date.now();const cached=LIVE_KK_MASTER_ROWS_CACHE.get(cacheKey);
+  if(cached&&cached.expiresAt>now)return cached.payload;
+  const inflight=LIVE_KK_MASTER_ROWS_PENDING.get(cacheKey);if(inflight)return inflight;
+  const job=(async()=>{
+    const token=await getGoogleAccessToken(env);
+    const params=new URLSearchParams();params.set('majorDimension','ROWS');params.set('valueRenderOption','FORMATTED_VALUE');
+    for(const sheetName of Object.values(mappings))params.append('ranges',`'${String(sheetName).replace(/'/g,"''")}'!A1:L1000`);
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchGet?${params.toString()}`;
+    const response=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${token}`}}, {retries:2,baseDelay:250});
+    const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error('Gagal membaca sumber master KK: '+JSON.stringify(body).slice(0,500));
+    const ranges=body.valueRanges||[];const sheets={};Object.entries(mappings).forEach(([code,sheetName],i)=>{sheets[code]=Array.isArray(ranges[i]?.values)?ranges[i].values:[];});
+    const payload={live:true,masterKind:kind,sheets,sheetNames:mappings,updatedAt:Date.now(),cacheSeconds:60};
+    LIVE_KK_MASTER_ROWS_CACHE.set(cacheKey,{expiresAt:Date.now()+60_000,payload});
+    return payload;
+  })();
+  LIVE_KK_MASTER_ROWS_PENDING.set(cacheKey,job);
+  try{return await job;}finally{LIVE_KK_MASTER_ROWS_PENDING.delete(cacheKey);}
+}
+async function syncPmMasterColumnsToOpdWorkbooks(env,year,options={}){
+  if(String(env.GOOGLE_SHEETS_PM_AUTO_PROPAGATE||'true').toLowerCase()==='false')return {skipped:true,reason:'disabled'};
+  const masterId=extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||'');
+  if(!masterId)return {skipped:true,reason:'pm master not configured'};
+  const sourceMap={T1:'KK3.1',T2:'KK3.2',T3:'KK3.3',T4:'KK3.4'};
+  const names=Object.values(sourceMap);
+  const token=await getGoogleAccessToken(env);
+  const params=new URLSearchParams();params.set('majorDimension','ROWS');params.set('valueRenderOption','FORMULA');
+  for(const sheetName of names)params.append('ranges',`'${sheetName.replace(/'/g,"''")}'!A1:L1000`);
+  const sourceUrl=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(masterId)}/values:batchGet?${params.toString()}`;
+  const sourceRes=await fetchWithRetry(sourceUrl,{headers:{Authorization:`Bearer ${token}`}}, {retries:2,baseDelay:300});
+  const sourceBody=await sourceRes.json().catch(()=>({}));
+  if(!sourceRes.ok)throw new Error('Gagal membaca formula master PM untuk propagasi: '+JSON.stringify(sourceBody).slice(0,400));
+  const sourceRows={};
+  Object.entries(sourceMap).forEach(([target,sheetName],i)=>{
+    const raw=Array.isArray(sourceBody.valueRanges?.[i]?.values)?sourceBody.valueRanges[i].values:[];
+    let last=-1;raw.forEach((row,index)=>{if(Array.isArray(row)&&row.some(v=>v!==''&&v!==null&&v!==undefined))last=index;});
+    sourceRows[target]=raw.slice(0,last+1).map(row=>Array.from({length:12},(_,col)=>row?.[col]??''));
+  });
+  const opdRows=(await env.DB.prepare('SELECT id,opd,kk_pm_data FROM opd_data WHERE year=?').bind(String(year)).all()).results||[];
+  const plans=new Map();
+  for(const row of opdRows){
+    let raw={};try{raw=row.kk_pm_data?JSON.parse(row.kk_pm_data):{};}catch{raw={};}
+    const wb=normalizeKkPmData(raw).workbook;
+    const destId=extractSpreadsheetId(wb.workbookSpreadsheetId||'');
+    if(!destId||destId===masterId)continue;
+    const allowed=assessmentAllowedTargets(row.opd);
+    const knownSheets=new Set((Array.isArray(wb.sheets)?wb.sheets:KK_PM_2026_SHEET_NAMES).map(normalizeSheetTitle));
+    const data=[];
+    for(const target of allowed){
+      const sheetName=sourceMap[target];
+      const rows=sourceRows[target];
+      if(rows?.length&&knownSheets.has(normalizeSheetTitle(sheetName)))data.push({range:`'${sheetName.replace(/'/g,"''")}'!A1:L${rows.length}`,values:rows});
+    }
+    if(!data.length)continue;
+    if(!plans.has(destId))plans.set(destId,{id:destId,opds:[],data:[]});
+    const plan=plans.get(destId);plan.opds.push(String(row.opd||row.id));
+    for(const item of data){const ix=plan.data.findIndex(x=>x.range===item.range);if(ix<0)plan.data.push(item);}
+  }
+  const hashInput=JSON.stringify({sourceRows,plans:[...plans.values()].map(p=>({id:p.id,opds:p.opds.sort(),ranges:p.data.map(x=>x.range).sort()})).sort((a,b)=>a.id.localeCompare(b.id))});
+  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(hashInput));
+  const contentHash=[...new Uint8Array(digest)].map(v=>v.toString(16).padStart(2,'0')).join('');
+  const syncKey=`kk-pm-master:${String(year)}:${masterId}`;
+  const now=Date.now();
+  await env.DB.prepare('INSERT OR IGNORE INTO kk_pm_master_sync_state(sync_key,content_hash,last_synced_at,lease_until,last_attempt_at,last_error) VALUES(?,?,0,0,0,\'\')').bind(syncKey,'').run();
+  const acquired=options.force
+    ? await env.DB.prepare('UPDATE kk_pm_master_sync_state SET lease_until=?,last_attempt_at=? WHERE sync_key=? AND lease_until<?').bind(now+180000,now,syncKey,now).run()
+    : await env.DB.prepare(`UPDATE kk_pm_master_sync_state SET lease_until=?,last_attempt_at=? WHERE sync_key=? AND lease_until<? AND (content_hash<>? OR (last_error<>'' AND last_attempt_at<?))`).bind(now+180000,now,syncKey,now,contentHash,now-300000).run();
+  if(!Number(acquired.meta?.changes||0))return {skipped:true,reason:'master unchanged or sync already running',workbooks:plans.size};
+  let updated=0,failed=0;const errors=[];
+  try{
+    const jobs=[...plans.values()];
+    for(let i=0;i<jobs.length;i+=4){
+      const batch=jobs.slice(i,i+4);
+      const results=await Promise.all(batch.map(async plan=>{
+        try{
+          const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(plan.id)}/values:batchUpdate`;
+          const res=await fetchWithRetry(url,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({valueInputOption:'USER_ENTERED',includeValuesInResponse:false,data:plan.data})},{retries:2,baseDelay:400});
+          const body=await res.json().catch(()=>({}));if(!res.ok)throw new Error(`HTTP ${res.status}: ${JSON.stringify(body).slice(0,240)}`);
+          return {ok:true,id:plan.id};
+        }catch(err){return {ok:false,id:plan.id,error:String(err?.message||err).slice(0,300)};}
+      }));
+      for(const result of results){if(result.ok)updated++;else{failed++;errors.push(`${result.id}: ${result.error}`);}}
+    }
+    const finished=Date.now();
+    if(!failed){
+      await env.DB.prepare('UPDATE kk_pm_master_sync_state SET content_hash=?,last_synced_at=?,lease_until=0,last_attempt_at=?,last_error=\'\' WHERE sync_key=?').bind(contentHash,finished,finished,syncKey).run();
+    }else{
+      await env.DB.prepare('UPDATE kk_pm_master_sync_state SET lease_until=0,last_attempt_at=?,last_error=? WHERE sync_key=?').bind(finished,errors.join(' | ').slice(0,1500),syncKey).run();
+      console.warn('Propagasi master KK PM sebagian gagal:',errors.slice(0,5));
+    }
+    return {skipped:false,workbooksUpdated:updated,workbooksFailed:failed,targets:Object.keys(sourceMap)};
+  }catch(err){
+    const failedAt=Date.now();
+    await env.DB.prepare('UPDATE kk_pm_master_sync_state SET lease_until=0,last_attempt_at=?,last_error=? WHERE sync_key=?').bind(failedAt,String(err?.message||err).slice(0,1500),syncKey).run().catch(()=>{});
+    throw err;
+  }
+}
+
+function schedulePmMasterPropagation(env,year,ctx){
+  const task=syncPmMasterColumnsToOpdWorkbooks(env,year).catch(err=>{console.warn('Propagasi master KK PM ke workbook OPD gagal:',err?.message||err);return null;});
+  if(ctx?.waitUntil)ctx.waitUntil(task);else task.catch(()=>{});
+}
+
+async function seedDefaultMahuluOpdsIfEmpty(env,year){
+  const seedKey=`mahulu-opds-v1:${String(year)}`;
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS app_seed_state(seed_key TEXT PRIMARY KEY, created_at INTEGER NOT NULL)').run();
+  const marker=await env.DB.prepare('SELECT seed_key FROM app_seed_state WHERE seed_key=? LIMIT 1').bind(seedKey).all();
+  if(marker.results?.length)return;
+  const existing=(await env.DB.prepare('SELECT id,opd FROM opd_data WHERE year=?').bind(String(year)).all()).results||[];
+  const existingNames=new Set(existing.map(x=>normalizeAssessmentOrgName(x.opd)));
+  const seen=new Set();const unique=MAHULU_DEFAULT_OPDS.filter(name=>{const n=normalizeAssessmentOrgName(name);if(!n||seen.has(n)||existingNames.has(n))return false;seen.add(n);return true;});
+  const sheets=JSON.stringify(KK_PM_2026_SHEET_NAMES);
+  const stmts=unique.map(name=>{
+    const slug=normalizeAssessmentOrgName(name).toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,46);
+    const id=`mh_${String(year).replace(/[^0-9]/g,'').slice(-4)||'year'}_${slug}`.slice(0,90);
+    const workbookData=JSON.stringify({version:2,workbook:{version:1,workbookSpreadsheetId:null,workbookUrl:null,workbookName:`${name} - Kertas Kerja PM SPIP - ${year}`,templateSpreadsheetId:null,sheets:JSON.parse(sheets)},cells:{}});
+    return env.DB.prepare("INSERT OR IGNORE INTO opd_data (id,opd,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,evidence,qa_apip,mri,iepk,rtp,status,struktur_proses_status,subunsurs,year,kk_data,kk_pm_data,kk_rtp_data,rtp_evidence,rtp_evidence_folder) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+      .bind(id,name,0,0,0,0,'Belum','Belum',0,0,'Belum','Belum','Belum','{}',String(year),'{}',workbookData,'{}','[]','Evidence RTP');
+  });
+  for(let i=0;i<stmts.length;i+=40)await env.DB.batch(stmts.slice(i,i+40));
+  await env.DB.prepare('INSERT OR IGNORE INTO app_seed_state(seed_key,created_at) VALUES(?,?)').bind(seedKey,Date.now()).run();
+}
 
 let schemaReady=false;
 let schemaReadyPromise=null;
@@ -51,6 +254,8 @@ const DRIVE_FOLDER_CACHE=new Map();
 const DRIVE_FOLDER_PROMISES=new Map();
 let GOOGLE_ACTIVE=0;
 const GOOGLE_QUEUE=[];
+const LIVE_KK_MASTER_ROWS_CACHE=new Map();
+const LIVE_KK_MASTER_ROWS_PENDING=new Map();
 
 async function withGoogleConcurrency(task, limit=3){
   if(GOOGLE_ACTIVE>=limit){
@@ -117,7 +322,7 @@ async function ensureOpdSchema(env){
     const info=await env.DB.prepare("PRAGMA table_info(opd_data)").all();
     const cols=new Set((info.results||[]).map(x=>x.name));
     const hadStructureField=cols.has('nilai_struktur_proses');
-    const adds=[['nilai_struktur_proses','REAL NOT NULL DEFAULT 0'],['nilai_maturitas','REAL NOT NULL DEFAULT 0'],['nilai_kapabilitas_apip','REAL NOT NULL DEFAULT 0'],['computed_workbook_data',"TEXT NOT NULL DEFAULT '{}'"],['kk_pm_data',"TEXT NOT NULL DEFAULT '{}'"],['kk_rtp_data',"TEXT NOT NULL DEFAULT '{}'"],['rtp_evidence',"TEXT NOT NULL DEFAULT '[]'"],['rtp_evidence_folder',"TEXT NOT NULL DEFAULT 'Evidence RTP'"],['rtp_evidence_folder_id',"TEXT NOT NULL DEFAULT ''"],['pm_spip_reports',"TEXT NOT NULL DEFAULT '[]'"],['pm_spip_folder',"TEXT NOT NULL DEFAULT 'Laporan Hasil PM SPIP'"],['pm_spip_folder_id',"TEXT NOT NULL DEFAULT ''"],['rr_rtp_reports',"TEXT NOT NULL DEFAULT '[]'"],['rr_rtp_folder',"TEXT NOT NULL DEFAULT 'Laporan Pemantauan RR_RTP'"],['rr_rtp_folder_id',"TEXT NOT NULL DEFAULT ''"],['struktur_proses_status',"TEXT NOT NULL DEFAULT 'Belum'"]];
+    const adds=[['nilai_struktur_proses','REAL NOT NULL DEFAULT 0'],['nilai_maturitas','REAL NOT NULL DEFAULT 0'],['nilai_kapabilitas_apip','REAL NOT NULL DEFAULT 0'],['computed_workbook_data',"TEXT NOT NULL DEFAULT '{}'"],['kk_pm_data',"TEXT NOT NULL DEFAULT '{}'"],['kk_rtp_data',"TEXT NOT NULL DEFAULT '{}'"],['rtp_evidence',"TEXT NOT NULL DEFAULT '[]'"],['rtp_evidence_folder',"TEXT NOT NULL DEFAULT 'Evidence RTP'"],['rtp_evidence_folder_id',"TEXT NOT NULL DEFAULT ''"],['pm_spip_reports',"TEXT NOT NULL DEFAULT '[]'"],['pm_spip_folder',"TEXT NOT NULL DEFAULT 'Laporan Hasil PM SPIP'"],['pm_spip_folder_id',"TEXT NOT NULL DEFAULT ''"],['rr_rtp_reports',"TEXT NOT NULL DEFAULT '[]'"],['rr_rtp_folder',"TEXT NOT NULL DEFAULT 'Laporan Pemantauan RR_RTP'"],['rr_rtp_folder_id',"TEXT NOT NULL DEFAULT ''"],['struktur_proses_status',"TEXT NOT NULL DEFAULT 'Belum'"],['assessment_status',"TEXT NOT NULL DEFAULT 'Belum Mengisi'"],['assessment_status_updated_at','INTEGER NOT NULL DEFAULT 0']];
     for(const [name,type] of adds)if(!cols.has(name))await env.DB.prepare(`ALTER TABLE opd_data ADD COLUMN ${name} ${type}`).run();
     if(cols.has('sa') && !hadStructureField) {
       await env.DB.prepare("UPDATE opd_data SET nilai_struktur_proses=CAST(COALESCE(sa,0) AS REAL)").run();
@@ -129,6 +334,31 @@ async function ensureOpdSchema(env){
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_data_year ON opd_data(year)").run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_data_id_year ON opd_data(id, year)").run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_login_attempts_lookup ON login_attempts(ip, action, timestamp)").run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_assessment_status ON opd_data(year, assessment_status)").run();
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS bpkp_official_scores (
+      year TEXT PRIMARY KEY,
+      spip REAL NOT NULL,
+      mri REAL NOT NULL,
+      iepk REAL NOT NULL,
+      apip INTEGER NOT NULL,
+      finalized INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0,
+      updated_by TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT ''
+    )`).run();
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS bpkp_official_score_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      year TEXT NOT NULL,
+      action TEXT NOT NULL,
+      payload TEXT NOT NULL DEFAULT '{}',
+      updated_by TEXT NOT NULL DEFAULT '',
+      created_at INTEGER NOT NULL DEFAULT 0
+    )`).run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_bpkp_score_audit_year ON bpkp_official_score_audit(year, created_at)").run();
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS kk_pm_master_sync_state (
+      sync_key TEXT PRIMARY KEY, content_hash TEXT NOT NULL DEFAULT '', last_synced_at INTEGER NOT NULL DEFAULT 0,
+      lease_until INTEGER NOT NULL DEFAULT 0, last_attempt_at INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT ''
+    )`).run();
 
     // Evidence registry migration (IMPORTANT):
     // Previous deployments may already have evidence_uploads with an older schema.
@@ -560,12 +790,13 @@ function normalizeKkPmData(raw){
   let data=raw; if(typeof data==='string'){try{data=JSON.parse(data)}catch{data={}}}
   if(!data||typeof data!=='object')data={};
   const wb=data.workbook&&typeof data.workbook==='object'?data.workbook:{};
-  return {version:2,workbook:{version:1,workbookSpreadsheetId:wb.workbookSpreadsheetId||null,workbookUrl:wb.workbookUrl||null,workbookName:wb.workbookName||null,templateSpreadsheetId:wb.templateSpreadsheetId||null,sheets:Array.isArray(wb.sheets)?wb.sheets:KK_FULL_TEMPLATE_SHEET_NAMES},cells:data.cells&&typeof data.cells==='object'?data.cells:{}};
+  return {version:2,workbook:{version:1,workbookSpreadsheetId:wb.workbookSpreadsheetId||null,workbookUrl:wb.workbookUrl||null,workbookName:wb.workbookName||null,templateSpreadsheetId:wb.templateSpreadsheetId||null,sheets:Array.isArray(wb.sheets)?wb.sheets:KK_PM_2026_SHEET_NAMES},cells:data.cells&&typeof data.cells==='object'?data.cells:{}};
 }
 async function ensureKkPmSpreadsheet(env,params){
   if(!env.GOOGLE_DRIVE_CLIENT_ID||!env.GOOGLE_DRIVE_CLIENT_SECRET||!env.GOOGLE_DRIVE_REFRESH_TOKEN)throw new Error('Google OAuth untuk Spreadsheet PM belum dikonfigurasi');
   if(!env.GOOGLE_DRIVE_FOLDER_ID)throw new Error('GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi');
   const accessToken=await getGoogleAccessToken(env);
+  const explicitPmTemplate=Boolean(env.GOOGLE_SHEETS_PM_TEMPLATE_ID);
   const templateId=extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||env.GOOGLE_SHEETS_TEMPLATE_ID||DEFAULT_KK_TEMPLATE_SPREADSHEET_ID);
   const tf=await getDriveFile(accessToken,templateId); if(!tf||tf.trashed)throw new Error(`Template Google Spreadsheet PM tidak dapat diakses (${templateId}).`);
   if(tf.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error(`ID template ${templateId} bukan Google Spreadsheet.`);
@@ -579,20 +810,21 @@ async function ensureKkPmSpreadsheet(env,params){
     try{
       const currentCheck=await validateKkPmSpreadsheet(accessToken,current.workbookSpreadsheetId,{checkFormulas:false});
       if(currentCheck.ok){
-        const ex=await getDriveFile(accessToken,current.workbookSpreadsheetId); if(ex&&!ex.trashed)return{version:2,templateSpreadsheetId:templateId,workbookSpreadsheetId:String(current.workbookSpreadsheetId),workbookUrl:current.workbookUrl||ex.webViewLink||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(current.workbookSpreadsheetId)}/edit`,workbookName:current.workbookName||ex.name||`${opdName} - Kertas Kerja PM SPIP - ${yearValue}`,sheets:(current.sheets&&current.sheets.length===KK_FULL_TEMPLATE_SHEET_NAMES.length)?current.sheets:KK_FULL_TEMPLATE_SHEET_NAMES};
+        const ex=await getDriveFile(accessToken,current.workbookSpreadsheetId); if(ex&&!ex.trashed)return{version:2,templateSpreadsheetId:templateId,workbookSpreadsheetId:String(current.workbookSpreadsheetId),workbookUrl:current.workbookUrl||ex.webViewLink||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(current.workbookSpreadsheetId)}/edit`,workbookName:current.workbookName||ex.name||`${opdName} - Kertas Kerja PM SPIP - ${yearValue}`,sheets:(current.sheets&&current.sheets.length)?current.sheets:KK_PM_2026_SHEET_NAMES};
       }
     }catch{}
   }
-  const templateCheck=await validateKkPmSpreadsheet(accessToken,templateId,{checkFormulas:true});
-  if(!templateCheck.ok){
-    const shapeMsg=templateCheck.shapeOk?'':'struktur sheet tidak sama dengan 28 sheet workbook';
+  const templateCheck=await validateKkPmSpreadsheet(accessToken,templateId,{checkFormulas:!explicitPmTemplate});
+  const newPmProfileOk=templateCheck.profile==='PM_2026';
+  if(!templateCheck.ok || !newPmProfileOk){
+    const shapeMsg=templateCheck.profile==='PM_2026'?'':'template bukan struktur PM terbaru 26 sheet';
     const formulaMsg=templateCheck.formulaOk?'':`formula inti tidak sama (${templateCheck.formulaMismatches.map(x=>`${x.cell}: ${x.actual||'kosong'} ≠ ${x.expected}`).join('; ')})`;
-    throw new Error(`Template Google Spreadsheet PM belum sesuai workbook sumber: ${[shapeMsg,formulaMsg].filter(Boolean).join(' dan ')}. Set GOOGLE_SHEETS_PM_TEMPLATE_ID ke Google Spreadsheet yang merupakan salinan persis template KK_PK_dan_Evaluasi_SPIP_Pemda_05052026_FORMULA_TEMPLATE.`);
+    throw new Error(`Template Google Spreadsheet PM belum sesuai workbook PM terbaru: ${[shapeMsg,formulaMsg].filter(Boolean).join(' dan ')}. Unggah/import workbook KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313.xlsx ke Google Sheets, lalu set GOOGLE_SHEETS_PM_TEMPLATE_ID ke ID spreadsheet baru tersebut. Workbook lama yang sudah tertaut tidak dihapus atau ditimpa.`);
   }
   const workbookName=`${opdName} - Kertas Kerja PM SPIP - ${yearValue}`;const copied=await copyDriveFile(accessToken,templateId,workbookName,pmFolder);
-  const copiedCheck=await validateKkPmSpreadsheet(accessToken,copied.id,{checkFormulas:true});
-  if(!copiedCheck.ok)throw new Error('Salinan Spreadsheet PM gagal diverifikasi terhadap workbook sumber.');
-  return{version:2,templateSpreadsheetId:templateId,workbookSpreadsheetId:copied.id,workbookUrl:copied.webViewLink||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(copied.id)}/edit`,workbookName:copied.name||workbookName,sheets:KK_FULL_TEMPLATE_SHEET_NAMES};
+  const copiedCheck=await validateKkPmSpreadsheet(accessToken,copied.id,{checkFormulas:!explicitPmTemplate});
+  if(!copiedCheck.ok||copiedCheck.profile!=='PM_2026')throw new Error('Salinan Spreadsheet PM gagal diverifikasi terhadap struktur 26 sheet dari workbook sumber.');
+  return{version:2,templateSpreadsheetId:templateId,workbookSpreadsheetId:copied.id,workbookUrl:copied.webViewLink||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(copied.id)}/edit`,workbookName:copied.name||workbookName,sheets:KK_PM_2026_SHEET_NAMES};
 }
 async function getSpreadsheetMetadata(accessToken,spreadsheetId){
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=spreadsheetId,properties(title),sheets(properties(sheetId,title,index,gridProperties(rowCount,columnCount)))`;
@@ -601,11 +833,7 @@ async function getSpreadsheetMetadata(accessToken,spreadsheetId){
 }
 
 function normalizeSheetTitle(title){return String(title||'').trim().replace(/\s+/g,' ');}
-function expectedPmSheetOrderMatches(sheets){
-  const actual=(sheets||[]).map(s=>normalizeSheetTitle(s.properties?.title||s.title));
-  const expected=KK_FULL_TEMPLATE_SHEET_NAMES.map(normalizeSheetTitle);
-  return actual.length===expected.length && actual.every((x,i)=>x===expected[i]);
-}
+function expectedPmSheetOrderMatches(sheets){ return Boolean(getPmSheetProfile(sheets)); }
 async function getSpreadsheetFormulaValues(accessToken,spreadsheetId){
   const qs=Object.keys(KK_PM_EXPECTED_FORMULAS).map(r=>`ranges=${encodeURIComponent(r)}`).join('&');
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchGet?${qs}&valueRenderOption=FORMULA`;
@@ -624,7 +852,7 @@ async function validateKkPmSpreadsheet(accessToken,spreadsheetId,{checkFormulas=
     for(const [cell,expected] of Object.entries(KK_PM_EXPECTED_FORMULAS)){const actual=String(formulas[cell]||'').trim(); if(actual!==expected)formulaMismatches.push({cell,expected,actual});}
     formulaOk=formulaMismatches.length===0;
   }
-  return {ok:shapeOk&&formulaOk,shapeOk,formulaOk,formulaMismatches,metadata:meta,formulas};
+  return {ok:shapeOk&&formulaOk,shapeOk,formulaOk,formulaMismatches,profile:getPmSheetProfile(meta.sheets||[]),metadata:meta,formulas};
 }
 
 
@@ -1232,18 +1460,22 @@ function validKkPmWorkpaperLocation(target,subunsur,paramId){
   const parts=pid.split('.').map(Number); const no=parts[2];
   return Number.isInteger(no) && no>=1 && no<=20;
 }
-function kkPmWorkpaperSummaryFromRow(qr){
-  const evaluated=Number(qr?.evaluated_items||0);
-  const sum=Number(qr?.sum_levels||0);
-  const completion=KK_PM_TOTAL_PARAMETERS?Math.round((evaluated/KK_PM_TOTAL_PARAMETERS)*10000)/100:0;
+function kkPmWorkpaperSummaryFromRows(rows, opdName=''){
+  const allowed=new Set(assessmentAllowedTargets(opdName));
+  const active=(rows||[]).filter(row=>allowed.has(String(row?.target||'').toUpperCase()));
+  const total=[...allowed].reduce((n,target)=>n+(KK_PM_TARGET_TOTALS[target]||0),0);
+  const evaluated=active.reduce((n,row)=>n+Number(row?.evaluated_items||0),0);
+  const sum=active.reduce((n,row)=>n+Number(row?.sum_levels||0),0);
+  const completion=total?Math.min(100,Math.round((evaluated/total)*10000)/100):0;
   const avgLevel=evaluated?Math.round((sum/evaluated)*100)/100:0;
-  return {total:KK_PM_TOTAL_PARAMETERS,evaluated,pending:Math.max(0,KK_PM_TOTAL_PARAMETERS-evaluated),sum,percentage:completion,completion,avgLevel,avgPercent:Math.round((avgLevel/5)*10000)/100,status:completion>=100?'Selesai':(evaluated?'Proses':'Belum')};
+  return {total,evaluated,pending:Math.max(0,total-evaluated),sum,percentage:completion,completion,avgLevel,avgPercent:Math.round((avgLevel/5)*10000)/100,status:completion>=100?'Selesai':(evaluated?'Proses':'Belum'),targets:[...allowed]};
 }
 async function getKkPmWorkpaperSummary(env,year,opdId){
-  const q=await env.DB.prepare(`SELECT COUNT(*) AS evaluated_items,
+  const org=(await env.DB.prepare('SELECT opd FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(String(opdId),String(year)).all()).results?.[0]?.opd||'';
+  const q=await env.DB.prepare(`SELECT target,COUNT(*) AS evaluated_items,
     COALESCE(SUM(CASE grade_result WHEN 'A' THEN 5 WHEN 'B' THEN 4 WHEN 'C' THEN 3 WHEN 'D' THEN 2 WHEN 'E' THEN 1 ELSE 0 END),0) AS sum_levels
-    FROM opd_kk_pm_workpaper_items WHERE year=? AND opd_id=? AND grade_result IN ('A','B','C','D','E')`).bind(String(year),String(opdId)).all();
-  return kkPmWorkpaperSummaryFromRow(q.results?.[0]||{});
+    FROM opd_kk_pm_workpaper_items WHERE year=? AND opd_id=? AND grade_result IN ('A','B','C','D','E') GROUP BY target`).bind(String(year),String(opdId)).all();
+  return kkPmWorkpaperSummaryFromRows(q.results||[],org);
 }
 
 function parseWorkbookScalar(value){
@@ -1271,9 +1503,9 @@ export async function onRequest({ request, env, ctx }) {
 
   // Daftar aksi sensitif yang tidak boleh diakses via GET
   const SENSITIVE_ACTIONS = [
-    'verifyAccess', 'verifyDelete', 'addOpd', 'saveData', 'saveField',
+    'verifyAccess', 'verifyDelete', 'addOpd', 'saveData', 'saveField', 'saveAssessmentStatus', 'saveBpkpOfficialScore', 'unlockBpkpOfficialScore', 'getBpkpOfficialScoreAdmin', 'getBpkpOfficialAudit',
     'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'saveQaApipItem', 'deleteQaApipItem', 'getQaApipChecklistData', 'saveQaApipChecklistItem', 'deleteQaApipChecklistItem', 'deleteOpd', 'addYear', 'deleteYear',
-    'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup'
+    'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'syncKkPmMasterNow', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup'
   ];
 
   // KK RTP dan pengaturan folder Evidence RTP wajib melalui POST.
@@ -1393,7 +1625,90 @@ export async function onRequest({ request, env, ctx }) {
         return new Response(JSON.stringify({ status: 'error', message: 'Password hapus salah' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
+      case 'getKkMasterSheetRows': {
+        const masterKind=String(params.masterKind||'PK').toUpperCase()==='PM'?'PM':'PK';
+        try{
+          const snapshot=await readLiveKkMasterRows(env,masterKind);
+          if(masterKind==='PM'&&snapshot.live)schedulePmMasterPropagation(env,year,ctx);
+          return jsonResponse({status:'success',...snapshot});
+        }catch(err){return jsonResponse({status:'success',live:false,masterKind,message:String(err?.message||err).slice(0,500),fallback:'snapshot'});}
+      }
+      case 'syncKkPmMasterNow': {
+        const configured=String(env.KK_MASTER_SYNC_SECRET||'').trim();
+        const supplied=String(params.secret||request.headers.get('X-KK-Master-Sync-Secret')||'').trim();
+        if(!configured||configured.length<32||supplied!==configured)return jsonResponse({status:'error',message:'Token sinkronisasi master tidak valid atau belum dikonfigurasi.'},403);
+        try{
+          const result=await syncPmMasterColumnsToOpdWorkbooks(env,year,{force:true});
+          return jsonResponse({status:'success',message:'Sinkronisasi master KK PM diproses.',...result});
+        }catch(err){return jsonResponse({status:'error',message:String(err?.message||err).slice(0,600)},500);}
+      }
+
+      case 'getBpkpOfficialScore': {
+        const found = (await env.DB.prepare('SELECT year,spip,mri,iepk,apip,finalized,updated_at,updated_by,note FROM bpkp_official_scores WHERE year=? LIMIT 1').bind(String(year)).all()).results?.[0] || null;
+        const score = found && Number(found.finalized)===1 ? found : (found ? {year:String(year),finalized:0,updated_at:found.updated_at||0} : null);
+        return jsonResponse({status:'success',year:String(year),score});
+      }
+      case 'getBpkpOfficialScoreAdmin': {
+        const configured=String(env.BPKP_ADMIN_PASSWORD||'');
+        if(configured.length<12)return jsonResponse({status:'error',message:'Secret BPKP_ADMIN_PASSWORD belum dikonfigurasi.'},503);
+        if(String(params.adminPassword||'')!==configured)return jsonResponse({status:'error',message:'Password admin nilai resmi salah.'},403);
+        const score=(await env.DB.prepare('SELECT year,spip,mri,iepk,apip,finalized,updated_at,updated_by,note FROM bpkp_official_scores WHERE year=? LIMIT 1').bind(String(year)).all()).results?.[0]||null;
+        return jsonResponse({status:'success',year:String(year),score});
+      }
+      case 'getBpkpOfficialAudit': {
+        const configured=String(env.BPKP_ADMIN_PASSWORD||'');
+        if(configured.length<12)return jsonResponse({status:'error',message:'Secret BPKP_ADMIN_PASSWORD belum dikonfigurasi.'},503);
+        if(String(params.adminPassword||'')!==configured)return jsonResponse({status:'error',message:'Password admin nilai resmi salah.'},403);
+        const q=await env.DB.prepare('SELECT action,payload,updated_by,created_at FROM bpkp_official_score_audit WHERE year=? ORDER BY created_at DESC LIMIT 10').bind(String(year)).all();
+        const entries=(q.results||[]).map(x=>{let payload={};try{payload=JSON.parse(x.payload||'{}')}catch{}return{action:x.action,payload,updatedBy:x.updated_by,createdAt:Number(x.created_at||0)}});
+        return jsonResponse({status:'success',entries});
+      }
+      case 'saveBpkpOfficialScore': {
+        const configured=String(env.BPKP_ADMIN_PASSWORD||'');
+        if(configured.length<12) return jsonResponse({status:'error',message:'Secret BPKP_ADMIN_PASSWORD belum dikonfigurasi dengan aman di Cloudflare.'},503);
+        if(String(params.adminPassword||'')!==configured) return jsonResponse({status:'error',message:'Password admin finalisasi BPKP salah.'},403);
+        const prior=(await env.DB.prepare('SELECT finalized FROM bpkp_official_scores WHERE year=? LIMIT 1').bind(String(year)).all()).results?.[0];
+        if(Number(prior?.finalized||0)===1) return jsonResponse({status:'error',message:'Nilai resmi sudah dikunci. Gunakan Buka Kunci terlebih dahulu sebelum mengubahnya.'},409);
+        const parseScore=(key)=>{const n=Number(params[key]);if(!Number.isFinite(n)||n<1||n>5)throw new Error(`${key.toUpperCase()} harus bernilai 1 sampai 5.`);return n;};
+        const spip=parseScore('spip'),mri=parseScore('mri'),iepk=parseScore('iepk');
+        const apip=Number(params.apip);if(!Number.isInteger(apip)||apip<1||apip>5)throw new Error('Kapabilitas APIP harus berupa level bulat 1 sampai 5.');
+        const finalizing=['1','true','yes','on'].includes(String(params.finalize||'').toLowerCase());
+        const by=String(params.updatedBy||'Admin Inspektorat').trim().slice(0,120)||'Admin Inspektorat';
+        const note=String(params.note||'').trim().slice(0,2000);const now=Date.now();
+        await env.DB.prepare(`INSERT INTO bpkp_official_scores(year,spip,mri,iepk,apip,finalized,updated_at,updated_by,note) VALUES(?,?,?,?,?,?,?,?,?)
+          ON CONFLICT(year) DO UPDATE SET spip=excluded.spip,mri=excluded.mri,iepk=excluded.iepk,apip=excluded.apip,finalized=excluded.finalized,updated_at=excluded.updated_at,updated_by=excluded.updated_by,note=excluded.note`)
+          .bind(String(year),spip,mri,iepk,apip,finalizing?1:0,now,by,note).run();
+        const payload=JSON.stringify({spip,mri,iepk,apip,finalized:finalizing,note});
+        await env.DB.prepare('INSERT INTO bpkp_official_score_audit(year,action,payload,updated_by,created_at) VALUES(?,?,?,?,?)').bind(String(year),finalizing?'finalize':'save-draft',payload,by,now).run();
+        notifyRealtime(env,ctx,String(year),{action:'bpkpOfficialScoreUpdated'});
+        return jsonResponse({status:'success',message:finalizing?'Nilai resmi BPKP berhasil dikunci dan difinalisasi.':'Draft nilai resmi berhasil disimpan.',score:{year:String(year),spip,mri,iepk,apip,finalized:finalizing?1:0,updated_at:now,updated_by:by,note}});
+      }
+      case 'unlockBpkpOfficialScore': {
+        const configured=String(env.BPKP_ADMIN_PASSWORD||'');
+        if(configured.length<12) return jsonResponse({status:'error',message:'Secret BPKP_ADMIN_PASSWORD belum dikonfigurasi di Cloudflare.'},503);
+        if(String(params.adminPassword||'')!==configured) return jsonResponse({status:'error',message:'Password admin finalisasi BPKP salah.'},403);
+        const by=String(params.updatedBy||'Admin Inspektorat').trim().slice(0,120)||'Admin Inspektorat';const now=Date.now();
+        const res=await env.DB.prepare('UPDATE bpkp_official_scores SET finalized=0,updated_at=?,updated_by=? WHERE year=? AND finalized=1').bind(now,by,String(year)).run();
+        if(!Number(res.meta?.changes||0)) return jsonResponse({status:'error',message:'Tidak ada nilai resmi yang sedang terkunci.'},409);
+        await env.DB.prepare('INSERT INTO bpkp_official_score_audit(year,action,payload,updated_by,created_at) VALUES(?,?,?,?,?)').bind(String(year),'unlock','{}',by,now).run();
+        notifyRealtime(env,ctx,String(year),{action:'bpkpOfficialScoreUpdated'});
+        return jsonResponse({status:'success',message:'Kunci nilai resmi dibuka. Anda dapat memperbaiki draft.'});
+      }
+      case 'saveAssessmentStatus': {
+        const configured=String(ACCESS_PASSWORD||'');
+        if(!configured) return jsonResponse({status:'error',message:'ACCESS_PASSWORD belum dikonfigurasi di Cloudflare.'},503);
+        if(String(params.password||'')!==configured) return jsonResponse({status:'error',message:'Password pengelola salah.'},403);
+        const status=String(params.assessmentStatus||'');
+        const allowed=['Belum Mengisi','Proses Pengisian','Proses Review','Selesai Verifikasi'];
+        if(!allowed.includes(status)) return jsonResponse({status:'error',message:'Status pengisian tidak valid.'},400);
+        const opdId=String(params.opdId||'');
+        const upd=await env.DB.prepare('UPDATE opd_data SET assessment_status=?,assessment_status_updated_at=? WHERE id=? AND year=?').bind(status,Date.now(),opdId,String(year)).run();
+        if(!Number(upd.meta?.changes||0)) return jsonResponse({status:'error',message:'OPD tidak ditemukan.'},404);
+        notifyRealtime(env,ctx,String(year),{action:'saveAssessmentStatus',opdId});
+        return jsonResponse({status:'success',message:'Status pengisian OPD berhasil diperbarui.',assessmentStatus:status});
+      }
       case 'getData': {
+        await seedDefaultMahuluOpdsIfEmpty(env,year);
         const {results}=await env.DB.prepare("SELECT * FROM opd_data WHERE year=? ORDER BY CAST(nilai_maturitas AS REAL) DESC, CAST(nilai_struktur_proses AS REAL) DESC, CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
         const levelRows=await env.DB.prepare("SELECT opd_id,subunsur,param_id,level FROM opd_parameter_levels_v2 WHERE year=?").bind(String(year)).all();
         const qaSummaryRows=await env.DB.prepare(`
@@ -1409,14 +1724,16 @@ export async function onRequest({ request, env, ctx }) {
         const qaSummaryMap=new Map();
         for(const q of (qaSummaryRows.results||[])) qaSummaryMap.set(String(q.opd_id),q);
         const kkPmSummaryRows=await env.DB.prepare(`
-          SELECT opd_id,
+          SELECT opd_id,target,
                  COUNT(*) AS evaluated_items,
                  COALESCE(SUM(CASE grade_result WHEN 'A' THEN 5 WHEN 'B' THEN 4 WHEN 'C' THEN 3 WHEN 'D' THEN 2 WHEN 'E' THEN 1 ELSE 0 END),0) AS sum_levels
           FROM opd_kk_pm_workpaper_items
-          WHERE year=? AND grade_result IN ('A','B','C','D','E') GROUP BY opd_id
+          WHERE year=? AND grade_result IN ('A','B','C','D','E') GROUP BY opd_id,target
         `).bind(String(year)).all();
         const kkPmSummaryMap=new Map();
-        for(const q of (kkPmSummaryRows.results||[])) kkPmSummaryMap.set(String(q.opd_id),q);
+        for(const q of (kkPmSummaryRows.results||[])){
+          const key=String(q.opd_id);if(!kkPmSummaryMap.has(key))kkPmSummaryMap.set(key,[]);kkPmSummaryMap.get(key).push(q);
+        }
         const workbookEvidenceSummaryRows=await env.DB.prepare(`
           SELECT opd_id,
                  COUNT(DISTINCT upload_id) AS total_files,
@@ -1425,7 +1742,19 @@ export async function onRequest({ request, env, ctx }) {
                  COUNT(DISTINCT CASE WHEN verification_status IN ('diterima','diterima_catatan','dikembalikan') THEN upload_id END) AS reviewed_files,
                  COUNT(DISTINCT CASE WHEN verification_status='diterima_catatan' THEN upload_id END) AS with_notes_files,
                  COUNT(DISTINCT CASE WHEN verification_status='dikembalikan' THEN upload_id END) AS returned_files,
-                 COUNT(DISTINCT CASE WHEN sync_status='done' THEN upload_id END) AS synced_files
+                 COUNT(DISTINCT CASE WHEN sync_status='done' THEN upload_id END) AS synced_files,
+                 COUNT(DISTINCT CASE WHEN target_code='T1' OR COALESCE(target_code,'')='' THEN evidence_key END) AS groups_t1,
+                 COUNT(DISTINCT CASE WHEN target_code='T2' THEN evidence_key END) AS groups_t2,
+                 COUNT(DISTINCT CASE WHEN target_code='T3' THEN evidence_key END) AS groups_t3,
+                 COUNT(DISTINCT CASE WHEN target_code='T4' THEN evidence_key END) AS groups_t4,
+                 COUNT(DISTINCT CASE WHEN target_code='T1' OR COALESCE(target_code,'')='' THEN upload_id END) AS files_t1,
+                 COUNT(DISTINCT CASE WHEN target_code='T2' THEN upload_id END) AS files_t2,
+                 COUNT(DISTINCT CASE WHEN target_code='T3' THEN upload_id END) AS files_t3,
+                 COUNT(DISTINCT CASE WHEN target_code='T4' THEN upload_id END) AS files_t4,
+                 COUNT(DISTINCT CASE WHEN (target_code='T1' OR COALESCE(target_code,'')='') AND verification_status='diterima' THEN upload_id END) AS verified_t1,
+                 COUNT(DISTINCT CASE WHEN target_code='T2' AND verification_status='diterima' THEN upload_id END) AS verified_t2,
+                 COUNT(DISTINCT CASE WHEN target_code='T3' AND verification_status='diterima' THEN upload_id END) AS verified_t3,
+                 COUNT(DISTINCT CASE WHEN target_code='T4' AND verification_status='diterima' THEN upload_id END) AS verified_t4
           FROM opd_workbook_evidence_items
           WHERE year=? AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>''
           GROUP BY opd_id
@@ -1484,18 +1813,20 @@ export async function onRequest({ request, env, ctx }) {
           const qaPercentage=qaEvaluated?Math.round((qaSum/qaEvaluated)*10000)/100:0;
           const qaCompletion=Math.round((qaChecked/qaTotalItems)*10000)/100;
           const qaStatus=qaCompletion>=100?'Selesai':(qaChecked>0?'Proses':'Belum');
-          const pm=kkPmSummaryMap.get(String(r.id));
-          const pmEvaluated=Number(pm?.evaluated_items||0);
-          const pmSum=Number(pm?.sum_levels||0);
-          const pmTotalItems=KK_PM_TOTAL_PARAMETERS;
+          const pmRows=kkPmSummaryMap.get(String(r.id))||[];
+          const pmScope=new Set(assessmentAllowedTargets(r.opd));
+          const pmScopedRows=pmRows.filter(item=>pmScope.has(String(item.target||'').toUpperCase()));
+          const pmEvaluated=pmScopedRows.reduce((n,item)=>n+Number(item.evaluated_items||0),0);
+          const pmSum=pmScopedRows.reduce((n,item)=>n+Number(item.sum_levels||0),0);
+          const pmTotalItems=[...pmScope].reduce((n,target)=>n+(KK_PM_TARGET_TOTALS[target]||0),0);
           const pmPending=Math.max(0,pmTotalItems-pmEvaluated);
-          const pmCompletion=pmTotalItems>0 ? Math.round((pmEvaluated/pmTotalItems)*10000)/100 : 0;
+          const pmCompletion=pmTotalItems>0 ? Math.min(100,Math.round((pmEvaluated/pmTotalItems)*10000)/100) : 0;
           const pmAvgLevel=pmEvaluated>0 ? Math.round((pmSum/pmEvaluated)*100)/100 : 0;
           const pmStatus=pmCompletion>=100?'Selesai':(pmEvaluated>0?'Proses':'Belum');
           let computedWorkbook={}; try{computedWorkbook=r.computed_workbook_data?JSON.parse(r.computed_workbook_data):{};}catch{computedWorkbook={};}
           const cv=computedWorkbook?.values||{};
           const n=(v)=>{const x=Number(v); return Number.isFinite(x)&&x>0?x:null;};
-          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,evaluated:qaEvaluated,na:qaNa,pass:qaPass,partial:qaPartial,fail:qaFail,pending:qaPending,sum:qaSum,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus},nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,computedWorkbook, nilaiMaturitas:n(cv.nilaiMaturitas),nilaiMRI:n(cv.mri),nilaiIEPK:n(cv.iepk),nilaiKapabilitasApip:n(cv.nilaiKapabilitasApip),mri:n(cv.mri),iepk:n(cv.iepk),workbookEvidenceSummary:{totalFiles:Number(wb?.total_files||0),evidenceGroups:Number(wb?.evidence_groups||0),verifiedFiles:Number(wb?.verified_files||0),reviewedFiles:Number(wb?.reviewed_files||0),withNotesFiles:Number(wb?.with_notes_files||0),returnedFiles:Number(wb?.returned_files||0),syncedFiles:Number(wb?.synced_files||0)}};
+          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,evaluated:qaEvaluated,na:qaNa,pass:qaPass,partial:qaPartial,fail:qaFail,pending:qaPending,sum:qaSum,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus,targets:[...pmScope]},nilaiStrukturProses:strukturNilai,sa:strukturNilai,strukturProsesStatus:strukturStatus,computedWorkbook, nilaiMaturitas:n(cv.nilaiMaturitas),nilaiMRI:n(cv.mri),nilaiIEPK:n(cv.iepk),nilaiKapabilitasApip:n(cv.nilaiKapabilitasApip),mri:n(cv.mri),iepk:n(cv.iepk),workbookEvidenceSummary:{totalFiles:Number(wb?.total_files||0),evidenceGroups:Number(wb?.evidence_groups||0),verifiedFiles:Number(wb?.verified_files||0),reviewedFiles:Number(wb?.reviewed_files||0),withNotesFiles:Number(wb?.with_notes_files||0),returnedFiles:Number(wb?.returned_files||0),syncedFiles:Number(wb?.synced_files||0),targetStats:{T1:{groups:Number(wb?.groups_t1||0),files:Number(wb?.files_t1||0),verifiedFiles:Number(wb?.verified_t1||0)},T2:{groups:Number(wb?.groups_t2||0),files:Number(wb?.files_t2||0),verifiedFiles:Number(wb?.verified_t2||0)},T3:{groups:Number(wb?.groups_t3||0),files:Number(wb?.files_t3||0),verifiedFiles:Number(wb?.verified_t3||0)},T4:{groups:Number(wb?.groups_t4||0),files:Number(wb?.files_t4||0),verifiedFiles:Number(wb?.verified_t4||0)}}}};
         });
         return new Response(JSON.stringify(mapped),{status:200,headers:{'Content-Type':'application/json','Cache-Control':'no-store, no-cache, must-revalidate, max-age=0'}});
       }
@@ -1560,6 +1891,7 @@ export async function onRequest({ request, env, ctx }) {
       }
       case 'saveSubunsur': {
         if (!params.opdId) throw new Error('ID OPD wajib diisi');
+        await assertAssessmentInputEditable(env,year,params.opdId);
 
         // Preferred path: send only changed parameter fields. Each JSON_SET is
         // one atomic SQLite/D1 UPDATE, so two users editing different parameters
@@ -1795,14 +2127,14 @@ export async function onRequest({ request, env, ctx }) {
         const data=normalizeKkPmData(rec.results[0].kk_pm_data); let sheets=[]; let needsSync=false;
         if(data.workbook.workbookSpreadsheetId){try{const token=await getGoogleAccessToken(env);const meta=await getSpreadsheetMetadata(token,data.workbook.workbookSpreadsheetId);sheets=(meta.sheets||[]).map(s=>({sheetId:s.properties?.sheetId,title:s.properties?.title,index:s.properties?.index,rowCount:s.properties?.gridProperties?.rowCount||0,columnCount:s.properties?.gridProperties?.columnCount||0}));needsSync=!expectedPmSheetOrderMatches(meta.sheets||[]);}catch(err){needsSync=true;sheets=Array.isArray(data.workbook.sheets)?data.workbook.sheets.map((x,i)=>({sheetId:null,title:x,index:i})):[];}}
         else needsSync=true;
-        return jsonResponse({status:'success',kkPmData:data.workbook,sheets,needsSync,expectedSheetCount:KK_FULL_TEMPLATE_SHEET_NAMES.length});
+        return jsonResponse({status:'success',kkPmData:data.workbook,sheets,needsSync,profile:getPmSheetProfile(sheets),expectedSheetCount:getPmSheetProfile(sheets)==='LEGACY_PK_28'?KK_FULL_TEMPLATE_SHEET_NAMES.length:KK_PM_2026_SHEET_NAMES.length});
       }
 
       case 'createKkPmSheets': {
         const rec=await env.DB.prepare("SELECT kk_pm_data, opd FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(String(params.opdId||''),String(year)).all();
         if(!rec.results?.length)return jsonResponse({status:'error',message:'OPD tidak ditemukan'},404);
         const kkPmRaw=normalizeKkPmData(rec.results[0].kk_pm_data);const wb=await ensureKkPmSpreadsheet(env,{...params,opd:params.opd||rec.results[0].opd,currentKkPmData:kkPmRaw});
-        const accessToken=await getGoogleAccessToken(env);let sheets=[];try{const meta=await getSpreadsheetMetadata(accessToken,wb.workbookSpreadsheetId);if(!expectedPmSheetOrderMatches(meta.sheets||[]))throw new Error('Spreadsheet PM hasil sinkronisasi tidak memiliki 28 sheet workbook sumber.');sheets=(meta.sheets||[]).map(s=>({sheetId:s.properties?.sheetId,title:s.properties?.title,index:s.properties?.index,rowCount:s.properties?.gridProperties?.rowCount||0,columnCount:s.properties?.gridProperties?.columnCount||0}));}catch(err){throw new Error(err.message||'Gagal memverifikasi struktur Spreadsheet PM.');}
+        const accessToken=await getGoogleAccessToken(env);let sheets=[];try{const meta=await getSpreadsheetMetadata(accessToken,wb.workbookSpreadsheetId);if(!expectedPmSheetOrderMatches(meta.sheets||[]))throw new Error('Spreadsheet PM hasil sinkronisasi tidak mengikuti salah satu profil yang didukung. Gunakan template PM terbaru 26 sheet.');sheets=(meta.sheets||[]).map(s=>({sheetId:s.properties?.sheetId,title:s.properties?.title,index:s.properties?.index,rowCount:s.properties?.gridProperties?.rowCount||0,columnCount:s.properties?.gridProperties?.columnCount||0}));}catch(err){throw new Error(err.message||'Gagal memverifikasi struktur Spreadsheet PM.');}
         const compact={version:2,workbook: {...wb,sheets:sheets.length?sheets:wb.sheets},cells:kkPmRaw.cells||{}};
         await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET kk_pm_data=? WHERE id=? AND year=?").bind(JSON.stringify(compact),String(params.opdId),String(year)));
         notifyRealtime(env,ctx,year,{action:'createKkPmSheets',opdId:params.opdId});
@@ -1856,6 +2188,8 @@ export async function onRequest({ request, env, ctx }) {
       case 'saveKkPmMeta': {
         const opdId=String(params.opdId||''), target=String(params.target||'').toUpperCase();
         if(!opdId || !Object.prototype.hasOwnProperty.call(KK_PM_TARGET_TOTALS,target)) throw new Error('Identitas target PM tidak valid.');
+        await assertAssessmentTargetAllowed(env,year,opdId,target);
+        await assertAssessmentInputEditable(env,year,opdId);
         const clean=v=>sanitizeQaText(v,160);
         const values={sectorFocus:clean(params.sectorFocus),preparedBy:clean(params.preparedBy),preparedDate:clean(params.preparedDate),reviewedBy:clean(params.reviewedBy),reviewedDate:clean(params.reviewedDate),approvedBy:clean(params.approvedBy),approvedDate:clean(params.approvedDate)};
         const now=Date.now();
@@ -1869,6 +2203,8 @@ export async function onRequest({ request, env, ctx }) {
       case 'saveKkPmItem': {
         const opdId=String(params.opdId||''), target=String(params.target||'').toUpperCase(), subunsur=String(params.subunsur||''), paramId=String(params.paramId||'');
         if(!opdId || !validKkPmWorkpaperLocation(target,subunsur,paramId)) throw new Error('Identitas parameter KK PM SPIP tidak valid.');
+        await assertAssessmentTargetAllowed(env,year,opdId,target);
+        await assertAssessmentInputEditable(env,year,opdId);
         const gradeResult=sanitizeQaText(params.gradeResult,2).toUpperCase();
         if(gradeResult && !Object.prototype.hasOwnProperty.call({A:1,B:1,C:1,D:1,E:1},gradeResult)) throw new Error('Grade hasil harus A, B, C, D, atau E.');
         const clean=v=>sanitizeQaText(v,4000);
@@ -1893,6 +2229,8 @@ export async function onRequest({ request, env, ctx }) {
       case 'deleteKkPmItem': {
         const opdId=String(params.opdId||''), target=String(params.target||'').toUpperCase(), subunsur=String(params.subunsur||''), paramId=String(params.paramId||'');
         if(!opdId || !validKkPmWorkpaperLocation(target,subunsur,paramId)) throw new Error('Identitas parameter KK PM SPIP tidak valid.');
+        await assertAssessmentTargetAllowed(env,year,opdId,target);
+        await assertAssessmentInputEditable(env,year,opdId);
         await env.DB.prepare("DELETE FROM opd_kk_pm_workpaper_items WHERE year=? AND opd_id=? AND target=? AND subunsur=? AND param_id=?").bind(String(year),opdId,target,subunsur,paramId).run();
         const summary=await getKkPmWorkpaperSummary(env,year,opdId);
         notifyRealtime(env,ctx,year,{action:'deleteKkPmItem',opdId,target,subunsur,paramId,summary});
@@ -2380,12 +2718,13 @@ export async function onRequest({ request, env, ctx }) {
 
       case 'uploadFile': {
         const sourceModel=String(params.sourceModel||'legacy');
+        if(params.opdId) await assertAssessmentInputEditable(env,year,String(params.opdId));
         if(sourceModel==='workbook'){
           const file=params.file,legacyData=params.fileData;if(!file&&!legacyData&&!request.body)throw new Error('File tidak diterima');let bytes=null,fileBody=null,fileName=String(params.fileName||'evidence'),fileType=String(params.fileType||'application/octet-stream');const fileSize=Number(params.fileSize)||0;
           if(file){fileName=file.name||fileName;fileType=file.type||fileType;if((file.size||0)>10*1024*1024)throw new Error('File > 10MB, terlalu besar!');bytes=await file.arrayBuffer();}else if(legacyData){bytes=decodeBase64File(legacyData,10);}else{if(fileSize>10*1024*1024)throw new Error('File > 10MB, terlalu besar!');fileBody=request.body;}
           const opdId=String(params.opdId||''),evidenceKey=String(params.evidenceKey||''),targetCode=String(params.targetCode||''),subCode=String(params.subunsur||''),paramId=String(params.paramId||''),grade=String(params.grade||'').toUpperCase(),level=Number(params.level||({A:5,B:4,C:3,D:2,E:1}[grade]||0)),uploadId=String(params.uploadId||crypto.randomUUID());
           if(!opdId||!evidenceKey)throw new Error('Identitas evidence workbook tidak lengkap.');if(targetCode&&!/^T[1-4]$/.test(targetCode))throw new Error('Target workbook tidak valid.');if(!['A','B','C','D','E'].includes(grade))throw new Error('Grade evidence harus A-E.');
-          const rec=await env.DB.prepare('SELECT opd FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(opdId,String(year)).all();if(!rec.results.length)throw new Error('OPD tidak ditemukan.');const safeOpd=sanitizeString(rec.results[0].opd||params.opdName||'OPD').replace(/[^A-Za-z0-9_. -]/g,'_').substring(0,80)||'OPD';const safeKey=evidenceKey.replace(/[^A-Za-z0-9_.-]/g,'_').substring(0,100);const safeName=sanitizeString(fileName).substring(0,150)||'evidence';const filePath=`kawal_spip/${year}/${safeOpd}/Evidence Struktur & Proses/${safeKey}/${grade}/${uploadId}-${safeName.replace(/[^A-Za-z0-9._ -]/g,'_')}`;const publicUrl=`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;const now=Date.now();
+          const rec=await env.DB.prepare('SELECT opd FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(opdId,String(year)).all();if(!rec.results.length)throw new Error('OPD tidak ditemukan.');if(targetCode)await assertAssessmentTargetAllowed(env,year,opdId,targetCode);const safeOpd=sanitizeString(rec.results[0].opd||params.opdName||'OPD').replace(/[^A-Za-z0-9_. -]/g,'_').substring(0,80)||'OPD';const safeKey=evidenceKey.replace(/[^A-Za-z0-9_.-]/g,'_').substring(0,100);const safeName=sanitizeString(fileName).substring(0,150)||'evidence';const filePath=`kawal_spip/${year}/${safeOpd}/Evidence Struktur & Proses/${safeKey}/${grade}/${uploadId}-${safeName.replace(/[^A-Za-z0-9._ -]/g,'_')}`;const publicUrl=`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${filePath}`;const now=Date.now();
           const existingReg=(await env.DB.prepare('SELECT * FROM evidence_upload_registry WHERE upload_id=? LIMIT 1').bind(uploadId).all()).results?.[0];if(existingReg&&(String(existingReg.year)!==String(year)||String(existingReg.opd_id)!==opdId||String(existingReg.evidence_key||'')!==evidenceKey||String(existingReg.source_model||'')!=='workbook'))throw new Error('Upload ID sudah terikat ke evidence lain.');
           if(!existingReg)await runD1WithRetry(()=>env.DB.prepare(`INSERT INTO evidence_upload_registry(upload_id,year,opd_id,subunsur,param_id,level,type,r2_key,sync_status,created_at,updated_at,evidence_key,source_model,target_code,grade) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(uploadId,String(year),opdId,subCode,paramId,String(level),'workbook_evidence',filePath,'pending',now,now,evidenceKey,'workbook',targetCode,grade));
           const old=(await env.DB.prepare('SELECT * FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uploadId,String(year),opdId).all()).results?.[0];if(old?.gdrive_id)return jsonResponse({status:'success',url:old.r2_key?`https://pub-8e4e0075c2e4428e95f6455b2e2b9826.r2.dev/${old.r2_key}`:publicUrl,fileName:old.file_name||safeName,gdriveId:old.gdrive_id,syncStatus:'done',uploadId,r2Key:old.r2_key});
