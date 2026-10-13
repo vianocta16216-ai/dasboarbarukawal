@@ -1,0 +1,41 @@
+[
+  {
+    "username": "admin_daerah",
+    "password": "GANTI_DENGAN_PASSWORD_ADMIN_UNIK_MIN_16_KARAKTER",
+    "role": "admin",
+    "displayName": "Super Admin Daerah",
+    "enabled": true
+  },
+  {
+    "username": "auditor_inspektorat",
+    "password": "GANTI_DENGAN_PASSWORD_AUDITOR_UNIK_MIN_16_KARAKTER",
+    "role": "auditor",
+    "displayName": "Auditor Inspektorat",
+    "opdNames": ["*"] ,
+    "enabled": true
+  },
+  {
+    "username": "opd_operator_01",
+    "password": "GANTI_DENGAN_PASSWORD_OPD_UNIK_MIN_16_KARAKTER",
+    "role": "opd",
+    "displayName": "Operator OPD 01",
+    "opdName": "NAMA OPD PERSIS SEPERTI DASHBOARD",
+    "enabled": true
+  },
+  {
+    "username": "verifikator_irban",
+    "password": "GANTI_DENGAN_PASSWORD_IRBAN_UNIK_MIN_16_KARAKTER",
+    "role": "irban",
+    "displayName": "Verifikator Irban",
+    "opdNames": ["*"],
+    "enabled": true
+  },
+  {
+    "username": "verifikator_bpkp",
+    "password": "GANTI_DENGAN_PASSWORD_BPKP_UNIK_MIN_16_KARAKTER",
+    "role": "bpkp",
+    "displayName": "Verifikator Akhir BPKP",
+    "opdNames": ["*"],
+    "enabled": true
+  }
+]

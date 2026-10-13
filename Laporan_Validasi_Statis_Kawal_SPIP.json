@@ -1,0 +1,34 @@
+{
+  "checks": {
+    "cloudflare_secret_json_bytes": 4261,
+    "cloudflare_secret_json_below_5000_bytes": true,
+    "default_master_opd_count": 28,
+    "bootstrap_user_count": 32,
+    "opd_operator_count": 28,
+    "admin_count": 1,
+    "auditor_count": 1,
+    "irban_count": 1,
+    "bpkp_count": 1,
+    "username_unique": true,
+    "password_unique": true,
+    "all_opd_accounts_match_master": true,
+    "all_passwords_at_least_16_chars": true,
+    "auditor_action_allowlist_present": true
+  },
+  "production_checks_not_run": [
+    "D1 rows and permissions",
+    "actual login against Cloudflare",
+    "Google Sheets OAuth read/write",
+    "R2 upload/download permission",
+    "Google Drive backup",
+    "cross-OPD rejection tests",
+    "live workbook IDs"
+  ],
+  "notes": [
+    "User-provided list has 27 OPDs; app default master has an additional BPKAD, so account JSON contains 28 Operator OPD accounts.",
+    "Secret JSON is minified and intentionally omits optional enabled and OPD displayName fields to fit Cloudflare 5 KB value limit. The parser defaults enabled to true and display name to username.",
+    "Credentials in the separate JSON/CSV are initial passwords; treat both files as confidential.",
+    "Cloudflare D1, real Google Sheets/Drive OAuth, R2 access and all workbook identifiers still require live production acceptance tests.",
+    "Role Auditor diubah menjadi allowlist API eksplisit; role lain tetap memakai aturan akses sesuai cakupannya."
+  ]
+}

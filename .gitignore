@@ -1,3 +1,6 @@
 .env
 node_modules
 .DS_Store
+KAWAL_SPIP_USERS_JSON.json
+DAFTAR_AKUN_KAWAL_SPIP_RAHASIA.csv
+*.secrets.json
