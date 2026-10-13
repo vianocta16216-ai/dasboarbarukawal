@@ -64,12 +64,17 @@
 
 <!-- ===== VIEW: DASHBOARD (KPI) ===== -->
 <div id="dashboardView" class="view-section hidden">
+  <section class="dashboard-mode-panel" aria-label="Mode penilaian SPIP">
+    <div class="dashboard-mode-heading"><div><strong>Mode Tampilan Penilaian</strong><small>Pisahkan pemantauan mandiri OPD dari nilai resmi tingkat Pemerintah Daerah.</small></div><div class="dashboard-mode-actions"><button id="modeInternalBtn" class="active" type="button">📊 Monitoring Internal</button><button id="modeBpkpBtn" type="button">🏛️ Hasil Resmi BPKP</button><button id="btnBpkpOfficialInput" type="button">✍️ Input Nilai Resmi</button></div></div>
+    <div id="dashboardModeBanner" class="dashboard-mode-banner internal">Menampilkan data berjalan / Self-Assessment per OPD. Nilai mandiri tidak sama dengan nilai final Pemda.</div>
+    <div class="assessment-progress-wrap"><div class="assessment-progress-title"><strong>Progres Verifikasi OPD</strong><span id="assessmentProgressText">0% · 0 dari 0 OPD selesai verifikasi</span></div><div class="assessment-progress-track"><div id="assessmentProgressBar" style="width:0%"></div></div></div>
+  </section>
   <div class="kpi-grid">
     <div class="kpi" id="kpi-card-1" onclick="showChart('nilaiStrukturProses')"><div class="kpi-header"><span class="kpi-label">Rata-rata Nilai Struktur dan Proses</span></div><div class="kpi-value" id="kpiStrukturProses">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiStrukturProsesBar" style="width:0%"></div></div><div class="kpi-note" id="kpiStrukturProsesNote">0 OPD terisi</div></div>
-    <div class="kpi" id="kpi-card-2" onclick="showChart('nilaiMaturitas')"><div class="kpi-header"><span class="kpi-label">Rata-rata Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</span></div><div class="kpi-value" id="kpiMaturitas">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiMaturitasBar" style="width:0%"></div></div><div class="kpi-note" id="kpiMaturitasNote">0 OPD terisi</div></div>
-    <div class="kpi" id="kpi-card-3" onclick="showChart('rataMRI')"><div class="kpi-header"><span class="kpi-label">Rata-rata MRI</span><span class="kpi-icon">📈</span></div><div class="kpi-value" id="kpiMRI">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiMRIBar" style="width:0%"></div></div><div class="kpi-note" id="kpiMRINote">0 OPD terisi</div></div>
-    <div class="kpi" id="kpi-card-4" onclick="showChart('rataIEPK')"><div class="kpi-header"><span class="kpi-label">Rata-rata IEPK</span><span class="kpi-icon">📈</span></div><div class="kpi-value" id="kpiIEPK">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiIEPKBar" style="width:0%"></div></div><div class="kpi-note" id="kpiIEPKNote">0 OPD terisi</div></div>
-    <div class="kpi" id="kpi-card-5" onclick="showChart('nilaiKapabilitasApip')"><div class="kpi-header"><span class="kpi-label">Rata-rata Nilai Kapabilitas APIP</span></div><div class="kpi-value" id="kpiKapabilitasApip">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiKapabilitasApipBar" style="width:0%"></div></div><div class="kpi-note" id="kpiKapabilitasApipNote">0 OPD terisi</div></div>
+    <div class="kpi" id="kpi-card-2" onclick="showChart('nilaiMaturitas')"><div class="kpi-header"><span class="kpi-label" id="kpiMaturitasLabel">Rata-rata Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</span></div><div class="kpi-value" id="kpiMaturitas">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiMaturitasBar" style="width:0%"></div></div><div class="kpi-note" id="kpiMaturitasNote">0 OPD terisi</div></div>
+    <div class="kpi" id="kpi-card-3" onclick="showChart('rataMRI')"><div class="kpi-header"><span class="kpi-label" id="kpiMRILabel">Rata-rata MRI</span><span class="kpi-icon">📈</span></div><div class="kpi-value" id="kpiMRI">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiMRIBar" style="width:0%"></div></div><div class="kpi-note" id="kpiMRINote">0 OPD terisi</div></div>
+    <div class="kpi" id="kpi-card-4" onclick="showChart('rataIEPK')"><div class="kpi-header"><span class="kpi-label" id="kpiIEPKLabel">Rata-rata IEPK</span><span class="kpi-icon">📈</span></div><div class="kpi-value" id="kpiIEPK">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiIEPKBar" style="width:0%"></div></div><div class="kpi-note" id="kpiIEPKNote">0 OPD terisi</div></div>
+    <div class="kpi" id="kpi-card-5" onclick="showChart('nilaiKapabilitasApip')"><div class="kpi-header"><span class="kpi-label" id="kpiKapabilitasApipLabel">Kapabilitas APIP — Inspektorat (Pemda)</span></div><div class="kpi-value" id="kpiKapabilitasApip">0.00</div><div class="kpi-bar"><div class="kpi-fill" id="kpiKapabilitasApipBar" style="width:0%"></div></div><div class="kpi-note" id="kpiKapabilitasApipNote">0 OPD terisi</div></div>
     <div class="kpi" id="kpi-card-6" onclick="showChart('qaApip')"><div class="kpi-header"><span class="kpi-label">Penjaminan Kualitas / Quality Assurance APIP</span><span class="kpi-icon">✅</span></div><div class="kpi-value" id="kpiQaApip">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiQaApipBar" style="width:0%"></div></div><div class="kpi-note" id="kpiQaApipNote">0 dokumen evidence · 0 OPD terisi</div></div>
     <div class="kpi" id="kpi-card-7" onclick="showChart('statusSelesai')"><div class="kpi-header"><span class="kpi-label">OPD Selesai (Status)</span></div><div class="kpi-value" id="kpiStatusSelesai">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiStatusSelesaiBar" style="width:0%"></div></div><div class="kpi-note" id="kpiStatusSelesaiNote">0 dari 0 OPD</div></div>
     <div class="kpi" id="kpi-card-8" onclick="showChart('rtpSelesai')"><div class="kpi-header"><span class="kpi-label">RTP Selesai</span></div><div class="kpi-value" id="kpiRtpSelesai">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiRtpSelesaiBar" style="width:0%"></div></div><div class="kpi-note" id="kpiRtpSelesaiNote">0 dari 0 OPD</div></div>
@@ -83,8 +88,33 @@
   <div class="panel">
     <div class="panel-head"><h2>🏢 Daftar OPD - Tahun <span id="currentYearLabel">2026</span></h2><p class="status-msg" id="saveStatus"></p></div>
     <p class="desc">Nilai Maturitas, MRI, IEPK, dan Nilai Kapabilitas APIP ditarik otomatis dari hasil formula workbook KK. Nilai Struktur dan Proses dihitung dari parameter Evidence Struktur &amp; Proses. Status dan kelengkapan mengikuti progres evidence workbook.</p>
-    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="min-width:220px;">Penjaminan Kualitas / Quality Assurance APIP</th><th style="width:78px;">KK SPIP</th><th style="min-width:220px;">KK PM SPIP</th><th style="min-width:145px;">Laporan Hasil PM SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:155px;">Laporan Pemantauan RR_RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:170px;">Status Pengisian / Verifikasi</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="min-width:220px;">Penjaminan Kualitas / Quality Assurance APIP</th><th style="width:78px;">KK SPIP</th><th style="min-width:220px;">KK PM SPIP</th><th style="min-width:145px;">Laporan Hasil PM SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:155px;">Laporan Pemantauan RR_RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
     <div class="empty-state" id="emptyState" style="display:none;">Belum ada OPD. Klik <strong>"Tambah OPD"</strong> untuk memulai.</div>
+  </div>
+</div>
+
+<!-- Modal nilai resmi BPKP: tersimpan terpisah dari hasil mandiri OPD -->
+<div class="sheet-links-overlay" id="bpkpOfficialModal">
+  <div class="sheet-links-modal" style="max-width:700px;">
+    <div class="sheet-links-header"><h3>🏛️ Nilai Resmi BPKP — Tingkat Pemda</h3><button class="sheet-links-close" id="bpkpOfficialClose" aria-label="Tutup">&times;</button></div>
+    <div class="sheet-links-body">
+      <div class="sheet-links-info">Data ini terpisah dari skor mandiri setiap OPD. Isi hanya berdasarkan hasil evaluasi resmi BPKP; data baru dianggap resmi pada dashboard setelah opsi finalisasi dicentang dan disimpan.</div>
+      <div class="sheet-links-status" id="bpkpOfficialStatus"></div>
+      <div class="sheet-links-info"><button id="bpkpOfficialLoadDraft" type="button">🔄 Muat Draft &amp; Riwayat (password diperlukan)</button></div>
+      <div class="bpkp-score-grid">
+        <label>Nilai SPIP Pemda (1–5)<input id="bpkpOfficialSpip" type="number" min="1" max="5" step="0.01"></label>
+        <label>Indeks MRI Pemda (1–5)<input id="bpkpOfficialMri" type="number" min="1" max="5" step="0.01"></label>
+        <label>Indeks IEPK Pemda (1–5)<input id="bpkpOfficialIepk" type="number" min="1" max="5" step="0.01"></label>
+        <label>Kapabilitas APIP (Level 1–5)<input id="bpkpOfficialApip" type="number" min="1" max="5" step="1"></label>
+        <label>Nama pejabat/admin pencatat<input id="bpkpOfficialBy" type="text" maxlength="120" value="Admin Inspektorat"></label>
+        <label>Catatan / nomor dokumen resmi<input id="bpkpOfficialNote" type="text" maxlength="2000" placeholder="Nomor surat / tanggal penetapan"></label>
+        <label class="bpkp-admin-password">Password admin nilai resmi<input id="bpkpOfficialPassword" type="password" autocomplete="current-password" required></label>
+      </div>
+      <label class="bpkp-finalize-check"><input id="bpkpOfficialFinalize" type="checkbox"> Saya memastikan nilai ini sesuai dokumen resmi BPKP dan mengunci hasil final Pemda.</label>
+      <div id="bpkpOfficialLockedNote" class="sheet-links-info" style="display:none;"></div>
+      <div id="bpkpOfficialAudit" class="bpkp-official-audit" style="display:none;"></div>
+    </div>
+    <div class="sheet-links-footer"><button id="bpkpOfficialUnlock" type="button" style="display:none;">🔓 Buka Kunci</button><button id="bpkpOfficialSave" class="primary" type="button">Simpan Nilai</button><button id="bpkpOfficialCancel" type="button">Tutup</button></div>
   </div>
 </div>
 
@@ -125,10 +155,10 @@
       <div class="kk-pm-tabs" id="kkPmTabs">
         <button type="button" data-pm-tab="allSheets">📚 Seluruh Workbook (28 Sheet)</button>
         <button type="button" data-pm-tab="summary">📊 Ringkasan PM</button>
-        <button type="button" data-pm-tab="T1">PM T1 · KK 3.1</button>
-        <button type="button" data-pm-tab="T2">PM T2 · KK 3.2</button>
-        <button type="button" data-pm-tab="T3">PM T3 · KK 3.3</button>
-        <button type="button" data-pm-tab="T4">PM T4 · KK 3.4</button>
+        <button type="button" data-pm-tab="T1">T1 · KK3.1 (Seluruh OPD)</button>
+        <button type="button" data-pm-tab="T2">T2 · KK3.2 (BPKAD)</button>
+        <button type="button" data-pm-tab="T3">T3 · KK3.3 (BPKAD)</button>
+        <button type="button" data-pm-tab="T4">T4 · KK3.4 (Inspektorat)</button>
       </div>
       <div class="kk-pm-actions">
         <button type="button" id="kkPmOpenWorkbook" class="kk-pm-action">↗️ Buka Spreadsheet PM</button>
@@ -428,4 +458,4 @@
   </div>
 </div>
 
-<script src="/script.js?v=20261012-qa-apip-template-v3" defer></script>
+<script src="/script.js?v=20261013-spip-target-state-v1" defer></script>
