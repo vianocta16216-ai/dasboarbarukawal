@@ -374,18 +374,53 @@ function parseAccountConfig(env){
     return {username,password,role,displayName:String(item.displayName||item.nama||username).trim().slice(0,120),opdIds:[...new Set(opdIds)],opdNames:[...new Set(opdNames)],enabled:item.enabled!==false};
   });
 }
-const AUTH_PASSWORD_ITERATIONS=120000;
+// Cloudflare Workers currently rejects a single WebCrypto PBKDF2 operation above 100,000 iterations.
+// Keep new hashes at the supported ceiling and migrate older bootstrap hashes on a successful seed-password login.
+const AUTH_PASSWORD_ITERATIONS=100000;
+const AUTH_PASSWORD_MAX_ITERATIONS=100000;
 function randomBase64(byteLength=16){const bytes=crypto.getRandomValues(new Uint8Array(byteLength));let binary='';for(const b of bytes)binary+=String.fromCharCode(b);return btoa(binary);}
 function bytesToHex(bytes){return [...new Uint8Array(bytes)].map(b=>b.toString(16).padStart(2,'0')).join('');}
 async function deriveAuthPasswordHash(password,saltBase64,iterations=AUTH_PASSWORD_ITERATIONS){
+  const count=Number(iterations)||AUTH_PASSWORD_ITERATIONS;
+  if(!Number.isInteger(count)||count<1||count>AUTH_PASSWORD_MAX_ITERATIONS)throw new Error(`Iterasi PBKDF2 tidak didukung pada runtime ini (maksimum ${AUTH_PASSWORD_MAX_ITERATIONS}).`);
   const saltBytes=Uint8Array.from(atob(String(saltBase64||'')),c=>c.charCodeAt(0));
   const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(String(password)),'PBKDF2',false,['deriveBits']);
-  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:saltBytes,iterations:Number(iterations)||AUTH_PASSWORD_ITERATIONS,hash:'SHA-256'},key,256);
+  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:saltBytes,iterations:count,hash:'SHA-256'},key,256);
   return bytesToHex(bits);
 }
 async function makeAuthPasswordRecord(password){const salt=randomBase64(16);return {salt,hash:await deriveAuthPasswordHash(password,salt,AUTH_PASSWORD_ITERATIONS),iterations:AUTH_PASSWORD_ITERATIONS};}
 function constantTimeStringEqual(a,b){a=String(a||'');b=String(b||'');let diff=a.length^b.length;const length=Math.max(a.length,b.length);for(let i=0;i<length;i++)diff|=(a.charCodeAt(i)||0)^(b.charCodeAt(i)||0);return diff===0;}
-async function verifyAuthPassword(password,row){if(!row?.password_salt||!row?.password_hash)return false;const candidate=await deriveAuthPasswordHash(password,row.password_salt,row.password_iterations||AUTH_PASSWORD_ITERATIONS);return constantTimeStringEqual(candidate,row.password_hash);}
+async function verifyAuthPassword(password,row){
+  if(!row?.password_salt||!row?.password_hash)return false;
+  const iterations=Number(row.password_iterations)||AUTH_PASSWORD_ITERATIONS;
+  // Do not allow an unsupported legacy count to bubble up as an HTTP 500 during login.
+  if(!Number.isInteger(iterations)||iterations<1||iterations>AUTH_PASSWORD_MAX_ITERATIONS)return false;
+  const candidate=await deriveAuthPasswordHash(password,row.password_salt,iterations);
+  return constantTimeStringEqual(candidate,row.password_hash);
+}
+function matchesConfiguredBootstrapPassword(env,row,password){
+  const raw=String(env.KAWAL_SPIP_USERS_JSON||'').trim();
+  if(!raw)return false;
+  try{
+    const accounts=JSON.parse(raw);
+    if(!Array.isArray(accounts))return false;
+    const account=accounts.find(item=>String(item?.username||'').trim().toLowerCase()===String(row?.username||'').trim().toLowerCase());
+    return !!account&&account.enabled!==false&&String(account.role||'').trim().toLowerCase()===String(row?.role||'').trim().toLowerCase()&&String(account.password||'')===String(password||'');
+  }catch{return false;}
+}
+async function upgradeSeededLegacyAuthPassword(env,row,password){
+  const iterations=Number(row?.password_iterations)||0;
+  const createdAt=Number(row?.created_at||0);
+  const passwordChangedAt=Number(row?.password_changed_at||0);
+  // Only migrate untouched bootstrap hashes. A password explicitly reset later by an administrator
+  // must not be overwritten by an old value still present in the bootstrap secret.
+  if(iterations<=AUTH_PASSWORD_MAX_ITERATIONS||!createdAt||passwordChangedAt!==createdAt||!matchesConfiguredBootstrapPassword(env,row,password))return null;
+  const record=await makeAuthPasswordRecord(password);
+  const now=Date.now();
+  await env.DB.prepare('UPDATE auth_users SET password_salt=?,password_hash=?,password_iterations=?,updated_at=? WHERE username_key=? AND password_iterations=? AND password_changed_at=created_at')
+    .bind(record.salt,record.hash,record.iterations,now,row.username_key,iterations).run();
+  return await env.DB.prepare('SELECT * FROM auth_users WHERE username_key=? LIMIT 1').bind(row.username_key).first();
+}
 async function ensureAuthUsersSeeded(env){
   const marker=await env.DB.prepare("SELECT seed_key FROM auth_user_seed_state WHERE seed_key='KAWAL_SPIP_USERS_JSON_v1' LIMIT 1").first();
   if(marker)return;
@@ -570,7 +605,7 @@ async function ensureOpdSchema(env){
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS auth_users (
       username_key TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL DEFAULT '', role TEXT NOT NULL,
       opd_ids_json TEXT NOT NULL DEFAULT '[]', opd_names_json TEXT NOT NULL DEFAULT '[]',
-      password_salt TEXT NOT NULL, password_hash TEXT NOT NULL, password_iterations INTEGER NOT NULL DEFAULT 120000,
+      password_salt TEXT NOT NULL, password_hash TEXT NOT NULL, password_iterations INTEGER NOT NULL DEFAULT 100000,
       enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
       password_changed_at INTEGER NOT NULL, created_by TEXT NOT NULL DEFAULT '', last_login_at INTEGER
     )`).run();
@@ -1947,10 +1982,16 @@ export async function onRequest({ request, env, ctx }) {
         let user=null;
         try {
           await ensureAuthUsersSeeded(env);
-          const stored= username ? await env.DB.prepare('SELECT * FROM auth_users WHERE username_key=? LIMIT 1').bind(username.toLowerCase()).first() : null;
-          if(stored && Number(stored.enabled)===1 && password && await verifyAuthPassword(password,stored)){
-            user={username:stored.username,displayName:stored.display_name,role:stored.role,opdIds:parseJsonStringArray(stored.opd_ids_json),opdNames:parseJsonStringArray(stored.opd_names_json)};
-            await env.DB.prepare('UPDATE auth_users SET last_login_at=? WHERE username_key=?').bind(Date.now(),stored.username_key).run();
+          let stored= username ? await env.DB.prepare('SELECT * FROM auth_users WHERE username_key=? LIMIT 1').bind(username.toLowerCase()).first() : null;
+          if(stored && Number(stored.enabled)===1 && password){
+            if(Number(stored.password_iterations)>AUTH_PASSWORD_MAX_ITERATIONS){
+              try{stored=await upgradeSeededLegacyAuthPassword(env,stored,password)||stored;}
+              catch(migrationError){console.error('Migrasi hash password lama gagal:',migrationError?.message||migrationError);}
+            }
+            if(await verifyAuthPassword(password,stored)){
+              user={username:stored.username,displayName:stored.display_name,role:stored.role,opdIds:parseJsonStringArray(stored.opd_ids_json),opdNames:parseJsonStringArray(stored.opd_names_json)};
+              await env.DB.prepare('UPDATE auth_users SET last_login_at=? WHERE username_key=?').bind(Date.now(),stored.username_key).run();
+            }
           }
           const accountCount=Number((await env.DB.prepare('SELECT COUNT(*) AS n FROM auth_users').first())?.n||0);
           const hasJsonConfig=Boolean(String(env.KAWAL_SPIP_USERS_JSON||'').trim());
