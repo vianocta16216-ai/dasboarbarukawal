@@ -49,6 +49,7 @@
   <div class="actions">
     <button id="btnDashboardNav" class="nav-btn light" style="display: none;">📈 Dashboard</button>
     <button id="btnOpdListNav" class="nav-btn">🏢 Daftar OPD</button>
+    <button id="btnAccountManagementNav" class="nav-btn" style="display:none;">👥 Manajemen Akun</button>
     
     <label style="color:#ffffff; font-size:14px; display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.1); padding:8px 12px; border-radius:10px;">
       <span>Tahun:</span>
@@ -59,6 +60,8 @@
     <button id="btnAdd" class="primary" style="display: none;">＋ Tambah OPD</button>
     <button id="btnBackup" class="primary" style="background:rgba(255,255,255,0.2); display: none;">🔄 Riwayat Backup</button>
     <button id="btnClear" class="danger" style="display: none;">🗑️ Kosongkan</button>
+    <span id="currentUserLabel" style="display:none;color:#fff;font-size:12px;padding:6px 9px;background:rgba(255,255,255,.13);border-radius:8px;max-width:220px;"></span>
+    <button id="btnLogout" type="button" class="nav-btn light" style="display:none;">Keluar</button>
   </div>
 </div>
 
@@ -88,7 +91,7 @@
   <div class="panel">
     <div class="panel-head"><h2>🏢 Daftar OPD - Tahun <span id="currentYearLabel">2026</span></h2><p class="status-msg" id="saveStatus"></p></div>
     <p class="desc">Nilai Maturitas, MRI, IEPK, dan Nilai Kapabilitas APIP ditarik otomatis dari hasil formula workbook KK. Nilai Struktur dan Proses dihitung dari parameter Evidence Struktur &amp; Proses. Status dan kelengkapan mengikuti progres evidence workbook.</p>
-    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:170px;">Status Pengisian / Verifikasi</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="min-width:220px;">Penjaminan Kualitas / Quality Assurance APIP</th><th style="width:78px;">KK SPIP</th><th style="min-width:220px;">KK PM SPIP</th><th style="min-width:145px;">Laporan Hasil PM SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:155px;">Laporan Pemantauan RR_RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th style="width:40px;">No.</th><th style="min-width:190px;">OPD</th><th style="min-width:170px;">Status Pengisian / Verifikasi</th><th style="min-width:240px;">Nilai Maturitas Penyelenggaraan SPIP Terintegrasi</th><th style="width:105px;">MRI</th><th style="width:105px;">IEPK</th><th style="min-width:160px;">Nilai Kapabilitas APIP</th><th style="min-width:120px;">Status</th><th style="min-width:120px;">Evidence</th><th style="min-width:120px;">RTP</th><th style="min-width:170px;">Nilai Struktur dan Proses</th><th style="min-width:145px;">Status Struktur dan Proses</th><th style="min-width:190px;">Kelengkapan Struktur dan Proses</th><th style="min-width:180px;">Evidence Struktur dan Proses</th><th style="min-width:220px;">Penjaminan Kualitas / Quality Assurance APIP</th><th style="width:78px;">KK SPIP</th><th style="min-width:220px;">KK PM SPIP</th><th style="min-width:145px;">Laporan Hasil PM SPIP</th><th style="width:78px;">KK RTP</th><th style="min-width:155px;">Laporan Pemantauan RR_RTP</th><th style="min-width:135px;">Evidence RTP</th><th style="min-width:145px;">Tindak Lanjut LHE SPIP</th><th style="width:50px;"></th></tr></thead><tbody id="tableBody"></tbody></table></div>
     <div class="empty-state" id="emptyState" style="display:none;">Belum ada OPD. Klik <strong>"Tambah OPD"</strong> untuk memulai.</div>
   </div>
 </div>
@@ -234,12 +237,55 @@
   <div class="confirm-modal">
     <div class="confirm-icon">🏛️</div>
     <h4>Tambah OPD Baru</h4>
-    <p>Anda akan menambahkan OPD baru dengan nama default "OPD Baru".</p>
-    <p style="font-size:13px;color:var(--text-secondary);margin-top:10px;">Anda dapat mengubah nama nanti.</p>
+    <p>Tambahkan OPD baru ke data tahun yang sedang dipilih. Setelah OPD tersimpan, Super Admin dapat membuat akun Operator OPD melalui menu Manajemen Akun.</p>
+    <label for="addOpdNameInput" style="display:block;text-align:left;font-weight:700;margin:12px 0 6px;">Nama OPD</label>
+    <input id="addOpdNameInput" type="text" maxlength="180" placeholder="Masukkan nama OPD lengkap" autocomplete="organization" style="width:100%;box-sizing:border-box;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:12px;">
     <div class="confirm-actions">
       <button id="addOpdCancel" class="danger">Batal</button>
       <button id="addOpdOk" class="primary">Ya, Tambahkan</button>
     </div>
+  </div>
+</div>
+
+<!-- Manajemen Akun: akun baru disimpan di D1 dengan password hash, bukan ditambahkan ke kode. -->
+<div class="confirm-overlay" id="accountManagementModal">
+  <div class="confirm-modal" style="max-width:1120px;width:94%;max-height:92vh;overflow:auto;text-align:left;padding:26px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div><h4 style="margin:0 0 5px;">👥 Manajemen Akun Kawal SPIP</h4><p style="margin:0 0 18px;">Super Admin dapat menambah akun, mengaktifkan/menonaktifkan akun, dan mereset password. Password tidak ditampilkan kembali.</p></div>
+      <button id="accountManagementClose" type="button" class="danger" style="padding:8px 12px;">Tutup</button>
+    </div>
+    <form id="accountUserForm" autocomplete="off" style="border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:18px;">
+      <h5 style="font-size:15px;margin:0 0 12px;">Tambah akun secara manual</h5>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;">
+        <label>Username<input id="accountUsername" type="text" required minlength="3" maxlength="60" pattern="[A-Za-z0-9._-]{3,60}" autocomplete="off" placeholder="contoh opd_dinas_x" style="display:block;width:100%;box-sizing:border-box;padding:10px;margin-top:5px;border:1px solid var(--border);border-radius:8px;"></label>
+        <label>Nama tampilan<input id="accountDisplayName" type="text" required maxlength="120" autocomplete="off" placeholder="Nama pengguna / OPD" style="display:block;width:100%;box-sizing:border-box;padding:10px;margin-top:5px;border:1px solid var(--border);border-radius:8px;"></label>
+        <label>Role<select id="accountRole" required style="display:block;width:100%;padding:10px;margin-top:5px;border:1px solid var(--border);border-radius:8px;"><option value="opd">Operator OPD (1 OPD saja)</option><option value="auditor">Auditor (lintas OPD)</option><option value="irban">Irban / verifikator</option><option value="bpkp">BPKP / verifikator akhir</option><option value="admin">Super Admin (akses penuh)</option></select></label>
+        <label id="accountOpdField">OPD yang diizinkan<select id="accountOpdName" style="display:block;width:100%;padding:10px;margin-top:5px;border:1px solid var(--border);border-radius:8px;"><option value="">Pilih OPD yang ada</option></select></label>
+        <label>Password awal<input id="accountPassword" type="password" required minlength="16" maxlength="128" autocomplete="new-password" placeholder="Minimal 16 karakter" style="display:block;width:100%;box-sizing:border-box;padding:10px;margin-top:5px;border:1px solid var(--border);border-radius:8px;"></label>
+      </div>
+      <p style="font-size:12px;color:var(--text-secondary);margin:10px 0;">Gunakan password unik minimal 16 karakter. Role Operator OPD wajib terikat tepat ke satu nama OPD. Role selain Operator OPD mengikuti cakupan kewenangan sistem.</p>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><button id="accountCreateBtn" type="submit" class="primary">＋ Buat Akun</button><span id="accountUserStatus" aria-live="polite" style="font-size:13px;"></span></div>
+    </form>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><h5 style="font-size:15px;margin:0;">Daftar akun terdaftar</h5><button id="accountReloadBtn" type="button" class="nav-btn light" style="padding:8px 12px;">↻ Muat ulang</button></div>
+    <div style="overflow:auto;border:1px solid var(--border);border-radius:10px;">
+      <table style="width:100%;min-width:800px;border-collapse:collapse;font-size:13px;"><thead><tr style="background:var(--surface-muted,#f8fafc);text-align:left;"><th style="padding:10px;">Username / Nama</th><th style="padding:10px;">Role</th><th style="padding:10px;">Cakupan</th><th style="padding:10px;">Status</th><th style="padding:10px;">Login terakhir</th><th style="padding:10px;">Tindakan</th></tr></thead><tbody id="accountUsersTable"><tr><td colspan="6" style="padding:14px;text-align:center;">Klik muat ulang untuk membaca akun.</td></tr></tbody></table>
+    </div>
+    <p style="font-size:12px;line-height:1.5;color:var(--text-secondary);margin:12px 0 0;">Akun baru disimpan dalam D1 menggunakan hash PBKDF2. Menonaktifkan akun juga mencabut sesi aktif. Akun yang dibuat di sini tidak perlu ditambahkan kembali ke environment variable.</p>
+  </div>
+</div>
+
+<!-- Password reset uses masked password fields; avoid exposing passwords in browser prompts. -->
+<div class="confirm-overlay" id="accountResetPasswordModal">
+  <div class="confirm-modal" style="max-width:520px;text-align:left;padding:24px;">
+    <h4 style="margin:0 0 8px;">Reset Password Akun</h4>
+    <p id="accountResetPasswordTarget" style="margin:0 0 16px;color:var(--text-secondary);">Pilih akun yang akan direset.</p>
+    <form id="accountResetPasswordForm" autocomplete="off">
+      <label>Password baru<input id="accountResetPassword1" type="password" required minlength="16" maxlength="128" autocomplete="new-password" style="display:block;width:100%;box-sizing:border-box;padding:10px;margin-top:6px;margin-bottom:12px;border:1px solid var(--border);border-radius:8px;"></label>
+      <label>Ulangi password baru<input id="accountResetPassword2" type="password" required minlength="16" maxlength="128" autocomplete="new-password" style="display:block;width:100%;box-sizing:border-box;padding:10px;margin-top:6px;margin-bottom:12px;border:1px solid var(--border);border-radius:8px;"></label>
+      <p style="font-size:12px;color:var(--text-secondary);">Minimal 16 karakter. Sesi akun akan dicabut setelah reset berhasil.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;"><button type="button" id="accountResetPasswordCancel" class="danger">Batal</button><button type="submit" id="accountResetPasswordSubmit" class="primary">Simpan Password</button></div>
+      <p id="accountResetPasswordStatus" aria-live="polite" style="font-size:13px;margin-bottom:0;"></p>
+    </form>
   </div>
 </div>
 
@@ -348,7 +394,7 @@
   </div>
 </div>
 <!-- Overlay Akses Daftar OPD -->
-<div id="opdAccessOverlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:99999; display:none; justify-content:center; align-items:center;">
+<div id="opdAccessOverlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:99999; display:flex; justify-content:center; align-items:center;">
   <div style="background:#ffffff; padding:40px; border-radius:20px; max-width:420px; width:90%; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,0.3);">
     <div style="display:flex; justify-content:center; align-items:center; margin-bottom:14px; color:#64748b;">
       <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -357,10 +403,13 @@
         <path d="M12 14v3"></path>
       </svg>
     </div>
-    <h2 style="margin-bottom:10px; color:#0f172a; font-size:24px;">Akses Daftar OPD Terkunci</h2>
-    <p style="margin-bottom:24px; color:#64748b; font-size:14px;">Masukkan password untuk mengelola data OPD</p>
+    <h2 style="margin-bottom:10px; color:#0f172a; font-size:24px;">Masuk ke Kawal SPIP</h2>
+    <p style="margin-bottom:18px; color:#64748b; font-size:14px;">Gunakan akun sesuai kewenangan Anda. Akun OPD hanya dapat mengakses OPD yang ditetapkan.</p>
     <div style="position:relative; margin-bottom:12px;">
-      <input type="password" id="opdAccessPassword" placeholder="Password Daftar OPD" autocomplete="current-password" style="width:100%; padding:12px 42px 12px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;">
+      <input type="text" id="opdAccessUsername" placeholder="Username" autocomplete="username" style="width:100%; padding:12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;">
+    </div>
+    <div style="position:relative; margin-bottom:12px;">
+      <input type="password" id="opdAccessPassword" placeholder="Password akun" autocomplete="current-password" style="width:100%; padding:12px 42px 12px 12px; border:1px solid #e2e8f0; border-radius:8px; font-size:14px; outline:none; box-sizing:border-box;">
       <button type="button" id="toggleOpdAccessPassword" aria-label="Tampilkan password" aria-pressed="false" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); width:30px; height:30px; padding:0; border:none; background:transparent; color:#64748b; cursor:pointer; display:flex; align-items:center; justify-content:center; border-radius:6px;">
         <svg id="toggleOpdAccessPasswordIcon" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -370,7 +419,7 @@
     </div>
     <div id="opdAccessError" style="display:none; background:#fee2e2; color:#dc2626; padding:12px; border-radius:8px; margin-bottom:12px; font-size:13px; font-weight:500;"></div>
     <button id="btnOpdAccess" style="width:100%; padding:14px; background:var(--primary); color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; font-size:14px;">Masuk</button>
-    <button id="btnOpdAccessCancel" style="width:100%; padding:10px; background:#f1f5f9; color:#334155; border:none; border-radius:8px; cursor:pointer; font-weight:600; font-size:14px; margin-top:10px;">Batal</button>
+    <button id="btnOpdAccessCancel" style="width:100%; padding:10px; background:#f1f5f9; color:#334155; border:none; border-radius:8px; cursor:pointer; font-weight:600; font-size:14px; margin-top:10px;">Bersihkan Form</button>
   </div>
 </div>
 
@@ -458,4 +507,81 @@
   </div>
 </div>
 
-<script src="/script.js?v=20261013-spip-target-state-v1" defer></script>
+
+<!-- ===== TINDAK LANJUT LHE SPIP ===== -->
+<div class="sheet-links-overlay" id="lheFollowupModal">
+  <div class="sheet-links-modal" style="max-width:1040px;max-height:92vh;overflow:auto;">
+    <div class="sheet-links-header"><h3>🧾 Tindak Lanjut LHE SPIP — <span id="lheFollowupOpdName"></span></h3><button class="sheet-links-close" id="lheFollowupClose" aria-label="Tutup">&times;</button></div>
+    <div class="sheet-links-body">
+      <div class="sheet-links-info" id="lheFollowupNotice">Pilih rekomendasi dari sumber LHE 2025 atau tindak lanjut 2024 yang belum tuntas. Data sumber adalah referensi/usulan; realisasi, status, dan bukti harus diperiksa dan diverifikasi secara terpisah.</div>
+      <div class="sheet-links-status" id="lheFollowupStatus"></div>
+      <div class="lhe-layout" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:16px;align-items:start;">
+        <section style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;min-width:0;">
+          <h4 style="margin:0 0 10px;color:#0f172a;">Butir tersimpan</h4><div id="lheFollowupList"></div>
+        </section>
+        <section style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;min-width:0;">
+          <h4 style="margin:0 0 10px;color:#0f172a;" id="lheEditorTitle">Tambah tindak lanjut</h4>
+          <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Templat rekomendasi sumber</label>
+          <select id="lheTemplateSelect" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;"><option value="">Pilih sumber LHE 2025 / TL 2024…</option></select>
+          <div style="font-size:11px;color:#64748b;margin:5px 0 10px;">Saat dipilih, template mengisi referensi, rencana, indikator, bukti yang diperlukan, PIC, dan tenggat. Realisasi baru tetap kosong sampai diperiksa.</div>
+          <div class="lhe-form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <label style="font-size:12px;font-weight:700;">Sumber Tahun<select id="lheSourceYear" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"><option value="2025">LHE / Renaksi 2025</option><option value="2024">TL 2024 Belum Tuntas</option></select></label>
+            <label style="font-size:12px;font-weight:700;">Ref. Rekomendasi<input id="lheRef" maxlength="50" placeholder="Contoh: 1.a" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></label>
+            <label style="font-size:12px;font-weight:700;grid-column:1/-1;">Rekomendasi laporan (ringkasan)<textarea id="lheRecommendation" rows="3" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></textarea></label>
+            <label style="font-size:12px;font-weight:700;grid-column:1/-1;">Rencana aksi / upaya perbaikan<textarea id="lheActionPlan" rows="3" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></textarea></label>
+            <label style="font-size:12px;font-weight:700;grid-column:1/-1;">Target / indikator penyelesaian<textarea id="lheIndicator" rows="2" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></textarea></label>
+            <label style="font-size:12px;font-weight:700;grid-column:1/-1;">Bukti dukung yang diperlukan<textarea id="lheEvidenceRequired" rows="2" placeholder="Daftar dokumen atau bukti yang harus dilampirkan" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></textarea></label>
+            <label style="font-size:12px;font-weight:700;">PIC / penanggung jawab<input id="lhePic" maxlength="500" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></label>
+            <label style="font-size:12px;font-weight:700;">Tenggat (usulan)<input id="lheDueDate" maxlength="160" placeholder="Contoh: 31 Desember 2026" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></label>
+            <label style="font-size:12px;font-weight:700;grid-column:1/-1;">Realisasi aktual (isi hanya yang benar-benar telah dilakukan)<textarea id="lheActualAction" rows="3" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></textarea></label>
+            <label style="font-size:12px;font-weight:700;grid-column:1/-1;">Status pelaksanaan<select id="lheStatus" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"><option>Belum dilaksanakan</option><option>Dalam proses</option><option>Sudah ditindaklanjuti</option><option>Belum diverifikasi</option><option>Ditolak / perlu perbaikan</option></select></label>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;"><button id="lheSaveButton" class="primary" type="button">💾 Simpan Tindak Lanjut</button><button id="lheNewButton" type="button">＋ Butir Baru</button></div>
+          <hr style="border:0;border-top:1px solid #e2e8f0;margin:16px 0;">
+          <h4 style="margin:0 0 8px;color:#0f172a;">Bukti dukung</h4><p style="font-size:12px;color:#64748b;margin:0 0 8px;">Upload bukti yang berhubungan dengan butir yang dipilih. Maksimal 10 MB per file.</p>
+          <input id="lheEvidenceInput" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png" style="display:none;">
+          <button id="lheEvidenceChoose" type="button">📎 Upload Bukti Dukung</button><div id="lheEvidenceList" style="margin-top:10px;"></div>
+        </section>
+      </div>
+    </div>
+    <div class="sheet-links-footer"><button id="lheFollowupRefresh" type="button">↻ Muat Ulang</button><button id="lheFollowupCloseFooter" type="button">Tutup</button></div>
+  </div>
+</div>
+
+<!-- ===== VERIFIKASI BERJENJANG AUDITOR → IRBAN → BPKP ===== -->
+<div class="sheet-links-overlay" id="evidenceWorkflowModal">
+  <div class="sheet-links-modal" style="max-width:800px;">
+    <div class="sheet-links-header"><h3>🛡️ Alur Verifikasi Evidence</h3><button class="sheet-links-close" id="evidenceWorkflowClose" aria-label="Tutup">&times;</button></div>
+    <div class="sheet-links-body">
+      <div class="sheet-links-info"><strong id="evidenceWorkflowFileName">File evidence</strong><br>Urutan resmi: <b>Auditor mengirim → Irban memverifikasi → BPKP sebagai verifikator akhir</b>. Tahap berikutnya hanya aktif setelah tahap sebelumnya memenuhi syarat.</div>
+      <div class="sheet-links-status" id="evidenceWorkflowStatus"></div>
+      <div id="evidenceWorkflowStages" style="display:grid;gap:10px;margin:12px 0;"></div>
+      <div style="border:1px solid #cbd5e1;background:#f8fafc;border-radius:12px;padding:14px;">
+        <h4 style="margin:0 0 10px;">Catat verifikasi tahap</h4>
+        <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Tahap<select id="workflowStageSelect" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"><option value="auditor">Auditor</option><option value="irban">Irban</option><option value="bpkp">BPKP (final)</option></select></label>
+        <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Hasil<select id="workflowStatusSelect" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></select></label>
+        <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Nama pemeriksa<input id="workflowExaminer" maxlength="100" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></label>
+        <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Catatan / alasan pengembalian<textarea id="workflowNote" maxlength="2000" rows="3" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></textarea></label>
+        <button id="workflowSaveButton" class="primary" type="button" style="margin-top:10px;">💾 Simpan Tahap Verifikasi</button>
+      </div>
+      <h4 style="margin:16px 0 8px;">Riwayat audit</h4><div id="evidenceWorkflowHistory"></div>
+    </div>
+    <div class="sheet-links-footer"><button id="evidenceWorkflowRefresh" type="button">↻ Muat Ulang</button><button id="evidenceWorkflowCloseFooter" type="button">Tutup</button></div>
+  </div>
+</div>
+
+<style>
+#lheFollowupModal.active,#evidenceWorkflowModal.active{display:flex;}
+.lhe-followup-card,.workflow-stage-card{border:1px solid #e2e8f0;border-radius:10px;padding:11px;margin:8px 0;background:#fff;}
+.lhe-followup-card h5{margin:0 0 5px;color:#0f172a;font-size:13px;line-height:1.45;}
+.lhe-followup-card p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#475569;margin:6px 0;}
+.lhe-followup-actions,.workflow-stage-meta{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:8px;}
+.lhe-followup-actions button{font-size:11px;padding:6px 8px;}
+.workflow-stage-card{display:grid;grid-template-columns:130px 1fr;gap:8px;}
+.workflow-stage-title{font-weight:800;color:#0f172a;}
+.workflow-stage-status{font-weight:700;text-transform:capitalize;}
+.workflow-stage-card p{font-size:12px;white-space:pre-wrap;color:#475569;margin:5px 0;}
+@media(max-width:850px){#lheFollowupModal .lhe-layout{grid-template-columns:1fr!important;}#lheFollowupModal .lhe-form-grid{grid-template-columns:1fr!important;}.workflow-stage-card{grid-template-columns:1fr;}}
+</style>
+
+<script src="/script.js?v=20261013-multitenant-account-management-v3" defer></script>
