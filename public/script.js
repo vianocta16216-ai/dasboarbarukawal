@@ -56,7 +56,7 @@ function scheduleRealtimeRefresh(reason='Pembaruan operator lain') {
     realtimeRefreshPending = false;
     try {
       await loadData();
-      setRealtimeBadge('🟢 Realtime aktif', 'online');
+      setRealtimeBadge('🟢 Realtime aktif (cakupan akun diterapkan server)', 'online');
     } catch (e) {
       setRealtimeBadge('🟠 Realtime menunggu sinkron', 'error');
     }
@@ -75,7 +75,9 @@ function closeRealtimeSocket() {
 }
 
 function connectRealtime() {
-  if (currentUser?.role === 'opd' || currentUser?.scoped) { closeRealtimeSocket(); setRealtimeBadge('Realtime lintas OPD nonaktif untuk akun terbatas', 'idle'); return; }
+  if (!currentUser) { closeRealtimeSocket(); setRealtimeBadge('Realtime menunggu login', 'idle'); return; }
+  // Pages Function authenticates the socket and the Durable Object filters each
+  // event by OPD scope. Scoped users can therefore receive safe realtime updates.
   const year = String(currentYear || document.getElementById('yearSelect')?.value || new Date().getFullYear());
   if (!year || typeof WebSocket === 'undefined') return;
   if (realtimeSocket && realtimeConnectingYear === year && [WebSocket.OPEN, WebSocket.CONNECTING].includes(realtimeSocket.readyState)) return;
@@ -96,7 +98,7 @@ function connectRealtime() {
 
   ws.addEventListener('open', () => {
     realtimeReconnectAttempt = 0;
-    setRealtimeBadge('🟢 Realtime aktif', 'online');
+    setRealtimeBadge('🟢 Realtime aktif (cakupan akun diterapkan server)', 'online');
     clearInterval(realtimeHeartbeatTimer);
     realtimeHeartbeatTimer = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -110,6 +112,8 @@ function connectRealtime() {
       const msg = JSON.parse(event.data);
       if (msg.type === 'connected' || msg.type === 'pong') return;
       if (msg.type === 'data-changed' && String(msg.year) === String(currentYear)) {
+        // The server filters every event by the session's OPD scope before it reaches
+        // this handler; reload the selected year for durable consistency.
         // QA APIP is stored in a sparse table. Update only its OPD summary so a QA
         // edit from another user does not force all viewers to reload the full dataset.
         if ((msg.action === 'saveQaApipChecklistItem' || msg.action === 'deleteQaApipChecklistItem' || msg.action === 'saveQaApipItem' || msg.action === 'deleteQaApipItem') && msg.opdId && msg.summary) {
@@ -378,12 +382,14 @@ function applyOfflineQueueToRows() {
             row.parameterLevels[`${c.subCode}|${c.paramId}`] = Math.max(0,Math.min(5,Number(c.value)||0));
           }
         });
-        row.nilaiStrukturProses = calculateSA(row);
-        row.sa = row.nilaiStrukturProses;
+        if(p.structureProcessBreakdown?.source==='verified_evidence_only')row.structureProcessBreakdown=p.structureProcessBreakdown;
+        if(p.nilaiStrukturProses!=null){row.nilaiStrukturProses=Number(p.nilaiStrukturProses)||0;row.sa=row.nilaiStrukturProses;}
+        else {row.nilaiStrukturProses=calculateSA(row);row.sa=row.nilaiStrukturProses;}
       } else if (row && p.subunsurs) {
         row.subunsurs = p.subunsurs;
-        row.nilaiStrukturProses = calculateSA(row);
-        row.sa = row.nilaiStrukturProses;
+        if(p.structureProcessBreakdown?.source==='verified_evidence_only')row.structureProcessBreakdown=p.structureProcessBreakdown;
+        if(p.nilaiStrukturProses!=null){row.nilaiStrukturProses=Number(p.nilaiStrukturProses)||0;row.sa=row.nilaiStrukturProses;}
+        else {row.nilaiStrukturProses=calculateSA(row);row.sa=row.nilaiStrukturProses;}
       }
     }
 
@@ -766,6 +772,11 @@ async function saveEvidenceVerification(row, subCode, paramId, level, uploadId, 
     const item = row.subunsurs?.[subCode]?.[paramId]?.['files' + level];
     const fileObj = Array.isArray(item) ? item.find(x => x && typeof x === 'object' && x.uploadId === uploadId) : null;
     if (fileObj) fileObj.verification = d.verification || { examinerName, note, status, verifiedAt: new Date().toISOString() };
+    if(d?.structureProcessBreakdown?.source==='verified_evidence_only'){
+      row.structureProcessBreakdown=d.structureProcessBreakdown;
+      row.nilaiStrukturProses=Number(d.nilaiStrukturProses)||0;row.sa=row.nilaiStrukturProses;
+      row.strukturProsesStatus=d.strukturProsesStatus||row.strukturProsesStatus;
+    }
     renderFileList(row, subCode, paramId, level);
     const rowSummary = getRowStructureVerificationSummary(row);
     row.structureVerificationSummary = rowSummary;
@@ -1121,51 +1132,36 @@ async function loadData() {
 
 // ====== FUNGSI: Hitung SA berdasarkan 43 total parameter ======
 function getStructureProcessBreakdown(subunsurs) {
-  const breakdown = { totalParams: 0, selectedParams: 0, sumLevels: 0, byLevel: {1:0,2:0,3:0,4:0,5:0} };
-  // The master contains exactly 43 parameters. Iterate only the master list so an
-  // OPD's value is never affected by stray/legacy JSON keys.
-  const master = Array.isArray(PARAM_LIST) && PARAM_LIST.length === 43
-    ? PARAM_LIST
-    : Object.entries(SUBUNSUR_DATA || {}).flatMap(([subCode, subInfo]) =>
-        (Array.isArray(subInfo?.params) ? subInfo.params : []).map(param => ({subCode, paramId:param.id}))
-      );
-  for (const param of master) {
-    breakdown.totalParams++;
-    const raw = subunsurs?.[param.subCode]?.[param.paramId]?.level;
-    const level = Math.max(0, Math.min(5, Number(raw) || 0));
-    if (level > 0) {
-      breakdown.selectedParams++;
-      breakdown.sumLevels += level;
-      breakdown.byLevel[level]++;
-    }
-  }
-  // Always use 43 as denominator when the 43-parameter master is available.
-  const denominator = (PARAM_LIST.length === 43) ? 43 : breakdown.totalParams;
-  breakdown.totalParams = denominator;
-  breakdown.value = denominator ? Math.round((breakdown.sumLevels / denominator) * 100) / 100 : 0;
-  return breakdown;
+  return getRowStructureProcessBreakdown({subunsurs:subunsurs||{}});
 }
 
-// Nilai Struktur dan Proses = rata-rata level yang dipilih pada SETIAP parameter
-// master (43 parameter). Hanya parameter master yang dihitung; key liar/legacy
-// di dalam JSON tidak ikut memengaruhi nilai.
+// Nilai Struktur dan Proses memakai 43 parameter master sebagai denominator;
+// hanya level evidence yang diterima/diterima dengan catatan dihitung.
 function getRowStructureProcessBreakdown(row) {
-  const master = Array.isArray(PARAM_LIST) ? PARAM_LIST : [];
-  const levels = row?.parameterLevels;
-  if (levels && typeof levels === 'object' && master.length) {
-    const b = { totalParams: master.length, selectedParams:0, sumLevels:0, byLevel:{1:0,2:0,3:0,4:0,5:0} };
-    for (const p of master) {
-      const key = `${p.subCode}|${p.paramId}`;
-      const lv = Math.max(0, Math.min(5, Number(levels[key]) || 0));
-      if (lv > 0) { b.selectedParams++; b.sumLevels += lv; b.byLevel[lv]++; }
-    }
-    b.value = Math.round((b.sumLevels / 43) * 100) / 100;
-    b.totalParams = 43;
-    return b;
+  // The server score is authoritative and represents accepted evidence only.
+  // Never replace it with a self-selected input level from parameterLevels.
+  const authoritative=row?.structureProcessBreakdown;
+  if(authoritative&&authoritative.source==='verified_evidence_only'&&Number.isFinite(Number(authoritative.value))){
+    const total=Math.max(0,Number(authoritative.totalParams)||PARAM_LIST.length||43);
+    const verified=Math.max(0,Number(authoritative.verifiedParams??authoritative.selectedParams)||0);
+    return {...authoritative,totalParams:total,selectedParams:verified,verifiedParams:verified,sumLevels:Number(authoritative.sumLevels)||0,value:Math.max(0,Number(authoritative.value)||0),byLevel:authoritative.byLevel||{1:0,2:0,3:0,4:0,5:0}};
   }
-  const b = getStructureProcessBreakdown(row?.subunsurs || {});
-  if (b.totalParams > 0) return b;
-  return {totalParams:43,selectedParams:0,sumLevels:0,byLevel:{1:0,2:0,3:0,4:0,5:0},value:0};
+  // Compatibility fallback for older API snapshots: compute from files with an
+  // accepted verification decision; level selectors alone never contribute.
+  const master=Array.isArray(PARAM_LIST)&&PARAM_LIST.length?PARAM_LIST:Object.entries(SUBUNSUR_DATA||{}).flatMap(([subCode,info])=>(info?.params||[]).map(param=>({subCode,paramId:param.id})));
+  const b={totalParams:master.length||43,selectedParams:0,verifiedParams:0,sumLevels:0,byLevel:{1:0,2:0,3:0,4:0,5:0}};
+  for(const param of master){
+    let maxLevel=0;
+    for(let level=1;level<=5;level++){
+      const files=row?.subunsurs?.[param.subCode]?.[param.paramId]?.['files'+level];
+      if(!Array.isArray(files))continue;
+      if(files.some(file=>{const status=normalizeVerification(file?.verification||file).status;return status==='diterima'||status==='diterima_catatan';}))maxLevel=level;
+    }
+    if(maxLevel>0){b.selectedParams++;b.verifiedParams++;b.sumLevels+=maxLevel;b.byLevel[maxLevel]++;}
+  }
+  b.value=b.totalParams?Math.round((b.sumLevels/b.totalParams)*100)/100:0;
+  b.source='verified_evidence_only';
+  return b;
 }
 
 function calculateSA(row) {
@@ -1321,8 +1317,9 @@ function render() {
       const scopedEvidence = getAssessmentEvidenceScopeSummary(r);
       const countEvidence = Number(scopedEvidence.groups||0);
       const evidenceFiles = Number(scopedEvidence.files||0);
-      const scopeTotal = Math.max(1,Number(scopedEvidence.totalParameters||43));
-      const strukturStatus = countEvidence >= scopeTotal ? 'Selesai' : (countEvidence > 0 ? 'Proses' : 'Belum');
+      const scopeTotal = Math.max(1,Number(structureBreakdown.totalParams||totalParams||43));
+      const verifiedParams = Math.max(0,Number(structureBreakdown.verifiedParams??structureBreakdown.selectedParams)||0);
+      const strukturStatus = verifiedParams >= scopeTotal ? 'Selesai' : (verifiedParams > 0 ? 'Proses' : 'Belum');
       let badgeClass = countEvidence >= scopeTotal ? 'badge-lengkap' : (countEvidence > 0 ? 'badge-sebagian' : 'badge-kosong');
       let badgeLabel = countEvidence >= scopeTotal ? `Lengkap (${countEvidence}/${scopeTotal})` : (countEvidence > 0 ? `Sebagian (${countEvidence}/${scopeTotal})` : `Belum (0/${scopeTotal})`);
       return `<tr>
@@ -1336,7 +1333,7 @@ function render() {
         <td>${selectHtml(r.id,'status',r.status,['Selesai','Proses','Belum'])}</td>
         <td>${selectHtml(r.id,'evidence',r.evidence,['Lengkap','Sebagian','Belum'])}</td>
         <td>${selectHtml(r.id,'rtp',r.rtp,['Selesai','Belum'])}</td>
-        <td><input class="auto-structure-value" type="number" data-id="${r.id}" value="${Number(struktur).toFixed(2)}" readonly aria-label="Nilai Struktur dan Proses otomatis" title="Otomatis dari 43 parameter"></td>
+        <td><input class="auto-structure-value" type="number" data-id="${r.id}" value="${Number(struktur).toFixed(2)}" readonly aria-label="Nilai Struktur dan Proses otomatis" title="Otomatis dari evidence yang diterima, denominator 43 parameter"></td>
         <td><span class="badge ${strukturStatus==='Selesai'?'badge-lengkap':(strukturStatus==='Proses'?'badge-sebagian':'badge-kosong')}">${strukturStatus}</span></td>
         <td><span class="badge ${badgeClass}" title="Evidence Struktur & Proses workbook: 55 grup merged dari KK3.1–KK3.4">${badgeLabel}</span></td>
         <td><div class="evidence-cell"><button class="btn-detail" data-id="${r.id}" title="Evidence Struktur dan Proses">📁</button><span class="structure-evidence-summary" data-id="${r.id}">${(evidenceFiles?(Number(scopedEvidence.verifiedFiles||0)/evidenceFiles*100):0).toFixed(0)}%<small>${evidenceFiles} file · ${countEvidence}/${scopeTotal} grup sesuai T${assessmentAllowedTargets(r)[0]==='T1'&&assessmentAllowedTargets(r).length===1?'1':assessmentAllowedTargets(r).join('+')}</small></span></div></td>
@@ -1874,7 +1871,7 @@ function populateAccountOpdOptions(){
   if(list.includes(selected))select.value=selected;
 }
 function updateAccountRoleFields(){const role=String(accountRoleField?.value||'opd');if(accountOpdField)accountOpdField.style.display=role==='opd'?'block':'none';}
-function accountRoleLabel(role){return ({admin:'Super Admin',auditor:'Auditor',opd:'Operator OPD',irban:'Irban',bpkp:'BPKP'})[role]||role;}
+function accountRoleLabel(role){return ({admin:'Super Admin',auditor:'Auditor',ppupd:'PPUPD',opd:'Operator OPD',irban:'Irban',bpkp:'BPKP'})[role]||role;}
 function accountScopeLabel(user){if(user.role==='admin')return 'Semua OPD + konfigurasi';if((user.opdNames||[]).includes('*')||(user.opdIds||[]).includes('*'))return 'Semua OPD (termasuk OPD baru)';const names=[...(user.opdNames||[])];if(names.length)return names.join(', ');if((user.opdIds||[]).length)return `ID: ${(user.opdIds||[]).join(', ')}`;return user.role==='opd'?'Cakupan OPD belum diatur':'Lintas OPD sesuai role';}
 function accountDate(value){if(!value)return 'Belum pernah';try{return new Date(Number(value)).toLocaleString('id-ID');}catch{return '-';}}
 function setAccountStatus(message,kind=''){const el=document.getElementById('accountUserStatus');if(el){el.textContent=message;el.style.color=kind==='error'?'#b91c1c':(kind==='success'?'#047857':'var(--text-secondary)');}}
@@ -2381,10 +2378,10 @@ async function openEditModal(id) {
     liveRow.parameterLevels = liveRow.parameterLevels || {};
     liveRow.parameterLevels[`${el.dataset.sub}|${el.dataset.param}`] = liveRow.subunsurs[el.dataset.sub][el.dataset.param].level;
     const bd = getRowStructureProcessBreakdown(liveRow);
+    // Selecting a level is an assessment input, not a verified score.
     liveRow.nilaiStrukturProses = bd.value;
     liveRow.sa = bd.value;
-    liveRow.strukturProsesStatus = bd.selectedParams === bd.totalParams ? 'Selesai' : (bd.selectedParams > 0 ? 'Proses' : 'Belum');
-    // Keep the table's value in sync even before the modal is closed.
+    liveRow.strukturProsesStatus = bd.verifiedParams>=bd.totalParams&&bd.totalParams>0?'Selesai':(bd.verifiedParams>0?'Proses':'Belum');
     const tableInput = document.querySelector(`.auto-structure-value[data-id=\"${CSS.escape(String(liveRow.id))}\"]`);
     if (tableInput) tableInput.value = bd.value.toFixed(2);
     updateKpisLocal();
@@ -2667,11 +2664,13 @@ function renderFileList(row, subCode, paramId, level) {
     }
 
     const ext = fileName.split('.').pop().toLowerCase();
-    let displayUrl = fileUrl;
-    if (!String(fileUrl).startsWith('/myCloudinaryHandler?')) {
-      if (['xls', 'xlsx'].includes(ext)) displayUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(fileUrl)}`;
-      else if (['pdf', 'doc', 'docx', 'ppt', 'pptx'].includes(ext)) displayUrl = `https://docs.google.com/viewer?embedded=true&url=${encodeURIComponent(fileUrl)}`;
-    }
+    const fileType = String(fileObj?.fileType || 'application/octet-stream');
+    const previewAction = isObject && fileObj.uploadId
+      ? `<button type="button" class="file-action evidence-preview-btn" data-opd-id="${escapeHtml(row.id)}" data-upload-id="${escapeHtml(fileObj.uploadId)}" data-file-name="${escapeHtml(fileName)}" data-file-type="${escapeHtml(fileType)}">👁 Pratinjau</button>`
+      : '';
+    const fileTitle = isObject && fileObj.uploadId
+      ? `<button type="button" class="file-name-preview" data-opd-id="${escapeHtml(row.id)}" data-upload-id="${escapeHtml(fileObj.uploadId)}" data-file-name="${escapeHtml(fileName)}" data-file-type="${escapeHtml(fileType)}">📎 ${escapeHtml(fileName)}</button>`
+      : `<a href="${escapeHtml(fileUrl)}" target="_blank" rel="noopener noreferrer" class="file-link">📎 ${escapeHtml(fileName)}</a>`;
 
     const div = document.createElement('div');
     div.className = 'evidence-file-card';
@@ -2687,7 +2686,7 @@ function renderFileList(row, subCode, paramId, level) {
       ? `<div class="file-replacement-notice">✅ File sudah diganti${fileObj.replacedAt ? ' pada ' + escapeHtml(formatVerificationDate(fileObj.replacedAt)) : ''}. File lama tidak diduplikasi. Menunggu verifikasi Inspektorat.</div>`
       : '';
     const replaceHtml = canReplace ? `<button type="button" class="file-action replace-evidence-btn">↻ Ganti File</button><input type="file" class="replace-evidence-input" hidden accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.mp4,.webm,.mov,.avi,.mkv,.xlsx,.xls,.ppt,.pptx">` : '';
-    const canLegacyVerify = ['admin','irban'].includes(String(currentUser?.role||''));
+    const canLegacyVerify = ['admin','auditor','ppupd','irban'].includes(String(currentUser?.role||''));
     const workflowButton = canVerify ? `<button type="button" class="file-action evidence-workflow-btn" data-opd-id="${escapeHtml(row.id)}" data-upload-id="${escapeHtml(fileObj.uploadId)}" data-file-name="${escapeHtml(fileName)}">🛡️ Alur Verifikasi</button>` : '';
     const verifyHtml = (canVerify && canLegacyVerify) ? `
       <div class="file-verification-panel${verifiedClass}">
@@ -2704,7 +2703,9 @@ function renderFileList(row, subCode, paramId, level) {
 
     div.innerHTML = `
       <div class="evidence-file-main">
-        <a href="${escapeHtml(displayUrl)}" target="_blank" rel="noopener" class="file-link">📎 ${escapeHtml(fileName)}</a>
+        ${fileTitle}
+        ${previewAction}
+        ${workflowButton}
         <span class="evidence-storage-status">${statusLabel}</span>
         ${retryButton}
         <button type="button" class="file-action delete" onclick="removeUploadedFile('${row.id}', '${subCode}', '${paramId}', ${level}, '${String(fileUrl).replace(/'/g, "\\'")}', ${index})">🗑️ Hapus</button>
@@ -3666,21 +3667,26 @@ function wbEvidenceFileHtml(file){
   const statusClass=verificationStatusClass(status);
   const score=getVerificationScore(file);
   const uploadId=escapeHtml(file.uploadId||'');
+  const opdId=escapeHtml(workbookEvidenceRow?.id||'');
+  const previewButton=file?.uploadId?`<button type="button" class="wb-action-preview evidence-preview-btn" data-opd-id="${opdId}" data-upload-id="${uploadId}" data-file-name="${name}" data-file-type="${escapeHtml(file.fileType||'application/octet-stream')}">👁 Pratinjau</button>`:'';
+  const workflowButton=file?.uploadId?`<button type="button" class="evidence-workflow-btn wb-action-preview" data-opd-id="${opdId}" data-upload-id="${uploadId}" data-file-name="${name}">🛡️ Alur Verifikasi</button>`:'';
   const retryButton=file?.syncStatus==='done'?'':`<button type="button" class="wb-action-retry" data-wb-action="retry" data-upload-id="${uploadId}" aria-label="Ulangi sinkronisasi Google Drive" title="Ulangi sinkronisasi Google Drive">↻ Ulangi Sinkronisasi</button>`;
-  const replaceControl=status==='dikembalikan'?`<button type="button" class="wb-action-replace" data-wb-action="replace" data-upload-id="${uploadId}">↻ Ganti File</button><input type="file" hidden data-wb-replace-input="1" data-upload-id="${uploadId}" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp">`:'';
-  return `<div class="wb-evidence-file is-${statusClass}" data-wb-file-id="${uploadId}">
-    <div class="wb-evidence-file-main">
-      <span class="wb-evidence-file-name">${url?`<a href="${escapeHtml(url)}" target="_blank" rel="noopener">📎 ${name}</a>`:`📎 ${name}`}</span>
-      <div class="wb-evidence-file-badges"><span class="wb-sync-pill ${file?.syncStatus==='done'?'is-synced':file?.syncStatus==='retrying'?'is-retry':'is-pending'}">${escapeHtml(syncStatus)}</span><span class="wb-verification-pill" data-wb-status-pill>${escapeHtml(verificationStatusLabel(status))}</span><span class="wb-score-badge" data-wb-score>Skor ${score}%</span></div>
-    </div>
-    <div class="wb-verification-meter" role="progressbar" aria-label="Skor verifikasi dokumen" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${score}"><span data-wb-score-fill style="width:${score}%"></span></div>
-    <div class="wb-evidence-file-actions">${replaceControl}${retryButton}<button type="button" class="wb-action-delete" data-wb-action="delete" data-upload-id="${uploadId}" aria-label="Hapus file evidence" title="Hapus file evidence">🗑 Hapus File</button></div>
-    <details class="wb-verification"><summary>🛡️ Penjaminan / Verifikasi Inspektorat</summary><div class="wb-verification-grid">
+  const canDirectVerify=['admin','auditor','ppupd','irban'].includes(String(currentUser?.role||''));
+  const replaceControl=status==='dikembalikan'&&canDirectVerify?`<button type="button" class="wb-action-replace" data-wb-action="replace" data-upload-id="${uploadId}">↻ Ganti File</button><input type="file" hidden data-wb-replace-input="1" data-upload-id="${uploadId}" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp">`:'';
+  const verificationPanel=canDirectVerify?`<details class="wb-verification"><summary>🛡️ Penjaminan / Verifikasi Inspektorat</summary><div class="wb-verification-grid">
       <label>Hasil Verifikasi<select class="wb-verify-status is-${statusClass}" data-wb-ver-status="${uploadId}">${verificationStatusOptions(status)}</select></label>
       <label>Nama Pemeriksa<input type="text" maxlength="100" data-wb-ver-examiner="${uploadId}" value="${escapeHtml(file.verificationExaminer||'')}" placeholder="Ketik nama pemeriksa"></label>
       <label class="wb-verification-note-label">Catatan Pemeriksa<textarea maxlength="2000" data-wb-ver-note="${uploadId}" placeholder="Catatan, alasan pengembalian, atau koreksi yang perlu ditindaklanjuti">${escapeHtml(file.verificationNote||'')}</textarea></label>
       <button type="button" class="wb-action-save" data-wb-action="verify" data-upload-id="${uploadId}">💾 Simpan Verifikasi</button>
-    </div></details>
+    </div></details>`:`<div class="wb-verification-readonly">${workflowButton}<span>${escapeHtml(verificationStatusLabel(status))}</span></div>`;
+  return `<div class="wb-evidence-file is-${statusClass}" data-wb-file-id="${uploadId}">
+    <div class="wb-evidence-file-main">
+      <span class="wb-evidence-file-name">${name}</span>
+      <div class="wb-evidence-file-badges"><span class="wb-sync-pill ${file?.syncStatus==='done'?'is-synced':file?.syncStatus==='retrying'?'is-retry':'is-pending'}">${escapeHtml(syncStatus)}</span><span class="wb-verification-pill" data-wb-status-pill>${escapeHtml(verificationStatusLabel(status))}</span><span class="wb-score-badge" data-wb-score>Skor ${score}%</span></div>
+    </div>
+    <div class="wb-verification-meter" role="progressbar" aria-label="Skor verifikasi dokumen" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${score}"><span data-wb-score-fill style="width:${score}%"></span></div>
+    <div class="wb-evidence-file-actions">${previewButton}${canDirectVerify?workflowButton:''}${replaceControl}${retryButton}${canDirectVerify?`<button type="button" class="wb-action-delete" data-wb-action="delete" data-upload-id="${uploadId}" aria-label="Hapus file evidence" title="Hapus file evidence">🗑 Hapus File</button>`:''}</div>
+    ${verificationPanel}
   </div>`;
 }
 
@@ -3799,8 +3805,8 @@ async function wbReplaceEvidenceSelected(input){
   try{
     input.dataset.replacing='1';if(button){button.disabled=true;button.textContent='Mengganti file…';}
     const result=await callServerWithRetry('replaceWorkbookEvidenceFile',{__binaryFile:file,opdId:workbookEvidenceRow.id,year:currentYear,uploadId,fileName:file.name,fileType:file.type||'application/octet-stream'},3);
-    await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();
-    const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));if(row)refreshWorkbookEvidenceCountsOnRow(row);
+    const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));if(row&&result?.structureProcessBreakdown?.source==='verified_evidence_only'){row.structureProcessBreakdown=result.structureProcessBreakdown;row.nilaiStrukturProses=Number(result.nilaiStrukturProses)||0;row.sa=row.nilaiStrukturProses;row.strukturProsesStatus=result.strukturProsesStatus||row.strukturProsesStatus;}
+    await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();if(row)refreshWorkbookEvidenceCountsOnRow(row);
     showWarning(result?.status==='success'?'✅ File berhasil diganti pada tautan yang sama. Salinan R2/Google Drive diperbarui tanpa menambah record baru; status verifikasi direset agar Inspektorat memeriksa file pengganti.':'File pengganti sudah diproses. Periksa status sinkronisasi.');
   }catch(err){
     showWarning(`❌ File belum berhasil diganti: ${err.message||err}`);
@@ -3809,15 +3815,23 @@ async function wbReplaceEvidenceSelected(input){
 
 async function wbVerify(uploadId){
   const st=document.querySelector(`[data-wb-ver-status="${CSS.escape(uploadId)}"]`);const ex=document.querySelector(`[data-wb-ver-examiner="${CSS.escape(uploadId)}"]`);const note=document.querySelector(`[data-wb-ver-note="${CSS.escape(uploadId)}"]`);if(!st||!ex||!note)return;
-  try{await callServerWithRetry('saveWorkbookEvidenceVerification',{opdId:workbookEvidenceRow.id,year:currentYear,uploadId,verificationStatus:st.value,verificationExaminer:ex.value.trim(),verificationNote:note.value.trim()},3);await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));if(row)refreshWorkbookEvidenceCountsOnRow(row);}
-  catch(err){alert('Gagal menyimpan verifikasi: '+(err.message||err));}
+  try{
+    const result=await callServerWithRetry('saveWorkbookEvidenceVerification',{opdId:workbookEvidenceRow.id,year:currentYear,uploadId,verificationStatus:st.value,verificationExaminer:ex.value.trim(),verificationNote:note.value.trim()},3);
+    const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));
+    if(row&&result?.structureProcessBreakdown?.source==='verified_evidence_only'){row.structureProcessBreakdown=result.structureProcessBreakdown;row.nilaiStrukturProses=Number(result.nilaiStrukturProses)||0;row.sa=row.nilaiStrukturProses;row.strukturProsesStatus=result.strukturProsesStatus||row.strukturProsesStatus;}
+    await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();if(row)refreshWorkbookEvidenceCountsOnRow(row);
+  }catch(err){alert('Gagal menyimpan verifikasi: '+(err.message||err));}
 }
 async function wbRetry(uploadId){try{await callServerWithRetry('retryDriveBackup',{type:'workbook_evidence',opdId:workbookEvidenceRow.id,year:currentYear,uploadId},3);await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));if(row)refreshWorkbookEvidenceCountsOnRow(row);}catch(err){alert('Retry Drive gagal: '+(err.message||err));}}
 async function wbDelete(uploadId){
   if(!confirm('Hapus evidence ini? File R2/Google Drive dan tautan di KK PM akan dihapus.'))return;
-  try{await callServerWithRetry('deleteWorkbookEvidence',{opdId:workbookEvidenceRow.id,year:currentYear,uploadId},3);await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));if(row)refreshWorkbookEvidenceCountsOnRow(row);}catch(err){alert('Gagal menghapus evidence: '+(err.message||err));}
+  try{
+    const result=await callServerWithRetry('deleteWorkbookEvidence',{opdId:workbookEvidenceRow.id,year:currentYear,uploadId},3);
+    const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));
+    if(row&&result?.structureProcessBreakdown?.source==='verified_evidence_only'){row.structureProcessBreakdown=result.structureProcessBreakdown;row.nilaiStrukturProses=Number(result.nilaiStrukturProses)||0;row.sa=row.nilaiStrukturProses;row.strukturProsesStatus=result.strukturProsesStatus||row.strukturProsesStatus;}
+    await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();if(row)refreshWorkbookEvidenceCountsOnRow(row);
+  }catch(err){alert('Gagal menghapus evidence: '+(err.message||err));}
 }
-
 document.addEventListener('click',e=>{
   const nav=e.target.closest('#subunsurContainer [data-wb-nav]');
   if(nav){
@@ -4003,7 +4017,7 @@ const REPORT_CONFIG={
 function reportListForRow(row,type){return type==='pm_spip'?(Array.isArray(row.pmSpipReports)?row.pmSpipReports:[]):(Array.isArray(row.rrRtpReports)?row.rrRtpReports:[]);}
 function setReportListForRow(row,type,list){if(type==='pm_spip')row.pmSpipReports=list;else row.rrRtpReports=list;}
 function reportSetStatus(msg,type=''){const e=document.getElementById('reportUploadStatus');if(!e)return;e.textContent=msg||'';e.className='sheet-links-status'+(type?' '+type:'');e.style.display=msg?'block':'none';}
-function renderReportUploadList(row,type){const e=document.getElementById('reportUploadList');if(!e)return;const a=reportListForRow(row,type);const cfg=REPORT_CONFIG[type];if(!a.length){e.innerHTML=`<div class="sheet-link-card">Belum ada file pada folder <b>${sheetLinksEsc(cfg.folder)}</b>.</div>`;return;}e.innerHTML='<div class="rtp-file-list">'+a.map((f,i)=>{const done=!!f.gdriveId&&f.syncStatus==='done';const status=done?'✅ Google Drive + R2':(f.syncStatus==='retrying'?'🔄 Perlu Retry Google Drive':'⏳ Menyimpan ke Google Drive');const retry=(done||!f.uploadId||!['admin','auditor','opd'].includes(String(currentUser?.role||'')))?'':`<button class="report-retry-btn" data-upload-id="${sheetLinksEsc(f.uploadId)}">↻ Retry</button>`;const open=f.uploadId&&f.url?f.url:(f.gdriveId?`https://drive.google.com/file/d/${encodeURIComponent(f.gdriveId)}/view`:(f.url||'#'));const workflow=f.uploadId?`<button class="evidence-workflow-btn" data-opd-id="${sheetLinksEsc(row.id)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Laporan')}">🛡️ Alur Verifikasi</button>`:'';const canDelete=!['irban','bpkp'].includes(String(currentUser?.role||''));return `<div class="rtp-file-item"><div><div class="rtp-file-name">${cfg.icon} ${sheetLinksEsc(f.fileName||'Laporan')}</div><div class="rtp-file-meta">${status}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions"><a href="${sheetLinksEsc(open)}" target="_blank" rel="noopener noreferrer">Buka</a>${workflow}${retry}${canDelete?`<button class="report-delete-btn" data-index="${i}">Hapus</button>`:''}</div></div>`;}).join('')+'</div>';}
+function renderReportUploadList(row,type){const e=document.getElementById('reportUploadList');if(!e)return;const a=reportListForRow(row,type);const cfg=REPORT_CONFIG[type];if(!a.length){e.innerHTML=`<div class="sheet-link-card">Belum ada file pada folder <b>${sheetLinksEsc(cfg.folder)}</b>.</div>`;return;}e.innerHTML='<div class="rtp-file-list">'+a.map((f,i)=>{const done=!!f.gdriveId&&f.syncStatus==='done';const status=done?'✅ Google Drive + R2':(f.syncStatus==='retrying'?'🔄 Perlu Retry Google Drive':'⏳ Menyimpan ke Google Drive');const retry=(done||!f.uploadId||!['admin','auditor','opd'].includes(String(currentUser?.role||'')))?'':`<button class="report-retry-btn" data-upload-id="${sheetLinksEsc(f.uploadId)}">↻ Retry</button>`;const open=f.uploadId&&f.url?f.url:(f.gdriveId?`https://drive.google.com/file/d/${encodeURIComponent(f.gdriveId)}/view`:(f.url||'#'));const workflow=f.uploadId?`<button class="evidence-workflow-btn" data-opd-id="${sheetLinksEsc(row.id)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Laporan')}">🛡️ Alur Verifikasi</button>`:'';const preview=f.uploadId?`<button type="button" class="evidence-preview-btn" data-opd-id="${sheetLinksEsc(row.id)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Laporan')}" data-file-type="${sheetLinksEsc(f.fileType||'application/octet-stream')}">👁 Pratinjau</button>`:'';const canDelete=!['irban','bpkp'].includes(String(currentUser?.role||''));return `<div class="rtp-file-item"><div><div class="rtp-file-name">${cfg.icon} ${sheetLinksEsc(f.fileName||'Laporan')}</div><div class="rtp-file-meta">${status}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions">${preview}<a href="${sheetLinksEsc(open)}" target="_blank" rel="noopener noreferrer">Buka</a>${workflow}${retry}${canDelete?`<button class="report-delete-btn" data-index="${i}">Hapus</button>`:''}</div></div>`;}).join('')+'</div>';}
 async function openReportUploadModal(id,type){const row=rows.find(r=>r.id===id);if(!row)return;reportUploadEditingRowId=id;reportUploadEditingType=type;const cfg=REPORT_CONFIG[type],modal=document.getElementById('reportUploadModal');if(!modal)return;const canUpload=['admin','auditor','opd'].includes(String(currentUser?.role||''));const chooser=document.getElementById('reportUploadChoose');if(chooser)chooser.style.display=canUpload?'inline-flex':'none';document.getElementById('reportUploadTitle').innerHTML=`${cfg.icon} ${cfg.title} - <span id="reportUploadOpdName">${sheetLinksEsc(row.opd||'Tanpa Nama')}</span>`;document.getElementById('reportUploadDescription').textContent=cfg.desc;document.getElementById('reportUploadChoose').textContent=cfg.button;modal.classList.add('active');reportSetStatus(`Memuat folder ${cfg.folder}...`);try{const d=await callServer('getReportFiles',{opdId:id,year:currentYear,reportType:type});const list=Array.isArray(d.reports)?d.reports:[];setReportListForRow(row,type,list);row[type==='pm_spip'?'pmSpipFolder':'rrRtpFolder']=d.folderName||cfg.folder;row[type==='pm_spip'?'pmSpipFolderId':'rrRtpFolderId']=d.folderId||null;const driveLink=document.getElementById('reportUploadDriveLink');if(driveLink){driveLink.href=d.folderUrl||'#';driveLink.style.display=d.folderUrl?'inline-flex':'none';}renderReportUploadList(row,type);reportSetStatus(d.folderUrl?`✅ Folder Google Drive terhubung: ${cfg.folder}.`:`Folder ${cfg.folder} siap dibuat saat upload.`,d.folderUrl?'success':'');}catch(err){reportSetStatus('Gagal memuat: '+err.message,'error');}}
 function closeReportUploadModal(){document.getElementById('reportUploadModal')?.classList.remove('active');reportUploadEditingRowId=null;}
 async function uploadReportFileClient(row,type,file,existingUploadId=null){if(!file)return null;if(file.size>MAX_FILE_UPLOAD_BYTES)throw new Error('File terlalu besar! Maks 10 MB per file.');const uploadId=existingUploadId||crypto.randomUUID();const payload={__binaryFile:file,opdId:row.id,opdName:row.opd||'OPD',reportType:type,year:currentYear,fileName:file.name,fileType:file.type||'application/octet-stream',uploadId};const result=await callServerWithRetry('uploadReportFile',payload,3);return{url:result.url,fileName:result.fileName,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'pending',syncError:result.driveError||null,uploadId:result.uploadId||uploadId,r2Key:result.r2Key||null,folderName:result.folderName||REPORT_CONFIG[type].folder,gdriveFolderId:result.folderId||null};}
@@ -4057,8 +4071,8 @@ function renderRtpEvidenceList(row){
     const canReplace=f?.uploadId && v.status==='dikembalikan';
     const replacementNotice=f?.replacementStatus==='menunggu_verifikasi' ? `<div class="file-replacement-notice">✅ File sudah diganti${f.replacedAt?' pada '+sheetLinksEsc(formatVerificationDate(f.replacedAt)):''}. File lama tidak diduplikasi. Menunggu verifikasi Inspektorat.</div>` : '';
     const replaceHtml=canReplace ? `<button class="rtp-replace-btn" data-upload-id="${sheetLinksEsc(f.uploadId)}">↻ Ganti File</button><input type="file" class="rtp-replace-input" hidden accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.mp4,.webm,.mov,.avi,.mkv,.xlsx,.xls,.ppt,.pptx">` : '';
-    const canLegacyVerify=['admin','irban'].includes(String(currentUser?.role||''));
-    const workflowButton=f?.uploadId?`<button class="evidence-workflow-btn" data-opd-id="${sheetLinksEsc(row.id)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Evidence RTP')}">🛡️ Alur Verifikasi</button>`:'';
+    const canLegacyVerify=['admin','auditor','ppupd','irban'].includes(String(currentUser?.role||''));
+    const workflowButton=f?.uploadId?`<button class="evidence-workflow-btn" data-opd-id="${sheetLinksEsc(row.id)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Evidence RTP')}">🛡️ Alur Verifikasi</button>`:'';const previewButton=f?.uploadId?`<button type="button" class="evidence-preview-btn" data-opd-id="${sheetLinksEsc(row.id)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Evidence RTP')}" data-file-type="${sheetLinksEsc(f.fileType||'application/octet-stream')}">👁 Pratinjau</button>`:'';
     const verifyHtml=(f?.uploadId&&canLegacyVerify)?`<div class="file-verification-panel rtp-verification-panel is-${v.status||'pending'}">
       <div class="file-verification-head"><strong>🛡️ Verifikasi Inspektorat</strong><span class="verification-score-badge">${verifyScore}%</span></div>
       ${replacementNotice}
@@ -4070,7 +4084,7 @@ function renderRtpEvidenceList(row){
       <div class="verification-save-row"><span class="verification-updated">${v.verifiedAt ? 'Diverifikasi: '+sheetLinksEsc(formatVerificationDate(v.verifiedAt)) : 'Belum diverifikasi'}</span><button class="verification-save-btn rtp-verification-save" data-upload-id="${sheetLinksEsc(f.uploadId)}">💾 Simpan Verifikasi</button>${replaceHtml}</div>
     </div>`:(f?.uploadId?`<div class="file-verification-legacy">Alur audit: Auditor mengirim → Irban memverifikasi → BPKP verifikator akhir.${replacementNotice}${replaceHtml}</div>`:'<div class="file-verification-legacy">⚠️ File lama belum memiliki identitas upload. Upload ulang untuk mengaktifkan verifikasi.</div>');
     const canDeleteRtp=!['irban','bpkp'].includes(String(currentUser?.role||''));
-    return `<div class="rtp-file-item rtp-file-item-expanded"><div class="rtp-file-top"><div><div class="rtp-file-name">📄 ${sheetLinksEsc(f.fileName||'File')}</div><div class="rtp-file-meta">${status}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions"><a href="${sheetLinksEsc(f.url||'#')}" target="_blank" rel="noopener noreferrer">Buka</a>${workflowButton}${retry}${canDeleteRtp?`<button class="rtp-delete-btn" data-index="${i}">Hapus</button>`:''}</div></div>${verifyHtml}</div>`;
+    return `<div class="rtp-file-item rtp-file-item-expanded"><div class="rtp-file-top"><div><div class="rtp-file-name">📄 ${sheetLinksEsc(f.fileName||'File')}</div><div class="rtp-file-meta">${status}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions">${previewButton}<a href="${sheetLinksEsc(f.url||'#')}" target="_blank" rel="noopener noreferrer">Buka</a>${workflowButton}${retry}${canDeleteRtp?`<button class="rtp-delete-btn" data-index="${i}">Hapus</button>`:''}</div></div>${verifyHtml}</div>`;
   }).join('')+'</div>';
   updateRtpVerificationTableSummary(row);
 }
@@ -4747,7 +4761,7 @@ const KK_RPJMD_WORKPAPERS=[
 ];
 function kkRpjmdGoals(){return (kkRpjmdMaster?.objectives||[]).flatMap(o=>(o.goals||[]).map(g=>({...g,objectiveCode:o.code,objectiveName:o.name})));}
 function kkRpjmdRenderMapping(){
- const goals=kkRpjmdGoals(); const canVerify=['admin','irban'].includes(String(currentUser?.role||''));
+ const goals=kkRpjmdGoals(); const canVerify=['admin','auditor','ppupd','irban'].includes(String(currentUser?.role||''));
  const options=goals.map(g=>`<option value="${escapeHtml(g.code)}">${escapeHtml(g.code+' · '+g.name)}</option>`).join('');
  const referenceHtml=`<details class="kk-pm-rpjmd-reference"><summary>Lihat daftar indikator dan target tahunan RPJMD</summary>${(kkRpjmdMaster?.objectives||[]).map(o=>`<section><h5>${escapeHtml(o.code+' · '+o.name)}</h5>${(o.objectiveIndicators||[]).map(i=>`<div class="kk-pm-rpjmd-indicator"><b>Indikator tujuan: ${escapeHtml(i.name)}</b><span>${Object.entries(i.targets||{}).map(([y,v])=>escapeHtml(y+': '+v)).join(' · ')}</span></div>`).join('')}${(o.goals||[]).map(g=>`<div class="kk-pm-rpjmd-indicator"><b>${escapeHtml(g.code+' · '+g.name)}</b>${(g.indicators||[]).map(i=>`<span>${escapeHtml(i.name)} — ${Object.entries(i.targets||{}).map(([y,v])=>escapeHtml(y+': '+v)).join(' · ')}</span>`).join('')}</div>`).join('')}</section>`).join('')}</details>`;
  return `<div class="kk-pm-rpjmd-intro"><div class="kk-pm-kicker">MASTER DOKUMEN PERENCANAAN</div><h4>${escapeHtml(kkRpjmdMaster?.vision||'RPJMD 2025–2029')}</h4><p>Sumber: Perda Kabupaten Mahakam Ulu Nomor 1 Tahun 2026, Bab III §3.1.2, Tabel 3.6 (halaman tercetak 195–198). Pemetaan ini menghubungkan kertas kerja penetapan tujuan dengan sasaran daerah. Pemetaan <b>tidak otomatis menentukan grade, skor SPIP, MRI, IEPK, atau nilai resmi</b>; penilaian tetap mengikuti parameter dan formula workbook BPKP.</p><div class="kk-pm-rpjmd-stats"><span><b>${(kkRpjmdMaster?.objectives||[]).length}</b> tujuan RPJMD</span><span><b>${goals.length}</b> sasaran strategis</span><span><b>2025–2029</b> periode RPJMD</span></div></div>${referenceHtml}
@@ -4844,7 +4858,7 @@ function kkPmRenderSummary(){
   <div class="kk-pm-target-grid">${s.targets.map(x=>`<button type="button" class="kk-pm-target-card" data-pm-tab-target="${x.target}"><span>${x.target} · ${kkPmTarget(x.target)?.sheet||''}</span><b>${x.evaluated}/${x.total}</b><small>${x.completion.toFixed(2)}% selesai · Avg level ${x.avgLevel?x.avgLevel.toFixed(2):'—'}</small><div class="kk-pm-progress"><i style="width:${x.completion}%"></i></div></button>`).join('')}</div>
   ${kkPmTargetsForRow().map(t=>kkPmMetaForm(t)).join('')}
   <div class="kk-pm-reconcile"><div class="kk-pm-reconcile-head"><b>Rekonsiliasi nilai OPD</b><span>referensi existing — KK PM tidak menimpa nilai ini</span></div><div class="kk-pm-reconcile-grid">
-    ${kkPmSummaryCard('Nilai Struktur & Proses',Number(getRowStructureProcessBreakdown(kkPmCurrentRow).value||0).toFixed(2),'derived dari level 43 parameter existing')}
+    ${kkPmSummaryCard('Nilai Struktur & Proses',Number(getRowStructureProcessBreakdown(kkPmCurrentRow).value||0).toFixed(2),'berdasarkan level evidence yang diterima dari 43 parameter')}
     ${kkPmSummaryCard('Nilai Maturitas SPIP',computedDisplay(kkPmCurrentRow,'nilaiMaturitas'),'formula workbook · read-only')}
     ${kkPmSummaryCard('MRI',computedDisplay(kkPmCurrentRow,'mri'),'formula workbook · read-only')}
     ${kkPmSummaryCard('IEPK',computedDisplay(kkPmCurrentRow,'iepk'),'formula workbook · read-only')}
@@ -5116,6 +5130,7 @@ document.addEventListener('click',function(e){
   else if(btn.classList.contains('btn-report-rr')) openReportUploadModal(btn.getAttribute('data-id'),'rr_rtp');
   else if(btn.classList.contains('btn-rtp-evidence')) openRtpEvidenceModal(btn.getAttribute('data-id'));
   else if(btn.classList.contains('btn-lhe-followup')) openLheFollowupModal(btn.getAttribute('data-id'));
+  else if(btn.classList.contains('evidence-preview-btn')||btn.classList.contains('file-name-preview')) openEvidencePreview({opdId:btn.dataset.opdId,uploadId:btn.dataset.uploadId,fileName:btn.dataset.fileName||'Evidence',fileType:btn.dataset.fileType||'application/octet-stream'});
   else if(btn.classList.contains('evidence-workflow-btn')) openEvidenceWorkflowModal({opdId:btn.dataset.opdId,uploadId:btn.dataset.uploadId,fileName:btn.dataset.fileName||'Evidence'});
   else if(btn.classList.contains('del-btn')) openConfirmModal(btn.getAttribute('data-id'));
 });
@@ -5160,11 +5175,11 @@ function renderLheEvidenceList(files=[]){
   const arr=Array.isArray(files)?files:[];
   if(!arr.length){root.innerHTML='<div class="sheet-link-card">Belum ada bukti dukung untuk butir ini.</div>';return;}
   root.innerHTML=arr.map(f=>{
-    const workflow=f.uploadId?`<button type="button" class="evidence-workflow-btn" data-opd-id="${sheetLinksEsc(lheUi.opdId)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Bukti LHE')}">🛡️ Alur Verifikasi</button>`:'';
+    const workflow=f.uploadId?`<button type="button" class="evidence-workflow-btn" data-opd-id="${sheetLinksEsc(lheUi.opdId)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Bukti LHE')}">🛡️ Alur Verifikasi</button>`:'';const preview=f.uploadId?`<button type="button" class="evidence-preview-btn" data-opd-id="${sheetLinksEsc(lheUi.opdId)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Bukti LHE')}" data-file-type="${sheetLinksEsc(f.fileType||'application/octet-stream')}">👁 Pratinjau</button>`:'';
     const canRetry=['admin','auditor','opd'].includes(String(currentUser?.role||''));
     const retry=f.syncStatus==='retrying'&&canRetry?`<button type="button" class="lhe-evidence-retry" data-upload-id="${sheetLinksEsc(f.uploadId)}">↻ Retry Drive</button>`:'';
     const del=currentUser?.role==='bpkp'?'':`<button type="button" class="lhe-evidence-delete" data-upload-id="${sheetLinksEsc(f.uploadId)}">Hapus</button>`;
-    return `<div class="rtp-file-item"><div><div class="rtp-file-name">📎 ${sheetLinksEsc(f.fileName||'Bukti dukung')}</div><div class="rtp-file-meta">${sheetLinksEsc(f.syncStatus||'tersimpan')}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}${f.syncError?' · '+sheetLinksEsc(f.syncError):''}</div></div><div class="rtp-file-actions"><a href="${sheetLinksEsc(f.url||'#')}" target="_blank" rel="noopener noreferrer">Buka</a>${workflow}${retry}${del}</div></div>`;
+    return `<div class="rtp-file-item"><div><div class="rtp-file-name">📎 ${sheetLinksEsc(f.fileName||'Bukti dukung')}</div><div class="rtp-file-meta">${sheetLinksEsc(f.syncStatus||'tersimpan')}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}${f.syncError?' · '+sheetLinksEsc(f.syncError):''}</div></div><div class="rtp-file-actions">${preview}<a href="${sheetLinksEsc(f.url||'#')}" target="_blank" rel="noopener noreferrer">Buka</a>${workflow}${retry}${del}</div></div>`;
   }).join('');
 }
 function renderLheFollowupList(){
@@ -5300,17 +5315,53 @@ lheField('lheEvidenceList')?.addEventListener('click',async e=>{
   const b=e.target.closest('.lhe-evidence-delete');if(b)deleteLheAttachment(b.dataset.uploadId);
 });
 
+// ====== PREVIEW FILE PRIVAT DI BROWSER ======
+const evidencePreviewUi={objectUrl:null,activeTab:'preview',fileName:'',fileType:'',size:0,previewHtml:'',viewerProvider:''};
+function closeEvidencePreview(){const modal=document.getElementById('evidencePreviewModal');if(modal)modal.classList.remove('active');if(evidencePreviewUi.objectUrl){URL.revokeObjectURL(evidencePreviewUi.objectUrl);evidencePreviewUi.objectUrl=null;}evidencePreviewUi.previewHtml='';evidencePreviewUi.viewerProvider='';const body=document.getElementById('evidencePreviewBody');if(body){body.replaceChildren();delete body.dataset.rendered;}}
+function evidencePreviewSetTab(tab){evidencePreviewUi.activeTab=tab;document.querySelectorAll('[data-preview-tab]').forEach(b=>b.classList.toggle('active',b.dataset.previewTab===tab));const body=document.getElementById('evidencePreviewBody');if(!body)return;if(tab==='details'){body.innerHTML=`<dl class="preview-file-details"><dt>Nama file</dt><dd>${escapeHtml(evidencePreviewUi.fileName)}</dd><dt>Jenis file</dt><dd>${escapeHtml(evidencePreviewUi.fileType||'Tidak diketahui')}</dd><dt>Ukuran</dt><dd>${(Number(evidencePreviewUi.size||0)/1024).toLocaleString('id-ID',{maximumFractionDigits:1})} KB</dd><dt>Sumber preview</dt><dd>${escapeHtml(evidencePreviewUi.viewerProvider||'Pratinjau privat dari penyimpanan aplikasi')}</dd></dl>`;return;}if(evidencePreviewUi.previewHtml){body.innerHTML=evidencePreviewUi.previewHtml;body.dataset.rendered='1';}else{body.dataset.rendered='0';body.innerHTML='<div class="preview-file-placeholder">Memuat pratinjau…</div>';}}
+async function openEvidencePreview(info){
+  const modal=document.getElementById('evidencePreviewModal'),body=document.getElementById('evidencePreviewBody');if(!modal||!body)return;
+  if(evidencePreviewUi.objectUrl){URL.revokeObjectURL(evidencePreviewUi.objectUrl);evidencePreviewUi.objectUrl=null;}
+  evidencePreviewUi.fileName=String(info.fileName||'Evidence');evidencePreviewUi.fileType=String(info.fileType||'application/octet-stream');evidencePreviewUi.size=0;evidencePreviewUi.activeTab='preview';evidencePreviewUi.previewHtml='';evidencePreviewUi.viewerProvider='Pratinjau privat dari penyimpanan aplikasi';
+  document.getElementById('evidencePreviewTitle').textContent=`Pratinjau File · ${evidencePreviewUi.fileName}`;modal.classList.add('active');document.querySelectorAll('[data-preview-tab]').forEach(b=>b.classList.toggle('active',b.dataset.previewTab==='preview'));body.dataset.rendered='0';body.innerHTML='<div class="preview-file-placeholder">⏳ Mengambil file privat…</div>';
+  try{
+    const name=evidencePreviewUi.fileName,ext=(name.split('.').pop()||'').toLowerCase(),type=evidencePreviewUi.fileType.toLowerCase();
+    const officeExt=['doc','docx','xls','xlsx','ppt','pptx'];
+    const openDocumentExt=['odt','ods','odp','rtf'];
+    if(officeExt.includes(ext)||openDocumentExt.includes(ext)){
+      const link=await callServerWithRetry('createEvidencePreviewLink',{opdId:info.opdId,uploadId:info.uploadId,year:currentYear},1);
+      const isOffice=officeExt.includes(ext);const viewerUrl=isOffice?`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(link.url)}`:`https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(link.url)}`;
+      evidencePreviewUi.viewerProvider=isOffice?'Microsoft Office Online Viewer (tautan privat sementara, 10 menit)':'Google Docs Viewer (tautan privat sementara, 10 menit)';
+      evidencePreviewUi.previewHtml=`<div class="preview-external-notice"><b>Pratinjau ${isOffice?'Microsoft Office Online':'Google Docs Viewer'}</b><p>Dokumen dibaca oleh layanan viewer pihak ketiga melalui tautan bertanda tangan yang kedaluwarsa otomatis dalam 10 menit. Gunakan hanya untuk dokumen yang boleh diproses oleh layanan tersebut; jangan bagikan URL pratinjau.</p></div><iframe title="Pratinjau ${escapeHtml(name)}" class="evidence-preview-frame" src="${viewerUrl}" referrerpolicy="no-referrer" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"></iframe>`;
+      body.innerHTML=evidencePreviewUi.previewHtml;body.dataset.rendered='1';evidencePreviewUi.size=0;return;
+    }
+    const q=new URLSearchParams({action:'previewEvidence',year:String(currentYear),opdId:String(info.opdId),uploadId:String(info.uploadId)});
+    const response=await fetch(`/myCloudinaryHandler?${q.toString()}`,{method:'GET',cache:'no-store',credentials:'same-origin',headers:{'Cache-Control':'no-cache'}});
+    if(!response.ok){const msg=await response.text();throw new Error(msg.slice(0,240)||`HTTP ${response.status}`);}
+    const blob=await response.blob();evidencePreviewUi.size=blob.size;evidencePreviewUi.fileType=blob.type||evidencePreviewUi.fileType;
+    const blobUrl=URL.createObjectURL(blob);evidencePreviewUi.objectUrl=blobUrl;
+    if(type==='application/pdf'||ext==='pdf'){evidencePreviewUi.viewerProvider='Pratinjau PDF lokal di browser';body.innerHTML=`<iframe title="Pratinjau PDF ${escapeHtml(name)}" class="evidence-preview-frame" src="${blobUrl}#toolbar=0&navpanes=0" referrerpolicy="no-referrer"></iframe>`;}
+    else if(type.startsWith('image/')||['png','jpg','jpeg','gif','webp','bmp','avif'].includes(ext)){evidencePreviewUi.viewerProvider='Pratinjau gambar lokal di browser';body.innerHTML=`<div class="evidence-preview-image-wrap"><img src="${blobUrl}" alt="${escapeHtml(name)}" class="evidence-preview-image"></div>`;}
+    else if(type.startsWith('video/')||['mp4','webm','mov','m4v','ogv'].includes(ext)){evidencePreviewUi.viewerProvider='Pemutar video browser';body.innerHTML=`<video controls playsinline class="evidence-preview-media" src="${blobUrl}">Browser tidak mendukung video ini.</video>`;}
+    else if(type.startsWith('audio/')||['mp3','wav','ogg','m4a','aac'].includes(ext)){evidencePreviewUi.viewerProvider='Pemutar audio browser';body.innerHTML=`<audio controls class="evidence-preview-audio" src="${blobUrl}">Browser tidak mendukung audio ini.</audio>`;}
+    else if(['txt','csv','json','xml','log','md','html','htm','svg','yaml','yml','ini','rtf'].includes(ext)||type.startsWith('text/')){evidencePreviewUi.viewerProvider='Pratinjau teks lokal (tidak dieksekusi)';const text=await blob.text();const pre=document.createElement('pre');pre.className='evidence-preview-text';pre.textContent=text.slice(0,2_000_000);body.replaceChildren(pre);if(text.length>2_000_000){const note=document.createElement('p');note.textContent='Pratinjau dibatasi sampai 2 MB teks.';body.append(note);}}
+    else body.innerHTML=`<div class="preview-file-placeholder"><h4>Format ini tidak dapat dirender aman secara langsung.</h4><p>Jenis: ${escapeHtml(evidencePreviewUi.fileType)}. Untuk menjaga keamanan file aplikasi, format aktif atau tidak dikenal tidak dieksekusi di dalam website.</p><p>Gunakan aplikasi pembuka resmi untuk format ini atau unggah ulang sebagai PDF jika diperlukan.</p></div>`;
+    evidencePreviewUi.previewHtml=body.innerHTML;body.dataset.rendered='1';
+  }catch(err){body.innerHTML=`<div class="preview-file-placeholder is-error"><b>Pratinjau gagal dimuat</b><p>${escapeHtml(err.message||String(err))}</p><p>Periksa sesi login, cakupan OPD, dan konfigurasi secret pratinjau/Google OAuth untuk file Office.</p></div>`;evidencePreviewUi.previewHtml=body.innerHTML;body.dataset.rendered='1';}
+}
+document.getElementById('evidencePreviewClose')?.addEventListener('click',closeEvidencePreview);document.getElementById('evidencePreviewCloseFooter')?.addEventListener('click',closeEvidencePreview);document.querySelectorAll('[data-preview-tab]').forEach(b=>b.addEventListener('click',()=>evidencePreviewSetTab(b.dataset.previewTab)));document.getElementById('evidencePreviewModal')?.addEventListener('click',e=>{if(e.target.id==='evidencePreviewModal')closeEvidencePreview();});
+
 // ====== ALUR VERIFIKASI BERTAHAP: AUDITOR → IRBAN → BPKP ======
 const workflowUi={opdId:null,uploadId:null,fileName:'Evidence',data:null};
 const workflowStageLabels={auditor:'Auditor (input/pengiriman)',irban:'Irban (verifikator)',bpkp:'BPKP (verifikator akhir)'};
 function workflowDate(value){if(!value)return '—';try{return new Date(Number(value)).toLocaleString('id-ID');}catch{return '—';}}
-function workflowStatusLabel(status){return ({menunggu:'Menunggu',dikirim:'Dikirim Auditor',diterima:'Diterima',dikembalikan:'Dikembalikan'})[status]||status||'Menunggu';}
+function workflowStatusLabel(status){return ({menunggu:'Menunggu',dikirim:'Dikirim Auditor',diterima:'Diterima',diterima_catatan:'Diterima dengan Catatan',dikembalikan:'Dikembalikan'})[status]||status||'Menunggu';}
 function workflowSetStatus(message,type=''){const el=document.getElementById('evidenceWorkflowStatus');if(!el)return;el.textContent=message||'';el.className='sheet-links-status'+(type?' '+type:'');el.style.display=message?'block':'none';}
 function workflowCanSubmit(stage,data){
-  const role=String(currentUser?.role||'');if(role!=='admin'&&role!==stage)return false;
+  const role=String(currentUser?.role||'');const roleStage=role==='ppupd'?'auditor':role;if(role!=='admin'&&roleStage!==stage)return false;
   const stages=data?.stages||{};
   if(stage==='irban'&&stages.auditor?.status!=='dikirim')return false;
-  if(stage==='bpkp'&&stages.irban?.status!=='diterima')return false;
+  if(stage==='bpkp'&&!['diterima','diterima_catatan'].includes(stages.irban?.status))return false;
   return true;
 }
 function renderWorkflowStageCards(data){
@@ -5327,11 +5378,11 @@ function renderWorkflowStageCards(data){
 }
 function workflowUpdateForm(){
   const stageEl=document.getElementById('workflowStageSelect'),statusEl=document.getElementById('workflowStatusSelect'),save=document.getElementById('workflowSaveButton');if(!stageEl||!statusEl||!save)return;
-  const role=String(currentUser?.role||'');if(role!=='admin'&&['auditor','irban','bpkp'].includes(role))stageEl.value=role;
+  const role=String(currentUser?.role||'');if(role!=='admin'&&['auditor','ppupd','irban','bpkp'].includes(role))stageEl.value=role==='ppupd'?'auditor':role;
   stageEl.disabled=role!=='admin';
-  const stage=stageEl.value;const data=workflowUi.data||{};const statuses=stage==='auditor'?[['dikirim','Kirim ke Irban']]:[['diterima','Diterima'],['dikembalikan','Dikembalikan / perlu perbaikan']];
+  const stage=stageEl.value;const data=workflowUi.data||{};const statuses=stage==='auditor'?[['dikirim','Kirim ke Irban']]:[['diterima','Diterima'],['diterima_catatan','Diterima dengan Catatan'],['dikembalikan','Dikembalikan / perlu perbaikan']];
   statusEl.innerHTML=statuses.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
-  const can=workflowCanSubmit(stage,data);const ready=statusEl.value!=='dikembalikan'||document.getElementById('workflowNote').value.trim().length>=2;
+  const can=workflowCanSubmit(stage,data);const ready=!['dikembalikan','diterima_catatan'].includes(statusEl.value)||document.getElementById('workflowNote').value.trim().length>=2;
   save.disabled=!can||!ready;save.title=!can?'Role belum sesuai atau tahap sebelumnya belum disetujui':'';
   const me=document.getElementById('workflowExaminer');if(me&&!me.value)me.value=currentUser?.displayName||currentUser?.username||'';
 }
@@ -5345,7 +5396,7 @@ async function openEvidenceWorkflowModal(info){
 }
 async function saveEvidenceWorkflowStep(){
   const stage=document.getElementById('workflowStageSelect').value,status=document.getElementById('workflowStatusSelect').value,note=document.getElementById('workflowNote').value.trim(),examinerName=document.getElementById('workflowExaminer').value.trim();
-  if(status==='dikembalikan'&&note.length<2){workflowSetStatus('Catatan wajib diisi jika evidence dikembalikan.','error');return;}
+  if(['dikembalikan','diterima_catatan'].includes(status)&&note.length<2){workflowSetStatus('Catatan wajib diisi untuk Diterima dengan Catatan atau Dikembalikan.','error');return;}
   try{document.getElementById('workflowSaveButton').disabled=true;workflowSetStatus('Menyimpan tahap verifikasi…');await callServer('saveEvidenceWorkflowStep',{opdId:workflowUi.opdId,uploadId:workflowUi.uploadId,year:currentYear,stage,status,note,examinerName});await openEvidenceWorkflowModal(workflowUi);workflowSetStatus('Tahap verifikasi tersimpan dan dicatat pada audit trail.','success');}
   catch(err){workflowSetStatus('Verifikasi gagal: '+err.message,'error');}
   finally{workflowUpdateForm();}
