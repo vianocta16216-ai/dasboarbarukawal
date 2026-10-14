@@ -1,43 +1,48 @@
-# Deployment KK PM SPIP — Exact Workbook
+# Deployment KK PM SPIP — Master 26 Sheet dan Link Rollover
 
-## Template Google Spreadsheet
-KK PM sekarang memerlukan template Google Spreadsheet yang merupakan salinan persis dari workbook:
-`KK_PK_dan_Evaluasi_SPIP_Pemda_05052026_FORMULA_TEMPLATE(4).xlsx`
+## Master PM aktif
 
-SHA-256 workbook sumber:
-`0d6144307a164b356d8e666c868d16191799e6358895517a39a8e8aec414b1e8`
+Provisioning Kertas Kerja **PM_2026** memakai Google Sheets yang berasal dari sumber bernama:
 
-Gunakan environment variable berikut untuk memisahkan template PM dari template KK existing:
-`GOOGLE_SHEETS_PM_TEMPLATE_ID=<ID Google Spreadsheet exact workbook>`
+`KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313`
 
-Bila variabel ini tidak diisi, kode PM fallback ke `GOOGLE_SHEETS_TEMPLATE_ID`, lalu `DEFAULT_KK_TEMPLATE_SPREADSHEET_ID`.
+Nama di Drive boleh memiliki ekstensi impor `.xlsx` atau suffix duplikat Google Drive seperti `(1)`. Beberapa suffix rilis eksplisit seperti `- BARU` juga dapat dideteksi. Master yang dipakai tetap harus lolos validasi struktur PM_2026: tepat 26 tab, urutan nama tab yang sesuai, dan formula inti `KKLEAD_SPIP!I11`, `KKLEAD_SPIP!I68`, `KKLEAD_SPIP!I85`, `KKLEAD_SPIP!I106`.
 
-## Validasi otomatis saat sinkronisasi
-Sistem memeriksa:
-- 28 sheet dan urutan sheet sesuai workbook.
-- 4 formula inti:
-  - `KKLEAD_SPIP!I11 = H16+H50+H64`
-  - `KKLEAD_SPIP!I68 = F83`
-  - `KKLEAD_SPIP!I85 = F104`
-  - `KKLEAD_SPIP!I106 = 'KKLEAD II'!L35`
+**Penting:** workbook PK/legacy 28 tab bukan master PM_2026. Jangan menetapkan ID workbook lama 28 tab sebagai master PM. Resolver tidak akan mengubah struktur workbook itu otomatis.
 
-Jika workbook PM lama masih berisi 19/21 sheet atau struktur metadata-nya tidak cocok, aplikasi akan menandainya `needsSync` dan membuat copy template exact baru.
+## Variabel Cloudflare yang wajib
 
-## Performa multi-operator
-Jangan menyalin seluruh isi workbook ke DOM dashboard. Workbook besar tetap berada di Google Spreadsheet. Dashboard menggunakan navigator metadata + preview kecil dan hanya menyimpan perubahan PM sebagai record sparse per parameter.
+- `GOOGLE_SHEETS_PM_TEMPLATE_ID`: ID Google Sheets master PM terbaru (bukan URL workbook OPD, bukan file `.xlsx` yang belum diimpor sebagai Google Sheets).
+- `GOOGLE_DRIVE_CLIENT_ID`
+- `GOOGLE_DRIVE_CLIENT_SECRET`
+- `GOOGLE_DRIVE_REFRESH_TOKEN`
+- `GOOGLE_DRIVE_FOLDER_ID`
 
-## Database
-Tabel aktif PM:
-- `opd_kk_pm_workpaper_items`
-- `opd_kk_pm_meta`
+Akun Google yang terhubung melalui OAuth harus dapat membaca master dan membuat salinan di folder output. Kalau nama file master yang sebenarnya tidak termasuk nama dasar/suffix yang didukung, `GOOGLE_SHEETS_PM_TEMPLATE_ID` harus diatur ke ID Google Sheets yang tepat. ID privat tidak bisa ditebak dari kode.
 
-Kunci utama item:
-`tahun + opd_id + target + subunsur + param_id`
+## Cara kerja tautan OPD
 
-Tabel PM legacy tetap dibuat untuk kompatibilitas, tetapi tidak dipakai sebagai sumber aktif workpaper PM baru.
+- Setiap pasangan **OPD + Tahun Anggaran** memiliki workbook kerja tersendiri, disalin dari satu master. Jangan arahkan seluruh OPD ke file kerja yang sama karena perubahan satu OPD bisa mencampuri data OPD lain.
+- Saat workbook PM dibuka atau disinkronkan, aplikasi memeriksa referensi di D1, memastikan file masih bisa diakses, memvalidasi profil, dan membandingkan ID/revisi master.
+- Jika link lama sudah dihapus atau bukan berasal dari master terbaru, sinkronisasi membuat salinan baru lalu memperbarui pointer di D1. Link lama disimpan di `kk_pm_data.workbookHistory`; file Drive lama tidak otomatis dihapus.
+- Migrasi dilakukan per OPD/tahun ketika digunakan, bukan dengan membuat semua salinan sekaligus saat deploy. Ini menghindari lonjakan API quota dan duplikasi workbook. Semua OPD akan beralih ketika link tiap OPD/tahun dibuka/disinkronkan setelah versi baru aktif.
+- Dua sesi yang mencoba menyinkronkan OPD/tahun yang sama dilindungi lock D1. Sesi kedua akan mencoba ulang sesuai petunjuk lock; perubahan cell tetap digabung secara atomik.
 
-## Evidence
-Upload tetap di `Evidence Struktur dan Proses`. KK PM hanya menarik file berdasarkan `evidenceKey`. File tidak di-upload ulang dan tidak diduplikasi.
+## Tahun Tindak Lanjut LHE SPIP
 
-## Nilai empat KPI
-Empat KPI tidak boleh diedit manual. Server menyimpan hasil pembacaan formula sebagai cache read-only dan menolak `saveField` untuk `nilaiMaturitas`, `mri`, `iepk`, dan `nilaiKapabilitasApip`.
+- Tahun target tindak lanjut mengikuti Tahun Anggaran aktif yang dipilih pada aplikasi; input tahun target read-only dan diperbarui saat pilihan tahun berubah.
+- `source_year` tetap menyimpan tahun asli laporan sumber (contoh data historis 2025 atau 2024). Itu bukan tahun target tindak lanjut dan tidak boleh diganti hanya agar terlihat seperti tahun berjalan.
+- Tanggal tenggat yang diusulkan dari templat diproyeksikan ke tahun target ketika tahun pada tanggal template sesuai dengan tahun sumber atau tahun setelahnya. Tanggal yang sudah diedit manual tidak otomatis ditimpa.
+- API `getYears` menambahkan tahun kalender sekarang jika belum ada; penyimpanan LHE tidak lagi membatasi tahun sumber hanya ke 2024/2025.
+
+## Deployment
+
+1. Ganti/merge **seluruh proyek** dari ZIP perbaikan ke repositori Pages yang benar, lalu commit/push atau jalankan cara deploy resmi proyek. Jangan hanya mengunggah ZIP sebagai file statis ke website.
+2. Tunggu deployment Cloudflare Pages sukses. Periksa bahwa `public/index.html`, `public/script.js`, dan `functions/myCloudinaryHandler.js` berasal dari revisi yang sama.
+3. Di Production Variables & Secrets, validasi semua variabel Google di atas, terutama `GOOGLE_SHEETS_PM_TEMPLATE_ID`.
+4. Login sebagai Inspektorat dan buka workbook satu OPD percobaan. Pastikan halaman membuka ID workbook baru, nama tab 26 benar, dan master formula lolos validasi. Ulangi untuk akun OPD lain. Akses OPD yang berbeda akan memiliki salinan berbeda.
+5. Uji dua browser/session untuk OPD/tahun sama, kemudian uji upload dan verifikasi. Lock sync mengurangi duplikasi workbook; pengujian produksi tetap perlu untuk memastikan kredensial, kuota Google dan konfigurasi Pages benar.
+
+## Batas pengujian
+
+Pemeriksaan lokal memvalidasi sintaks, JSON, resolver master dengan Google API mock, penggabungan metadata D1, link rollover, tahun LHE, serta beberapa aturan akses/konkurensi. Paket lokal tidak memiliki secret atau akses produksi; karena itu tidak mengklaim bahwa file Google Drive privat sudah ditemukan/dipindahkan di server aktif.

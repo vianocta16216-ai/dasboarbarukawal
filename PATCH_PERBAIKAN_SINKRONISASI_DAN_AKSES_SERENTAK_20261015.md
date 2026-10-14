@@ -1,50 +1,49 @@
-# Patch lanjutan sinkronisasi workbook PM dan akses serentak
+# Catatan Patch — Sinkronisasi Workbook PM, akses serentak, dan LHE
 
-Tanggal: 15 Oktober 2026 — revisi berdasarkan rekaman error terbaru
+Tanggal revisi: 15 Oktober 2026.
 
-## Akar masalah yang terlihat pada rekaman terbaru
+Catatan ini diperbarui untuk menjelaskan paket terbaru. Petunjuk lama yang menyebut template PM 28 tab atau validator LHE `template_source_year` tidak berlaku untuk provisioning PM_2026 saat ini.
 
-1. Pembacaan master menampilkan Google Sheets `Unable to parse range` ketika membangun range untuk target T1–T4 dari nama tab tetap (`KK3.1`, `KK3.2`, `KK3.3`, `KK3.4`). Nama tab aktual pada workbook yang sedang dirujuk dapat memakai variasi seperti `KK3.1 (OPD)`, `KK3.2 BPKAD Akun`, atau `KK3.4 (INSPEKTORAT)`. Range dibangun tanpa mencocokkan metadata tab terlebih dahulu.
-2. Saat tombol Sinkronkan Workbook diklik, backend menemukan master yang dikonfigurasi memiliki **28 tab**, sedangkan workbook PM terbaru harus memiliki **26 tab** dan formula kunci yang tervalidasi. Artinya ID yang aktif mengarah ke workbook lama/legacy, bukan sumber PM_2026 yang benar. Kode tidak boleh mengubah workbook 28 tab itu menjadi PM hanya dengan mengganti nama atau menghapus tab karena isi, format, maupun formula yang berbeda dapat merusak data.
-3. Pengecekan `needsSync` sebelumnya menganggap profil `LEGACY_PK_28` sebagai profil yang dikenali sehingga workbook 28 tab tidak selalu ditandai perlu sinkronisasi ke profil PM_2026.
-4. Metadata sheet yang tersimpan bisa berupa objek (`{title, sheetId, ...}`) atau string. Propagasi yang membandingkan objek langsung dengan nama tab bisa gagal mengenali sheet tujuan yang sebenarnya.
+## Akar masalah yang terlihat
 
-## Perubahan kode dalam revisi ini
+1. Rekaman terbaru menampilkan Google Sheets dengan pesan bahwa file sudah dihapus. Karena ID workbook lama tersimpan sebagai pointer di D1, cache browser saja tidak cukup diperbaiki; referensi server harus diperiksa dan diganti.
+2. Master yang sebelumnya dipakai tidak konsisten dengan master PM_2026. Resolver lama terlalu longgar terhadap profil sheet dan metadata revisi, sehingga workbook lama bisa tetap dianggap valid hanya karena tabnya ada.
+3. Tombol Buka Spreadsheet PM sebelumnya bisa memakai URL dalam memori browser tanpa memeriksa ulang pointer D1.
+4. Nama tab T1–T4 dalam Google Sheets dapat bervariasi; membangun A1 range dari alias tetap menimbulkan `Unable to parse range`.
+5. Frasa tahun LHE sebelumnya terlihat mengunci pada 2025/2024, sementara tahun target tindak lanjut seharusnya mengikuti Tahun Anggaran aktif aplikasi.
+6. Dua permintaan pembuatan workbook pada OPD/tahun sama berpotensi menyalin master dua kali bila tidak diserialisasi.
 
-- **Resolver master PM otomatis dan aman.** Backend memeriksa `GOOGLE_SHEETS_PM_TEMPLATE_ID` terlebih dahulu. Jika ID itu salah/legacy, backend mencari Google Sheets dengan nama dasar sumber `KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313`, termasuk file di shared drive. Kandidat hanya dipakai jika lolos validasi profil PM_2026: tepat 26 tab, urutan nama sesuai, dan formula inti `KKLEAD_SPIP!I11`, `I68`, `I85`, `I106` sesuai. Tidak ada fallback diam-diam ke template PK, dan template 28 tab tidak diubah otomatis.
-- **Penyelesaian nama tab dari metadata Google Sheets.** Pembaca master memeriksa metadata tab sebelum mengirim `values:batchGet`; alias nama T1–T4 didukung, sehingga nama tab aktual dipakai untuk membuat range A1. Jika tab memang tidak ada, pesan error menunjukkan target dan daftar tab yang tersedia—bukan sekadar error parser range Google.
-- **Profil sinkronisasi diketatkan.** Workbook dianggap perlu disinkronkan jika profilnya bukan `PM_2026`, termasuk workbook legacy 28 tab. Jadi profil yang hanya “dikenali” tidak lagi dianggap sudah benar.
-- **Propagasi master dibatasi ke workbook tujuan PM_2026.** Backend hanya menulis kolom master ke tujuan yang mempunyai metadata tab tercatat dan tervalidasi. Workbook legacy atau workbook dengan metadata tidak lengkap dilewati agar tidak menerima data PM pada struktur yang salah.
-- **Tautan lama dipertahankan untuk pemulihan.** Jika workbook aktif lama harus diganti setelah sumber PM yang valid ditemukan, file Google Sheets lama tidak dihapus. Metadata tautan lama diarsipkan pada `kk_pm_data.workbookHistory` di D1 dan cell sparse tetap dipertahankan saat referensi workbook aktif diperbarui.
-- Patch sebelumnya tetap dipertahankan: izin aksi yang diperlukan bagi akun OPD/Inspektorat dengan pembatasan cakupan, lease sinkronisasi per OPD/tahun, merge cell D1 atomik, perlindungan cache in-flight, pemeriksaan status verifikasi bertingkat, serta validasi agar nilai formula tidak ditulis jika ID workbook sudah berubah.
+## Perubahan terkini
 
-## Pengujian lokal
+- **Master PM kanonis:** pemeriksaan ID master khusus, deteksi master Google Sheets terbaru dengan nama sumber yang disetujui, pengecekan `modifiedTime`, struktur 26 tab PM_2026, dan formula kunci. Resolver menolak file cadangan yang sekadar diawali nama master tetapi memiliki suffix tidak dikenal.
+- **Rollover pointer D1:** saat open/sync, backend memastikan workbook masih bisa diakses dan membandingkan ID/revisi sumber dengan master aktif. Jika sumber beda atau file sudah dihapus, ia membuat salinan baru dan memindahkan pointer OPD/tahun setelah validasi. File lama tidak dihapus; riwayat disimpan pada `kk_pm_data.workbookHistory`.
+- **URL buka authoritative:** tombol Buka Spreadsheet dan buka tab tertentu meminta ulang data dari server tanpa cache. Jika workbook perlu diperbarui, sinkronisasi dijalankan sebelum URL dibuka. Jika verifikasi gagal, tab baru ditutup—tidak jatuh balik ke URL lama.
+- **Akun dan konkurensi:** role Inspektorat/Irban diberi izin hanya untuk aksi yang dibutuhkan dalam cakupan OPD yang diizinkan. Lock D1 per OPD/tahun menyerialisasi pembuatan workbook, memeriksa token pemilik lock sebelum menulis, dan sesi yang terkena konflik dapat retry berdasarkan `retryAfterSeconds`. Penyimpanan cell memakai merge D1 agar data dan pointer workbook tidak saling menimpa.
+- **Formula dan skor:** pembacaan nilai formula tidak diperbolehkan menulis hasil dari workbook yang bukan lagi workbook aktif untuk OPD/tahun tersebut.
+- **Tahun LHE:** tahun target tindak lanjut menggunakan Tahun Anggaran aktif dan berubah otomatis. `source_year` tetap menjaga tahun laporan asli agar historis tidak dipalsukan. Tahun sumber tidak dibatasi hanya 2024/2025; tahun kalender sekarang dimasukkan otomatis ke pilihan Tahun Anggaran.
+- **Cache:** cache-buster aset diperbarui untuk memastikan browser tidak menyajikan versi HTML/JS LHE lama.
 
-Perintah berikut lulus dalam paket ini:
+## Uji otomatis lokal
 
-```bash
-node --check functions/myCloudinaryHandler.js
-node --check public/script.js
-node tools/validate-workbook-concurrency.mjs
-node tools/validate-pm-template-resolution.mjs
-node tools/validate-spip-integration.mjs
-```
+Semua pemeriksaan berikut lulus pada paket lokal:
 
-`tools/validate-pm-template-resolution.mjs` menguji alias T1–T4, variasi nama file impor, penolakan ID legacy 28 tab, penemuan master PM yang valid melalui mock Google Drive/Sheets, dan perilaku gagal yang eksplisit ketika kandidat yang benar tidak tersedia.
+- Sintaks semua berkas `.js` dan `.mjs`.
+- Parsing 13 berkas JSON.
+- `node tools/validate-pm-template-resolution.mjs` — 23 pemeriksaan.
+- `node tools/validate-workbook-concurrency.mjs` — 37 pemeriksaan.
+- `node tools/validate-inspektorat-20261014.mjs` — 60 pemeriksaan.
+- `node tools/validate-spip-integration.mjs` — 11 pemeriksaan.
+- `node tools/validate-workbook-rollover-lhe-years.mjs` — 17 pemeriksaan.
 
-Validator lama `tools/validate-inspektorat-20261014.mjs` masih berhenti pada assertion `template_source_year`. Assertion tersebut juga tidak ditemukan pada ZIP asli yang diberikan dan berkaitan dengan migrasi LHE yang tidak diubah pada patch ini; saya tidak mengubah jalur LHE di luar permintaan agar perubahan tetap terlokalisasi.
+Jumlah tersebut adalah hasil validasi statis, mock Google API, dan simulasi/helper lokal, bukan tes beban terhadap layanan produksi.
 
-**Batas pengujian:** kredensial Google OAuth dan layanan Cloudflare produksi tidak tersedia di paket lokal. Karena itu, penemuan file sesungguhnya di Google Drive, hak akses akun produksi, dan pembuatan workbook langsung di lingkungan aktif tetap perlu dikonfirmasi setelah deployment.
+## Hal yang tetap wajib diverifikasi saat deploy
 
-## Cara deployment dan pengecekan
+- `GOOGLE_SHEETS_PM_TEMPLATE_ID` harus menunjuk ke ID Google Sheets master PM 26 tab terbaru. Resolver otomatis mengenali nama canonical dan beberapa suffix rilis; nama yang benar-benar berbeda memerlukan ID env yang eksplisit.
+- `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN`, dan `GOOGLE_DRIVE_FOLDER_ID` harus valid. OAuth harus dapat membaca master dan menyalin file.
+- Deploy seluruh proyek Pages agar backend, HTML, JS, dan cache-buster diperbarui bersamaan.
+- Uji secara langsung satu OPD Inspektorat, satu OPD umum, dua sesi bersamaan, upload, dan verifikasi. Credential dan Cloudflare/Google Drive produksi tidak tersedia di lingkungan pembuat ZIP, sehingga saya tidak menyatakan migrasi di server live telah terjadi.
 
-1. Deploy seluruh ZIP hasil revisi ke proyek Cloudflare Pages (jangan menyalin hanya satu potongan fungsi). Pastikan deployment selesai dan URL produksi memakai deployment terbaru.
-2. Pastikan `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN`, dan `GOOGLE_DRIVE_FOLDER_ID` tersedia serta akun OAuth dapat membaca master dan membuat salinan pada folder tujuan.
-3. Cara paling pasti tetap mengatur `GOOGLE_SHEETS_PM_TEMPLATE_ID` ke ID **Google Sheets hasil impor** dari `KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313.xlsx`. Revisi ini juga mencoba menemukan otomatis file valid dengan nama dasar tersebut bila ID konfigurasi ternyata mengarah ke workbook legacy. Jika nama file hasil impor berbeda sehingga tidak ditemukan, ganti ID environment ke spreadsheet PM yang benar.
-4. Setelah deployment, masuk ke akun Inspektorat dan satu akun OPD percobaan, pilih tahun yang sama, buka Kertas Kerja PM, lalu klik Sinkronkan Workbook satu kali. Sukses hanya jika workbook baru memiliki profil 26 tab PM_2026. Jika tidak ditemukan sumber master valid, pesan sekarang menjelaskan konfigurasi yang perlu diperbaiki; jangan memaksa memakai template 28 tab.
-5. Periksa bahwa tautan workbook lama tetap dapat dibuka dari Google Drive sebelum mengarsipkan atau menghapus apa pun. Riwayat tautannya disimpan di D1 pada `kk_pm_data.workbookHistory`; file Google Drive lama tidak dihapus oleh patch.
-6. Uji dua sesi secara bersamaan: dua klik sinkronisasi pada OPD/tahun sama seharusnya diserialisasi oleh lease D1; unggahan, penyimpanan cell, dan verifikasi juga perlu diuji pada satu OPD berbeda untuk memastikan scope aksesnya benar.
+## Perilaku aman
 
-## Batasan dan jaminan perubahan
-
-Patch tidak menghapus file Google Drive, tidak menghapus cell PM, dan tidak mengubah UI/fungsi yang tidak berkaitan. Pembuatan workbook baru tetap ditolak jika tidak ada master PM_2026 yang tervalidasi—ini disengaja demi mencegah template lama disalin sebagai PM terbaru. Bila Google Drive tidak memiliki master PM 26 tab yang valid dengan nama dasar sumber yang dicari, ID master yang benar masih harus dimasukkan ke environment Cloudflare. Saya tidak mengklaim sudah melakukan tes live dengan banyak akun produksi; yang lulus adalah validasi statis dan simulasi lokal.
+Sinkronisasi hanya membuat workbook kerja terpisah per OPD/tahun dari master bersama. Ia tidak mengarahkan seluruh OPD ke satu file, tidak menghapus Google Sheet lama, dan tidak mengganti template 28 tab menjadi 26 tab secara paksa. Migrasi pointer dilakukan saat OPD/tahun dibuka atau disinkronkan setelah deployment, sehingga tidak membuat puluhan salinan sekaligus secara mendadak.
