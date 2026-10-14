@@ -24,3 +24,9 @@ Class: `RealtimeHub`
 Storage: SQLite
 
 The class uses the WebSocket Hibernation API so idle realtime connections can hibernate while clients remain connected.
+
+## Isolasi realtime per akun/OPD
+
+Realtime kini memakai otorisasi dua lapis. `functions/realtime.js` memvalidasi sesi melalui `auth_sessions` + `auth_users` dan meneruskan ID OPD yang memang boleh dilihat akun. `RealtimeHub` menyimpan scope tersebut pada attachment per-WebSocket lalu mengirim metadata perubahan hanya ke koneksi dengan cakupan OPD yang sesuai. Jangan deploy perubahan Pages tanpa versi Worker ini (atau sebaliknya), karena kedua sisi harus memakai protokol scope yang sama.
+
+Akun dengan cakupan OPD terbatas sekarang dapat menerima pembaruan realtime tanpa menerima aktivitas OPD lain. Setiap perangkat/operator tetap mempunyai token sesi tersendiri; tidak ada sesi lama yang ditimpa oleh login perangkat lain.

@@ -42,7 +42,16 @@ export class RealtimeHub extends DurableObject {
       });
 
       let sent = 0;
+      const eventYear = safeText(payload?.year, 4);
+      const eventOpdId = payload?.opdId ? safeText(payload.opdId, 120) : '';
       for (const ws of this.ctx.getWebSockets()) {
+        // Scope stored in Durable Object attachment was created by the authenticated
+        // Pages Function. Never trust room membership alone for OPD-level visibility.
+        const scope = ws.deserializeAttachment() || {};
+        if (scope.year && scope.year !== eventYear) continue;
+        if (scope.access !== 'all') {
+          if (!eventOpdId || !Array.isArray(scope.allowedOpdIds) || !scope.allowedOpdIds.includes(eventOpdId)) continue;
+        }
         try {
           ws.send(data);
           sent++;
@@ -65,9 +74,20 @@ export class RealtimeHub extends DurableObject {
     const client = pair[0];
     const server = pair[1];
     const year = safeText(url.searchParams.get('year'), 4);
+    const accessHeader = request.headers.get('X-Kawal-Realtime-Access');
+    const access = accessHeader === 'all' ? 'all' : 'scoped';
+    const role = safeText(request.headers.get('X-Kawal-Realtime-Role'), 20);
+    let allowedOpdIds = [];
+    try {
+      const parsed = JSON.parse(request.headers.get('X-Kawal-Realtime-Opd-Ids') || '[]');
+      if (Array.isArray(parsed)) allowedOpdIds = parsed.map(x => safeText(x, 120)).filter(Boolean).slice(0, 500);
+    } catch {}
+    // The DO is reached through the Pages binding; reject missing auth context rather
+    // than accidentally opening a room that can read all broadcast events.
+    if (access !== 'all' && !allowedOpdIds.length) return new Response('Realtime scope wajib tersedia.', { status: 403 });
 
     this.ctx.acceptWebSocket(server, ['kawal-spip']);
-    server.serializeAttachment({ year, connectedAt: Date.now() });
+    server.serializeAttachment({ year, access, role, allowedOpdIds, connectedAt: Date.now() });
 
     try {
       server.send(JSON.stringify({
