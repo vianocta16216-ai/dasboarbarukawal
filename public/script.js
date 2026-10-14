@@ -4694,10 +4694,24 @@ function kkPmEvidenceHtml(row,p,selectedGrade=''){
   return `<div class="kk-pm-evidence-list">${files.map(f=>{const name=escapeHtml(f.name);const href=f.url?escapeHtml(f.url):'';const active=selectedGrade===f.grade?' active':'';return `<div class="kk-pm-evidence-item${active}"><span class="kk-pm-evidence-grade">${escapeHtml(f.grade)}</span><span>${href?`<a href="${href}" target="_blank" rel="noopener">${name}</a>`:name}</span></div>`;}).join('')}</div>`;
 }
 function kkPmMasterKey(target,p){return `${target}|${p.subCode}|${p.paramId}`;}
-async function ensureKkPmMasterLoaded(){
-  if(kkPmMaster)return kkPmMaster;
-  const r=await fetch('/kk-pm-exact-workbook-master.json?v=20261013.1',{cache:'force-cache'}); if(!r.ok)throw new Error('Master KK PM SPIP tidak dapat dimuat');
-  kkPmMaster=await r.json(); await refreshMasterFromGoogleSheet(kkPmMaster,'PM'); return kkPmMaster;
+let kkPmMasterRefreshPromise=null;
+async function ensureKkPmMasterLoaded(forceRefresh=true){
+  // Muat snapshot statis tanpa cache browser ketika master belum ada; refresh live harus terjadi
+  // setiap modal PM dibuka agar perubahan master tidak tertahan pada objek kkPmMaster lama.
+  if(!kkPmMaster){
+    const r=await fetch('/kk-pm-exact-workbook-master.json?v=20261015.1',{cache:'no-store'});
+    if(!r.ok)throw new Error(`Master KK PM SPIP tidak dapat dimuat (HTTP ${r.status})`);
+    kkPmMaster=await r.json();
+  }
+  if(forceRefresh){
+    // Satu refresh bersama untuk beberapa modal/call yang berimpit, bukan request live duplikat.
+    if(!kkPmMasterRefreshPromise){
+      const masterAtStart=kkPmMaster;
+      kkPmMasterRefreshPromise=refreshMasterFromGoogleSheet(masterAtStart,'PM').finally(()=>{kkPmMasterRefreshPromise=null;});
+    }
+    await kkPmMasterRefreshPromise;
+  }
+  return kkPmMaster;
 }
 async function ensureKkRpjmdMasterLoaded(){
   if(kkRpjmdMaster)return kkRpjmdMaster;
@@ -4978,7 +4992,16 @@ function exportKkPmExcel(){
 async function openKkPmModal(id){
   const row=rows.find(r=>String(r.id)===String(id)); if(!row)return; kkPmCurrentRow=row;kkPmEditingRowId=row.id;kkPmTab='allSheets';kkPmSelectedSheet='FAQ';kkPmFilters={search:'',unsur:'all',subunsur:'all'};const modal=document.getElementById('kkPmModal');if(!modal)return;
   document.getElementById('kkPmModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;modal.classList.add('active');kkPmSetStatus('Memuat workbook lengkap, PM detail, evidence terhubung, dan nilai formula...');
-  try{await Promise.all([ensureKkPmMasterLoaded(),ensureKkRpjmdMasterLoaded(),loadKkPmData(row),loadKkPmWorkbookData(row),loadKkRpjmdMappings(row),syncKkComputedValues(row,false)]);kkPmSetStatus('✓ Data KK PM siap; sheet dan target ditampilkan sesuai OPD. Workbook Google Sheets akan menggunakan template baru setelah ID template dikonfigurasi.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('Gagal memuat KK PM SPIP: '+(err.message||err),'error');kkPmRenderModal();}
+  try{
+    await Promise.all([ensureKkPmMasterLoaded(true),ensureKkRpjmdMasterLoaded(),loadKkPmData(row),loadKkPmWorkbookData(row),loadKkRpjmdMappings(row),syncKkComputedValues(row,false)]);
+    if(kkPmMaster?.liveSourceStatus?.live===true){
+      kkPmSetStatus('✓ Data KK PM siap; master live berhasil diperbarui dari Google Sheets. Sheet dan target ditampilkan sesuai OPD.','success');
+    }else{
+      const detail=String(kkPmMaster?.liveSourceStatus?.message||'Google Sheets master belum mengembalikan data live.');
+      kkPmSetStatus(`⚠️ Data KK PM ditampilkan dari snapshot lokal karena refresh master live gagal. Jangan gunakan sebagai konfirmasi bahwa master terbaru sudah tersinkron. Detail: ${detail}`,'error');
+    }
+    kkPmRenderModal();
+  }catch(err){kkPmSetStatus('Gagal memuat KK PM SPIP: '+(err.message||err),'error');kkPmRenderModal();}
 }
 
 function closeKkPmModal(){document.getElementById('kkPmModal')?.classList.remove('active');kkPmEditingRowId=null;kkPmCurrentRow=null;kkPmWorkbookData=null;kkPmWorkbookSheets=[];kkPmSelectedSheet='';kkPmStateMap=new Map();kkPmMetaMap=new Map();kkPmSaveTimers.forEach(t=>clearTimeout(t));kkPmSaveTimers.clear();kkPmMetaSaveTimers.forEach(t=>clearTimeout(t));kkPmMetaSaveTimers.clear();}
