@@ -11,7 +11,9 @@
     "password": "GANTI_DENGAN_PASSWORD_AUDITOR_UNIK_MIN_16_KARAKTER",
     "role": "auditor",
     "displayName": "Auditor Inspektorat",
-    "opdNames": ["*"] ,
+    "opdNames": [
+      "*"
+    ],
     "enabled": true
   },
   {
@@ -23,11 +25,23 @@
     "enabled": true
   },
   {
+    "username": "ppupd_inspektorat_01",
+    "password": "GANTI_DENGAN_PASSWORD_PPUPD_UNIK_MIN_16_KARAKTER",
+    "role": "ppupd",
+    "displayName": "PPUPD Inspektorat",
+    "opdNames": [
+      "*"
+    ],
+    "enabled": true
+  },
+  {
     "username": "verifikator_irban",
     "password": "GANTI_DENGAN_PASSWORD_IRBAN_UNIK_MIN_16_KARAKTER",
     "role": "irban",
     "displayName": "Verifikator Irban",
-    "opdNames": ["*"],
+    "opdNames": [
+      "*"
+    ],
     "enabled": true
   },
   {
@@ -35,7 +49,9 @@
     "password": "GANTI_DENGAN_PASSWORD_BPKP_UNIK_MIN_16_KARAKTER",
     "role": "bpkp",
     "displayName": "Verifikator Akhir BPKP",
-    "opdNames": ["*"],
+    "opdNames": [
+      "*"
+    ],
     "enabled": true
   }
 ]
