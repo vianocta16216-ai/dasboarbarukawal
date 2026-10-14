@@ -1,0 +1,15 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const backend=fs.readFileSync('functions/myCloudinaryHandler.js','utf8');
+const ui=fs.readFileSync('public/script.js','utf8');
+const html=fs.readFileSync('public/index.html','utf8');
+assert.match(backend,/new Set\(\['admin','auditor','ppupd','opd','irban','bpkp'\]\)/,'PPUPD must be a valid role');
+assert.match(backend,/const PPUPD_ALLOWED_ACTIONS = new Set\(AUDITOR_ALLOWED_ACTIONS\)/,'PPUPD must mirror Auditor permissions');
+assert.match(backend,/role==='auditor'\|\|role==='ppupd'/,'Auditor/PPUPD must pass explicit role authorization');
+assert.match(backend,/const score=await refreshVerifiedStructureProcessScore\(env,year,opdId\)/,'Workbook verification must recalculate Structure & Process score');
+assert.match(backend,/saveLegacyEvidenceVerificationAtomic\(env,year,opdId,subunsur,paramId,level,uploadId/,'Legacy verification must recalculate score atomically');
+assert.match(backend,/VERIFIED_STRUCTURE_STATUSES = new Set\(\['diterima','diterima_catatan'\]\)/,'Accepted statuses must count toward score');
+assert.match(ui,/const canLegacyVerify = \['admin','auditor','ppupd','irban'\]/,'Legacy evidence UI must expose verification for Auditor/PPUPD/Irban');
+assert.match(ui,/const canDirectVerify=\['admin','auditor','ppupd','irban'\]/,'Workbook UI must expose verification for Auditor/PPUPD/Irban');
+assert.match(html,/option value="ppupd">PPUPD/,'Account creation must expose PPUPD role');
+console.log('Verification role/score regression: 9 assertions passed');

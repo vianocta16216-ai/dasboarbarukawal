@@ -44,7 +44,7 @@ assert.ok(handler.includes("code:'INVALID_MASTER_SYNC_SECRET'"), 'Unauthenticate
 assert.ok(handler.includes('!isTrustedMasterWebhook && !SAFE_PUBLIC_ACTIONS'), 'Only a valid secret-protected webhook may bypass a browser session');
 assert.ok(handler.includes('json_extract(CASE WHEN json_valid('), 'Computed-value write must be conditional on the currently linked workbook');
 assert.ok(handler.includes("code:'VERIFICATION_STAGE_CONFLICT'"), 'Concurrent downstream verification must reject stale stage state');
-assert.ok(handler.includes('SELECT 1 FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage=? AND status=?'), 'Verification prerequisite must be checked atomically with the D1 write');
+assert.ok(handler.includes('SELECT 1 FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage=? AND ${statusClause}') && handler.includes('INSERT INTO evidence_verification_steps') && handler.includes('VERIFICATION_STAGE_CONFLICT'), 'Verification prerequisite must be checked atomically with the D1 write');
 assert.ok(script.includes("callServerWithRetry('syncKkComputedValues'"), 'UI must continue using the computed values sync action');
 assert.ok(script.includes('async function ensureKkPmMasterLoaded(forceRefresh=true)'), 'PM master loader must refresh live data on each modal open');
 assert.ok(script.includes('ensureKkPmMasterLoaded(true)'), 'PM modal must explicitly request fresh master data');
