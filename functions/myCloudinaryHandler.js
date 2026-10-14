@@ -369,7 +369,7 @@ const OPD_INPUT_ACTIONS = new Set([
 ]);
 const AUDITOR_ALLOWED_ACTIONS = new Set([
   ...COMMON_READ_ACTIONS,...OPD_INPUT_ACTIONS,'saveEvidenceWorkflowStep',
-  'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification'
+  'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','deleteLheFollowup'
 ]);
 // PPUPD memiliki hak operasional yang sama dengan Auditor, tetap dibatasi oleh cakupan OPD sesi.
 const PPUPD_ALLOWED_ACTIONS = new Set(AUDITOR_ALLOWED_ACTIONS);
@@ -388,7 +388,7 @@ const BPKP_ALLOWED_ACTIONS = new Set([
 ]);
 const DESTRUCTIVE_ADMIN_ACTIONS = new Set([
   'addOpd','deleteOpd','addYear','deleteYear','createBackup','restoreBackup','deleteBackup',
-  'deleteBackup','deleteYear','deleteLheFollowup','syncKkPmMasterNow','saveAssessmentStatus','getBpkpOfficialScoreAdmin',
+  'deleteBackup','deleteYear','syncKkPmMasterNow','saveAssessmentStatus','getBpkpOfficialScoreAdmin',
   'getBpkpOfficialAudit','saveBpkpOfficialScore','unlockBpkpOfficialScore','saveRow','saveData',
   'listAuthUsers','createAuthUser','setAuthUserEnabled','resetAuthUserPassword'
 ]);
@@ -1604,7 +1604,15 @@ function calculateVerifiedStructureProcessBreakdown(subunsurs, workbookRows=[]){
     consider({uploadId:file.upload_id||file.uploadId||'',sub,param,level:lv,status,timestamp,sourcePriority:2,legacyKey:`workbook|${file.upload_id||''}`});
   }
   const byParam=new Map();
-  const resolved=[...canonicalByUpload.values(),...legacyWithoutId];
+  // If the normalized workbook evidence table has records for a parameter,
+  // it is the current source of truth for that parameter. Do not let an older
+  // legacy JSON file without an upload ID keep an obsolete accepted level alive.
+  const workbookBackedParams=new Set((Array.isArray(workbookRows)?workbookRows:[])
+    .filter(file=>String(file?.subunsur||'')&&String(file?.param_id||file?.paramId||'')
+      &&String(file?.r2_key||file?.r2Key||'').trim()&&String(file?.file_name||file?.fileName||'').trim())
+    .map(file=>`${String(file.subunsur)}|${String(file.param_id||file.paramId)}`));
+  const currentLegacy=legacyWithoutId.filter(file=>!workbookBackedParams.has(`${file.sub}|${file.param}`));
+  const resolved=[...canonicalByUpload.values(),...currentLegacy];
   for(const file of resolved){
     if(!VERIFIED_STRUCTURE_STATUSES.has(normalizeVerificationStatus(file.status)))continue;
     const level=Math.max(0,Math.min(5,Number(file.level)||0));if(level<1)continue;
