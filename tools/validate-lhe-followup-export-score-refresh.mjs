@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 const root=path.resolve(path.dirname(new URL(import.meta.url).pathname),'..');
 const app=fs.readFileSync(path.join(root,'public/script.js'),'utf8');
 const html=fs.readFileSync(path.join(root,'public/index.html'),'utf8');
@@ -10,9 +11,24 @@ check(html.includes('id="lheExportExcel"'),'LHE modal must provide Excel export 
 check(app.includes('function exportLheFollowupsExcel()'),'Export function must exist');
 for(const h of ['Ref. rekomendasi','Rencana aksi / upaya perbaikan yang diusulkan','Target / indikator penyelesaian','Bukti tindak lanjut yang diperlukan','Realisasi upaya perbaikan','Status terkini','Link bukti tindak lanjut','Catatan verifikasi APIP'])check(app.includes(h),'Export column missing: '+h);
 check(app.includes('XLSX.utils.book_new()')&&app.includes('XLSX.writeFile(wb'),'Export must create and download a real workbook');
-check(app.includes("function lheCanDelete(){return ['admin','irban','auditor']"),'Delete button must be visible to authorized Inspektorat auditor role');
+check(app.includes("function lheCanDelete(){return ['admin','auditor','ppupd','irban','opd']"),'Delete button must be visible to scoped roles that may manage LHE follow-up items');
+check(app.includes("function lheCanEdit(){return ['admin','auditor','ppupd','opd','irban']"),'PPUPD must be able to edit LHE follow-up items');
 check(server.includes("'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','deleteLheFollowup'"),'Auditor role must be authorized to invoke the scoped delete action');
+check(server.includes("'uploadReportFile','deleteReportFile','deleteLheFollowup'"),'OPD input role must be authorized for scoped LHE item deletion');
+check(app.includes('Hapus Butir')&&app.includes('deleteLheFollowup')&&app.includes('Tindakan ini tidak dapat dibatalkan.'),'Every saved LHE item must expose a confirmed per-item delete action');
+check(server.includes('Auditor / PPUPD belum Dikirim'),'Verification prerequisite message must mention Auditor / PPUPD');
 check(!server.includes("'deleteBackup','deleteYear','deleteLheFollowup','syncKkPmMasterNow'"),'LHE item deletion must not be blocked as admin-only for scoped auditors');
-check(server.includes('const workbookBackedParams=new Set'),'Current normalized workbook evidence must supersede stale legacy evidence per parameter');
-check(server.includes('legacyWithoutId.filter(file=>!workbookBackedParams.has'),'Stale legacy entries without upload IDs must not preserve old scores when normalized evidence exists');
+check(server.includes('Only currently active normalized workbook rows can contribute to the score.'),'Score recalculation must ignore legacy-only cached evidence so old values cannot return');
+check(server.includes("if(!String(file?.r2_key||file?.r2Key||'').trim()||!String(file?.file_name||file?.fileName||'').trim())continue;"),'Score calculation must ignore deleted/tombstone evidence rows');
+check(server.includes("sync_status='deleted'")&&server.includes("FROM opd_workbook_evidence_items WHERE year=? AND opd_id=? ORDER BY upload_id"),'Soft-delete tombstones must persist and remain part of score refresh');
+
+check(server.includes("COALESCE(evidence_json,'[]')=?")&&server.includes('LHE_DELETE_CONFLICT'),'Deleting an LHE item must use compare-and-swap to avoid removing concurrent uploads');
+check(server.includes('cleanupLheEvidenceArtifacts')&&server.includes('DELETE FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=?'),'Delete must remove storage metadata and active workflow state while preserving audit history');
+const authStart=server.indexOf('const SESSION_COOKIE_NAME');
+const authEnd=server.indexOf('function privateEvidenceUrl',authStart);
+assert(authStart>=0&&authEnd>authStart,'Role policy block must be available for execution');
+const authSandbox={};
+vm.runInNewContext(server.slice(authStart,authEnd)+'\nglobalThis.isActionAllowedForRole=isActionAllowedForRole;',authSandbox);
+for(const role of ['admin','auditor','ppupd','irban','opd'])check(authSandbox.isActionAllowedForRole({role},'deleteLheFollowup',{}),`${role} should be permitted to delete LHE items within scope`);
+check(!authSandbox.isActionAllowedForRole({role:'bpkp'},'deleteLheFollowup',{}),'BPKP final verifier remains read-only for LHE item deletion');
 console.log(JSON.stringify({status:'PASS',checks},null,2));
