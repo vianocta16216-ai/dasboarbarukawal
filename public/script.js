@@ -1346,7 +1346,7 @@ function render() {
         <td><button class="btn-kk-rtp" data-id="${r.id}" title="Buka Spreadsheet Kertas Kerja RTP">📋</button></td>
         <td><button class="btn-report-rr" data-id="${r.id}" title="Upload Laporan Pemantauan RR_RTP">📄</button><div class="report-count rr">${Array.isArray(r.rrRtpReports)?r.rrRtpReports.length:0}</div></td>
         <td><div class="evidence-cell"><button class="btn-rtp-evidence" data-id="${r.id}" title="Evidence RTP dan alur verifikasi">📤</button><span class="rtp-evidence-summary" data-id="${r.id}">${getRtpEvidenceVerificationSummary(r).percentage.toFixed(0)}%<small>${getRtpEvidenceVerificationSummary(r).total} file</small></span></div></td>
-        <td><button class="btn-lhe-followup" data-id="${escapeHtml(r.id)}" title="Tindak Lanjut LHE SPIP tahun 2025 dan 2024">🧾 <small>${Number(r.lheFollowupCount||0)} butir</small></button></td>
+        <td><button class="btn-lhe-followup" data-id="${escapeHtml(r.id)}" title="Tindak Lanjut LHE SPIP tahun ${Number(currentYear)} dan ${Number(currentYear)-1}">🧾 <small>${Number(r.lheFollowupCount||0)} butir</small></button></td>
         <td>${currentUser?.role==='admin'?`<button class="del-btn" data-id="${escapeHtml(r.id)}" title="Hapus">&times;</button>`:''}</td>
       </tr>`;
     }).join('');
@@ -3566,7 +3566,7 @@ function applyLiveKkMasterRows(master,payload){
   return master;
 }
 async function refreshMasterFromGoogleSheet(master,kind){
-  try{const result=await callServerWithRetry('getKkMasterSheetRows',{masterKind:kind},1);if(result?.live)return applyLiveKkMasterRows(master,result);if(master)master.liveSourceStatus={live:false,message:result?.message||'Memakai snapshot master lokal.'};}
+  try{const result=await callServerWithRetry('getKkMasterSheetRows',{masterKind:kind,forceRefresh:true},1);if(result?.live)return applyLiveKkMasterRows(master,result);if(master)master.liveSourceStatus={live:false,message:result?.message||'Memakai snapshot master lokal.'};}
   catch(err){if(master)master.liveSourceStatus={live:false,message:String(err?.message||err).slice(0,200)};}
   return master;
 }
@@ -3587,12 +3587,15 @@ let workbookEvidenceMaster=null;
 let workbookEvidenceRow=null;
 let workbookEvidenceFiles=[];
 let workbookEvidenceNav={screen:'unsur',unsur:'',sub:'',groupId:''};
-async function ensureWorkbookEvidenceMasterLoaded(){
-  if(workbookEvidenceMaster)return workbookEvidenceMaster;
-  const r=await fetch('/workbook-structure-process-master.json?v=20261013.1',{cache:'force-cache'});
-  if(!r.ok)throw new Error('Master Struktur & Proses workbook tidak dapat dimuat');
-  workbookEvidenceMaster=await r.json();
-  await refreshMasterFromGoogleSheet(workbookEvidenceMaster,'PK');
+async function ensureWorkbookEvidenceMasterLoaded(forceRefresh=true){
+  if(!workbookEvidenceMaster){
+    const r=await fetch('/workbook-structure-process-master.json?v=20261014.1',{cache:'no-store'});
+    if(!r.ok)throw new Error(`Master Struktur & Proses workbook tidak dapat dimuat (HTTP ${r.status}). Pastikan file master ikut ter-deploy.`);
+    workbookEvidenceMaster=await r.json();
+  }
+  // Ambil snapshot Google Sheets terbaru setiap kali kolom dibuka. Backend memakai cache singkat
+  // agar perubahan master segera terlihat tanpa mengunduh ulang workbook statis.
+  if(forceRefresh)await refreshMasterFromGoogleSheet(workbookEvidenceMaster,'PK');
   if(!workbookEvidenceMaster?.mergedEvidence?.groups?.length)throw new Error('Master merged Evidence workbook tidak valid.');
   return workbookEvidenceMaster;
 }
@@ -4213,12 +4216,21 @@ function qaApipNormalizeState(x={}){
   const s={availability:x.availability||'',identityDoc:x.identityDoc||'',validity:x.validity||'',periodOk:x.periodOk||'',substance:x.substance||'',note:x.note||'',updatedAt:Number(x.updatedAt||0)};
   s.score=qaApipToScore(s);s.conclusion=qaApipConclusion(s,s.score);return s;
 }
-async function ensureQaApipMasterLoaded(){
-  if(qaApipMaster)return qaApipMaster;
-  const response=await fetch('/qa-apip-workbook-master.json?v=20261012.4',{cache:'no-cache'});
-  if(!response.ok)throw new Error(`Master QA APIP template tidak dapat dimuat (HTTP ${response.status})`);
-  const data=await response.json();
-  if(!data||!Array.isArray(data.items)||data.items.length!==671||!Array.isArray(data.rekapParameters)||!Array.isArray(data.rekapUnsur))throw new Error('Master QA APIP tidak sesuai template (diharapkan 671 item dan dua data rekap).');
+async function ensureQaApipMasterLoaded(forceReload=false){
+  if(qaApipMaster&&!forceReload)return qaApipMaster;
+  // Versi dinamis mencegah browser/CDN memakai master QA APIP lama setelah deploy.
+  const asset='/qa-apip-workbook-master.json';
+  let data=null,lastError='';
+  for(const url of [`${asset}?v=20261014.1`,`${asset}?retry=${Date.now()}`]){
+    try{
+      const response=await fetch(url,{cache:'no-store'});
+      if(!response.ok){lastError=`HTTP ${response.status} pada ${url}`;continue;}
+      data=await response.json();
+      if(data&&Array.isArray(data.items)&&data.items.length===671&&Array.isArray(data.rekapParameters)&&Array.isArray(data.rekapUnsur))break;
+      data=null;lastError='Isi master tidak cocok dengan template 671 item.';
+    }catch(err){lastError=String(err?.message||err);}
+  }
+  if(!data)throw new Error(`Master QA APIP tidak dapat dimuat atau tidak valid (${lastError||'respons kosong'}). Pastikan qa-apip-workbook-master.json ikut ter-deploy di folder public.`);
   qaApipMaster=data;
   qaApipMasterIndex=new Map();
   qaApipMaster.items.forEach(it=>qaApipMasterIndex.set(qaApipLocationKey(it.subCode,it.paramId,it.grade,it.itemNo),it));
@@ -5022,7 +5034,8 @@ document.addEventListener('click',function(e){
 });
 
 
-// ====== TINDAK LANJUT LHE SPIP (2025 + TL 2024 BELUM TUNTAS) ======
+// ====== TINDAK LANJUT LHE SPIP (tahun berjalan + tahun sebelumnya) ======
+function lheYearPair(){const y=Number(currentYear)||new Date().getFullYear();return {current:String(y),previous:String(y-1),label:`${y} / ${y-1}`};}
 const lheUi={opdId:null,items:[],templates:[],templateLoaded:false,editingId:null,selectedFollowupId:null};
 function lheStatus(message,type=''){const el=document.getElementById('lheFollowupStatus');if(!el)return;el.textContent=message||'';el.className='sheet-links-status'+(type?' '+type:'');el.style.display=message?'block':'none';}
 function lheCanEdit(){return ['admin','auditor','opd','irban'].includes(String(currentUser?.role||''));}
@@ -5031,7 +5044,7 @@ function lheField(id){return document.getElementById(id);}
 function lheSetForm(item={}){
   lheUi.editingId=item.id||null;lheUi.selectedFollowupId=item.id||null;
   lheField('lheEditorTitle').textContent=item.id?'Ubah tindak lanjut':'Tambah tindak lanjut';
-  lheField('lheSourceYear').value=String(item.source_year||item.sourceYear||'2025');
+  lheField('lheSourceYear').value=String(item.source_year||item.sourceYear||lheYearPair().current);
   lheField('lheRef').value=item.recommendation_ref||item.recommendationRef||'';
   lheField('lheRecommendation').value=item.recommendation||'';
   lheField('lheActionPlan').value=item.action_plan||item.actionPlan||'';
@@ -5103,7 +5116,7 @@ async function loadLheTemplates(){
   const response=await fetch('/lhe-followup-templates.json',{cache:'no-store'});
   if(!response.ok)throw new Error('File template rekomendasi tidak dapat dimuat.');
   const payload=await response.json();lheUi.templates=Array.isArray(payload.templates)?payload.templates:[];lheUi.templateLoaded=true;
-  select.innerHTML='<option value="">Pilih sumber LHE 2025 / TL 2024…</option>'+lheUi.templates.map((t,i)=>`<option value="${i}">${sheetLinksEsc(t.sourceYear)} · ${sheetLinksEsc(t.recommendationRef)} — ${sheetLinksEsc(t.recommendation.slice(0,110))}</option>`).join('');
+  const years=lheYearPair();select.innerHTML=`<option value="">Pilih sumber LHE ${years.current} / TL ${years.previous}…</option>`+lheUi.templates.map((t,i)=>`<option value="${i}">Sumber asli ${sheetLinksEsc(t.sourceYear)} · ${sheetLinksEsc(t.recommendationRef)} — ${sheetLinksEsc(t.recommendation.slice(0,110))}</option>`).join('');
 }
 async function openLheFollowupModal(id){
   const row=rows.find(r=>String(r.id)===String(id));if(!row)return;
