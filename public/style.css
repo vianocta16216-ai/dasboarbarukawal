@@ -2668,3 +2668,70 @@ tbody td:nth-child(2){box-shadow:2px 0 8px rgba(15,23,42,.05)}
 @media(max-width:720px){.dashboard-mode-panel{padding:14px}.dashboard-mode-actions{width:100%}.dashboard-mode-actions button{flex:1 1 140px}.bpkp-score-grid{grid-template-columns:1fr}.assessment-progress-title{align-items:flex-start;flex-direction:column}}
 
 .bpkp-official-audit{margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:12px;color:#334155}.bpkp-official-audit>strong{display:block;margin-bottom:8px}.bpkp-audit-item{display:grid;grid-template-columns:minmax(90px,.55fr) minmax(160px,1fr);gap:3px 12px;padding:9px 0;border-bottom:1px solid #edf2f7}.bpkp-audit-item b{text-transform:capitalize;color:#1e3a8a}.bpkp-audit-item span{color:#64748b}.bpkp-audit-item small{grid-column:1/-1;white-space:normal;overflow-wrap:anywhere;color:#475569}
+
+
+
+/* ===== PATCH VISIBILITAS TOMBOL & RESPONSIVE (2026-10) =====
+   Menetralisir aturan white-space/warna global yang membuat label tombol
+   terpotong atau tidak kontras, tanpa mengubah handler/ID tombol. */
+button, .btn, [role="button"] {
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+button {
+  height: auto;
+  min-height: 34px;
+  white-space: normal;
+  color: #1e293b;
+  text-shadow: none;
+  backdrop-filter: none;
+}
+button:focus-visible, [role="button"]:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+button:disabled { cursor: not-allowed; opacity: .58; }
+.modal-actions button, .confirm-actions button,
+.sheet-links-footer button, .kk-pm-tabs button,
+#qaApipTabs [data-qa-tab], .dashboard-mode-actions button,
+.wb-evidence-file-actions button {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.kk-pm-tabs, #qaApipTabs, .dashboard-mode-actions,
+.kk-pm-actions, .modal-actions, .confirm-actions {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.kk-pm-action, .kk-pm-tabs button, #qaApipTabs [data-qa-tab],
+.dashboard-mode-actions button {
+  min-height: 36px;
+  line-height: 1.3;
+}
+button.primary, .confirm-actions button.primary,
+.modal-actions button.primary, .sheet-links-footer button.primary,
+.kk-pm-tabs button.active, .dashboard-mode-actions button.active {
+  color: #fff;
+}
+button.danger, .confirm-actions button.danger,
+.modal-actions button.danger { color: #b91c1c; }
+@media (max-width: 768px) {
+  body { padding: 12px; }
+  button { padding: 9px 12px; }
+  .modal-actions button, .confirm-actions button { flex: 1 1 130px; }
+  .kk-pm-actions { flex-wrap: wrap; }
+}
+
+
+/* Pemetaan RPJMD 2025–2029 di dalam Kertas Kerja PM SPIP */
+.kk-pm-rpjmd-intro{padding:16px 18px;margin-bottom:16px;border:1px solid #cbd5e1;border-radius:12px;background:#f8fafc;color:#1e293b}.kk-pm-rpjmd-intro h4{margin:4px 0 8px;font-size:18px;color:#0f172a}.kk-pm-rpjmd-intro p{margin:6px 0;font-size:12px;line-height:1.65;color:#334155}.kk-pm-rpjmd-stats{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.kk-pm-rpjmd-stats span{padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:11px}.kk-pm-rpjmd-stats b{color:#0f766e}.kk-pm-rpjmd-card{padding:15px;margin:12px 0;border:1px solid #dbe3ee;border-radius:12px;background:#fff;color:#1e293b}.kk-pm-rpjmd-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.kk-pm-rpjmd-card-head h5{margin:0 0 4px;font-size:14px;color:#0f172a}.kk-pm-rpjmd-card-head p{margin:0 0 10px;font-size:11px;color:#64748b}.kk-pm-rpjmd-status{display:inline-flex;align-items:center;padding:5px 8px;border-radius:999px;border:1px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:10px;font-weight:800;white-space:normal}.kk-pm-rpjmd-status.is-verified{border-color:#86efac;background:#f0fdf4;color:#166534}.kk-pm-rpjmd-status.is-returned{border-color:#fdba74;background:#fff7ed;color:#9a3412}.kk-pm-rpjmd-card label{display:block;margin:10px 0 5px;color:#334155;font-size:12px;font-weight:800}.kk-pm-rpjmd-card select,.kk-pm-rpjmd-card textarea,.kk-pm-rpjmd-card input{box-sizing:border-box;width:100%;min-width:0;padding:9px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#0f172a;font:inherit;font-size:12px}.kk-pm-rpjmd-card select{min-height:120px}.kk-pm-rpjmd-card small{display:block;margin-top:5px;color:#64748b;font-size:10px;line-height:1.5}.kk-pm-rpjmd-card-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}.kk-pm-rpjmd-card-foot>small{margin:0;overflow-wrap:anywhere}.kk-pm-rpjmd-card .kk-pm-action,.kk-pm-rpjmd-verify button{border:1px solid #0f766e;background:#0f766e;color:#fff!important;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer}.kk-pm-rpjmd-verify{display:grid;grid-template-columns:minmax(150px,.7fr) minmax(200px,1.3fr) auto auto;gap:8px;margin-top:12px;padding-top:12px;border-top:1px dashed #cbd5e1}.kk-pm-rpjmd-verify button:last-child{border-color:#b45309;background:#b45309}.kk-pm-rpjmd-note{margin:12px 0;padding:12px;border:1px solid #cbd5e1;border-radius:9px;background:#f8fafc;color:#334155;font-size:11px;line-height:1.6;overflow-wrap:anywhere}.kk-pm-rpjmd-card .kk-pm-rpjmd-note{background:#fffbeb;border-color:#fde68a;color:#92400e}.kk-pm-rpjmd-card button:disabled{opacity:.6;cursor:wait}
+@media(max-width:760px){.kk-pm-rpjmd-card{padding:11px}.kk-pm-rpjmd-verify{grid-template-columns:1fr}.kk-pm-rpjmd-card-foot{align-items:stretch;flex-direction:column}.kk-pm-rpjmd-card-foot button{width:100%}}
+
+.kk-pm-rpjmd-reference{margin:10px 0 16px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#334155}.kk-pm-rpjmd-reference>summary{padding:11px 13px;cursor:pointer;font-size:12px;font-weight:800;color:#1e3a8a}.kk-pm-rpjmd-reference>section{padding:10px 13px;border-top:1px solid #e2e8f0}.kk-pm-rpjmd-reference h5{margin:3px 0 7px;font-size:12px;color:#0f172a}.kk-pm-rpjmd-indicator{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(240px,1.2fr);gap:6px 12px;padding:6px 0;border-bottom:1px dashed #e2e8f0;font-size:10px;line-height:1.5}.kk-pm-rpjmd-indicator b{color:#334155}.kk-pm-rpjmd-indicator span{color:#64748b;overflow-wrap:anywhere}@media(max-width:720px){.kk-pm-rpjmd-indicator{grid-template-columns:1fr;gap:2px}}

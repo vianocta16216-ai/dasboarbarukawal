@@ -4636,6 +4636,8 @@ document.getElementById('qaApipClose')?.addEventListener('click',closeQaApipModa
 // blok 5 Grade (A–E), dengan input Hasil Pengujian + Grade Hasil + AoI/Penyebab.
 // Evidence hanya ditarik read-only dari Evidence Struktur & Proses.
 let kkPmMaster=null;
+let kkRpjmdMaster=null;
+let kkRpjmdMappings=new Map();
 let kkFullWorkbookManifest=null;
 let kkPmWorkbookData=null;
 let kkPmWorkbookSheets=[];
@@ -4684,6 +4686,48 @@ async function ensureKkPmMasterLoaded(){
   if(kkPmMaster)return kkPmMaster;
   const r=await fetch('/kk-pm-exact-workbook-master.json?v=20261013.1',{cache:'force-cache'}); if(!r.ok)throw new Error('Master KK PM SPIP tidak dapat dimuat');
   kkPmMaster=await r.json(); await refreshMasterFromGoogleSheet(kkPmMaster,'PM'); return kkPmMaster;
+}
+async function ensureKkRpjmdMasterLoaded(){
+  if(kkRpjmdMaster)return kkRpjmdMaster;
+  const r=await fetch('/rpjmd-mahakam-ulu-2025-2029-master.json',{cache:'no-cache'});
+  if(!r.ok)throw new Error('Master sasaran RPJMD Mahakam Ulu tidak dapat dimuat.');
+  kkRpjmdMaster=await r.json(); return kkRpjmdMaster;
+}
+async function loadKkRpjmdMappings(row){
+  const d=await callServerWithRetry('getKkRpjmdMappings',{opdId:row.id,year:currentYear},2);
+  kkRpjmdMappings=new Map((Array.isArray(d?.mappings)?d.mappings:[]).map(x=>[String(x.workpaperCode||''),x]));
+  return d;
+}
+const KK_RPJMD_WORKPAPERS=[
+ {code:'KKE 1.1 SASTRA',title:'KKE 1.1 · Sasaran Strategis Pemda',hint:'Koordinasi utama: BP4D/Bappelitbangda'},
+ {code:'KKE 1.2 SASTRA OPD',title:'KKE 1.2 · Sasaran Strategis OPD',hint:'OPD mengaitkan Renstra/Renja dengan sasaran daerah'},
+ {code:'KKE 2.1 SASPRO',title:'KKE 2.1 · Sasaran Program',hint:'Keterkaitan program dengan hasil/sasaran RPJMD'},
+ {code:'KKE 2.2 SASKEG',title:'KKE 2.2 · Sasaran Kegiatan',hint:'Keterkaitan kegiatan dengan program dan sasaran'},
+ {code:'KKE 2.3 SASSUBKEG',title:'KKE 2.3 · Sasaran Subkegiatan',hint:'Keterkaitan subkegiatan dengan output dan sasaran'},
+ {code:'KK 5.1 A',title:'KK 5.1 A · Capaian RPJMD',hint:'Gunakan indikator resmi dan sumber data pemilik indikator'},
+ {code:'KK 5.1 B',title:'KK 5.1 B · Capaian OPD',hint:'Gunakan indikator/target Renstra dan sumber data OPD'},
+ {code:'KK 5.1 C',title:'KK 5.1 C · Capaian terkait',hint:'Pilih hanya sasaran yang benar-benar didukung isi kertas kerja'}
+];
+function kkRpjmdGoals(){return (kkRpjmdMaster?.objectives||[]).flatMap(o=>(o.goals||[]).map(g=>({...g,objectiveCode:o.code,objectiveName:o.name})));}
+function kkRpjmdRenderMapping(){
+ const goals=kkRpjmdGoals(); const canVerify=['admin','irban'].includes(String(currentUser?.role||''));
+ const options=goals.map(g=>`<option value="${escapeHtml(g.code)}">${escapeHtml(g.code+' · '+g.name)}</option>`).join('');
+ const referenceHtml=`<details class="kk-pm-rpjmd-reference"><summary>Lihat daftar indikator dan target tahunan RPJMD</summary>${(kkRpjmdMaster?.objectives||[]).map(o=>`<section><h5>${escapeHtml(o.code+' · '+o.name)}</h5>${(o.objectiveIndicators||[]).map(i=>`<div class="kk-pm-rpjmd-indicator"><b>Indikator tujuan: ${escapeHtml(i.name)}</b><span>${Object.entries(i.targets||{}).map(([y,v])=>escapeHtml(y+': '+v)).join(' · ')}</span></div>`).join('')}${(o.goals||[]).map(g=>`<div class="kk-pm-rpjmd-indicator"><b>${escapeHtml(g.code+' · '+g.name)}</b>${(g.indicators||[]).map(i=>`<span>${escapeHtml(i.name)} — ${Object.entries(i.targets||{}).map(([y,v])=>escapeHtml(y+': '+v)).join(' · ')}</span>`).join('')}</div>`).join('')}</section>`).join('')}</details>`;
+ return `<div class="kk-pm-rpjmd-intro"><div class="kk-pm-kicker">MASTER DOKUMEN PERENCANAAN</div><h4>${escapeHtml(kkRpjmdMaster?.vision||'RPJMD 2025–2029')}</h4><p>Sumber: Perda Kabupaten Mahakam Ulu Nomor 1 Tahun 2026, Bab III §3.1.2, Tabel 3.6 (halaman tercetak 195–198). Pemetaan ini menghubungkan kertas kerja penetapan tujuan dengan sasaran daerah. Pemetaan <b>tidak otomatis menentukan grade, skor SPIP, MRI, IEPK, atau nilai resmi</b>; penilaian tetap mengikuti parameter dan formula workbook BPKP.</p><div class="kk-pm-rpjmd-stats"><span><b>${(kkRpjmdMaster?.objectives||[]).length}</b> tujuan RPJMD</span><span><b>${goals.length}</b> sasaran strategis</span><span><b>2025–2029</b> periode RPJMD</span></div></div>${referenceHtml}
+ ${KK_RPJMD_WORKPAPERS.map(w=>{const m=kkRpjmdMappings.get(w.code)||{};const selected=new Set(Array.isArray(m.goalCodes)?m.goalCodes:[]);return `<section class="kk-pm-rpjmd-card" data-rpjmd-card="${escapeHtml(w.code)}"><div class="kk-pm-rpjmd-card-head"><div><h5>${escapeHtml(w.title)}</h5><p>${escapeHtml(w.hint)}</p></div><span class="kk-pm-rpjmd-status ${m.status==='Terverifikasi'?'is-verified':m.status==='Perlu Perbaikan'?'is-returned':'is-pending'}">${escapeHtml(m.status||'Belum Diajukan')}</span></div><label for="rpjmd-goals-${escapeHtml(w.code.replace(/[^A-Za-z0-9]/g,''))}">Sasaran/tujuan RPJMD terkait (pilih satu atau lebih)</label><select multiple size="5" id="rpjmd-goals-${escapeHtml(w.code.replace(/[^A-Za-z0-9]/g,''))}" data-rpjmd-goals="${escapeHtml(w.code)}">${options.replace(/<option value="([^"]+)">/g,(all,code)=>`<option value="${code}"${selected.has(code)?' selected':''}>`)}</select><small>Pilih dengan Ctrl (Windows) untuk beberapa sasaran. Jangan pilih sasaran hanya karena nama mirip; pastikan ada hubungan logis dengan sasaran, program, kegiatan atau indikator.</small><label for="rpjmd-rationale-${escapeHtml(w.code.replace(/[^A-Za-z0-9]/g,''))}">Uraian hubungan/keterkaitan</label><textarea id="rpjmd-rationale-${escapeHtml(w.code.replace(/[^A-Za-z0-9]/g,''))}" data-rpjmd-rationale="${escapeHtml(w.code)}" rows="3" maxlength="3000" placeholder="Jelaskan hubungan sasaran dengan Renstra/Renja, program/kegiatan, indikator, risiko, dan bukti pendukung.">${escapeHtml(m.rationale||'')}</textarea><div class="kk-pm-rpjmd-card-foot"><small>${m.updatedAt?'Diperbarui '+escapeHtml(new Date(m.updatedAt).toLocaleString('id-ID')):'Belum ada data tersimpan'}${m.verifierName?' · Verifikator: '+escapeHtml(m.verifierName):''}</small><button type="button" class="kk-pm-action" data-rpjmd-save="${escapeHtml(w.code)}">Simpan & Ajukan Verifikasi</button></div>${m.verifierNote?`<div class="kk-pm-rpjmd-note"><b>Catatan verifikasi:</b> ${escapeHtml(m.verifierNote)}</div>`:''}${canVerify&&m.status==='Menunggu Verifikasi'?`<div class="kk-pm-rpjmd-verify"><input data-rpjmd-verifier="${escapeHtml(w.code)}" value="${escapeHtml(currentUser?.displayName||currentUser?.username||'')}" placeholder="Nama verifikator"/><input data-rpjmd-verifier-note="${escapeHtml(w.code)}" placeholder="Catatan (wajib bila perlu perbaikan)" value=""/><button type="button" data-rpjmd-verify="${escapeHtml(w.code)}" data-rpjmd-decision="Terverifikasi">✓ Verifikasi</button><button type="button" data-rpjmd-verify="${escapeHtml(w.code)}" data-rpjmd-decision="Perlu Perbaikan">↩ Kembalikan</button></div>`:''}</section>`;}).join('')}
+ <div class="kk-pm-rpjmd-note"><b>Alur peran:</b> OPD mengisi dan mengajukan; BP4D/Bappelitbangda mengoordinasikan konsistensi sasaran dan perencanaan; BPKAD menjadi pemilik data/validasi untuk ranah keuangan dan aset sesuai kewenangan; Inspektorat melakukan penelaahan/penjaminan kualitas. Akses verifikasi pada aplikasi saat ini dibatasi ke Admin dan Irban. Setiap pengajuan/keputusan dicatat pada audit trail.</div>`;
+}
+async function kkRpjmdSaveMapping(workpaperCode){
+ if(!kkPmCurrentRow)return; const select=document.querySelector(`[data-rpjmd-goals="${CSS.escape(workpaperCode)}"]`),rationale=document.querySelector(`[data-rpjmd-rationale="${CSS.escape(workpaperCode)}"]`);
+ const goalCodes=Array.from(select?.selectedOptions||[]).map(o=>o.value); const text=String(rationale?.value||'').trim();
+ if(!goalCodes.length){kkPmSetStatus('Pilih minimal satu sasaran RPJMD yang terkait.','error');return;}if(text.length<10){kkPmSetStatus('Uraian hubungan/keterkaitan wajib diisi minimal 10 karakter.','error');return;}
+ const btn=document.querySelector(`[data-rpjmd-save="${CSS.escape(workpaperCode)}"]`);if(btn){btn.disabled=true;btn.textContent='Menyimpan…';}
+ try{await callServerWithRetry('saveKkRpjmdMapping',{opdId:kkPmCurrentRow.id,year:currentYear,workpaperCode,goalCodes,rationale:text},2);await loadKkRpjmdMappings(kkPmCurrentRow);kkPmSetStatus('Pemetaan RPJMD tersimpan dan diajukan untuk verifikasi.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('Gagal menyimpan pemetaan: '+(err.message||err),'error');}finally{if(btn){btn.disabled=false;btn.textContent='Simpan & Ajukan Verifikasi';}}
+}
+async function kkRpjmdVerifyMapping(workpaperCode,decision){
+ if(!kkPmCurrentRow||!['admin','irban'].includes(String(currentUser?.role||''))){kkPmSetStatus('Hanya Admin/Irban yang dapat memverifikasi pemetaan.','error');return;}
+ const verifier=document.querySelector(`[data-rpjmd-verifier="${CSS.escape(workpaperCode)}"]`)?.value||'';const note=document.querySelector(`[data-rpjmd-verifier-note="${CSS.escape(workpaperCode)}"]`)?.value||'';
+ try{await callServerWithRetry('verifyKkRpjmdMapping',{opdId:kkPmCurrentRow.id,year:currentYear,workpaperCode,decision,verifierName:verifier,note},2);await loadKkRpjmdMappings(kkPmCurrentRow);kkPmSetStatus('Keputusan verifikasi tersimpan.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('Verifikasi gagal: '+(err.message||err),'error');}
 }
 async function ensureKkFullWorkbookManifestLoaded(sheetMeta=kkPmWorkbookSheets){
   const sheetCount=Array.isArray(sheetMeta)?sheetMeta.length:0;
@@ -4846,7 +4890,7 @@ function kkPmRenderModal(){
   document.querySelectorAll('#kkPmTabs [data-pm-tab]').forEach(b=>{const target=b.dataset.pmTab;const scoped=/^T[1-4]$/.test(target);b.hidden=scoped&&!allowed.has(target);b.classList.toggle('active',target===kkPmTab);});
   if(/^T[1-4]$/.test(kkPmTab)&&!allowed.has(kkPmTab))kkPmTab='summary';
   kkPmUpdateSummary();const c=document.getElementById('kkPmContent');if(!c)return;
-  if(kkPmTab==='allSheets')c.innerHTML=kkPmRenderAllSheets();else if(kkPmTab==='summary')c.innerHTML=kkPmRenderSummary();else if(allowed.has(kkPmTab))c.innerHTML=kkPmRenderTarget(kkPmTab);else c.innerHTML=kkPmRenderSummary();
+  if(kkPmTab==='allSheets')c.innerHTML=kkPmRenderAllSheets();else if(kkPmTab==='summary')c.innerHTML=kkPmRenderSummary();else if(kkPmTab==='rpjmd')c.innerHTML=kkRpjmdRenderMapping();else if(allowed.has(kkPmTab))c.innerHTML=kkPmRenderTarget(kkPmTab);else c.innerHTML=kkPmRenderSummary();
 }
 function kkPmReadDomValue(target,sub,paramId,field){return document.querySelector(`#kkPmContent [data-pm-field="${field}"][data-pm-target="${CSS.escape(String(target))}"][data-pm-sub="${CSS.escape(String(sub))}"][data-pm-param="${CSS.escape(String(paramId))}"]`)?.value||'';}
 function kkPmCollectDom(target,sub,paramId){
@@ -4898,6 +4942,11 @@ function exportKkPmExcel(){
     const recap=[['KERTAS KERJA PM SPIP',''],['OPD',kkPmCurrentRow.opd||''],['Tahun',currentYear],[],['Target','Total Parameter','Dinilai','Pending','Progress','Rata-rata Level','Evidence Terhubung'],...s.targets.map(x=>[x.target,x.total,x.evaluated,x.pending,x.completion,x.avgLevel||'',x.evidence])];
     recap.push([],['Nilai Existing','Nilai'],['Nilai Struktur & Proses',Number(getRowStructureProcessBreakdown(kkPmCurrentRow).value||0)],['Nilai Maturitas SPIP',computedValueOf(kkPmCurrentRow,'nilaiMaturitas')??''],['MRI',computedValueOf(kkPmCurrentRow,'mri')??''],['IEPK',computedValueOf(kkPmCurrentRow,'iepk')??''],['Nilai Kapabilitas APIP',computedValueOf(kkPmCurrentRow,'nilaiKapabilitasApip')??'']);
     const wsRecap=XLSX.utils.aoa_to_sheet(recap);wsRecap['!cols']=[{wch:24},{wch:18},{wch:14},{wch:14},{wch:14},{wch:18},{wch:24}];wsRecap['!freeze']={xSplit:0,ySplit:5};XLSX.utils.book_append_sheet(wb,wsRecap,'Rekap PM');
+    if(kkRpjmdMaster){
+      const rp=[['PEMETAAN KERTAS KERJA DENGAN RPJMD MAHAKAM ULU 2025–2029'],['Sumber','Perda Kabupaten Mahakam Ulu Nomor 1 Tahun 2026 · Bab III · Tabel 3.6 · hlm. tercetak 195–198'],['Visi',kkRpjmdMaster.vision||''],[],['Kertas Kerja','Kode Sasaran','Nama Sasaran RPJMD','Uraian Keterkaitan','Status Verifikasi','Verifikator','Catatan Verifikasi','Waktu Pembaruan']];
+      KK_RPJMD_WORKPAPERS.forEach(w=>{const m=kkRpjmdMappings.get(w.code)||{};const codes=Array.isArray(m.goalCodes)?m.goalCodes:[];if(!codes.length){rp.push([w.title,'','','',m.status||'Belum Diajukan',m.verifierName||'',m.verifierNote||'',m.updatedAt?new Date(m.updatedAt).toLocaleString('id-ID'):'']);return;}codes.forEach(code=>{const g=kkRpjmdGoals().find(x=>x.code===code);rp.push([w.title,code,g?.name||'',m.rationale||'',m.status||'Belum Diajukan',m.verifierName||'',m.verifierNote||'',m.updatedAt?new Date(m.updatedAt).toLocaleString('id-ID'):'']);});});
+      const wr=XLSX.utils.aoa_to_sheet(rp);wr['!cols']=[{wch:32},{wch:12},{wch:55},{wch:65},{wch:22},{wch:24},{wch:55},{wch:24}];wr['!freeze']={xSplit:0,ySplit:5};XLSX.utils.book_append_sheet(wb,wr,'Pemetaan RPJMD');
+    }
     kkPmTargetsForRow().forEach(target=>{
       const rowsOut=[['OPD',kkPmCurrentRow.opd||'','Tahun',currentYear,'Target',target],[],['Kode','Uraian Subunsur','No','Uraian Parameter','Kode Parameter','MRI','IEPK','Grade','Kriteria','Penjelasan','Cara Pengujian','Hasil Pengujian','Grade Hasil','Kluster AoI','Uraian AoI','Kluster Penyebab','Uraian Penyebab','Kesimpulan Akhir','Evidence Disarankan','Evidence Struktur & Proses']];
       kkPmParamList(target).forEach(p=>{
@@ -4917,7 +4966,7 @@ function exportKkPmExcel(){
 async function openKkPmModal(id){
   const row=rows.find(r=>String(r.id)===String(id)); if(!row)return; kkPmCurrentRow=row;kkPmEditingRowId=row.id;kkPmTab='allSheets';kkPmSelectedSheet='FAQ';kkPmFilters={search:'',unsur:'all',subunsur:'all'};const modal=document.getElementById('kkPmModal');if(!modal)return;
   document.getElementById('kkPmModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;modal.classList.add('active');kkPmSetStatus('Memuat workbook lengkap, PM detail, evidence terhubung, dan nilai formula...');
-  try{await Promise.all([ensureKkPmMasterLoaded(),loadKkPmData(row),loadKkPmWorkbookData(row),syncKkComputedValues(row,false)]);kkPmSetStatus('✓ Data KK PM siap; sheet dan target ditampilkan sesuai OPD. Workbook Google Sheets akan menggunakan template baru setelah ID template dikonfigurasi.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('Gagal memuat KK PM SPIP: '+(err.message||err),'error');kkPmRenderModal();}
+  try{await Promise.all([ensureKkPmMasterLoaded(),ensureKkRpjmdMasterLoaded(),loadKkPmData(row),loadKkPmWorkbookData(row),loadKkRpjmdMappings(row),syncKkComputedValues(row,false)]);kkPmSetStatus('✓ Data KK PM siap; sheet dan target ditampilkan sesuai OPD. Workbook Google Sheets akan menggunakan template baru setelah ID template dikonfigurasi.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('Gagal memuat KK PM SPIP: '+(err.message||err),'error');kkPmRenderModal();}
 }
 
 function closeKkPmModal(){document.getElementById('kkPmModal')?.classList.remove('active');kkPmEditingRowId=null;kkPmCurrentRow=null;kkPmWorkbookData=null;kkPmWorkbookSheets=[];kkPmSelectedSheet='';kkPmStateMap=new Map();kkPmMetaMap=new Map();kkPmSaveTimers.forEach(t=>clearTimeout(t));kkPmSaveTimers.clear();kkPmMetaSaveTimers.forEach(t=>clearTimeout(t));kkPmMetaSaveTimers.clear();}
@@ -4931,6 +4980,8 @@ document.addEventListener('click',e=>{
   const syncW=e.target.closest('#kkPmSyncWorkbook'); if(syncW){createKkPmWorkbookForCurrentRow(); return;}
   const expFull=e.target.closest('#kkPmExportFull'); if(expFull){exportKkPmFullWorkbook(); return;}
   const tab=e.target.closest('#kkPmTabs [data-pm-tab]');if(tab){kkPmTab=tab.dataset.pmTab;kkPmFilters={search:'',unsur:'all',subunsur:'all'};kkPmRenderModal();return;}
+  const rpjmdSave=e.target.closest('[data-rpjmd-save]');if(rpjmdSave){kkRpjmdSaveMapping(rpjmdSave.dataset.rpjmdSave);return;}
+  const rpjmdVerify=e.target.closest('[data-rpjmd-verify]');if(rpjmdVerify){kkRpjmdVerifyMapping(rpjmdVerify.dataset.rpjmdVerify,rpjmdVerify.dataset.rpjmdDecision);return;}
   const targetBtn=e.target.closest('#kkPmContent [data-pm-tab-target]');if(targetBtn){kkPmTab=targetBtn.dataset.pmTabTarget;kkPmFilters={search:'',unsur:'all',subunsur:'all'};kkPmRenderModal();return;}
   const exp=e.target.closest('#kkPmExport');if(exp){exportKkPmExcel();return;}
   const btn=e.target.closest('.btn-kk-pm-spip');if(btn){openKkPmModal(btn.dataset.id);return;}
