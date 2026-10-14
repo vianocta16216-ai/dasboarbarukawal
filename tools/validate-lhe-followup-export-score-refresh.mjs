@@ -1,0 +1,18 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const root=path.resolve(path.dirname(new URL(import.meta.url).pathname),'..');
+const app=fs.readFileSync(path.join(root,'public/script.js'),'utf8');
+const html=fs.readFileSync(path.join(root,'public/index.html'),'utf8');
+const server=fs.readFileSync(path.join(root,'functions/myCloudinaryHandler.js'),'utf8');
+let checks=0;const check=(v,m)=>{assert.ok(v,m);checks++;};
+check(html.includes('id="lheExportExcel"'),'LHE modal must provide Excel export button');
+check(app.includes('function exportLheFollowupsExcel()'),'Export function must exist');
+for(const h of ['Ref. rekomendasi','Rencana aksi / upaya perbaikan yang diusulkan','Target / indikator penyelesaian','Bukti tindak lanjut yang diperlukan','Realisasi upaya perbaikan','Status terkini','Link bukti tindak lanjut','Catatan verifikasi APIP'])check(app.includes(h),'Export column missing: '+h);
+check(app.includes('XLSX.utils.book_new()')&&app.includes('XLSX.writeFile(wb'),'Export must create and download a real workbook');
+check(app.includes("function lheCanDelete(){return ['admin','irban','auditor']"),'Delete button must be visible to authorized Inspektorat auditor role');
+check(server.includes("'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','deleteLheFollowup'"),'Auditor role must be authorized to invoke the scoped delete action');
+check(!server.includes("'deleteBackup','deleteYear','deleteLheFollowup','syncKkPmMasterNow'"),'LHE item deletion must not be blocked as admin-only for scoped auditors');
+check(server.includes('const workbookBackedParams=new Set'),'Current normalized workbook evidence must supersede stale legacy evidence per parameter');
+check(server.includes('legacyWithoutId.filter(file=>!workbookBackedParams.has'),'Stale legacy entries without upload IDs must not preserve old scores when normalized evidence exists');
+console.log(JSON.stringify({status:'PASS',checks},null,2));
