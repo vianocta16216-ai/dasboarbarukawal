@@ -5138,8 +5138,8 @@ document.addEventListener('click',function(e){
 
 // ====== TINDAK LANJUT LHE SPIP (tahun berjalan + tahun sebelumnya) ======
 function lheYearPair(){const y=Number(currentYear)||new Date().getFullYear();return {current:String(y),previous:String(y-1),calendarCurrent:String(new Date().getFullYear()),calendarPrevious:String(new Date().getFullYear()-1),label:`${y} / ${y-1}`};}
-function lheMapDueDateToTargetYear(rawDate,sourceYear,targetYear){const source=Number(sourceYear),target=String(targetYear);if(!Number.isFinite(source)||!/^\d{4}$/.test(target))return String(rawDate||'');return String(rawDate||'').replace(/\b(?:19|20)\d{2}\b/g,match=>{const y=Number(match);return (y===source||y===source+1)?target:match;});}
-function lheRefreshYearLabels(){const years=lheYearPair();const target=lheField('lheTargetYear');if(target)target.value=years.current;const banner=lheField('lheFollowupYearLabel');if(banner)banner.textContent=`Tahun Anggaran tindak lanjut: ${years.current} (mengikuti Tahun Anggaran aktif aplikasi). Tahun pada templat tetap menunjukkan tahun asli dokumen sumber.`;const modalTitle=lheField('lheFollowupOpdName');if(modalTitle){const row=rows.find(r=>String(r.id)===String(lheUi.opdId));modalTitle.textContent=`${row?.opd||'Tanpa Nama'} · Tahun ${years.current}`;}if(lheUi?.templateDueDateAuto){const select=lheField('lheTemplateSelect'),t=select&&select.value!==''?lheUi.templates[Number(select.value)]:null,due=lheField('lheDueDate');if(t&&due&&due.value===lheUi.templateDueDateValue){due.value=lheMapDueDateToTargetYear(t.dueDate,t.sourceYear,years.current);lheUi.templateDueDateValue=due.value;}}}
+function lheMapDueDateToTargetYear(rawDate,sourceYear,targetYear){const target=String(targetYear);if(!/^\d{4}$/.test(target))return String(rawDate||'');return String(rawDate||'').replace(/\b(?:19|20)\d{2}\b/g,()=>target).replace(/\btahun berjalan\b/gi,target).replace(/\btahun berikutnya\b/gi,String(Number(target)+1));}
+function lheRefreshYearLabels(){const years=lheYearPair();const target=lheField('lheTargetYear');if(target)target.value=years.current;const banner=lheField('lheFollowupYearLabel');if(banner)banner.textContent=`Tahun Anggaran tindak lanjut: ${years.current} (otomatis mengikuti Tahun Anggaran aktif aplikasi).`;const modalTitle=lheField('lheFollowupOpdName');if(modalTitle){const row=rows.find(r=>String(r.id)===String(lheUi.opdId));modalTitle.textContent=`${row?.opd||'Tanpa Nama'} · Tahun ${years.current}`;}if(lheUi?.templateDueDateAuto){const select=lheField('lheTemplateSelect'),t=select&&select.value!==''?lheUi.templates[Number(select.value)]:null,due=lheField('lheDueDate');if(t&&due&&due.value===lheUi.templateDueDateValue){due.value=lheMapDueDateToTargetYear(t.dueDate,years.current,years.current);lheUi.templateDueDateValue=due.value;}}}
 const lheUi={opdId:null,items:[],templates:[],templateLoaded:false,editingId:null,selectedFollowupId:null,templateDueDateAuto:false,templateDueDateValue:''};
 function lheStatus(message,type=''){const el=document.getElementById('lheFollowupStatus');if(!el)return;el.textContent=message||'';el.className='sheet-links-status'+(type?' '+type:'');el.style.display=message?'block':'none';}
 function lheCanEdit(){return ['admin','auditor','opd','irban'].includes(String(currentUser?.role||''));}
@@ -5150,7 +5150,10 @@ function lheSetForm(item={}){
   lheUi.editingId=item.id||null;lheUi.selectedFollowupId=item.id||null;
   lheField('lheEditorTitle').textContent=item.id?'Ubah tindak lanjut':'Tambah tindak lanjut';
   lheRefreshYearLabels();
-  lheField('lheSourceYear').value=String(item.source_year||item.sourceYear||lheYearPair().current);
+  const sourceYearValue=String(item.source_year||item.sourceYear||lheYearPair().current);
+  const sourceYearSelect=lheField('lheSourceYear');
+  if(sourceYearSelect&&!Array.from(sourceYearSelect.options).some(option=>option.value===sourceYearValue)){const option=document.createElement('option');option.value=sourceYearValue;option.textContent=`Tahun LHE ${sourceYearValue} (data tersimpan)`;option.dataset.legacyYear='true';sourceYearSelect.add(option);}
+  if(sourceYearSelect)sourceYearSelect.value=sourceYearValue;
   if(lheField('lheTargetYear'))lheField('lheTargetYear').value=lheYearPair().current;
   lheField('lheRef').value=item.recommendation_ref||item.recommendationRef||'';
   lheField('lheRecommendation').value=item.recommendation||'';
@@ -5193,7 +5196,7 @@ function renderLheFollowupList(){
     const deleteBtn=lheCanDelete()?`<button type="button" class="lhe-delete-followup" data-id="${sheetLinksEsc(item.id)}">Hapus Butir</button>`:'';
     return `<article class="lhe-followup-card" style="${active?'border-color:#2563eb;background:#eff6ff;':''}">
       <h5>${sheetLinksEsc(item.recommendation_ref||'Tanpa Ref.')} · ${sheetLinksEsc(item.recommendation||'Rekomendasi belum diisi')}</h5>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px;"><span class="badge">Tahun TL ${sheetLinksEsc(item.year||currentYear)}</span><span class="badge">Sumber LHE ${sheetLinksEsc(item.source_year||'—')}</span><span class="badge">${sheetLinksEsc(item.status||'Belum diverifikasi')}</span><span class="badge">Bukti ${evidence.length}</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px;"><span class="badge">Tahun TL ${sheetLinksEsc(item.year||currentYear)}</span><span class="badge">Tahun LHE ${sheetLinksEsc(item.source_year||'—')}</span><span class="badge">${sheetLinksEsc(item.status||'Belum diverifikasi')}</span><span class="badge">Bukti ${evidence.length}</span></div>
       <p><b>Rencana aksi:</b> ${sheetLinksEsc(item.action_plan||'Belum diisi')}</p>
       <p><b>Indikator:</b> ${sheetLinksEsc(item.indicator||'Belum diisi')}</p>
       <p><b>Bukti dukung yang diperlukan:</b> ${sheetLinksEsc(item.evidence_required||'Belum ditentukan')}</p>
@@ -5219,31 +5222,33 @@ async function loadLheFollowups(){
 }
 async function loadLheTemplates(){
   if(!lheUi.templateLoaded){
-    const response=await fetch(`/lhe-followup-templates.json?v=20261015-lhe-years-v4&_=${Date.now()}`,{cache:'no-store'});
+    const response=await fetch(`/lhe-followup-templates.json?v=20261015-lhe-neutral-templates-v1&_=${Date.now()}`,{cache:'no-store'});
     if(!response.ok)throw new Error('File template rekomendasi tidak dapat dimuat.');
     const payload=await response.json();lheUi.templates=Array.isArray(payload.templates)?payload.templates:[];lheUi.templateLoaded=true;
   }
   const years=lheYearPair();
   const select=lheField('lheTemplateSelect');
-  const sourceYears=[...new Set(lheUi.templates.map(t=>String(t.sourceYear||'')).filter(Boolean))].sort((a,b)=>Number(b)-Number(a));
-  const sourceLabel=sourceYears.length?`Dokumen sumber asli tersedia: ${sourceYears.join(', ')}`:'Belum ada templat sumber';
   if(select){
     const prior=select.value;
-    select.innerHTML=`<option value="">Pilih templat rekomendasi · tahun tindak lanjut ${sheetLinksEsc(years.current)} (${sheetLinksEsc(sourceLabel)})…</option>`+lheUi.templates.map((t,i)=>`<option value="${i}">Sumber asli ${sheetLinksEsc(t.sourceYear)} · ${sheetLinksEsc(t.recommendationRef)} — ${sheetLinksEsc(String(t.recommendation||'').slice(0,110))}</option>`).join('');
+    select.innerHTML=`<option value="">Pilih templat rekomendasi untuk Tahun Anggaran ${sheetLinksEsc(years.current)}…</option>`+lheUi.templates.map((t,i)=>`<option value="${i}">${sheetLinksEsc(t.category||'Rekomendasi umum')} · Ref. ${sheetLinksEsc(t.recommendationRef||'—')} — ${sheetLinksEsc(String(t.recommendation||'').slice(0,150))}</option>`).join('');
     if(prior!==''&&lheUi.templates[Number(prior)])select.value=prior;
   }
   const sourceSelect=lheField('lheSourceYear');
   if(sourceSelect){
     const current=String(sourceSelect.value||years.current);
-    const options=new Map();
-    // Current/previous year choices support new records; historical templates retain their
-    // authentic source year so the application never rewrites the year of an old report.
-    [years.current,years.previous,...sourceYears].forEach(y=>{if(y&&!options.has(y))options.set(y,y===years.current?`Tahun berjalan ${y}`:y===years.previous?`Tahun sebelumnya ${y}`:`Sumber historis ${y}`);});
-    sourceSelect.innerHTML=[...options].map(([value,label])=>`<option value="${sheetLinksEsc(value)}">${sheetLinksEsc(label)}</option>`).join('');
-    sourceSelect.value=options.has(current)?current:years.current;
+    const currentNumber=Number(years.current)||new Date().getFullYear();
+    const earliestYear=Math.max(2000,currentNumber-20);
+    const yearOptions=[];
+    for(let year=currentNumber+2;year>=earliestYear;year--){
+      const value=String(year);
+      const label=value===years.current?`Tahun berjalan — ${value}`:value===years.previous?`Tahun sebelumnya — ${value}`:`Tahun LHE ${value}`;
+      yearOptions.push(`<option value="${value}">${sheetLinksEsc(label)}</option>`);
+    }
+    sourceSelect.innerHTML=yearOptions.join('');
+    sourceSelect.value=yearOptions.some(option=>option.includes(`value="${current}"`))?current:years.current;
   }
   const notice=lheField('lheFollowupNotice');
-  if(notice)notice.textContent=`Semua butir tindak lanjut yang disimpan pada layar ini terkait Tahun Anggaran aktif ${years.current}. Pilihan templat menunjukkan tahun asli dokumen sumber (${sourceYears.join(', ')||'belum tersedia'}); tahun historis tidak diganti otomatis. Realisasi, status, dan bukti tetap harus diperiksa serta diverifikasi secara terpisah.`;
+  if(notice)notice.textContent=`Pilih rekomendasi yang paling sesuai dengan LHE yang sedang ditindaklanjuti. Tahun tindak lanjut otomatis mengikuti Tahun Anggaran aktif ${years.current}. Templat hanya acuan: sesuaikan rumusan, PIC, indikator dan tenggat; realisasi, status serta bukti aktual harus diisi dan diverifikasi terpisah.`;
   lheRefreshYearLabels();
 }
 async function openLheFollowupModal(id){
@@ -5260,14 +5265,14 @@ function chooseLheTemplate(){
   const t=lheUi.templates[Number(idx)];if(!t)return;
   lheUi.editingId=null;lheUi.selectedFollowupId=null;
   const targetYear=lheYearPair().current;
-  const suggestedDueDate=lheMapDueDateToTargetYear(t.dueDate,t.sourceYear,targetYear);
-  lheSetForm({sourceYear:t.sourceYear,recommendationRef:t.recommendationRef,recommendation:t.recommendation,actionPlan:t.actionPlan,indicator:t.indicator,evidenceRequired:t.evidenceRequired,pic:t.pic,dueDate:suggestedDueDate,status:'Belum diverifikasi'});
+  const suggestedDueDate=lheMapDueDateToTargetYear(t.dueDate,targetYear,targetYear);
+  lheSetForm({sourceYear:targetYear,recommendationRef:t.recommendationRef,recommendation:t.recommendation,actionPlan:t.actionPlan,indicator:t.indicator,evidenceRequired:t.evidenceRequired,pic:t.pic,dueDate:suggestedDueDate,status:'Belum diverifikasi'});
   lheUi.templateDueDateAuto=true;lheUi.templateDueDateValue=suggestedDueDate;
   lheField('lheActualAction').value='';
   let baseline=lheField('lheTemplateBaseline');
   if(!baseline){baseline=document.createElement('div');baseline.id='lheTemplateBaseline';baseline.className='sheet-links-info';lheField('lheTemplateSelect').insertAdjacentElement('afterend',baseline);}
-  baseline.textContent=`Catatan sumber (belum diverifikasi): status awal di workbook “${t.sourceStatus||'tidak diisi'}”; realisasi yang tertulis: “${(t.sourceActualAction||'tidak diinformasikan').slice(0,380)}”. Jangan salin sebagai realisasi terbaru tanpa pemeriksaan. Bukti yang disarankan: ${t.evidenceRequired||'lihat laporan sumber'}. Sumber: ${t.source||'workbook rencana aksi'}.`;
-  renderLheEvidenceList([]);lheStatus(`Template ${t.sourceYear} / ${t.recommendationRef} dimuat sebagai acuan, bukan status terverifikasi.`,'success');
+  baseline.textContent=`Templat ini hanya acuan. Status dan realisasi tidak disalin sebagai kondisi aktual. Periksa dan sesuaikan dengan LHE serta keadaan terbaru. Bukti dukung yang disarankan: ${t.evidenceRequired||'tentukan sesuai rekomendasi'}.`;
+  renderLheEvidenceList([]);lheStatus(`Templat rekomendasi dimuat untuk Tahun Anggaran ${targetYear}; status dan realisasi tetap perlu diperiksa.`,'success');
 }
 async function saveLheFollowup(){
   if(!lheCanEdit()){lheStatus('Role akun ini hanya dapat membaca tindak lanjut.','error');return;}

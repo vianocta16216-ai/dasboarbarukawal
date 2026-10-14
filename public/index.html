@@ -514,8 +514,8 @@
   <div class="sheet-links-modal" style="max-width:1040px;max-height:92vh;overflow:auto;">
     <div class="sheet-links-header"><h3>🧾 Tindak Lanjut LHE SPIP — <span id="lheFollowupOpdName"></span></h3><button class="sheet-links-close" id="lheFollowupClose" aria-label="Tutup">&times;</button></div>
     <div class="sheet-links-body">
-      <div class="sheet-links-info" id="lheFollowupNotice">Semua butir disimpan berdasarkan Tahun Anggaran yang sedang dipilih. Tahun pada templat tetap menunjukkan tahun asli dokumen sumber; realisasi, status, dan bukti harus diperiksa serta diverifikasi secara terpisah.</div>
-      <div id="lheFollowupYearLabel" class="sheet-links-info" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af;font-weight:700;margin-top:8px;">Tahun Anggaran tindak lanjut mengikuti pilihan Tahun Anggaran aplikasi.</div>
+      <div class="sheet-links-info" id="lheFollowupNotice">Semua butir disimpan berdasarkan Tahun Anggaran aktif. Pilih templat yang paling sesuai dengan isi LHE; realisasi, status, dan bukti aktual harus diisi serta diverifikasi terpisah.</div>
+      <div id="lheFollowupYearLabel" class="sheet-links-info" style="background:#eff6ff;border-color:#bfdbfe;color:#1e40af;font-weight:700;margin-top:8px;">Tahun Anggaran tindak lanjut mengikuti Tahun Anggaran aktif aplikasi.</div>
       <div class="sheet-links-status" id="lheFollowupStatus"></div>
       <div class="lhe-layout" style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:16px;align-items:start;">
         <section style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;min-width:0;">
@@ -523,11 +523,11 @@
         </section>
         <section style="border:1px solid #e2e8f0;border-radius:12px;padding:14px;min-width:0;">
           <h4 style="margin:0 0 10px;color:#0f172a;" id="lheEditorTitle">Tambah tindak lanjut</h4>
-          <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Templat rekomendasi sumber</label>
-          <select id="lheTemplateSelect" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;"><option value="">Memuat templat dengan tahun sumber asli…</option></select>
-          <div style="font-size:11px;color:#64748b;margin:5px 0 10px;">Saat dipilih, template mengisi referensi, rencana, indikator, bukti yang diperlukan, PIC, dan tenggat. Realisasi baru tetap kosong sampai diperiksa.</div>
+          <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Templat rekomendasi</label>
+          <select id="lheTemplateSelect" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;"><option value="">Memuat templat rekomendasi…</option></select>
+          <div style="font-size:11px;color:#64748b;margin:5px 0 10px;">Saat dipilih, templat mengisi referensi, rencana aksi, indikator, bukti dukung, PIC, dan usulan tenggat. Rumusan harus disesuaikan dengan LHE yang ditindaklanjuti; realisasi aktual tetap kosong sampai diperiksa.</div>
           <div class="lhe-form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <label style="font-size:12px;font-weight:700;">Tahun Sumber LHE (tahun dokumen asli)<select id="lheSourceYear" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"><option value="2026">Tahun berjalan</option></select></label>
+            <label style="font-size:12px;font-weight:700;">Tahun LHE (sesuai dokumen yang ditindaklanjuti)<select id="lheSourceYear" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"><option value="">Memuat pilihan tahun…</option></select></label>
             <label style="font-size:12px;font-weight:700;">Ref. Rekomendasi<input id="lheRef" maxlength="50" placeholder="Contoh: 1.a" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></label>
             <label style="font-size:12px;font-weight:700;grid-column:1/-1;">Rekomendasi laporan (ringkasan)<textarea id="lheRecommendation" rows="3" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></textarea></label>
             <label style="font-size:12px;font-weight:700;grid-column:1/-1;">Rencana aksi / upaya perbaikan<textarea id="lheActionPlan" rows="3" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></textarea></label>
