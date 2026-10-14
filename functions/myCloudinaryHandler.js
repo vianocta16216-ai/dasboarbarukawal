@@ -115,7 +115,7 @@ function getPmSheetProfile(sheets){
   if(match(KK_FULL_TEMPLATE_SHEET_NAMES))return 'LEGACY_PK_28';
   return null;
 }
-async function readLiveKkMasterRows(env,masterKind='PK'){
+async function readLiveKkMasterRows(env,masterKind='PK',options={}){
   const kind=String(masterKind||'PK').toUpperCase()==='PM'?'PM':'PK';
   const mappings=kind==='PM'
     ?{T1:'KK3.1',T2:'KK3.2',T3:'KK3.3',T4:'KK3.4'}
@@ -125,7 +125,7 @@ async function readLiveKkMasterRows(env,masterKind='PK'){
     :(env.GOOGLE_SHEETS_PK_MASTER_ID||env.GOOGLE_SHEETS_PK_TEMPLATE_ID||env.GOOGLE_SHEETS_TEMPLATE_ID||''));
   if(!spreadsheetId)return{live:false,masterKind:kind,message:kind==='PM'?'GOOGLE_SHEETS_PM_TEMPLATE_ID belum diatur.':'GOOGLE_SHEETS_PK_MASTER_ID belum diatur; aplikasi memakai snapshot master yang disertakan.'};
   const cacheKey=`${kind}:${spreadsheetId}`;const now=Date.now();const cached=LIVE_KK_MASTER_ROWS_CACHE.get(cacheKey);
-  if(cached&&cached.expiresAt>now)return cached.payload;
+  if(!options.forceRefresh&&cached&&cached.expiresAt>now)return cached.payload;
   const inflight=LIVE_KK_MASTER_ROWS_PENDING.get(cacheKey);if(inflight)return inflight;
   const job=(async()=>{
     const token=await getGoogleAccessToken(env);
@@ -2179,7 +2179,7 @@ export async function onRequest({ request, env, ctx }) {
       case 'getKkMasterSheetRows': {
         const masterKind=String(params.masterKind||'PK').toUpperCase()==='PM'?'PM':'PK';
         try{
-          const snapshot=await readLiveKkMasterRows(env,masterKind);
+          const snapshot=await readLiveKkMasterRows(env,masterKind,{forceRefresh:params.forceRefresh===true||params.forceRefresh==='true'});
           if(masterKind==='PM'&&snapshot.live)schedulePmMasterPropagation(env,year,ctx);
           return jsonResponse({status:'success',...snapshot});
         }catch(err){return jsonResponse({status:'success',live:false,masterKind,message:String(err?.message||err).slice(0,500),fallback:'snapshot'});}
