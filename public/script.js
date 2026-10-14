@@ -845,7 +845,7 @@ function callServer(action, params = {}) {
       const msg=(data&&data.message)||text.slice(0,200)||`HTTP ${response.status}`;
       const err=new Error(`HTTP ${response.status}: ${msg}`);
       err.status=response.status;
-      err.transient=[408,425,429,500,502,503,504].includes(response.status);
+      err.transient=[408,425,429,500,502,503,504].includes(response.status) || (action==='createKkPmSheets' && data?.code==='WORKBOOK_SYNC_IN_PROGRESS');
       err.data=data;
       throw err;
     }
@@ -867,7 +867,9 @@ async function callServerWithRetry(action, params={}, retries=2){
     try{return await callServer(action,params);}catch(err){
       lastError=err;
       if(!err.transient || attempt===retries)throw err;
-      await new Promise(r=>setTimeout(r,500*Math.pow(2,attempt)+Math.floor(Math.random()*250)));
+      const lockRetryMs=err?.data?.code==='WORKBOOK_SYNC_IN_PROGRESS'?Math.min(5000,Math.max(1000,Number(err.data.retryAfterSeconds||3)*1000)):0;
+      const retryDelay=lockRetryMs|| (500*Math.pow(2,attempt)+Math.floor(Math.random()*250));
+      await new Promise(r=>setTimeout(r,retryDelay));
     }
   }
   throw lastError;
@@ -998,19 +1000,18 @@ async function loadYears() {
     const select = document.getElementById('yearSelect');
     select.innerHTML = '';
     if (!years || years.length === 0) years = [currentYear];
-    const uniqueYears = [...new Set(years)].sort((a,b) => b.localeCompare(a));
+    const calendarYear=String(new Date().getFullYear());
+    const uniqueYears = [...new Set([...(Array.isArray(years)?years:[]).map(String),calendarYear])].sort((a,b) => b.localeCompare(a));
     uniqueYears.forEach(year => {
       const option = document.createElement('option');
       option.value = year;
       option.textContent = year;
       select.appendChild(option);
     });
-    if (!uniqueYears.includes(currentYear)) {
-      select.value = uniqueYears[0];
-      currentYear = uniqueYears[0];
-    } else {
-      select.value = currentYear;
-    }
+    // On a fresh calendar year, prefer the current year even before historical rows
+    // exist. The backend seeds the year record and getData ensures the default OPD rows.
+    if (!uniqueYears.includes(currentYear)) currentYear=calendarYear;
+    select.value=currentYear;
   } catch (e) {
     console.error('Gagal memuat tahun:', e);
   }
@@ -3217,8 +3218,8 @@ document.getElementById('addYearOk').addEventListener('click', async function() 
 document.getElementById('btnDeleteYear').addEventListener('click', function() {
   const year = document.getElementById('yearSelect').value;
   if (!year) return;
-  if (year === '2026') {
-    showWarning('Tahun default 2026 tidak dapat dihapus.');
+  if (year === String(new Date().getFullYear())) {
+    showWarning('Tahun berjalan tidak dapat dihapus.');
     return;
   }
   document.getElementById('deleteYearMessage').textContent = `Yakin ingin menghapus tahun ${year}? Semua data OPD untuk tahun ini akan hilang.`;
@@ -3266,7 +3267,7 @@ document.getElementById('deleteYearOk').addEventListener('click', async function
       return;
     }
     await loadYears();
-    currentYear = '2026';
+    currentYear = String(new Date().getFullYear());
     document.getElementById('yearSelect').value = currentYear;
     await loadData();
     document.getElementById('deleteYearModal').classList.remove('active');
@@ -3289,6 +3290,13 @@ document.getElementById('yearSelect').addEventListener('change', function() {
   document.getElementById('currentYearLabel').textContent = currentYear;
   connectRealtime();
   loadData();
+  // If the LHE follow-up modal stays open while the budget year changes, refresh its
+  // target-year banner and load the rows that actually belong to the newly selected year.
+  if(document.getElementById('lheFollowupModal')?.classList.contains('active')){
+    lheRefreshYearLabels();
+    loadLheTemplates().catch(err=>lheStatus('Gagal memperbarui tahun tindak lanjut: '+(err.message||err),'error'));
+    loadLheFollowups();
+  }
 });
 
 // ====== BACKUP ======
@@ -4653,6 +4661,9 @@ let kkRpjmdMappings=new Map();
 let kkFullWorkbookManifest=null;
 let kkPmWorkbookData=null;
 let kkPmWorkbookSheets=[];
+let kkPmWorkbookNeedsSync=false;
+let kkPmWorkbookSyncReason='';
+let kkPmWorkbookOpenBusy=false;
 let kkPmSelectedSheet='';
 const KK_PM_TOTAL_PARAMETERS=183;
 let kkPmCurrentRow=null;
@@ -4699,7 +4710,7 @@ async function ensureKkPmMasterLoaded(forceRefresh=true){
   // Muat snapshot statis tanpa cache browser ketika master belum ada; refresh live harus terjadi
   // setiap modal PM dibuka agar perubahan master tidak tertahan pada objek kkPmMaster lama.
   if(!kkPmMaster){
-    const r=await fetch('/kk-pm-exact-workbook-master.json?v=20261015.1',{cache:'no-store'});
+    const r=await fetch('/kk-pm-exact-workbook-master.json?v=20261015.2',{cache:'no-store'});
     if(!r.ok)throw new Error(`Master KK PM SPIP tidak dapat dimuat (HTTP ${r.status})`);
     kkPmMaster=await r.json();
   }
@@ -4758,7 +4769,7 @@ async function kkRpjmdVerifyMapping(workpaperCode,decision){
 async function ensureKkFullWorkbookManifestLoaded(sheetMeta=kkPmWorkbookSheets){
   const sheetCount=Array.isArray(sheetMeta)?sheetMeta.length:0;
   const legacy=sheetCount===28;
-  const file=legacy?'/kk-full-workbook-manifest.json?v=20261008.6':'/kk-pm-full-workbook-manifest.json?v=20261013.1';
+  const file=legacy?'/kk-full-workbook-manifest.json?v=20261008.6':'/kk-pm-full-workbook-manifest.json?v=20261015.2';
   const expectedKey=legacy?'legacy28':'pm26';
   if(kkFullWorkbookManifest?.__profile===expectedKey)return kkFullWorkbookManifest;
   const r=await fetch(file,{cache:'force-cache'});
@@ -4773,7 +4784,12 @@ async function loadKkPmWorkbookData(row){
   const d=await callServerWithRetry('getKkPmSheets',{opdId:row.id,year:currentYear},2);
   kkPmWorkbookData=d?.kkPmData||{};
   kkPmWorkbookSheets=Array.isArray(d?.sheets)?d.sheets:[];
-  if(d?.needsSync)kkPmSetStatus('ℹ️ Data PM di aplikasi tetap dapat diisi. Untuk membuat workbook Google Sheets dengan struktur PM terbaru, admin perlu menyiapkan GOOGLE_SHEETS_PM_TEMPLATE_ID; workbook yang sudah tertaut tidak akan ditimpa otomatis.');
+  kkPmWorkbookNeedsSync=Boolean(d?.needsSync);
+  kkPmWorkbookSyncReason=String(d?.needsSyncReason||'');
+  // Replace the stale in-memory row pointer with the authoritative D1 link. Other
+  // account sessions will similarly re-read D1 before opening a workbook.
+  row.kkPmData={...(row.kkPmData||{}),workbook:kkPmWorkbookData};
+  if(d?.needsSync)kkPmSetStatus('⚠️ '+(d.needsSyncReason||'Workbook perlu disinkronkan dengan master PM terbaru.')+' Klik Buka Spreadsheet PM untuk memperbarui tautan otomatis; jika master tidak tersedia, aplikasi akan menampilkan penyebabnya dan tidak membuka file lama.','error');
   await ensureKkFullWorkbookManifestLoaded(kkPmWorkbookSheets);
   return d;
 }
@@ -4905,11 +4921,11 @@ function kkPmRenderAllSheets(){
   const current=kkPmWorkbookSheetByName(kkPmSelectedSheet||'');
   const sample=current?.sampleRows||[];
   const preview=current
-    ? `<div class="kk-pm-workbook-preview"><div class="kk-pm-workbook-preview-head"><div><div class="kk-pm-kicker">SHEET ${current.order} / ${sheets.length}</div><h4>${escapeHtml(current.sheetName)}</h4><p>${escapeHtml(current.description||'')}</p></div><div class="kk-pm-preview-actions">${openUrl?`<a class="kk-pm-action-link" href="${escapeHtml(openUrl)}" target="_blank" rel="noopener">↗️ Buka Sheet Ini</a>`:''}</div></div><div class="kk-pm-preview-meta"><span>Jenis <b>${escapeHtml(current.type==='workpaper'?'Kertas Kerja':'Pendukung/Referensi')}</b></span><span>Dimensi <b>${escapeHtml(current.dimension||'')}</b></span><span>Formula <b>${Number(current.formulaCount||0).toLocaleString('id-ID')}</b></span><span>Mode <b>Lazy-load</b></span></div><div class="kk-pm-sample-rows">${sample.map(r=>`<div class="kk-pm-sample-row"><b>Baris ${r.row}</b><div>${(r.cells||[]).map(c=>`<span><em>${escapeHtml(c[0])}</em> ${escapeHtml(String(c[1]).slice(0,220))}</span>`).join('')}</div></div>`).join('')}</div><div class="kk-pm-workbook-note"><b>Seluruh isi dan formula tetap utuh di Spreadsheet sumber.</b> Sheet besar seperti KK 5.2 tidak dimuat seluruh sel ke browser. Dashboard hanya memuat metadata + preview kecil, lalu operator membuka sheet asli saat perlu mengisi/menelusuri seluruh baris. Ini mencegah lag ketika banyak operator aktif.</div></div>`
+    ? `<div class="kk-pm-workbook-preview"><div class="kk-pm-workbook-preview-head"><div><div class="kk-pm-kicker">SHEET ${current.order} / ${sheets.length}</div><h4>${escapeHtml(current.sheetName)}</h4><p>${escapeHtml(current.description||'')}</p></div><div class="kk-pm-preview-actions">${openUrl?`<button type="button" class="kk-pm-action-link" data-pm-open-workbook="${escapeHtml(current.sheetName)}">↗️ Buka Sheet Ini</button>`:''}</div></div><div class="kk-pm-preview-meta"><span>Jenis <b>${escapeHtml(current.type==='workpaper'?'Kertas Kerja':'Pendukung/Referensi')}</b></span><span>Dimensi <b>${escapeHtml(current.dimension||'')}</b></span><span>Formula <b>${Number(current.formulaCount||0).toLocaleString('id-ID')}</b></span><span>Mode <b>Lazy-load</b></span></div><div class="kk-pm-sample-rows">${sample.map(r=>`<div class="kk-pm-sample-row"><b>Baris ${r.row}</b><div>${(r.cells||[]).map(c=>`<span><em>${escapeHtml(c[0])}</em> ${escapeHtml(String(c[1]).slice(0,220))}</span>`).join('')}</div></div>`).join('')}</div><div class="kk-pm-workbook-note"><b>Seluruh isi dan formula tetap utuh di Spreadsheet sumber.</b> Sheet besar seperti KK 5.2 tidak dimuat seluruh sel ke browser. Dashboard hanya memuat metadata + preview kecil, lalu operator membuka sheet asli saat perlu mengisi/menelusuri seluruh baris. Ini mencegah lag ketika banyak operator aktif.</div></div>`
     : `<div class="kk-pm-workbook-empty">Pilih sheet dari daftar yang sesuai jenis OPD untuk melihat metadata, preview, dan membuka sheet aslinya.</div>`;
   const workbookReady=!!wb.workbookUrl;
   const sheetCards=`<div class="kk-pm-sheet-group"><div class="kk-pm-sheet-group-title">Sheet tersedia untuk OPD ini · ${sheets.length} sheet</div>${sheets.map(x=>`<button type="button" class="kk-pm-workbook-sheet-card ${kkPmSelectedSheet===x.sheetName?'active':''}" data-pm-sheet="${escapeHtml(x.sheetName)}"><span class="kk-pm-sheet-order">${x.order}</span><div><b>${escapeHtml(x.sheetName)}</b><strong>${escapeHtml(x.description||'')}</strong><small>${escapeHtml(x.phase||'')} · ${escapeHtml(x.type==='workpaper'?'Kertas Kerja':'Pendukung/Referensi')} · ${escapeHtml(x.dimension||'—')} · ${Number(x.formulaCount||0).toLocaleString('id-ID')} formula</small></div><span class="kk-pm-sheet-arrow">→</span></button>`).join('')}</div>`;
-  return `<div class="kk-pm-sheet-head"><div><div class="kk-pm-kicker">WORKBOOK SINGLE SOURCE OF TRUTH</div><h4>Seluruh Workbook dari Awal sampai Akhir</h4><p>${escapeHtml(scopeNote)} Workbook terbaru mengikuti template KK PM dengan <b>${sheets.length} sheet yang ditampilkan untuk cakupan OPD ini</b>; master global tetap satu sumber dan data isian per OPD tetap terpisah.</p></div><div class="kk-pm-workbook-overview-actions">${workbookReady?`<a class="kk-pm-action-link" href="${escapeHtml(wb.workbookUrl)}" target="_blank" rel="noopener">↗️ Buka Seluruh Workbook</a>`:'<span class="kk-pm-disabled-link">Spreadsheet PM belum dibuat</span>'}</div></div><div class="kk-pm-workbook-alert"><b>Hubungan data:</b> upload tetap dilakukan melalui <b>Evidence Struktur &amp; Proses</b>. Evidence yang memiliki evidenceKey yang sama akan muncul otomatis di KK PM. Nilai Maturitas SPIP, MRI, IEPK, dan Kapabilitas APIP dibaca dari <b>sel formula workbook KKLEAD_SPIP</b> dan tidak tersedia sebagai input manual.</div>${strategicLink}<div class="kk-pm-workbook-layout"><div class="kk-pm-workbook-sheet-list">${sheetCards}</div><div class="kk-pm-workbook-detail">${preview}</div></div>`;
+  return `<div class="kk-pm-sheet-head"><div><div class="kk-pm-kicker">WORKBOOK SINGLE SOURCE OF TRUTH</div><h4>Seluruh Workbook dari Awal sampai Akhir</h4><p>${escapeHtml(scopeNote)} Workbook terbaru mengikuti template KK PM dengan <b>${sheets.length} sheet yang ditampilkan untuk cakupan OPD ini</b>; master global tetap satu sumber dan data isian per OPD tetap terpisah.</p></div><div class="kk-pm-workbook-overview-actions">${workbookReady?`<button type="button" class="kk-pm-action-link" data-pm-open-workbook="">↗️ Buka Seluruh Workbook</button>`:'<span class="kk-pm-disabled-link">Spreadsheet PM belum dibuat</span>'}</div></div><div class="kk-pm-workbook-alert"><b>Hubungan data:</b> upload tetap dilakukan melalui <b>Evidence Struktur &amp; Proses</b>. Evidence yang memiliki evidenceKey yang sama akan muncul otomatis di KK PM. Nilai Maturitas SPIP, MRI, IEPK, dan Kapabilitas APIP dibaca dari <b>sel formula workbook KKLEAD_SPIP</b> dan tidak tersedia sebagai input manual.</div>${strategicLink}<div class="kk-pm-workbook-layout"><div class="kk-pm-workbook-sheet-list">${sheetCards}</div><div class="kk-pm-workbook-detail">${preview}</div></div>`;
 }
 function kkPmRenderModal(){
   if(!kkPmCurrentRow)return;const allowed=new Set(kkPmTargetsForRow());
@@ -4938,24 +4954,71 @@ function kkPmCollectMeta(target){const out={};document.querySelectorAll(`#kkPmCo
 function kkPmScheduleMetaSave(target){if(!kkPmTargetsForRow().includes(String(target).toUpperCase()))return;const key=String(target);clearTimeout(kkPmMetaSaveTimers.get(key));kkPmMetaSaveTimers.set(key,setTimeout(async()=>{kkPmMetaSaveTimers.delete(key);const meta=kkPmCollectMeta(target);kkPmMetaMap.set(key,meta);try{await callServerWithRetry('saveKkPmMeta',{opdId:kkPmCurrentRow.id,year:currentYear,target,...meta},3);markAssessmentInProgressLocally(kkPmCurrentRow.id);kkPmSetStatus('✓ Identitas lembar kerja tersimpan.','success');}catch(err){kkPmSetStatus('❌ Gagal menyimpan identitas: '+(err.message||err),'error');}},500));}
 function kkPmExportCellValue(aoa,rowIndex,col,value,link){if(!link){aoa.push(value);return;} }
 
-async function createKkPmWorkbookForCurrentRow(){
-  if(!kkPmCurrentRow)return;
+async function createKkPmWorkbookForCurrentRow(options={}){
+  if(!kkPmCurrentRow)return null;
   const btn=document.getElementById('kkPmSyncWorkbook');
   if(btn)btn.disabled=true;
-  kkPmSetStatus('⏳ Membuat/sinkronkan Spreadsheet PM sesuai template terbaru (26 sheet)...');
+  kkPmSetStatus('⏳ Memeriksa master terbaru dan menautkan workbook PM yang sesuai…');
   try{
     const d=await callServerWithRetry('createKkPmSheets',{opdId:kkPmCurrentRow.id,year:currentYear,opd:kkPmCurrentRow.opd||'OPD'},2);
     kkPmWorkbookData=d?.kkPmData||{};
     kkPmWorkbookSheets=Array.isArray(d?.sheets)?d.sheets:[];
+    kkPmWorkbookNeedsSync=false;kkPmWorkbookSyncReason='';
     kkPmCurrentRow.kkPmData={...(kkPmCurrentRow.kkPmData||{}),workbook:kkPmWorkbookData};
-    // Sync computed formula values immediately after creating/synchronizing the PM workbook.
+    const idx=rows.findIndex(r=>String(r.id)===String(kkPmCurrentRow.id));
+    if(idx>=0)rows[idx].kkPmData={...(rows[idx].kkPmData||{}),workbook:kkPmWorkbookData};
+    // Refresh authoritative D1 link after the write, avoiding a stale URL kept by another tab.
+    const verified=await callServerWithRetry('getKkPmSheets',{opdId:kkPmCurrentRow.id,year:currentYear,forceRefresh:true},1);
+    if(verified?.needsSync)throw new Error(verified.needsSyncReason||'Tautan workbook masih belum sesuai master PM terbaru setelah sinkronisasi.');
+    kkPmWorkbookData=verified?.kkPmData||kkPmWorkbookData;
+    kkPmWorkbookSheets=Array.isArray(verified?.sheets)?verified.sheets:kkPmWorkbookSheets;
+    kkPmCurrentRow.kkPmData={...(kkPmCurrentRow.kkPmData||{}),workbook:kkPmWorkbookData};
+    if(idx>=0)rows[idx].kkPmData={...(rows[idx].kkPmData||{}),workbook:kkPmWorkbookData};
     await syncKkComputedValues(kkPmCurrentRow,false);
-    render();
-    updateKpisLocal();
-    kkPmSetStatus('✓ Spreadsheet PM siap; nilai formula sudah dibaca ulang dari workbook tertaut.','success');
+    render();updateKpisLocal();
+    const replaced=d?.syncDisposition==='created';
+    kkPmSetStatus(replaced?'✓ Workbook baru dari master PM terbaru sudah ditautkan. Workbook lama tetap tersimpan untuk pemulihan.':'✓ Workbook PM telah diverifikasi dan masih sesuai master terbaru.','success');
     kkPmRenderModal();
-  }catch(err){kkPmSetStatus('❌ Gagal membuat/sinkronkan Spreadsheet PM: '+(err.message||err),'error');}
-  finally{if(btn)btn.disabled=false;}
+    return verified;
+  }catch(err){
+    kkPmWorkbookNeedsSync=true;kkPmWorkbookSyncReason=err?.message||String(err);
+    kkPmSetStatus('❌ Sinkronisasi belum berhasil: '+kkPmWorkbookSyncReason+' Workbook lama tidak dihapus; tautan lama tidak akan dibuka otomatis.','error');
+    throw err;
+  }finally{if(btn)btn.disabled=false;}
+}
+async function openLatestKkPmWorkbook(sheetName=''){
+  if(!kkPmCurrentRow||kkPmWorkbookOpenBusy)return;
+  // Open synchronously from the click handler so browsers do not block the eventual URL.
+  const newTab=window.open('about:blank','_blank');
+  kkPmWorkbookOpenBusy=true;
+  const openBtn=document.getElementById('kkPmOpenWorkbook');
+  if(openBtn)openBtn.disabled=true;
+  try{
+    kkPmSetStatus('⏳ Memeriksa tautan workbook terbaru di server…');
+    let data=await callServerWithRetry('getKkPmSheets',{opdId:kkPmCurrentRow.id,year:currentYear,forceRefresh:true},2);
+    if(data?.needsSync){
+      kkPmSetStatus('🔄 '+(data.needsSyncReason||'Workbook belum terbaru')+' Menjalankan sinkronisasi sebelum membuka…');
+      await createKkPmWorkbookForCurrentRow();
+      data=await callServerWithRetry('getKkPmSheets',{opdId:kkPmCurrentRow.id,year:currentYear,forceRefresh:true},1);
+    }
+    if(data?.needsSync)throw new Error(data.needsSyncReason||'Workbook masih belum sesuai master PM terbaru.');
+    const wb=data?.kkPmData||{};
+    let url=wb.workbookUrl||(wb.workbookSpreadsheetId?`https://docs.google.com/spreadsheets/d/${encodeURIComponent(wb.workbookSpreadsheetId)}/edit`:'');
+    if(!url)throw new Error('Server belum memiliki tautan Google Spreadsheet PM untuk OPD/tahun ini.');
+    if(sheetName){
+      const exactSheet=(data.sheets||[]).find(x=>String(x.title||'')===String(sheetName));
+      if(!exactSheet)throw new Error(`Tab ${sheetName} tidak ditemukan pada workbook PM terbaru; tautan sheet lama tidak dibuka.`);
+      if(exactSheet.sheetId!==undefined&&exactSheet.sheetId!==null)url+=`#gid=${encodeURIComponent(exactSheet.sheetId)}`;
+    }
+    kkPmWorkbookData=wb;kkPmWorkbookSheets=Array.isArray(data.sheets)?data.sheets:kkPmWorkbookSheets;kkPmWorkbookNeedsSync=false;kkPmWorkbookSyncReason='';
+    kkPmCurrentRow.kkPmData={...(kkPmCurrentRow.kkPmData||{}),workbook:wb};
+    const idx=rows.findIndex(r=>String(r.id)===String(kkPmCurrentRow.id));if(idx>=0)rows[idx].kkPmData={...(rows[idx].kkPmData||{}),workbook:wb};
+    kkPmSetStatus('✓ Tautan resmi dari server sudah diperiksa. Membuka workbook PM terbaru…','success');kkPmRenderModal();
+    if(newTab&&!newTab.closed)newTab.location.replace(url);else window.open(url,'_blank','noopener,noreferrer');
+  }catch(err){
+    if(newTab&&!newTab.closed)newTab.close();
+    kkPmSetStatus('❌ Spreadsheet tidak dibuka karena tautan terbaru belum tervalidasi: '+(err?.message||err)+' Periksa GOOGLE_SHEETS_PM_TEMPLATE_ID, izin Google Drive, dan master PM 26 tab. File lama tetap aman.','error');
+  }finally{kkPmWorkbookOpenBusy=false;if(openBtn)openBtn.disabled=false;}
 }
 async function exportKkPmFullWorkbook(){
   if(!kkPmCurrentRow)return; kkPmSetStatus('⏳ Menyiapkan export workbook lengkap...');
@@ -4993,8 +5056,11 @@ async function openKkPmModal(id){
   const row=rows.find(r=>String(r.id)===String(id)); if(!row)return; kkPmCurrentRow=row;kkPmEditingRowId=row.id;kkPmTab='allSheets';kkPmSelectedSheet='FAQ';kkPmFilters={search:'',unsur:'all',subunsur:'all'};const modal=document.getElementById('kkPmModal');if(!modal)return;
   document.getElementById('kkPmModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;modal.classList.add('active');kkPmSetStatus('Memuat workbook lengkap, PM detail, evidence terhubung, dan nilai formula...');
   try{
-    await Promise.all([ensureKkPmMasterLoaded(true),ensureKkRpjmdMasterLoaded(),loadKkPmData(row),loadKkPmWorkbookData(row),loadKkRpjmdMappings(row),syncKkComputedValues(row,false)]);
-    if(kkPmMaster?.liveSourceStatus?.live===true){
+    const results=await Promise.all([ensureKkPmMasterLoaded(true),ensureKkRpjmdMasterLoaded(),loadKkPmData(row),loadKkPmWorkbookData(row),loadKkRpjmdMappings(row),syncKkComputedValues(row,false)]);
+    const workbookState=results[3]||{};
+    if(workbookState.needsSync||kkPmWorkbookNeedsSync){
+      kkPmSetStatus('⚠️ '+(workbookState.needsSyncReason||kkPmWorkbookSyncReason||'Workbook PM perlu diperbarui dari master terbaru.')+' Tekan “Buka Spreadsheet PM” untuk membuat/menautkan workbook yang sudah tervalidasi. Workbook lama disimpan untuk pemulihan.','error');
+    }else if(kkPmMaster?.liveSourceStatus?.live===true){
       kkPmSetStatus('✓ Data KK PM siap; master live berhasil diperbarui dari Google Sheets. Sheet dan target ditampilkan sesuai OPD.','success');
     }else{
       const detail=String(kkPmMaster?.liveSourceStatus?.message||'Google Sheets master belum mengembalikan data live.');
@@ -5008,11 +5074,9 @@ function closeKkPmModal(){document.getElementById('kkPmModal')?.classList.remove
 
 document.addEventListener('click',e=>{
   const sheet=e.target.closest('#kkPmContent [data-pm-sheet]'); if(sheet){kkPmSelectedSheet=sheet.dataset.pmSheet||''; kkPmTab='allSheets'; kkPmRenderModal(); return;}
-  const openW=e.target.closest('#kkPmOpenWorkbook'); if(openW){
-    if(kkPmWorkbookData?.workbookUrl){window.open(kkPmWorkbookData.workbookUrl,'_blank','noopener');} else {kkPmSetStatus('Spreadsheet PM belum dibuat. Gunakan tombol Sinkronkan Workbook terlebih dahulu.','error');}
-    return;
-  }
-  const syncW=e.target.closest('#kkPmSyncWorkbook'); if(syncW){createKkPmWorkbookForCurrentRow(); return;}
+  const openW=e.target.closest('#kkPmOpenWorkbook'); if(openW){openLatestKkPmWorkbook();return;}
+  const openSheet=e.target.closest('#kkPmContent [data-pm-open-workbook]'); if(openSheet){openLatestKkPmWorkbook(openSheet.dataset.pmOpenWorkbook||'');return;}
+  const syncW=e.target.closest('#kkPmSyncWorkbook'); if(syncW){createKkPmWorkbookForCurrentRow().catch(()=>{}); return;}
   const expFull=e.target.closest('#kkPmExportFull'); if(expFull){exportKkPmFullWorkbook(); return;}
   const tab=e.target.closest('#kkPmTabs [data-pm-tab]');if(tab){kkPmTab=tab.dataset.pmTab;kkPmFilters={search:'',unsur:'all',subunsur:'all'};kkPmRenderModal();return;}
   const rpjmdSave=e.target.closest('[data-rpjmd-save]');if(rpjmdSave){kkRpjmdSaveMapping(rpjmdSave.dataset.rpjmdSave);return;}
@@ -5058,16 +5122,21 @@ document.addEventListener('click',function(e){
 
 
 // ====== TINDAK LANJUT LHE SPIP (tahun berjalan + tahun sebelumnya) ======
-function lheYearPair(){const y=Number(currentYear)||new Date().getFullYear();return {current:String(y),previous:String(y-1),label:`${y} / ${y-1}`};}
-const lheUi={opdId:null,items:[],templates:[],templateLoaded:false,editingId:null,selectedFollowupId:null};
+function lheYearPair(){const y=Number(currentYear)||new Date().getFullYear();return {current:String(y),previous:String(y-1),calendarCurrent:String(new Date().getFullYear()),calendarPrevious:String(new Date().getFullYear()-1),label:`${y} / ${y-1}`};}
+function lheMapDueDateToTargetYear(rawDate,sourceYear,targetYear){const source=Number(sourceYear),target=String(targetYear);if(!Number.isFinite(source)||!/^\d{4}$/.test(target))return String(rawDate||'');return String(rawDate||'').replace(/\b(?:19|20)\d{2}\b/g,match=>{const y=Number(match);return (y===source||y===source+1)?target:match;});}
+function lheRefreshYearLabels(){const years=lheYearPair();const target=lheField('lheTargetYear');if(target)target.value=years.current;const banner=lheField('lheFollowupYearLabel');if(banner)banner.textContent=`Tahun Anggaran tindak lanjut: ${years.current} (mengikuti Tahun Anggaran aktif aplikasi). Tahun pada templat tetap menunjukkan tahun asli dokumen sumber.`;const modalTitle=lheField('lheFollowupOpdName');if(modalTitle){const row=rows.find(r=>String(r.id)===String(lheUi.opdId));modalTitle.textContent=`${row?.opd||'Tanpa Nama'} · Tahun ${years.current}`;}if(lheUi?.templateDueDateAuto){const select=lheField('lheTemplateSelect'),t=select&&select.value!==''?lheUi.templates[Number(select.value)]:null,due=lheField('lheDueDate');if(t&&due&&due.value===lheUi.templateDueDateValue){due.value=lheMapDueDateToTargetYear(t.dueDate,t.sourceYear,years.current);lheUi.templateDueDateValue=due.value;}}}
+const lheUi={opdId:null,items:[],templates:[],templateLoaded:false,editingId:null,selectedFollowupId:null,templateDueDateAuto:false,templateDueDateValue:''};
 function lheStatus(message,type=''){const el=document.getElementById('lheFollowupStatus');if(!el)return;el.textContent=message||'';el.className='sheet-links-status'+(type?' '+type:'');el.style.display=message?'block':'none';}
 function lheCanEdit(){return ['admin','auditor','opd','irban'].includes(String(currentUser?.role||''));}
 function lheCanDelete(){return ['admin','irban'].includes(String(currentUser?.role||''));}
 function lheField(id){return document.getElementById(id);}
 function lheSetForm(item={}){
+  lheUi.templateDueDateAuto=false;lheUi.templateDueDateValue='';
   lheUi.editingId=item.id||null;lheUi.selectedFollowupId=item.id||null;
   lheField('lheEditorTitle').textContent=item.id?'Ubah tindak lanjut':'Tambah tindak lanjut';
+  lheRefreshYearLabels();
   lheField('lheSourceYear').value=String(item.source_year||item.sourceYear||lheYearPair().current);
+  if(lheField('lheTargetYear'))lheField('lheTargetYear').value=lheYearPair().current;
   lheField('lheRef').value=item.recommendation_ref||item.recommendationRef||'';
   lheField('lheRecommendation').value=item.recommendation||'';
   lheField('lheActionPlan').value=item.action_plan||item.actionPlan||'';
@@ -5109,7 +5178,7 @@ function renderLheFollowupList(){
     const deleteBtn=lheCanDelete()?`<button type="button" class="lhe-delete-followup" data-id="${sheetLinksEsc(item.id)}">Hapus Butir</button>`:'';
     return `<article class="lhe-followup-card" style="${active?'border-color:#2563eb;background:#eff6ff;':''}">
       <h5>${sheetLinksEsc(item.recommendation_ref||'Tanpa Ref.')} · ${sheetLinksEsc(item.recommendation||'Rekomendasi belum diisi')}</h5>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px;"><span class="badge">Sumber ${sheetLinksEsc(item.source_year||'—')}</span><span class="badge">${sheetLinksEsc(item.status||'Belum diverifikasi')}</span><span class="badge">Bukti ${evidence.length}</span></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px;"><span class="badge">Tahun TL ${sheetLinksEsc(item.year||currentYear)}</span><span class="badge">Sumber LHE ${sheetLinksEsc(item.source_year||'—')}</span><span class="badge">${sheetLinksEsc(item.status||'Belum diverifikasi')}</span><span class="badge">Bukti ${evidence.length}</span></div>
       <p><b>Rencana aksi:</b> ${sheetLinksEsc(item.action_plan||'Belum diisi')}</p>
       <p><b>Indikator:</b> ${sheetLinksEsc(item.indicator||'Belum diisi')}</p>
       <p><b>Bukti dukung yang diperlukan:</b> ${sheetLinksEsc(item.evidence_required||'Belum ditentukan')}</p>
@@ -5134,18 +5203,40 @@ async function loadLheFollowups(){
   }catch(err){lheStatus('Gagal memuat tindak lanjut: '+err.message,'error');}
 }
 async function loadLheTemplates(){
-  if(lheUi.templateLoaded)return;
-  const select=lheField('lheTemplateSelect');select.innerHTML='<option value="">Memuat daftar rekomendasi…</option>';
-  const response=await fetch('/lhe-followup-templates.json',{cache:'no-store'});
-  if(!response.ok)throw new Error('File template rekomendasi tidak dapat dimuat.');
-  const payload=await response.json();lheUi.templates=Array.isArray(payload.templates)?payload.templates:[];lheUi.templateLoaded=true;
-  const years=lheYearPair();select.innerHTML=`<option value="">Pilih sumber LHE ${years.current} / TL ${years.previous}…</option>`+lheUi.templates.map((t,i)=>`<option value="${i}">Sumber asli ${sheetLinksEsc(t.sourceYear)} · ${sheetLinksEsc(t.recommendationRef)} — ${sheetLinksEsc(t.recommendation.slice(0,110))}</option>`).join('');
+  if(!lheUi.templateLoaded){
+    const response=await fetch(`/lhe-followup-templates.json?v=20261015-lhe-years-v4&_=${Date.now()}`,{cache:'no-store'});
+    if(!response.ok)throw new Error('File template rekomendasi tidak dapat dimuat.');
+    const payload=await response.json();lheUi.templates=Array.isArray(payload.templates)?payload.templates:[];lheUi.templateLoaded=true;
+  }
+  const years=lheYearPair();
+  const select=lheField('lheTemplateSelect');
+  const sourceYears=[...new Set(lheUi.templates.map(t=>String(t.sourceYear||'')).filter(Boolean))].sort((a,b)=>Number(b)-Number(a));
+  const sourceLabel=sourceYears.length?`Dokumen sumber asli tersedia: ${sourceYears.join(', ')}`:'Belum ada templat sumber';
+  if(select){
+    const prior=select.value;
+    select.innerHTML=`<option value="">Pilih templat rekomendasi · tahun tindak lanjut ${sheetLinksEsc(years.current)} (${sheetLinksEsc(sourceLabel)})…</option>`+lheUi.templates.map((t,i)=>`<option value="${i}">Sumber asli ${sheetLinksEsc(t.sourceYear)} · ${sheetLinksEsc(t.recommendationRef)} — ${sheetLinksEsc(String(t.recommendation||'').slice(0,110))}</option>`).join('');
+    if(prior!==''&&lheUi.templates[Number(prior)])select.value=prior;
+  }
+  const sourceSelect=lheField('lheSourceYear');
+  if(sourceSelect){
+    const current=String(sourceSelect.value||years.current);
+    const options=new Map();
+    // Current/previous year choices support new records; historical templates retain their
+    // authentic source year so the application never rewrites the year of an old report.
+    [years.current,years.previous,...sourceYears].forEach(y=>{if(y&&!options.has(y))options.set(y,y===years.current?`Tahun berjalan ${y}`:y===years.previous?`Tahun sebelumnya ${y}`:`Sumber historis ${y}`);});
+    sourceSelect.innerHTML=[...options].map(([value,label])=>`<option value="${sheetLinksEsc(value)}">${sheetLinksEsc(label)}</option>`).join('');
+    sourceSelect.value=options.has(current)?current:years.current;
+  }
+  const notice=lheField('lheFollowupNotice');
+  if(notice)notice.textContent=`Semua butir tindak lanjut yang disimpan pada layar ini terkait Tahun Anggaran aktif ${years.current}. Pilihan templat menunjukkan tahun asli dokumen sumber (${sourceYears.join(', ')||'belum tersedia'}); tahun historis tidak diganti otomatis. Realisasi, status, dan bukti tetap harus diperiksa serta diverifikasi secara terpisah.`;
+  lheRefreshYearLabels();
 }
 async function openLheFollowupModal(id){
   const row=rows.find(r=>String(r.id)===String(id));if(!row)return;
   lheUi.opdId=String(id);lheUi.items=[];lheUi.selectedFollowupId=null;lheUi.editingId=null;
-  lheField('lheFollowupOpdName').textContent=row.opd||'Tanpa Nama';
-  lheField('lheFollowupModal').classList.add('active');lheSetForm({});
+  lheField('lheFollowupOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${lheYearPair().current}`;
+  lheRefreshYearLabels();
+  lheField('lheFollowupModal').classList.add('active');if(lheField('lheTemplateSelect'))lheField('lheTemplateSelect').value='';lheSetForm({});
   try{await loadLheTemplates();}catch(err){lheStatus('Templat gagal dimuat: '+err.message,'error');}
   await loadLheFollowups();
 }
@@ -5153,7 +5244,10 @@ function chooseLheTemplate(){
   const idx=lheField('lheTemplateSelect').value;if(idx==='')return;
   const t=lheUi.templates[Number(idx)];if(!t)return;
   lheUi.editingId=null;lheUi.selectedFollowupId=null;
-  lheSetForm({sourceYear:t.sourceYear,recommendationRef:t.recommendationRef,recommendation:t.recommendation,actionPlan:t.actionPlan,indicator:t.indicator,evidenceRequired:t.evidenceRequired,pic:t.pic,dueDate:t.dueDate,status:'Belum diverifikasi'});
+  const targetYear=lheYearPair().current;
+  const suggestedDueDate=lheMapDueDateToTargetYear(t.dueDate,t.sourceYear,targetYear);
+  lheSetForm({sourceYear:t.sourceYear,recommendationRef:t.recommendationRef,recommendation:t.recommendation,actionPlan:t.actionPlan,indicator:t.indicator,evidenceRequired:t.evidenceRequired,pic:t.pic,dueDate:suggestedDueDate,status:'Belum diverifikasi'});
+  lheUi.templateDueDateAuto=true;lheUi.templateDueDateValue=suggestedDueDate;
   lheField('lheActualAction').value='';
   let baseline=lheField('lheTemplateBaseline');
   if(!baseline){baseline=document.createElement('div');baseline.id='lheTemplateBaseline';baseline.className='sheet-links-info';lheField('lheTemplateSelect').insertAdjacentElement('afterend',baseline);}
@@ -5167,7 +5261,7 @@ async function saveLheFollowup(){
     lheField('lheSaveButton').disabled=true;lheStatus('Menyimpan butir tindak lanjut…');
     const result=await callServer('saveLheFollowup',payload);lheUi.selectedFollowupId=result.id;lheUi.editingId=result.id;
     await loadLheFollowups();lheSetForm(lheUi.items.find(x=>String(x.id)===String(result.id))||{id:result.id,...payload});
-    lheStatus('Tindak lanjut tersimpan. Status tetap perlu verifikasi sesuai proses.','success');
+    lheStatus(`Tindak lanjut tersimpan untuk Tahun Anggaran ${currentYear}. Status tetap perlu verifikasi sesuai proses.`,'success');
   }catch(err){lheStatus('Gagal menyimpan: '+err.message,'error');}
   finally{lheField('lheSaveButton').disabled=false;}
 }
@@ -5189,6 +5283,7 @@ async function deleteLheAttachment(uploadId){
 }
 function closeLheFollowupModal(){lheField('lheFollowupModal')?.classList.remove('active');lheUi.opdId=null;}
 lheField('lheTemplateSelect')?.addEventListener('change',chooseLheTemplate);
+lheField('lheDueDate')?.addEventListener('input',()=>{lheUi.templateDueDateAuto=false;});
 lheField('lheSaveButton')?.addEventListener('click',saveLheFollowup);
 lheField('lheNewButton')?.addEventListener('click',()=>{lheField('lheTemplateSelect').value='';lheField('lheTemplateBaseline')?.remove();lheSetForm({});lheStatus('Form baru siap diisi.','');});
 lheField('lheEvidenceChoose')?.addEventListener('click',()=>lheField('lheEvidenceInput')?.click());
