@@ -16,7 +16,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KAWAL SPIP - Dashboard Lengkap</title>
 <link rel="icon" type="image/png" href="/favicon.png">
-<link rel="stylesheet" href="/style.css?v=20261015-workbook-rollover-v7">
+<link rel="stylesheet" href="/style.css?v=20261015-kawal-fix2">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -555,12 +555,12 @@
   <div class="sheet-links-modal" style="max-width:800px;">
     <div class="sheet-links-header"><h3>🛡️ Alur Verifikasi Evidence</h3><button class="sheet-links-close" id="evidenceWorkflowClose" aria-label="Tutup">&times;</button></div>
     <div class="sheet-links-body">
-      <div class="sheet-links-info"><strong id="evidenceWorkflowFileName">File evidence</strong><br>Urutan resmi: <b>Auditor mengirim → Irban memverifikasi → BPKP sebagai verifikator akhir</b>. Tahap berikutnya hanya aktif setelah tahap sebelumnya memenuhi syarat.</div>
+      <div class="sheet-links-info"><strong id="evidenceWorkflowFileName">File evidence</strong><br>Urutan resmi: <b>Auditor / PPUPD mengirim → Irban memverifikasi → BPKP sebagai verifikator akhir</b>. Tahap berikutnya hanya aktif setelah tahap sebelumnya memenuhi syarat.</div>
       <div class="sheet-links-status" id="evidenceWorkflowStatus"></div>
       <div id="evidenceWorkflowStages" style="display:grid;gap:10px;margin:12px 0;"></div>
       <div style="border:1px solid #cbd5e1;background:#f8fafc;border-radius:12px;padding:14px;">
         <h4 style="margin:0 0 10px;">Catat verifikasi tahap</h4>
-        <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Tahap<select id="workflowStageSelect" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"><option value="auditor">Auditor</option><option value="irban">Irban</option><option value="bpkp">BPKP (final)</option></select></label>
+        <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Tahap<select id="workflowStageSelect" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"><option value="auditor">Auditor / PPUPD</option><option value="irban">Irban</option><option value="bpkp">BPKP (final)</option></select></label>
         <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Hasil<select id="workflowStatusSelect" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></select></label>
         <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Nama pemeriksa<input id="workflowExaminer" maxlength="100" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></label>
         <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Catatan / alasan pengembalian<textarea id="workflowNote" maxlength="2000" rows="3" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></textarea></label>
@@ -589,7 +589,10 @@
 .lhe-followup-card h5{margin:0 0 5px;color:#0f172a;font-size:13px;line-height:1.45;}
 .lhe-followup-card p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:#475569;margin:6px 0;}
 .lhe-followup-actions,.workflow-stage-meta{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:8px;}
-.lhe-followup-actions button{font-size:11px;padding:6px 8px;}
+.lhe-followup-actions button{font-size:11px;padding:6px 8px;min-height:30px;cursor:pointer;}
+.lhe-followup-actions .lhe-delete-followup{background:#fff1f2!important;color:#be123c!important;border:1px solid #fecdd3!important;font-weight:800;}
+.lhe-followup-actions .lhe-delete-followup:hover{background:#ffe4e6!important;border-color:#fda4af!important;}
+.lhe-followup-actions button:focus-visible{outline:3px solid #93c5fd;outline-offset:2px;}
 .workflow-stage-card{display:grid;grid-template-columns:130px 1fr;gap:8px;}
 .workflow-stage-title{font-weight:800;color:#0f172a;}
 .workflow-stage-status{font-weight:700;text-transform:capitalize;}
@@ -622,4 +625,4 @@
 
 </style>
 
-<script src="/script.js?v=20261015-workbook-rollover-lhe-years-v7" defer></script>
+<script src="/script.js?v=20261015-kawal-fix2" defer></script>

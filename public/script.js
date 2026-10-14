@@ -5142,8 +5142,8 @@ function lheMapDueDateToTargetYear(rawDate,sourceYear,targetYear){const target=S
 function lheRefreshYearLabels(){const years=lheYearPair();const target=lheField('lheTargetYear');if(target)target.value=years.current;const banner=lheField('lheFollowupYearLabel');if(banner)banner.textContent=`Tahun Anggaran tindak lanjut: ${years.current} (otomatis mengikuti Tahun Anggaran aktif aplikasi).`;const modalTitle=lheField('lheFollowupOpdName');if(modalTitle){const row=rows.find(r=>String(r.id)===String(lheUi.opdId));modalTitle.textContent=`${row?.opd||'Tanpa Nama'} · Tahun ${years.current}`;}if(lheUi?.templateDueDateAuto){const select=lheField('lheTemplateSelect'),t=select&&select.value!==''?lheUi.templates[Number(select.value)]:null,due=lheField('lheDueDate');if(t&&due&&due.value===lheUi.templateDueDateValue){due.value=lheMapDueDateToTargetYear(t.dueDate,years.current,years.current);lheUi.templateDueDateValue=due.value;}}}
 const lheUi={opdId:null,items:[],templates:[],templateLoaded:false,editingId:null,selectedFollowupId:null,templateDueDateAuto:false,templateDueDateValue:''};
 function lheStatus(message,type=''){const el=document.getElementById('lheFollowupStatus');if(!el)return;el.textContent=message||'';el.className='sheet-links-status'+(type?' '+type:'');el.style.display=message?'block':'none';}
-function lheCanEdit(){return ['admin','auditor','opd','irban'].includes(String(currentUser?.role||''));}
-function lheCanDelete(){return ['admin','irban','auditor'].includes(String(currentUser?.role||''));}
+function lheCanEdit(){return ['admin','auditor','ppupd','opd','irban'].includes(String(currentUser?.role||''));}
+function lheCanDelete(){return ['admin','auditor','ppupd','irban','opd'].includes(String(currentUser?.role||''));}
 function lheField(id){return document.getElementById(id);}
 function lheSetForm(item={}){
   lheUi.templateDueDateAuto=false;lheUi.templateDueDateValue='';
@@ -5193,7 +5193,8 @@ function renderLheFollowupList(){
   root.innerHTML=items.map(item=>{
     const evidence=Array.isArray(item.evidence)?item.evidence:[];
     const active=String(item.id)===String(lheUi.selectedFollowupId);
-    const deleteBtn=lheCanDelete()?`<button type="button" class="lhe-delete-followup" data-id="${sheetLinksEsc(item.id)}">Hapus Butir</button>`:'';
+    const deleteBtn=lheCanDelete()?`<button type="button" class="lhe-delete-followup" data-id="${sheetLinksEsc(item.id)}">🗑 Hapus Butir</button>`:'';
+    const openLabel=lheCanEdit()?'✏️ Buka / Edit':'👁 Lihat';
     return `<article class="lhe-followup-card" style="${active?'border-color:#2563eb;background:#eff6ff;':''}">
       <h5>${sheetLinksEsc(item.recommendation_ref||'Tanpa Ref.')} · ${sheetLinksEsc(item.recommendation||'Rekomendasi belum diisi')}</h5>
       <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px;"><span class="badge">Tahun TL ${sheetLinksEsc(item.year||currentYear)}</span><span class="badge">Tahun LHE ${sheetLinksEsc(item.source_year||'—')}</span><span class="badge">${sheetLinksEsc(item.status||'Belum diverifikasi')}</span><span class="badge">Bukti ${evidence.length}</span></div>
@@ -5203,7 +5204,7 @@ function renderLheFollowupList(){
       <p><b>PIC / tenggat:</b> ${sheetLinksEsc(item.pic||'Belum diisi')} · ${sheetLinksEsc(item.due_date||'Belum ditentukan')}</p>
       <p><b>Realisasi aktual:</b> ${sheetLinksEsc(item.actual_action||'Belum diisi')}</p>
       <p><b>Status verifikasi evidence:</b> ${sheetLinksEsc(item.verification_status||'Belum diverifikasi')}</p>
-      <div class="lhe-followup-actions"><button type="button" class="lhe-edit-followup" data-id="${sheetLinksEsc(item.id)}">✏️ Buka / Edit</button>${deleteBtn}</div>
+      <div class="lhe-followup-actions"><button type="button" class="lhe-edit-followup" data-id="${sheetLinksEsc(item.id)}">${openLabel}</button>${deleteBtn}</div>
     </article>`;
   }).join('');
   render();
@@ -5325,7 +5326,7 @@ async function uploadLheEvidence(){
 }
 async function deleteLheAttachment(uploadId){
   if(!confirm('Hapus file bukti dukung ini dari R2 dan Google Drive?'))return;
-  try{lheStatus('Menghapus bukti…');await callServer('deleteLheEvidence',{opdId:lheUi.opdId,year:currentYear,followupId:lheUi.selectedFollowupId,uploadId});await loadLheFollowups();lheStatus('Bukti dukung dihapus.','success');}catch(err){lheStatus('Gagal menghapus bukti: '+err.message,'error');}
+  try{lheStatus('Menghapus bukti…');const result=await callServer('deleteLheEvidence',{opdId:lheUi.opdId,year:currentYear,followupId:lheUi.selectedFollowupId,uploadId});await loadLheFollowups();lheStatus(result?.cleanupWarnings?.length?'Bukti dihapus dari daftar, tetapi ada file cadangan yang gagal dibersihkan. Hubungi admin untuk pemeriksaan.':'Bukti dukung dihapus.','success');}catch(err){lheStatus('Gagal menghapus bukti: '+err.message,'error');}
 }
 function closeLheFollowupModal(){lheField('lheFollowupModal')?.classList.remove('active');lheUi.opdId=null;}
 lheField('lheTemplateSelect')?.addEventListener('change',chooseLheTemplate);
@@ -5339,7 +5340,20 @@ lheField('lheFollowupRefresh')?.addEventListener('click',loadLheFollowups);
 lheField('lheFollowupClose')?.addEventListener('click',closeLheFollowupModal);lheField('lheFollowupCloseFooter')?.addEventListener('click',closeLheFollowupModal);
 lheField('lheFollowupList')?.addEventListener('click',async e=>{
   const edit=e.target.closest('.lhe-edit-followup');if(edit){const item=lheUi.items.find(x=>String(x.id)===String(edit.dataset.id));if(item){lheField('lheTemplateSelect').value='';lheField('lheTemplateBaseline')?.remove();lheSetForm(item);renderLheEvidenceList(item.evidence||[]);lheStatus(`Sedang mengedit ${item.recommendation_ref||'butir'}; simpan setelah diperiksa.`);}return;}
-  const del=e.target.closest('.lhe-delete-followup');if(del){if(!lheCanDelete())return;if(!confirm('Hapus butir tindak lanjut beserta seluruh bukti yang terlampir?'))return;try{lheStatus('Menghapus butir…');await callServer('deleteLheFollowup',{opdId:lheUi.opdId,year:currentYear,id:del.dataset.id});lheUi.selectedFollowupId=null;lheSetForm({});await loadLheFollowups();lheStatus('Butir tindak lanjut dihapus.','success');}catch(err){lheStatus('Gagal menghapus: '+err.message,'error');}}
+  const del=e.target.closest('.lhe-delete-followup');if(del){
+    if(!lheCanDelete())return;
+    const targetId=String(del.dataset.id||'');
+    const target=lheUi.items.find(x=>String(x.id)===targetId);
+    const label=target?.recommendation_ref||target?.recommendation||'butir ini';
+    if(!confirm(`Hapus ${label} beserta seluruh bukti yang terlampir? Tindakan ini tidak dapat dibatalkan.`))return;
+    try{
+      lheStatus('Menghapus butir…');
+      const result=await callServer('deleteLheFollowup',{opdId:lheUi.opdId,year:currentYear,id:targetId});
+      if(String(lheUi.selectedFollowupId)===targetId){lheUi.selectedFollowupId=null;lheUi.editingId=null;lheSetForm({});}
+      await loadLheFollowups();
+      lheStatus(result?.cleanupWarnings?.length?`Butir ${label} dihapus, tetapi sebagian salinan bukti gagal dibersihkan. Minta admin memeriksa Google Drive/R2.`:`Butir ${label} berhasil dihapus.`,'success');
+    }catch(err){lheStatus('Gagal menghapus: '+err.message,'error');}
+  }
 });
 lheField('lheEvidenceList')?.addEventListener('click',async e=>{
   const retry=e.target.closest('.lhe-evidence-retry');
@@ -5383,11 +5397,11 @@ async function openEvidencePreview(info){
 }
 document.getElementById('evidencePreviewClose')?.addEventListener('click',closeEvidencePreview);document.getElementById('evidencePreviewCloseFooter')?.addEventListener('click',closeEvidencePreview);document.querySelectorAll('[data-preview-tab]').forEach(b=>b.addEventListener('click',()=>evidencePreviewSetTab(b.dataset.previewTab)));document.getElementById('evidencePreviewModal')?.addEventListener('click',e=>{if(e.target.id==='evidencePreviewModal')closeEvidencePreview();});
 
-// ====== ALUR VERIFIKASI BERTAHAP: AUDITOR → IRBAN → BPKP ======
+// ====== ALUR VERIFIKASI BERTAHAP: AUDITOR / PPUPD → IRBAN → BPKP ======
 const workflowUi={opdId:null,uploadId:null,fileName:'Evidence',data:null};
-const workflowStageLabels={auditor:'Auditor (input/pengiriman)',irban:'Irban (verifikator)',bpkp:'BPKP (verifikator akhir)'};
+const workflowStageLabels={auditor:'Auditor / PPUPD (input/pengiriman)',irban:'Irban (verifikator)',bpkp:'BPKP (verifikator akhir)'};
 function workflowDate(value){if(!value)return '—';try{return new Date(Number(value)).toLocaleString('id-ID');}catch{return '—';}}
-function workflowStatusLabel(status){return ({menunggu:'Menunggu',dikirim:'Dikirim Auditor',diterima:'Diterima',diterima_catatan:'Diterima dengan Catatan',dikembalikan:'Dikembalikan'})[status]||status||'Menunggu';}
+function workflowStatusLabel(status){return ({menunggu:'Menunggu',dikirim:'Dikirim Auditor / PPUPD',diterima:'Diterima',diterima_catatan:'Diterima dengan Catatan',dikembalikan:'Dikembalikan'})[status]||status||'Menunggu';}
 function workflowSetStatus(message,type=''){const el=document.getElementById('evidenceWorkflowStatus');if(!el)return;el.textContent=message||'';el.className='sheet-links-status'+(type?' '+type:'');el.style.display=message?'block':'none';}
 function workflowCanSubmit(stage,data){
   const role=String(currentUser?.role||'');const roleStage=role==='ppupd'?'auditor':role;if(role!=='admin'&&roleStage!==stage)return false;
