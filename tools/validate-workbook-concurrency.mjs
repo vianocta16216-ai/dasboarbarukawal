@@ -27,13 +27,16 @@ const resolver = handler.slice(resolverStart, resolverEnd);
 assert.ok(resolver.includes("check.profile==='PM_2026'") && resolver.includes("check.profile!=='PM_2026'"), 'PM template resolver must accept only the validated PM_2026 profile');
 assert.ok(resolver.includes('checkFormulas:true'), 'PM master formulas must be validated before copying');
 assert.ok(handler.includes('listPmTemplateCandidates(accessToken)'), 'A stale 28-sheet config must trigger safe Drive discovery for the exact PM master');
-assert.ok(handler.includes("normalizeDriveTemplateTitle(file.name)!==normalizeDriveTemplateTitle(basename)"), 'Drive discovery must reject unrelated spreadsheets');
+assert.ok(handler.includes('explicitReleaseSuffix') && handler.includes('normalized!==expected&&!explicitReleaseSuffix'), 'Drive discovery must reject arbitrary prefix-matching backups and accept only canonical or explicitly named release variants');
 assert.ok(handler.includes('workbookHistory'), 'Replacing an incompatible legacy link must preserve the old workbook reference');
 assert.ok(!helper.includes('deleteGoogleDriveFile'), 'Existing workbooks must not be deleted during recovery');
 
 assert.ok(handler.includes('CREATE TABLE IF NOT EXISTS kk_pm_workbook_sync_locks'), 'Distributed workbook lock table missing');
 assert.ok(handler.includes('WHERE kk_pm_workbook_sync_locks.lease_until<?'), 'Workbook lock must have atomic lease acquisition');
 assert.ok(handler.includes("WHERE lock_key=? AND owner_token=?"), 'Workbook lock release must be owner-token scoped');
+assert.ok(handler.includes('SELECT owner_token,lease_until FROM kk_pm_workbook_sync_locks WHERE lock_key=? LIMIT 1'), 'Workbook sync must revalidate lock ownership before storing a new link');
+assert.ok(script.includes("data?.code==='WORKBOOK_SYNC_IN_PROGRESS'"), 'Concurrent PM sync should be treated as a retryable conflict, not a permanent failure');
+assert.ok(script.includes("const lockRetryMs=err?.data?.code==='WORKBOOK_SYNC_IN_PROGRESS'"), 'Client retry should respect the distributed-lock retry hint');
 assert.ok(handler.includes("kk_pm_data=json_patch(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,json(?))"), 'Sparse PM cell saves must merge, not replace workbook metadata');
 assert.ok(handler.includes('LIVE_KK_MASTER_ROWS_GENERATION'), 'Master cache generation guard missing');
 assert.ok(handler.includes('if(LIVE_KK_MASTER_ROWS_PENDING.get(cacheKey)===job)'), 'Old in-flight master response must not clear the newer pending refresh');
@@ -45,7 +48,7 @@ assert.ok(handler.includes('SELECT 1 FROM evidence_verification_steps WHERE year
 assert.ok(script.includes("callServerWithRetry('syncKkComputedValues'"), 'UI must continue using the computed values sync action');
 assert.ok(script.includes('async function ensureKkPmMasterLoaded(forceRefresh=true)'), 'PM master loader must refresh live data on each modal open');
 assert.ok(script.includes('ensureKkPmMasterLoaded(true)'), 'PM modal must explicitly request fresh master data');
-assert.ok(script.includes("fetch('/kk-pm-exact-workbook-master.json?v=20261015.1',{cache:'no-store'})"), 'PM static snapshot must not be held by browser cache');
+assert.ok(script.includes("fetch('/kk-pm-exact-workbook-master.json?v=20261015.2',{cache:'no-store'})"), 'PM static snapshot must not be held by browser cache');
 assert.ok(script.includes('snapshot lokal karena refresh master live gagal'), 'UI must show a warning instead of silently reporting stale master as live');
 
 const sheetNamesText = (handler.match(/const KK_PM_2026_SHEET_NAMES = \[([\s\S]*?)\];/) || [])[1] || '';
@@ -53,7 +56,7 @@ assert.equal((sheetNamesText.match(/'[^']*'/g) || []).length, 26, 'PM_2026 profi
 
 console.log(JSON.stringify({
   status: 'PASS',
-  checks: 36,
+  checks: 37,
   verified: [
     'scoped-account permissions for dashboard reads and formula synchronization',
     'Inspektorat/Irban is explicitly allowed to synchronize PM workbooks within its OPD scope',

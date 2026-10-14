@@ -7,43 +7,61 @@ const worker=fs.readFileSync(path.join(root,'functions/myCloudinaryHandler.js'),
 const app=fs.readFileSync(path.join(root,'public/script.js'),'utf8');
 const html=fs.readFileSync(path.join(root,'public/index.html'),'utf8');
 const sync=fs.readFileSync(path.join(root,'tools/KawalSPIP_MasterSync.gs'),'utf8');
+let checks=0;
+const check=(condition,message)=>{assert.ok(condition,message);checks++;};
 
-// OPD/Inspektorat-scoped accounts must be allowed to read the workpaper and QA data
-// needed by the UI; the handler continues to validate the requested OPD scope.
+// Role boundaries: Irban can initiate PM provisioning and read formula values only inside
+// the requested OPD scope; these are not broad admin privileges.
 const opdActions=(worker.match(/const OPD_INPUT_ACTIONS = new Set\(\[([\s\S]*?)\]\);/)||[])[1]||'';
-for(const action of ['getQaApipData','getQaApipChecklistData','getWorkbookEvidenceFiles','getBpkpOfficialScore','getKkPmDataDetailed','getKkRpjmdMappings','saveKkRpjmdMapping','getKkMasterSheetRows','syncKkComputedValues','getEvidenceWorkflow']){
-  assert.ok(opdActions.includes(`'${action}'`),`OPD allowlist missing ${action}`);
-}
-assert.ok(worker.includes('assertSessionCanAccessOpd(env, authSession, params.year || year, params.opdId)'), 'Per-OPD scope guard is missing');
-assert.ok(worker.includes("'template_source_year'"), 'LHE original-template-year migration missing');
-assert.ok(worker.includes('new Set([String(year),String(Number(year)-1)])'), 'LHE target years must be dynamic and current/previous');
-assert.ok(worker.includes('LIVE_KK_MASTER_ROWS_GENERATION'), 'Master cache generation guard missing');
-assert.ok(worker.includes('resolveMasterTargetSheetNames'), 'Master reader must resolve actual sheet titles before building A1 ranges');
-assert.ok(worker.includes("'KK3.1 (OPD)'"), 'Master reader must support legacy tab-name aliases without creating invalid A1 ranges');
-assert.ok(worker.includes('resolveKkPmTemplateSpreadsheet'), 'PM reads and syncs must validate/discover the latest PM template instead of using stale legacy ID');
-assert.ok(worker.includes('LIVE_KK_MASTER_ROWS_CACHE.delete(cacheKey)'), 'Master cache invalidation missing after sync');
-assert.ok(worker.includes("new Set(['syncKkPmMasterNow'])"), 'Secret-protected service webhook must bypass browser-session requirement');
-assert.ok(worker.includes('supplied!==configured'), 'Webhook secret comparison is missing');
-assert.ok(worker.includes("'syncKkPmMasterNow'"), 'Webhook must remain an explicit API action');
-assert.ok(app.includes("ensureKkPmMasterLoaded(true)"), 'Kertas Kerja must refresh the master when opened');
-assert.ok(app.includes("{masterKind:kind,year:currentYear}"), 'Master refresh should pass selected year for OPD-wide propagation');
-assert.ok(app.includes('function lheYearPair()'), 'Dynamic LHE year helper missing');
-assert.ok(app.includes('lheTemplateTargetYear(t)'), 'Historical template year mapping missing');
-// Exercise the actual pure year-mapping helpers with both current and future years.
+for(const action of ['getQaApipData','getQaApipChecklistData','getWorkbookEvidenceFiles','getBpkpOfficialScore','getKkPmDataDetailed','getKkRpjmdMappings','saveKkRpjmdMapping','getKkMasterSheetRows','syncKkComputedValues','createKkPmSheets','getEvidenceWorkflow'])check(opdActions.includes(`'${action}'`),`OPD allowlist missing ${action}`);
+const irbanAllowed=(worker.match(/const IRBAN_ALLOWED_ACTIONS = new Set\(\[([\s\S]*?)\]\);/)||[])[1]||'';
+for(const action of ['createKkPmSheets','syncKkComputedValues','getKkPmSheets'])check(irbanAllowed.includes(`'${action}'`)||opdActions.includes(`'${action}'`),`Inspektorat/Irban role cannot reach ${action}`);
+check(worker.includes('assertSessionCanAccessOpd(env, authSession, params.year || year, params.opdId)'), 'Per-OPD scope guard is missing');
+check(worker.includes("sourceYear=String(params.sourceYear||year||new Date().getFullYear())"), 'LHE source year must not default to an old hard-coded year');
+check(worker.includes("Number(sourceYear)>new Date().getFullYear()+2"), 'LHE source year must be validated as a four-digit year, not hard-coded to 2024/2025');
+check(!worker.includes("if(!['2024','2025'].includes(sourceYear))"), 'Legacy LHE source-year restriction remains');
+check(worker.includes('LIVE_KK_MASTER_ROWS_GENERATION'), 'Master cache generation guard missing');
+check(worker.includes('resolveMasterTargetSheetNames'), 'Master reader must resolve actual sheet titles before building A1 ranges');
+check(worker.includes("'KK3.1 (OPD)'"), 'Master reader must support legacy tab-name aliases without invalid ranges');
+check(worker.includes('resolveKkPmTemplateSpreadsheet'), 'PM reads and syncs must validate the latest master');
+check(worker.includes('LIVE_KK_MASTER_ROWS_CACHE.delete(key)'), 'Master cache invalidation missing after sync');
+check(worker.includes("const isTrustedMasterWebhook=action==='syncKkPmMasterNow'"), 'Secret-protected service webhook action check is missing');
+check(worker.includes('suppliedMasterSyncSecret.length===configuredMasterSyncSecret.length'), 'Webhook secret comparison is missing');
+check(worker.includes("'syncKkPmMasterNow'"), 'Webhook must remain an explicit API action');
+check(app.includes('ensureKkPmMasterLoaded(true)'), 'Kertas Kerja must refresh master when opened');
+check(app.includes('{masterKind:kind,forceRefresh:true}'), 'Master refresh should request a fresh live master read');
+check(app.includes('function lheYearPair()'), 'Dynamic LHE year helper missing');
+check(app.includes('function lheRefreshYearLabels()'), 'Dynamic LHE labels and target-year input must refresh');
+check(app.includes("lheField('lheTargetYear')"), 'LHE target-year field must be linked to the current application year');
+check(app.includes('loadLheFollowups();')&&app.includes("getLheFollowups',{opdId:lheUi.opdId,year:currentYear}"), 'Changing budget year must reload follow-up records for that year');
+check(app.includes("async function openLatestKkPmWorkbook(sheetName='')"), 'Opening PM workbook must re-read the authoritative server link');
+check(app.includes("callServerWithRetry('getKkPmSheets',{opdId:kkPmCurrentRow.id,year:currentYear,forceRefresh:true},2)"), 'Opening PM workbook must force-refresh the master and validate the current D1 link before opening');
+check(app.includes('data-pm-open-workbook'), 'Sheet preview links must go through the authoritative open handler');
+check(app.includes('if(workbookState.needsSync||kkPmWorkbookNeedsSync)'), 'PM modal must not overwrite stale-link warning with generic success');
+check(worker.includes('templateRevision'), 'D1 workbook metadata must preserve master revision lineage');
+check(worker.includes('discoveredTime>configuredTime'), 'Resolver must prefer a newer validated master over a stale but valid configured ID');
+check(worker.includes('explicitReleaseSuffix') && worker.includes('normalized!==expected&&!explicitReleaseSuffix'), 'Master discovery must reject arbitrary backups whose names merely start with the canonical name');
+check(worker.includes('SELECT owner_token,lease_until FROM kk_pm_workbook_sync_locks WHERE lock_key=? LIMIT 1'), 'Sync must verify distributed-lock ownership before D1 write');
+check(app.includes("action==='createKkPmSheets' && data?.code==='WORKBOOK_SYNC_IN_PROGRESS'"), 'Concurrent PM sync lock responses must be retryable by the UI');
+check(app.includes('lockRetryMs=err?.data?.code===\'WORKBOOK_SYNC_IN_PROGRESS\''), 'Concurrent PM sync retries must respect the server lock retry hint');
+check(worker.includes("WHERE lock_key=? AND owner_token=?"), 'Lock release must be owner-token scoped');
+check(worker.includes("kk_pm_data=json_set(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,'$.version',3,'$.workbook',json(?),'$.workbookHistory',json(?))"), 'Workbook rollover must atomically update pointer/history and preserve other JSON fields');
+check(html.includes('id="lheTargetYear" readonly'), 'LHE target year must be read-only/automatic');
+check(!html.includes('id="lheTargetYear" readonly aria-readonly="true" style="display:block;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;background:#f1f5f9;color:#334155;font-weight:700;" value="2026"'), 'LHE target year input must not ship with a hard-coded calendar year before JS runs');
+check(html.includes('id="lheFollowupYearLabel"'), 'LHE modal must show the current target-year banner');
+check(!html.includes('Pilih sumber LHE 2025 / TL 2024'), 'Old hard-coded LHE source/target year label remains');
+check(!html.includes('TL 2024 Belum Tuntas'), 'Old hard-coded LHE due/status label remains');
+check(sync.includes('new Date().getFullYear()'), 'Master webhook year must follow the current calendar year when no override is configured');
+check(worker.includes('const calendarYear=String(new Date().getFullYear())'), 'D1 year list must auto-seed the current calendar year');
+check(app.includes('const calendarYear=String(new Date().getFullYear())'), 'Browser must include the current calendar year even if API years are stale');
+check(app.includes('data-pm-open-workbook'), 'All PM workbook links must validate against the server pointer before opening');
+
 const helperStart=app.indexOf('function lheYearPair()');
-const helperEnd=app.indexOf('function lheRefreshSourceYearOptions(',helperStart);
-assert.ok(helperStart>=0&&helperEnd>helperStart,'LHE year helpers are not in the expected region');
-const helperCode=app.slice(helperStart,helperEnd);
-const context={currentYear:'2026',lheUi:{templates:[{sourceYear:'2025'},{sourceYear:'2024'}]}};
-vm.createContext(context);vm.runInContext(helperCode,context);
-assert.equal(context.lheTemplateTargetYear({sourceYear:'2025'}),'2026');
-assert.equal(context.lheTemplateTargetYear({sourceYear:'2024'}),'2025');
-context.currentYear='2027';
-assert.equal(context.lheTemplateTargetYear({sourceYear:'2025'}),'2027');
-assert.equal(context.lheTemplateTargetYear({sourceYear:'2024'}),'2026');
-assert.ok(!html.includes('2025 / 2024'), 'Stale hard-coded LHE label remains in HTML');
-assert.ok(!html.includes('value="2026">LHE / Renaksi 2026'), 'Stale hard-coded LHE select remains in HTML');
-assert.ok(sync.includes('String(new Date().getFullYear())'), 'Master webhook year must follow the current calendar year');
-assert.ok(worker.includes('const calendarYear=String(new Date().getFullYear())'), 'Year list must add current calendar year automatically');
-assert.ok(worker.includes('const yearValue = String(params.year || new Date().getFullYear())'), 'Workbook creation default year must be dynamic');
-console.log(JSON.stringify({status:'PASS',checks:32,areas:['role access/scoping','QA APIP','KK PM sync/cache invalidation','dynamic LHE years','master webhook year']},null,2));
+const helperEnd=app.indexOf('function lheRefreshYearLabels()',helperStart);
+check(helperStart>=0&&helperEnd>helperStart,'LHE year-pair helper must be extractable for a behavioral test');
+const context={currentYear:'2026',Date};vm.createContext(context);vm.runInContext(app.slice(helperStart,helperEnd),context);
+assert.equal(context.lheYearPair().current,'2026');assert.equal(context.lheYearPair().previous,'2025');checks+=2;
+assert.equal(context.lheMapDueDateToTargetYear('31 Desember 2025','2024','2026'),'31 Desember 2026');checks++;
+assert.equal(context.lheMapDueDateToTargetYear('Bulan Nopember 2026','2025','2027'),'Bulan Nopember 2027');checks++;
+context.currentYear='2027';assert.equal(context.lheYearPair().current,'2027');assert.equal(context.lheYearPair().previous,'2026');checks+=2;
+console.log(JSON.stringify({status:'PASS',checks,areas:['role access/scoping','PM master revision and link migration','D1 concurrency lock ownership','fresh links for every PM-open action','LHE dynamic target year and historical source-year integrity']},null,2));

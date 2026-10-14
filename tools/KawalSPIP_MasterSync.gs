@@ -35,7 +35,7 @@ function notifyKawalSpipMasterChanged(event) {
   var properties = PropertiesService.getScriptProperties();
   var url = String(properties.getProperty('KAWAL_SPIP_WEBHOOK_URL') || '').trim();
   var secret = String(properties.getProperty('KAWAL_SPIP_SYNC_SECRET') || '').trim();
-  var year = String(properties.getProperty('KAWAL_SPIP_YEAR') || '2026').trim();
+  var year = String(properties.getProperty('KAWAL_SPIP_YEAR') || new Date().getFullYear()).trim();
   if (!url || !secret || secret.length < 32) {
     console.error('Kawal SPIP master sync belum dikonfigurasi di Script Properties.');
     return;
