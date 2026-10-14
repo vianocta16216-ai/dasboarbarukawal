@@ -18,7 +18,16 @@
     "auth_password_pbkdf2_runtime_limit_guard": true,
     "legacy_bootstrap_hash_migration_guarded": true,
     "wrong_password_rejected_in_helper_test": true,
-    "manual_password_reset_not_overwritten_in_migration_test": true
+    "manual_password_reset_not_overwritten_in_migration_test": true,
+    "rpjmd_master_valid_json": true,
+    "rpjmd_objective_count": 4,
+    "rpjmd_strategic_goal_count": 21,
+    "rpjmd_indicator_count": 31,
+    "rpjmd_workpaper_mapping_count": 8,
+    "rpjmd_mapping_api_actions_present": true,
+    "rpjmd_mapping_audit_table_in_source": true,
+    "rpjmd_mapping_export_sheet_in_source": true,
+    "rpjmd_mapping_bp4d_scope_rule_in_source": true
   },
   "production_checks_not_run": [
     "D1 account hash iteration counts and bindings in production",
@@ -28,7 +37,12 @@
     "Google Drive backup",
     "cross-OPD rejection tests",
     "live workbook IDs",
-    "login test for all 32 accounts after deployment"
+    "login test for all 32 accounts after deployment",
+    "D1 live create/read/update of opd_kk_rpjmd_mapping and audit rows",
+    "live Admin/Irban verification and OPD forbidden-action tests for RPJMD mapping",
+    "UI browser acceptance test for RPJMD tab and button contrast",
+    "live export workbook containing Pemetaan RPJMD sheet",
+    "confirmation of latest BPKP technical instructions and official regulatory status at deployment"
   ],
   "notes": [
     "User-provided list has 27 OPDs; app default master has an additional BPKAD, so account JSON contains 28 Operator OPD accounts.",
@@ -36,12 +50,18 @@
     "Credentials in the separate JSON/CSV are initial passwords; treat both files as confidential.",
     "Cloudflare D1, real Google Sheets/Drive OAuth, R2 access and all workbook identifiers still require live production acceptance tests.",
     "Role Auditor diubah menjadi allowlist API eksplisit; role lain tetap memakai aturan akses sesuai cakupannya.",
-    "Login 500 reproduced from user recording was caused by PBKDF2 requesting 120000 iterations while Cloudflare Workers supports up to 100000 per operation. Patch uses 100000 and safely upgrades untouched bootstrap hashes on matching initial-password login."
+    "Login 500 reproduced from user recording was caused by PBKDF2 requesting 120000 iterations while Cloudflare Workers supports up to 100000 per operation. Patch uses 100000 and safely upgrades untouched bootstrap hashes on matching initial-password login.",
+    "Integrasi pemetaan RPJMD menambahkan tab Kertas Kerja PM SPIP, penyimpanan per tahun/OPD/kertas kerja, status verifikasi Admin/Irban, audit trail, dan sheet export. Uji runtime pada Cloudflare D1/Google Sheets/Drive belum dilakukan dari lingkungan lokal."
   ],
   "local_tests_run": [
     "JavaScript syntax checks passed for myCloudinaryHandler.js and project function scripts",
     "All JSON files parsed successfully",
     "PBKDF2 helper tests passed for password create/verify and unsupported iteration handling",
-    "Legacy bootstrap migration test passed; explicitly reset password records are not overwritten"
+    "Legacy bootstrap migration test passed; explicitly reset password records are not overwritten",
+    "Node syntax checks passed for public/script.js and all project JavaScript files",
+    "RPJMD master JSON validated: 4 objectives, 21 strategic goals, 31 indicators",
+    "Static integration validator passed: 8 workpaper mapping types, 3 API actions, role rule and audit table source checks",
+    "All project JSON files parsed successfully",
+    "Final ZIP integrity test passed"
   ]
 }

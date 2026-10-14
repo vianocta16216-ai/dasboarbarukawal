@@ -80,3 +80,18 @@ Ada dua jalur export:
 
 ## Backup/restore
 Tabel sparse PM (`opd_kk_pm_workpaper_items`, `opd_kk_pm_meta`) dan checklist QA (`opd_qa_apip_checklist_items`) ikut dalam backup/restore. Storage legacy PM tetap dipertahankan untuk kompatibilitas dan tidak dihapus.
+
+
+## Integrasi Sasaran RPJMD Kabupaten Mahakam Ulu 2025–2029
+
+Acuan yang diberikan pengguna: Peraturan Daerah Kabupaten Mahakam Ulu Nomor 1 Tahun 2026 tentang RPJMD Tahun 2025–2029 (ditetapkan 20 April 2026). Perda Pasal 2 menyatakan RPJMD memuat tujuan, sasaran, strategi, arah kebijakan, program Perangkat Daerah dan kerangka pendanaan indikatif; menjadi pedoman Renstra PD, RKPD, serta pengendalian/evaluasi RPJMD. Pasal 4 mengharuskan pelaksanaan program RPJMD dijabarkan dalam Renstra PD dan penyusunan Renstra berkoordinasi dengan perangkat daerah bidang perencanaan. Pasal 5 menugaskan kepala perangkat daerah bidang perencanaan melakukan pengendalian/evaluasi pelaksanaan RPJMD. Lampiran Bab I bagian 1.3.2 juga menjelaskan penyelarasan tujuan, sasaran, strategi, arah kebijakan, program, dan indikator kinerja RPJMD dengan Renstra PD; Bab V bagian 5.2–5.3 memuat kaidah pelaksanaan serta pengendalian/evaluasi.
+
+### Aturan integrasi yang harus dijaga pada aplikasi
+- **KK 1.1–2.3:** tab Pemetaan Sasaran RPJMD kini menyediakan master terstruktur dari Tabel 3.6 (4 tujuan, 21 sasaran strategis, indikator tujuan/sasaran dan target tahunan yang ditranskripsi) untuk mengaitkan sasaran pemerintah daerah, Renstra/Renja OPD, program, kegiatan, dan subkegiatan. Perluasan indikator/penanggung jawab dari tabel lain Bab IV tetap harus diverifikasi terhadap dokumen resmi sebelum dijadikan referensi input wajib.
+- **KK 3.1–3.4:** tetap menjadi empat target PM Struktur & Proses T1–T4, dengan evidence tunggal dari modul Evidence Struktur & Proses dan data terisolasi menurut tahun + OPD + target + subunsur + parameter. Bappelitbangda/BP4D berperan sebagai pengampu perencanaan dan pengendalian/evaluasi RPJMD; BPKAD untuk keterkaitan keuangan/penganggaran; Inspektorat untuk pengawasan/penjaminan dan verifikasi sesuai kewenangan akun.
+- **KK 5.1:** tab pemetaan mendukung KK 5.1 A/B/C dengan referensi sasaran RPJMD dan status verifikasi. Pemetaan ini konteks hubungan perencanaan, bukan pengganti indikator hasil dan parameter/formula resmi workbook.
+- **Alur akun:** Admin Pemda mengelola master OPD, tahun, dan penugasan; OPD mengisi ruang lingkup OPD sendiri; verifikator lintas-OPD memeriksa sesuai role dan merekam status/jejak audit. Jangan membuka data OPD lain hanya karena tautan RPJMD sama.
+- **Reset data:** reset berarti mengalihkan tampilan ke master kertas kerja baru yang tervalidasi, bukan menghapus data operasional lama. Data legacy harus tetap dapat dipulihkan/diarsipkan sampai migrasi dan rekonsiliasi disetujui.
+
+### Catatan batasan data
+Master sasaran/indikator pada aplikasi merujuk Tabel 3.6, halaman tercetak 195–198, dengan nilai target dipertahankan sebagai teks untuk menjaga `NA`, rentang, predikat, dan level. Kesesuaian pemetaan setiap OPD tetap harus didukung Renstra/Renja, dokumen program/kegiatan, indikator, risiko, dan bukti yang relevan. Pemetaan tidak secara otomatis menentukan grade, skor maturitas, MRI, IEPK, atau nilai resmi BPKP. Uji nyata pada Cloudflare D1, akun produksi, dan Google Sheets/Drive tetap wajib sebelum operasional.
