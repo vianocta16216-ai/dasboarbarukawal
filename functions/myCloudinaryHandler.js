@@ -304,7 +304,7 @@ const SAFE_PUBLIC_ACTIONS = new Set(['authMe','login','verifyAccess']);
 const COMMON_READ_ACTIONS = new Set([
   'getYears','getData','getSubunsurData','getKkMasterSheetRows','getKkSheets','getRtpKkSheets',
   'getRtpEvidence','getReportFiles','getWorkbookEvidenceFiles','getKkPmSheets','getKkPmData',
-  'getKkPmDataDetailed','getQaApipData','getQaApipChecklistData','getEvidenceWorkflow',
+  'getKkPmDataDetailed','getKkRpjmdMappings','getQaApipData','getQaApipChecklistData','getEvidenceWorkflow',
   'getBpkpOfficialScore','exportKkPmWorkbook','getLheFollowups'
 ]);
 const ADMIN_ONLY_ACTIONS = new Set([
@@ -314,7 +314,7 @@ const ADMIN_ONLY_ACTIONS = new Set([
   'listAuthUsers','createAuthUser','setAuthUserEnabled','resetAuthUserPassword'
 ]);
 const VERIFICATION_ACTIONS = new Set([
-  'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep'
+  'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','verifyKkRpjmdMapping'
 ]);
 const OPD_INPUT_ACTIONS = new Set([
   'saveSubunsur','saveField','saveRow','uploadFile','deleteFile','replaceEvidenceFile','retryDriveBackup',
@@ -322,7 +322,7 @@ const OPD_INPUT_ACTIONS = new Set([
   'uploadReportFile','deleteReportFile','getReportFiles','getRtpEvidence','getLheFollowups','saveLheFollowup','uploadLheEvidence','deleteLheEvidence','getKkSheets','createKkSheets',
   'saveKkData','getRtpKkSheets','createRtpKkSheets','saveRtpKkData','getKkPmSheets','createKkPmSheets',
   'exportKkPmWorkbook','getKkPmData','getKkPmDataDetailed','saveKkPmData','saveKkPmItem','deleteKkPmItem',
-  'saveKkPmMeta','getWorkbookEvidenceFiles','replaceWorkbookEvidenceFile','saveQaApipItem',
+  'saveKkPmMeta','saveKkRpjmdMapping','getWorkbookEvidenceFiles','replaceWorkbookEvidenceFile','saveQaApipItem',
   'deleteQaApipItem','saveQaApipChecklistItem','deleteQaApipChecklistItem','getQaApipChecklistData',
   'getYears','getData','getSubunsurData','getKkMasterSheetRows','getEvidenceWorkflow','downloadEvidence','getLheFollowups'
 ]);
@@ -331,7 +331,7 @@ const AUDITOR_ALLOWED_ACTIONS = new Set([
 ]);
 const IRBAN_ALLOWED_ACTIONS = new Set([
   ...COMMON_READ_ACTIONS,'saveAssessmentStatus','saveEvidenceVerification','saveRtpEvidenceVerification',
-  'saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','downloadEvidence','listBackups','getLheFollowups','saveLheFollowup','deleteLheFollowup','uploadLheEvidence','deleteLheEvidence'
+  'saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','verifyKkRpjmdMapping','downloadEvidence','listBackups','getLheFollowups','saveLheFollowup','deleteLheFollowup','uploadLheEvidence','deleteLheEvidence'
 ]);
 const BPKP_ALLOWED_ACTIONS = new Set([
   ...COMMON_READ_ACTIONS,'saveEvidenceWorkflowStep','downloadEvidence','getLheFollowups','getBpkpOfficialScoreAdmin',
@@ -869,6 +869,20 @@ async function ensureOpdSchema(env){
       PRIMARY KEY(year, opd_id, target)
     )`).run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_kk_pm_meta_opd ON opd_kk_pm_meta(year, opd_id)").run();
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS opd_kk_rpjmd_mapping (
+      year TEXT NOT NULL, opd_id TEXT NOT NULL, workpaper_code TEXT NOT NULL,
+      goal_codes_json TEXT NOT NULL DEFAULT '[]', rationale TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'Belum Diajukan', submitted_by TEXT NOT NULL DEFAULT '',
+      verifier_name TEXT NOT NULL DEFAULT '', verifier_note TEXT NOT NULL DEFAULT '',
+      verified_at INTEGER, updated_by TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(year,opd_id,workpaper_code)
+    )`).run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_kk_rpjmd_mapping_lookup ON opd_kk_rpjmd_mapping(year,opd_id)").run();
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS opd_kk_rpjmd_mapping_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, year TEXT NOT NULL, opd_id TEXT NOT NULL,
+      workpaper_code TEXT NOT NULL, status TEXT NOT NULL, verifier_name TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL
+    )`).run();
 
     // Workbook-aligned Evidence Struktur & Proses. The same evidenceKey is stored once
     // when KK3.1-KK3.4 share identical parameter content; target labels are metadata.
@@ -2724,6 +2738,45 @@ export async function onRequest({ request, env, ctx }) {
         return jsonResponse({ status: 'success', message: 'Kertas Kerja PM tersimpan', kkPmData: compact });
       }
 
+      case 'getKkRpjmdMappings': {
+        const opdId=String(params.opdId||''); if(!opdId) throw new Error('ID OPD wajib diisi.');
+        const rows=(await env.DB.prepare(`SELECT workpaper_code,goal_codes_json,rationale,status,submitted_by,verifier_name,verifier_note,verified_at,updated_by,updated_at FROM opd_kk_rpjmd_mapping WHERE year=? AND opd_id=? ORDER BY workpaper_code`).bind(String(year),opdId).all()).results||[];
+        const mappings=rows.map(r=>({workpaperCode:r.workpaper_code,goalCodes:(()=>{try{return JSON.parse(r.goal_codes_json||'[]')}catch{return []}})(),rationale:r.rationale||'',status:r.status||'Belum Diajukan',submittedBy:r.submitted_by||'',verifierName:r.verifier_name||'',verifierNote:r.verifier_note||'',verifiedAt:r.verified_at?Number(r.verified_at):null,updatedBy:r.updated_by||'',updatedAt:Number(r.updated_at||0)}));
+        return jsonResponse({status:'success',mappings});
+      }
+      case 'saveKkRpjmdMapping': {
+        const opdId=String(params.opdId||''), workpaperCode=String(params.workpaperCode||'').toUpperCase();
+        const allowedWorkpapers=new Set(['KKE 1.1 SASTRA','KKE 1.2 SASTRA OPD','KKE 2.1 SASPRO','KKE 2.2 SASKEG','KKE 2.3 SASSUBKEG','KK 5.1 A','KK 5.1 B','KK 5.1 C']);
+        const allowedGoals=new Set(['T1.S1','T1.S2','T1.S3','T2.S1','T2.S2','T2.S3','T2.S4','T2.S5','T2.S6','T2.S7','T2.S8','T3.S1','T3.S2','T3.S3','T3.S4','T4.S1','T4.S2','T4.S3','T4.S4','T4.S5','T4.S6']);
+        if(!opdId||!allowedWorkpapers.has(workpaperCode))throw new Error('Identitas kertas kerja pemetaan RPJMD tidak valid.');
+        const orgRow=(await env.DB.prepare('SELECT opd FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(opdId,String(year)).all()).results?.[0];
+        if(!orgRow)throw new Error('OPD tidak ditemukan.');
+        if(['KKE 1.1 SASTRA','KK 5.1 A'].includes(workpaperCode)&&authSession?.role!=='admin'&&assessmentOrgProfile(orgRow.opd)!=='BP4D')throw new Error(`${workpaperCode} merupakan kertas kerja tingkat Pemda; pengisian dibatasi untuk akun BP4D/Bappelitbangda atau Admin Pemda.`);
+        await assertAssessmentInputEditable(env,year,opdId);
+        const goalCodes=Array.isArray(params.goalCodes)?[...new Set(params.goalCodes.map(x=>String(x||'').trim()).filter(Boolean))]:[];
+        if(goalCodes.some(x=>!allowedGoals.has(x)))throw new Error('Terdapat kode sasaran RPJMD yang tidak dikenal.');
+        if(!goalCodes.length)throw new Error('Pilih minimal satu sasaran RPJMD yang terkait.');
+        const rationale=sanitizeQaText(params.rationale,3000); if(rationale.length<10)throw new Error('Uraian keterkaitan wajib diisi minimal 10 karakter.');
+        const now=Date.now(), actor=String(authSession?.username||authSession?.displayName||'');
+        await env.DB.prepare(`INSERT INTO opd_kk_rpjmd_mapping(year,opd_id,workpaper_code,goal_codes_json,rationale,status,submitted_by,verifier_name,verifier_note,verified_at,updated_by,updated_at)
+          VALUES(?,?,?,?,?,'Menunggu Verifikasi',?,'','',NULL,?,?) ON CONFLICT(year,opd_id,workpaper_code) DO UPDATE SET goal_codes_json=excluded.goal_codes_json,rationale=excluded.rationale,status='Menunggu Verifikasi',submitted_by=excluded.submitted_by,verifier_name='',verifier_note='',verified_at=NULL,updated_by=excluded.updated_by,updated_at=excluded.updated_at`)
+          .bind(String(year),opdId,workpaperCode,JSON.stringify(goalCodes),rationale,actor,actor,now).run();
+        await env.DB.prepare(`INSERT INTO opd_kk_rpjmd_mapping_audit(year,opd_id,workpaper_code,status,verifier_name,note,updated_by,created_at) VALUES(?,?,?,'Menunggu Verifikasi','',?,?,?)`).bind(String(year),opdId,workpaperCode,'Pemetaan disimpan/diajukan untuk verifikasi.',actor,now).run();
+        return jsonResponse({status:'success',message:'Pemetaan RPJMD disimpan dan menunggu verifikasi.',workpaperCode,goalCodes,status:'Menunggu Verifikasi',updatedAt:now});
+      }
+      case 'verifyKkRpjmdMapping': {
+        const opdId=String(params.opdId||''),workpaperCode=String(params.workpaperCode||'').toUpperCase(),decision=String(params.decision||'').trim();
+        if(!opdId||!['KKE 1.1 SASTRA','KKE 1.2 SASTRA OPD','KKE 2.1 SASPRO','KKE 2.2 SASKEG','KKE 2.3 SASSUBKEG','KK 5.1 A','KK 5.1 B','KK 5.1 C'].includes(workpaperCode))throw new Error('Identitas pemetaan tidak valid.');
+        if(!['Terverifikasi','Perlu Perbaikan'].includes(decision))throw new Error('Keputusan verifikasi tidak valid.');
+        const examiner=sanitizeQaText(params.verifierName||authSession?.displayName||authSession?.username,120),note=sanitizeQaText(params.note,3000);
+        if(examiner.length<2)throw new Error('Nama verifikator wajib diisi.');
+        if(decision==='Perlu Perbaikan'&&note.length<5)throw new Error('Catatan perbaikan wajib diisi.');
+        const now=Date.now();
+        const res=await env.DB.prepare(`UPDATE opd_kk_rpjmd_mapping SET status=?,verifier_name=?,verifier_note=?,verified_at=?,updated_by=?,updated_at=? WHERE year=? AND opd_id=? AND workpaper_code=? AND status='Menunggu Verifikasi'`).bind(decision,examiner,note,now,String(authSession?.username||examiner),now,String(year),opdId,workpaperCode).run();
+        if(!res.meta?.changes)throw new Error('Pemetaan belum disimpan oleh OPD.');
+        await env.DB.prepare(`INSERT INTO opd_kk_rpjmd_mapping_audit(year,opd_id,workpaper_code,status,verifier_name,note,updated_by,created_at) VALUES(?,?,?,?,?,?,?,?)`).bind(String(year),opdId,workpaperCode,decision,examiner,note,String(authSession?.username||examiner),now).run();
+        return jsonResponse({status:'success',message:`Pemetaan RPJMD ${decision.toLowerCase()}.`,decision,verifiedAt:now});
+      }
       case 'getKkPmDataDetailed': {
         const opdId=String(params.opdId||'');
         if(!opdId) throw new Error('ID OPD wajib diisi');
