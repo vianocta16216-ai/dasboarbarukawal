@@ -5143,7 +5143,7 @@ function lheRefreshYearLabels(){const years=lheYearPair();const target=lheField(
 const lheUi={opdId:null,items:[],templates:[],templateLoaded:false,editingId:null,selectedFollowupId:null,templateDueDateAuto:false,templateDueDateValue:''};
 function lheStatus(message,type=''){const el=document.getElementById('lheFollowupStatus');if(!el)return;el.textContent=message||'';el.className='sheet-links-status'+(type?' '+type:'');el.style.display=message?'block':'none';}
 function lheCanEdit(){return ['admin','auditor','opd','irban'].includes(String(currentUser?.role||''));}
-function lheCanDelete(){return ['admin','irban'].includes(String(currentUser?.role||''));}
+function lheCanDelete(){return ['admin','irban','auditor'].includes(String(currentUser?.role||''));}
 function lheField(id){return document.getElementById(id);}
 function lheSetForm(item={}){
   lheUi.templateDueDateAuto=false;lheUi.templateDueDateValue='';
@@ -5285,6 +5285,32 @@ async function saveLheFollowup(){
   }catch(err){lheStatus('Gagal menyimpan: '+err.message,'error');}
   finally{lheField('lheSaveButton').disabled=false;}
 }
+function exportLheFollowupsExcel(){
+  if(!Array.isArray(lheUi.items)||!lheUi.items.length){lheStatus('Belum ada butir tersimpan untuk diekspor.','error');return;}
+  if(typeof XLSX==='undefined'){lheStatus('Fitur Excel belum termuat. Muat ulang aplikasi lalu coba lagi.','error');return;}
+  const row=rows.find(r=>String(r.id)===String(lheUi.opdId));
+  const year=String(currentYear||new Date().getFullYear());
+  const aoa=[
+    ['RENCANA AKSI TINDAK LANJUT SPIP TERINTEGRASI'],
+    [`OPD: ${row?.opd||'—'} | Tahun Anggaran Tindak Lanjut: ${year}`],
+    ['Rencana aksi, PIC dan waktu merupakan usulan. Realisasi/status harus menggambarkan kondisi aktual; tautan bukti hanya diisi bila tersedia.'],
+    ['No.','Ref. rekomendasi','Penanggung jawab / pendukung (usulan)','Rekomendasi laporan (ringkasan)','Rencana aksi / upaya perbaikan yang diusulkan','Target / indikator penyelesaian','Bukti tindak lanjut yang diperlukan','Waktu penyelesaian (usulan)','Realisasi upaya perbaikan','Status terkini','Link bukti tindak lanjut','Catatan verifikasi APIP','Tahun LHE']
+  ];
+  lheUi.items.forEach((item,i)=>{
+    const evidence=Array.isArray(item.evidence)?item.evidence:[];
+    const links=evidence.map(f=>f.webViewLink||f.driveUrl||f.publicUrl||'').filter(Boolean).join('\n');
+    aoa.push([i+1,item.recommendation_ref||'',item.pic||'',item.recommendation||'',item.action_plan||'',item.indicator||'',item.evidence_required||'',item.due_date||'',item.actual_action||'',item.status||'Belum diverifikasi',links,item.verifier_note||'',item.source_year||'']);
+  });
+  const wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:12}},{s:{r:1,c:0},e:{r:1,c:12}},{s:{r:2,c:0},e:{r:2,c:12}}];
+  ws['!freeze']={xSplit:0,ySplit:4};ws['!autofilter']={ref:`A4:M${aoa.length}`};
+  ws['!cols']=[{wch:6},{wch:18},{wch:32},{wch:48},{wch:58},{wch:42},{wch:46},{wch:25},{wch:48},{wch:23},{wch:42},{wch:42},{wch:12}];
+  for(let r=0;r<aoa.length;r++)for(let c=0;c<13;c++){const cell=ws[XLSX.utils.encode_cell({r,c})];if(cell)cell.s={alignment:{vertical:'top',wrapText:true}};}
+  XLSX.utils.book_append_sheet(wb,ws,'Rencana Aksi');
+  const safe=String(row?.opd||'OPD').replace(/[\\/:*?"<>|]/g,' ').trim().slice(0,65)||'OPD';
+  XLSX.writeFile(wb,`${safe}-${year}-Tindak-Lanjut-LHE-SPIP.xlsx`);
+  lheStatus('Ekspor Excel berhasil. Format mengikuti kolom rencana aksi pada contoh workbook, dengan realisasi/status tetap berasal dari data tersimpan.','success');
+}
 async function uploadLheEvidence(){
   const row=rows.find(r=>String(r.id)===String(lheUi.opdId));const file=lheField('lheEvidenceInput').files?.[0];
   if(!row||!file)return;
@@ -5303,6 +5329,7 @@ async function deleteLheAttachment(uploadId){
 }
 function closeLheFollowupModal(){lheField('lheFollowupModal')?.classList.remove('active');lheUi.opdId=null;}
 lheField('lheTemplateSelect')?.addEventListener('change',chooseLheTemplate);
+lheField('lheExportExcel')?.addEventListener('click',exportLheFollowupsExcel);
 lheField('lheDueDate')?.addEventListener('input',()=>{lheUi.templateDueDateAuto=false;});
 lheField('lheSaveButton')?.addEventListener('click',saveLheFollowup);
 lheField('lheNewButton')?.addEventListener('click',()=>{lheField('lheTemplateSelect').value='';lheField('lheTemplateBaseline')?.remove();lheSetForm({});lheStatus('Form baru siap diisi.','');});
