@@ -359,7 +359,7 @@ const VERIFICATION_ACTIONS = new Set([
 const OPD_INPUT_ACTIONS = new Set([
   'saveSubunsur','saveField','saveRow','uploadFile','deleteFile','replaceEvidenceFile','retryDriveBackup',
   'uploadRtpEvidence','deleteRtpEvidence','replaceRtpEvidence','saveRtpEvidenceFolder',
-  'uploadReportFile','deleteReportFile','getReportFiles','getRtpEvidence','getLheFollowups','saveLheFollowup','uploadLheEvidence','deleteLheEvidence','deleteWorkbookEvidence','getKkSheets','createKkSheets',
+  'uploadReportFile','deleteReportFile','deleteLheFollowup','getReportFiles','getRtpEvidence','getLheFollowups','saveLheFollowup','uploadLheEvidence','deleteLheEvidence','deleteWorkbookEvidence','getKkSheets','createKkSheets',
   'saveKkData','getRtpKkSheets','createRtpKkSheets','saveRtpKkData','getKkPmSheets','createKkPmSheets',
   'exportKkPmWorkbook','getKkPmData','getKkPmDataDetailed','saveKkPmData','saveKkPmItem','deleteKkPmItem',
   'saveKkPmMeta','saveKkRpjmdMapping','getKkRpjmdMappings','createEvidencePreviewLink','previewEvidence','getWorkbookEvidenceFiles','replaceWorkbookEvidenceFile','saveQaApipItem',
@@ -580,7 +580,7 @@ function isActionAllowedForRole(session,action,params={}){
   if(role==='admin')return true;
   if(role==='opd'){
     if(!OPD_INPUT_ACTIONS.has(action))return false;
-    if(VERIFICATION_ACTIONS.has(action)||DESTRUCTIVE_ADMIN_ACTIONS.has(action)||action==='deleteLheFollowup')return false;
+    if(VERIFICATION_ACTIONS.has(action)||DESTRUCTIVE_ADMIN_ACTIONS.has(action))return false;
     if(action==='saveField'&&!['evidence','qaApip','rtp','status'].includes(String(params.field||'')))return false;
     if(action==='saveRow'||action==='saveData')return false;
     return true;
@@ -634,7 +634,7 @@ async function assertUploadBelongsToOpd(env,year,opdId,uploadId){
   const id=String(opdId||''),uid=String(uploadId||'');
   if(!id||!uid)throw new Error('Identitas OPD dan file wajib lengkap.');
   const r=await env.DB.prepare('SELECT r2_key,file_name,file_type FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uid,String(year),id).all();
-  if(r.results?.[0])return {r2Key:r.results[0].r2_key,fileName:r.results[0].file_name,fileType:r.results[0].file_type};
+  if(r.results?.[0]&&String(r.results[0].r2_key||'').trim())return {r2Key:r.results[0].r2_key,fileName:r.results[0].file_name,fileType:r.results[0].file_type};
   const reg=await env.DB.prepare('SELECT r2_key FROM evidence_upload_registry WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uid,String(year),id).all();
   if(reg.results?.[0]){
     const row=(await env.DB.prepare('SELECT subunsurs,rtp_evidence,pm_spip_reports,rr_rtp_reports FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(id,String(year)).all()).results?.[0];
@@ -1564,60 +1564,57 @@ function evidenceTimestampMs(value){
   const numeric=Number(value);if(Number.isFinite(numeric)&&numeric>0)return numeric;
   const parsed=Date.parse(String(value));return Number.isFinite(parsed)?parsed:0;
 }
-function calculateVerifiedStructureProcessBreakdown(subunsurs, workbookRows=[]){
+function calculateVerifiedStructureProcessBreakdown(legacySubunsurs, workbookRows=[]){
   const totalParams=countTotalParameters();
-  // The same upload may exist in the legacy JSON and the normalized workbook
-  // evidence table. Resolve one authoritative latest record per upload ID first;
-  // otherwise stale accepted JSON could keep contributing after a return/replacement.
-  const canonicalByUpload=new Map();
-  const legacyWithoutId=[];
-  const consider=(candidate)=>{
+  // Only currently active normalized workbook rows can contribute to the score.
+  // Legacy JSON is consulted only as a second copy of the decision for the SAME
+  // active upload ID. This preserves the newest decision if a synchronized write
+  // briefly reached one store first, but legacy-only/deleted files can never revive
+  // an old score. Soft-deleted rows remain tombstones and do not count as active.
+  const activeByUpload=new Map();
+  for(const file of (Array.isArray(workbookRows)?workbookRows:[])){
+    if(!String(file?.r2_key||file?.r2Key||'').trim()||!String(file?.file_name||file?.fileName||'').trim())continue;
+    const id=String(file?.upload_id||file?.uploadId||'').trim();
+    const sub=String(file?.subunsur||''),param=String(file?.param_id||file?.paramId||'');
+    const level=Math.max(0,Math.min(5,Number(file?.level)||0));
+    if(!id||!sub||!param||level<1||!SUBUNSUR_DATA?.[sub]?.params?.some(x=>String(x.id)===param))continue;
+    const status=normalizeVerificationStatus(file?.verification_status||file?.verificationStatus||'');
+    const decisionTime=evidenceTimestampMs(file?.verification_at)||evidenceTimestampMs(file?.verifiedAt);
+    const timestamp=status?(decisionTime||evidenceTimestampMs(file?.updated_at)):evidenceTimestampMs(file?.updated_at);
+    const prev=activeByUpload.get(id);
+    if(!prev||timestamp>=prev.timestamp)activeByUpload.set(id,{id,sub,param,level,status,timestamp,sourcePriority:2});
+  }
+  const latestDecisionByUpload=new Map(activeByUpload);
+  const considerLegacy=(candidate)=>{
     const id=String(candidate.uploadId||'').trim();
-    if(!id){legacyWithoutId.push(candidate);return;}
-    const old=canonicalByUpload.get(id);
-    if(!old||candidate.timestamp>old.timestamp||(candidate.timestamp===old.timestamp&&candidate.sourcePriority>old.sourcePriority))canonicalByUpload.set(id,candidate);
+    if(!id||!activeByUpload.has(id))return; // never score stale / legacy-only files
+    const old=latestDecisionByUpload.get(id);
+    if(!old||candidate.timestamp>old.timestamp||(candidate.timestamp===old.timestamp&&candidate.sourcePriority>old.sourcePriority)){
+      // Keep the normalized row's parameter/level identity; take only the latest status/time.
+      latestDecisionByUpload.set(id,{...old,status:candidate.status,timestamp:candidate.timestamp,sourcePriority:candidate.sourcePriority});
+    }
   };
   for(const [subCode,subInfo] of Object.entries(SUBUNSUR_DATA||{})){
     for(const param of (Array.isArray(subInfo?.params)?subInfo.params:[])){
       for(let lv=1;lv<=5;lv++){
-        const files=normalizedFileArray(subunsurs?.[subCode]?.[param.id]?.['files'+lv]);
-        files.forEach((file,index)=>{
+        const files=normalizedFileArray(legacySubunsurs?.[subCode]?.[param.id]?.['files'+lv]);
+        files.forEach(file=>{
           if(!file||typeof file!=='object')return;
+          const id=String(file.uploadId||file.upload_id||'').trim();const active=activeByUpload.get(id);
+          if(!id||!active||active.sub!==String(subCode)||active.param!==String(param.id)||active.level!==lv)return;
           const v=normalizeVerificationRecord(file.verification||file);
           const timestamp=Math.max(evidenceTimestampMs(v.updatedAt),evidenceTimestampMs(v.verifiedAt),evidenceTimestampMs(file.updatedAt),evidenceTimestampMs(file.createdAt),evidenceTimestampMs(file.uploadedAt));
-          consider({uploadId:file.uploadId||file.upload_id||'',sub:subCode,param:String(param.id),level:lv,status:v.status,timestamp,sourcePriority:1,legacyKey:`${subCode}|${param.id}|${lv}|${index}`});
+          considerLegacy({uploadId:id,status:v.status,timestamp,sourcePriority:1});
         });
       }
     }
   }
-  for(const file of (Array.isArray(workbookRows)?workbookRows:[])){
-    const status=normalizeVerificationStatus(file?.verification_status||file?.verificationStatus||'');
-    const lv=Math.max(0,Math.min(5,Number(file?.level)||0));
-    const sub=String(file?.subunsur||''),param=String(file?.param_id||file?.paramId||'');
-    if(lv<1||!sub||!param||!SUBUNSUR_DATA?.[sub]?.params?.some(x=>String(x.id)===param))continue;
-    // A verification decision is ordered by verification_at, not a later
-    // housekeeping/backup updated_at. An empty status is a deliberate reset
-    // (replacement/pending) and must instead use the reset's updated_at.
-    const hasDecision=Boolean(status);
-    const decisionTime=evidenceTimestampMs(file?.verification_at)||evidenceTimestampMs(file?.verifiedAt);
-    const timestamp=hasDecision?(decisionTime||evidenceTimestampMs(file?.updated_at)):evidenceTimestampMs(file?.updated_at);
-    consider({uploadId:file.upload_id||file.uploadId||'',sub,param,level:lv,status,timestamp,sourcePriority:2,legacyKey:`workbook|${file.upload_id||''}`});
-  }
   const byParam=new Map();
-  // If the normalized workbook evidence table has records for a parameter,
-  // it is the current source of truth for that parameter. Do not let an older
-  // legacy JSON file without an upload ID keep an obsolete accepted level alive.
-  const workbookBackedParams=new Set((Array.isArray(workbookRows)?workbookRows:[])
-    .filter(file=>String(file?.subunsur||'')&&String(file?.param_id||file?.paramId||'')
-      &&String(file?.r2_key||file?.r2Key||'').trim()&&String(file?.file_name||file?.fileName||'').trim())
-    .map(file=>`${String(file.subunsur)}|${String(file.param_id||file.paramId)}`));
-  const currentLegacy=legacyWithoutId.filter(file=>!workbookBackedParams.has(`${file.sub}|${file.param}`));
-  const resolved=[...canonicalByUpload.values(),...currentLegacy];
-  for(const file of resolved){
-    if(!VERIFIED_STRUCTURE_STATUSES.has(normalizeVerificationStatus(file.status)))continue;
-    const level=Math.max(0,Math.min(5,Number(file.level)||0));if(level<1)continue;
+  for(const [id,file] of activeByUpload){
+    const current=latestDecisionByUpload.get(id)||file;
+    if(!VERIFIED_STRUCTURE_STATUSES.has(normalizeVerificationStatus(current.status)))continue;
     const key=`${file.sub}|${file.param}`;
-    byParam.set(key,Math.max(Number(byParam.get(key)||0),level));
+    byParam.set(key,Math.max(Number(byParam.get(key)||0),file.level));
   }
   const byLevel={1:0,2:0,3:0,4:0,5:0};let sumLevels=0;
   for(const lv of byParam.values()){if(lv>=1&&lv<=5){byLevel[lv]++;sumLevels+=lv;}}
@@ -1635,7 +1632,7 @@ async function refreshVerifiedStructureProcessScore(env,year,opdId){
     if(!row)throw new Error('OPD tidak ditemukan saat menghitung Nilai Struktur dan Proses.');
     const raw=String(row.subunsurs||'{}');let obj={};try{obj=JSON.parse(raw||'{}')}catch{obj={};}
     const fileQuery=await env.DB.prepare(`SELECT upload_id,subunsur,param_id,level,verification_status,verification_at,updated_at,r2_key,file_name
-      FROM opd_workbook_evidence_items WHERE year=? AND opd_id=? AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>'' ORDER BY upload_id`)
+      FROM opd_workbook_evidence_items WHERE year=? AND opd_id=? ORDER BY upload_id`)
       .bind(String(year),String(opdId)).all();
     const files=fileQuery.results||[];const fingerprint=structureEvidenceFingerprint(files);
     const breakdown=calculateVerifiedStructureProcessBreakdown(obj,files);
@@ -1645,7 +1642,7 @@ async function refreshVerifiedStructureProcessScore(env,year,opdId){
       AND COALESCE((SELECT group_concat(sig, char(30)) FROM (
         SELECT COALESCE(upload_id,'')||char(31)||COALESCE(subunsur,'')||char(31)||COALESCE(param_id,'')||char(31)||
           COALESCE(CAST(level AS TEXT),'')||char(31)||COALESCE(verification_status,'')||char(31)||COALESCE(CAST(verification_at AS TEXT),'')||char(31)||COALESCE(CAST(updated_at AS TEXT),'')||char(31)||COALESCE(r2_key,'')||char(31)||COALESCE(file_name,'') AS sig
-        FROM opd_workbook_evidence_items WHERE year=? AND opd_id=? AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>'' ORDER BY upload_id
+        FROM opd_workbook_evidence_items WHERE year=? AND opd_id=? ORDER BY upload_id
       )),'')=?`)
       .bind(breakdown.value,breakdown.value,status,String(opdId),String(year),raw,String(year),String(opdId),fingerprint));
     if(Number(write.meta?.changes||0)>0)return {...breakdown,status};
@@ -2122,6 +2119,20 @@ function notifyRealtime(env, ctx, year, payload = {}) {
   }
 }
 
+async function cleanupLheEvidenceArtifacts(env,year,opdId,file){
+  const warnings=[];const uploadId=String(file?.uploadId||file?.upload_id||'').trim();
+  const driveId=String(file?.gdriveId||file?.gdrive_id||'').trim(),r2Key=String(file?.r2Key||file?.r2_key||'').trim();
+  const fileName=String(file?.fileName||file?.file_name||'bukti').slice(0,80);
+  if(driveId){try{await deleteGoogleDriveFile(env,driveId);}catch(e){warnings.push(`Google Drive (${fileName}): ${String(e?.message||e).slice(0,180)}`);}}
+  if(r2Key){try{await env.EVIDENCE_BUCKET.delete(r2Key);}catch(e){warnings.push(`R2 (${fileName}): ${String(e?.message||e).slice(0,180)}`);}}
+  if(uploadId){
+    try{await env.DB.prepare('DELETE FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=?').bind(String(year),String(opdId),uploadId).run();}catch(e){warnings.push(`Riwayat status aktif ${uploadId}: ${String(e?.message||e).slice(0,120)}`);}
+    try{await env.DB.prepare('DELETE FROM evidence_upload_registry WHERE upload_id=? AND year=? AND opd_id=?').bind(uploadId,String(year),String(opdId)).run();}catch(e){warnings.push(`Registri upload ${uploadId}: ${String(e?.message||e).slice(0,120)}`);}
+    try{await env.DB.prepare('DELETE FROM evidence_uploads WHERE upload_id=?').bind(uploadId).run();}catch(e){warnings.push(`Metadata upload ${uploadId}: ${String(e?.message||e).slice(0,120)}`);}
+  }
+  return warnings;
+}
+
 async function deleteGoogleDriveFile(env, fileId) {
   const safeId = String(fileId || '').trim();
   if (!safeId) return { deleted: false, alreadyMissing: true };
@@ -2538,7 +2549,7 @@ export async function onRequest({ request, env, ctx }) {
         if(!['auditor','irban','bpkp'].includes(stage))throw new Error('Tahap verifikasi tidak valid.');
         const roleStage=(role==='ppupd'?'auditor':role);if(role!=='admin'&&roleStage!==stage)return jsonResponse({status:'error',message:'Akun hanya dapat mengisi tahap sesuai role masing-masing.'},403);
         const allowedStatuses=stage==='auditor'?['dikirim']:['diterima','diterima_catatan','dikembalikan'];
-        if(!allowedStatuses.includes(status))throw new Error(stage==='auditor'?'Tahap auditor hanya dapat diubah menjadi Dikirim.':'Pilih hasil Diterima atau Dikembalikan.');
+        if(!allowedStatuses.includes(status))throw new Error(stage==='auditor'?'Tahap Auditor / PPUPD hanya dapat diubah menjadi Dikirim.':'Pilih hasil Diterima atau Dikembalikan.');
         if(!opdId||!uploadId||!examinerName)throw new Error('OPD, file, dan nama pemeriksa wajib lengkap.');
         if(['diterima_catatan','dikembalikan'].includes(status)&&note.trim().length<2)throw new Error('Catatan wajib diisi untuk Diterima dengan Catatan atau Dikembalikan.');
         await assertSessionCanAccessOpd(env,authSession,year,opdId);
@@ -2557,7 +2568,7 @@ export async function onRequest({ request, env, ctx }) {
               SELECT 1 FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage=? AND ${statusClause}
             ) ON CONFLICT(year,opd_id,upload_id,stage) DO UPDATE SET status=excluded.status,examiner_name=excluded.examiner_name,note=excluded.note,updated_by=excluded.updated_by,updated_at=excluded.updated_at`)
             .bind(...baseValues,String(year),opdId,uploadId,previousStage,...previousStatuses).run();
-          if(!Number(write.meta?.changes||0))return jsonResponse({status:'error',code:'VERIFICATION_STAGE_CONFLICT',message:stage==='irban'?'Status Auditor belum Dikirim atau sudah berubah. Muat ulang status evidence sebelum memverifikasi.':'Status Irban belum Diterima atau Diterima dengan Catatan lagi. Muat ulang status evidence sebelum verifikasi akhir BPKP.'},409);
+          if(!Number(write.meta?.changes||0))return jsonResponse({status:'error',code:'VERIFICATION_STAGE_CONFLICT',message:stage==='irban'?'Status Auditor / PPUPD belum Dikirim atau sudah berubah. Muat ulang status evidence sebelum memverifikasi.':'Status Irban belum Diterima atau Diterima dengan Catatan lagi. Muat ulang status evidence sebelum verifikasi akhir BPKP.'},409);
         }else{
           write=await env.DB.prepare(`INSERT INTO evidence_verification_steps(year,opd_id,upload_id,stage,status,examiner_name,note,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(year,opd_id,upload_id,stage) DO UPDATE SET status=excluded.status,examiner_name=excluded.examiner_name,note=excluded.note,updated_by=excluded.updated_by,updated_at=excluded.updated_at`).bind(...baseValues).run();
         }
@@ -2609,11 +2620,18 @@ export async function onRequest({ request, env, ctx }) {
       }
       case 'deleteLheFollowup': {
         const id=String(params.id||''),opdId=String(params.opdId||'');if(!id||!opdId)throw new Error('ID butir dan OPD wajib lengkap.');
+        await assertSessionCanAccessOpd(env,authSession,String(year),opdId);
         const record=await env.DB.prepare('SELECT evidence_json FROM lhe_followup_items WHERE id=? AND year=? AND opd_id=? LIMIT 1').bind(id,String(year),opdId).first();if(!record)throw new Error('Butir tindak lanjut tidak ditemukan.');
-        let evidence=[];try{evidence=JSON.parse(record.evidence_json||'[]')}catch{};
-        for(const file of (Array.isArray(evidence)?evidence:[])){if(file?.gdriveId)await deleteGoogleDriveFile(env,file.gdriveId).catch(()=>{});if(file?.r2Key)await env.EVIDENCE_BUCKET.delete(file.r2Key).catch(()=>{});}
-        await env.DB.prepare('DELETE FROM lhe_followup_items WHERE id=? AND year=? AND opd_id=?').bind(id,String(year),opdId).run();
-        notifyRealtime(env,ctx,String(year),{action:'deleteLheFollowup',opdId,followupId:id});return jsonResponse({status:'success',message:'Butir tindak lanjut dihapus.'});
+        const evidenceRaw=String(record.evidence_json||'[]');let evidence=[];let evidenceParseFailed=false;
+        try{evidence=JSON.parse(evidenceRaw)}catch{evidenceParseFailed=true;}if(!Array.isArray(evidence)){evidence=[];evidenceParseFailed=true;}
+        // Compare-and-swap the exact version before cleaning storage. If another
+        // operator uploads/edits at the same time, nothing is deleted on conflict.
+        const deleted=await runD1WithRetry(()=>env.DB.prepare("DELETE FROM lhe_followup_items WHERE id=? AND year=? AND opd_id=? AND COALESCE(evidence_json,'[]')=?").bind(id,String(year),opdId,evidenceRaw).run());
+        if(!Number(deleted.meta?.changes||0))return jsonResponse({status:'error',code:'LHE_DELETE_CONFLICT',message:'Butir berubah karena operator lain sedang menyimpan. Muat ulang daftar lalu ulangi hapus.'},409);
+        const cleanupWarnings=evidenceParseFailed?['Data bukti lama tidak dapat dibaca; mohon admin memeriksa kemungkinan file yatim di Google Drive/R2.']:[];
+        for(const file of evidence)cleanupWarnings.push(...await cleanupLheEvidenceArtifacts(env,year,opdId,file));
+        notifyRealtime(env,ctx,String(year),{action:'deleteLheFollowup',opdId,followupId:id});
+        return jsonResponse({status:'success',message:'Butir tindak lanjut dihapus.',cleanupWarnings});
       }
       case 'uploadLheEvidence': {
         assertGoogleDriveConfigured(env);const opdId=String(params.opdId||''),followupId=String(params.followupId||''),uploadId=String(params.uploadId||crypto.randomUUID());
@@ -2636,7 +2654,21 @@ export async function onRequest({ request, env, ctx }) {
       }
       case 'deleteLheEvidence': {
         const opdId=String(params.opdId||''),followupId=String(params.followupId||''),uploadId=String(params.uploadId||'');if(!opdId||!followupId||!uploadId)throw new Error('Identitas file bukti tidak lengkap.');
-        const rec=await env.DB.prepare('SELECT evidence_json FROM lhe_followup_items WHERE id=? AND year=? AND opd_id=? LIMIT 1').bind(followupId,String(year),opdId).first();if(!rec)throw new Error('Butir tindak lanjut tidak ditemukan.');let list=[];try{list=JSON.parse(rec.evidence_json||'[]')}catch{};const file=(Array.isArray(list)?list:[]).find(x=>x.uploadId===uploadId);if(!file)throw new Error('File bukti tidak ditemukan.');if(file.gdriveId)await deleteGoogleDriveFile(env,file.gdriveId);if(file.r2Key)await env.EVIDENCE_BUCKET.delete(file.r2Key);list=list.filter(x=>x.uploadId!==uploadId);await env.DB.prepare("UPDATE lhe_followup_items SET evidence_json=?,verification_status='Belum diverifikasi',verifier_name='',verifier_note='',updated_by=?,updated_at=? WHERE id=? AND year=? AND opd_id=?").bind(JSON.stringify(list),String(authSession.username||''),Date.now(),followupId,String(year),opdId).run();return jsonResponse({status:'success',message:'File bukti dihapus.'});
+        await assertSessionCanAccessOpd(env,authSession,String(year),opdId);
+        let fileToDelete=null,committed=false;
+        for(let attempt=0;attempt<6;attempt++){
+          const rec=await env.DB.prepare('SELECT evidence_json FROM lhe_followup_items WHERE id=? AND year=? AND opd_id=? LIMIT 1').bind(followupId,String(year),opdId).first();
+          if(!rec)throw new Error('Butir tindak lanjut tidak ditemukan.');
+          const evidenceRaw=String(rec.evidence_json||'[]');let list=[];try{list=JSON.parse(evidenceRaw)}catch{};if(!Array.isArray(list))list=[];
+          fileToDelete=list.find(x=>String(x?.uploadId||x?.upload_id||'')===uploadId)||null;if(!fileToDelete)throw new Error('File bukti tidak ditemukan.');
+          const nextList=list.filter(x=>String(x?.uploadId||x?.upload_id||'')!==uploadId);
+          const write=await runD1WithRetry(()=>env.DB.prepare("UPDATE lhe_followup_items SET evidence_json=?,verification_status='Belum diverifikasi',verifier_name='',verifier_note='',updated_by=?,updated_at=? WHERE id=? AND year=? AND opd_id=? AND COALESCE(evidence_json,'[]')=?").bind(JSON.stringify(nextList),String(authSession.username||''),Date.now(),followupId,String(year),opdId,evidenceRaw).run());
+          if(Number(write.meta?.changes||0)>0){committed=true;break;}
+          fileToDelete=null;await new Promise(resolve=>setTimeout(resolve,20*(attempt+1)));
+        }
+        if(!committed||!fileToDelete)return jsonResponse({status:'error',code:'LHE_EVIDENCE_DELETE_CONFLICT',message:'Daftar bukti sedang berubah karena operator lain. Muat ulang lalu coba lagi.'},409);
+        const cleanupWarnings=await cleanupLheEvidenceArtifacts(env,year,opdId,fileToDelete);
+        notifyRealtime(env,ctx,String(year),{action:'deleteLheEvidence',opdId,followupId,uploadId});return jsonResponse({status:'success',message:'File bukti dihapus.',cleanupWarnings});
       }
       case 'getSubunsurData':
         return new Response(JSON.stringify(SUBUNSUR_DATA), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -2812,8 +2844,8 @@ export async function onRequest({ request, env, ctx }) {
         for(const q of (workbookEvidenceSummaryRows.results||[])) workbookEvidenceSummaryMap.set(String(q.opd_id),q);
         // One batched read supplies the authoritative status/level source for every OPD.
         // Do not derive the reported score from self-selected parameter levels.
-        const verifiedEvidenceQuery=await env.DB.prepare(`SELECT opd_id,upload_id,subunsur,param_id,level,verification_status,verification_at,updated_at
-          FROM opd_workbook_evidence_items WHERE year=? AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>''
+        const verifiedEvidenceQuery=await env.DB.prepare(`SELECT opd_id,upload_id,subunsur,param_id,level,verification_status,verification_at,updated_at,r2_key,file_name
+          FROM opd_workbook_evidence_items WHERE year=?
           ORDER BY opd_id,upload_id`).bind(String(year)).all();
         const verifiedEvidenceMap=new Map();
         for(const evidenceRow of (verifiedEvidenceQuery.results||[])){
@@ -2824,6 +2856,10 @@ export async function onRequest({ request, env, ctx }) {
           const key=`${lr.opd_id}|${lr.subunsur}|${lr.param_id}`;
           levelMap.set(key,Math.max(0,Math.min(5,Number(lr.level)||0)));
         }
+        // Persist a one-time correction for old cached score columns as the data is read.
+        // Only OPDs in the current session scope are touched, and compare-and-swap checks
+        // both the JSON input and the full evidence fingerprint to avoid stale writes.
+        const scoreRefreshCandidates=[];
         const mapped=results.map(r=>{
           let subunsurs={};
           try{subunsurs=r.subunsurs?JSON.parse(r.subunsurs):{}}catch{subunsurs={};}
@@ -2855,8 +2891,13 @@ export async function onRequest({ request, env, ctx }) {
           for(const v of Object.values(parameterLevels)){ if(v>0){selected++;sumLevels+=v;} }
           // Selected level remains useful for workbook entry, but the dashboard score
           // is calculated only from accepted evidence, not from unverified selections.
-          const verifiedStructureBreakdown=calculateVerifiedStructureProcessBreakdown(subunsurs,verifiedEvidenceMap.get(String(r.id))||[]);
+          const structureEvidenceRows=verifiedEvidenceMap.get(String(r.id))||[];
+          const verifiedStructureBreakdown=calculateVerifiedStructureProcessBreakdown(subunsurs,structureEvidenceRows);
           const strukturStatus=verifiedStructureBreakdown.verifiedParams>=verifiedStructureBreakdown.totalParams&&verifiedStructureBreakdown.totalParams>0?'Selesai':(verifiedStructureBreakdown.verifiedParams>0?'Proses':'Belum');
+          const scoreMatchesStored=(value)=>value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value))&&Math.round(Number(value)*100)===Math.round(verifiedStructureBreakdown.value*100);
+          if((!scoreMatchesStored(r.sa)||!scoreMatchesStored(r.nilai_struktur_proses)||String(r.struktur_proses_status||'')!==strukturStatus)&&sessionCanAccessOrg(authSession,r.id,r.opd)){
+            scoreRefreshCandidates.push({id:String(r.id),rawSubunsurs:r.subunsurs===null||r.subunsurs===undefined?'{}':String(r.subunsurs),oldSa:r.sa===null||r.sa===undefined?-9999:r.sa,oldNilai:r.nilai_struktur_proses===null||r.nilai_struktur_proses===undefined?-9999:r.nilai_struktur_proses,oldStatus:String(r.struktur_proses_status||''),value:verifiedStructureBreakdown.value,status:strukturStatus,fingerprint:structureEvidenceFingerprint(structureEvidenceRows)});
+          }
           const wb=workbookEvidenceSummaryMap.get(String(r.id));
           const qaEvidenceFiles=Number(wb?.total_files||0);
           const q=qaSummaryMap.get(String(r.id));
@@ -2887,6 +2928,22 @@ export async function onRequest({ request, env, ctx }) {
           const n=(v)=>{const x=Number(v); return Number.isFinite(x)&&x>0?x:null;};
           return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,evaluated:qaEvaluated,na:qaNa,pass:qaPass,partial:qaPartial,fail:qaFail,pending:qaPending,sum:qaSum,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus,targets:[...pmScope]},nilaiStrukturProses:verifiedStructureBreakdown.value,sa:verifiedStructureBreakdown.value,strukturProsesStatus:strukturStatus,structureProcessBreakdown:verifiedStructureBreakdown,computedWorkbook, nilaiMaturitas:n(cv.nilaiMaturitas),nilaiMRI:n(cv.mri),nilaiIEPK:n(cv.iepk),nilaiKapabilitasApip:n(cv.nilaiKapabilitasApip),mri:n(cv.mri),iepk:n(cv.iepk),workbookEvidenceSummary:{totalFiles:Number(wb?.total_files||0),evidenceGroups:Number(wb?.evidence_groups||0),verifiedFiles:Number(wb?.verified_files||0),reviewedFiles:Number(wb?.reviewed_files||0),withNotesFiles:Number(wb?.with_notes_files||0),returnedFiles:Number(wb?.returned_files||0),syncedFiles:Number(wb?.synced_files||0),targetStats:{T1:{groups:Number(wb?.groups_t1||0),files:Number(wb?.files_t1||0),verifiedFiles:Number(wb?.verified_t1||0)},T2:{groups:Number(wb?.groups_t2||0),files:Number(wb?.files_t2||0),verifiedFiles:Number(wb?.verified_t2||0)},T3:{groups:Number(wb?.groups_t3||0),files:Number(wb?.files_t3||0),verifiedFiles:Number(wb?.verified_t3||0)},T4:{groups:Number(wb?.groups_t4||0),files:Number(wb?.files_t4||0),verifiedFiles:Number(wb?.verified_t4||0)}}}};
         });
+        if(scoreRefreshCandidates.length){
+          try{
+            for(let i=0;i<scoreRefreshCandidates.length;i+=40){
+              const writes=scoreRefreshCandidates.slice(i,i+40).map(c=>env.DB.prepare(`UPDATE opd_data SET sa=?,nilai_struktur_proses=?,struktur_proses_status=?
+                WHERE id=? AND year=? AND COALESCE(subunsurs,'{}')=?
+                  AND COALESCE(sa,-9999)=? AND COALESCE(nilai_struktur_proses,-9999)=? AND COALESCE(struktur_proses_status,'')=?
+                  AND COALESCE((SELECT group_concat(sig, char(30)) FROM (
+                    SELECT COALESCE(upload_id,'')||char(31)||COALESCE(subunsur,'')||char(31)||COALESCE(param_id,'')||char(31)||
+                      COALESCE(CAST(level AS TEXT),'')||char(31)||COALESCE(verification_status,'')||char(31)||COALESCE(CAST(verification_at AS TEXT),'')||char(31)||
+                      COALESCE(CAST(updated_at AS TEXT),'')||char(31)||COALESCE(r2_key,'')||char(31)||COALESCE(file_name,'') AS sig
+                    FROM opd_workbook_evidence_items WHERE year=? AND opd_id=? ORDER BY upload_id
+                  )),'')=?`).bind(c.value,c.value,c.status,c.id,String(year),c.rawSubunsurs,c.oldSa,c.oldNilai,c.oldStatus,String(year),c.id,c.fingerprint));
+              await env.DB.batch(writes);
+            }
+          }catch(scoreSyncError){console.warn('Koreksi persistensi nilai Struktur dan Proses tertunda; respons tetap memakai nilai hitung terbaru:',scoreSyncError?.message||scoreSyncError);}
+        }
         let visibleRows=mapped.filter(r=>sessionCanAccessOrg(authSession,r.id,r.opd));
         // Evidence URLs are routed through the authenticated download endpoint rather than the public r2.dev hostname.
         for(const row of visibleRows){
@@ -3141,9 +3198,14 @@ export async function onRequest({ request, env, ctx }) {
         const q=await env.DB.prepare('SELECT * FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uploadId,String(year),opdId).all();const item=q.results?.[0];if(!item)throw new Error('Evidence tidak ditemukan.');
         if(item.gdrive_id)await deleteGoogleDriveFile(env,item.gdrive_id);if(item.r2_key)await env.EVIDENCE_BUCKET.delete(item.r2_key);
         await removeLegacyEvidenceMirror(env,year,opdId,uploadId);
-        await runD1WithRetry(()=>env.DB.prepare('DELETE FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=?').bind(uploadId,String(year),opdId));try{await runD1WithRetry(()=>env.DB.prepare('DELETE FROM evidence_upload_registry WHERE upload_id=?').bind(uploadId));}catch(_){ }try{await runD1WithRetry(()=>env.DB.prepare('DELETE FROM evidence_uploads WHERE upload_id=?').bind(uploadId));}catch(_){ }
+        const deletedAt=Date.now();
+        // Keep a metadata-only tombstone so legacy JSON cannot resurrect this
+        // parameter's old accepted value after its last workbook file is deleted.
+        await runD1WithRetry(()=>env.DB.prepare(`UPDATE opd_workbook_evidence_items SET r2_key='',gdrive_id=NULL,sync_status='deleted',sync_error=NULL,verification_status='',verification_examiner='',verification_note='',verification_at=NULL,updated_at=? WHERE upload_id=? AND year=? AND opd_id=?`).bind(deletedAt,uploadId,String(year),opdId));
+        try{await runD1WithRetry(()=>env.DB.prepare('DELETE FROM evidence_upload_registry WHERE upload_id=?').bind(uploadId));}catch(_){ }
+        try{await runD1WithRetry(()=>env.DB.prepare('DELETE FROM evidence_uploads WHERE upload_id=?').bind(uploadId));}catch(_){ }
         const score=await refreshVerifiedStructureProcessScore(env,year,opdId);
-        notifyRealtime(env,ctx,year,{action:'deleteWorkbookEvidence',opdId,uploadId,evidenceKey:item.evidence_key,nilaiStrukturProses:score.value});return jsonResponse({status:'success',uploadId,evidenceKey:item.evidence_key,fileName:item.file_name||'File',nilaiStrukturProses:score.value,strukturProsesStatus:score.status,structureProcessBreakdown:score});
+        notifyRealtime(env,ctx,year,{action:'deleteWorkbookEvidence',opdId,uploadId,evidenceKey:item.evidence_key,nilaiStrukturProses:score.value,strukturProsesStatus:score.status,structureProcessBreakdown:score});return jsonResponse({status:'success',uploadId,evidenceKey:item.evidence_key,fileName:item.file_name||'File',nilaiStrukturProses:score.value,strukturProsesStatus:score.status,structureProcessBreakdown:score});
       }
       case 'syncKkComputedValues': {
         const opdId=String(params.opdId||'');
