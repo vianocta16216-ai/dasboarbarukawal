@@ -21,8 +21,14 @@ assert.ok(helperStart >= 0 && helperEnd > helperStart, 'PM workbook helper not f
 const helper = handler.slice(helperStart, helperEnd);
 assert.ok(helper.includes('GOOGLE_SHEETS_PM_TEMPLATE_ID'), 'PM template must use dedicated environment variable');
 assert.ok(!helper.includes('env.GOOGLE_SHEETS_PM_TEMPLATE_ID||env.GOOGLE_SHEETS_TEMPLATE_ID'), 'PM workbook must not silently fall back to legacy PK template');
-assert.ok(helper.includes("templateCheck.profile!=='PM_2026'"), 'PM template must be checked against PM_2026 profile');
-assert.ok(helper.includes('checkFormulas:true'), 'PM master formulas must be validated before copying');
+const resolverStart = handler.indexOf('async function resolveKkPmTemplateSpreadsheet(');
+const resolverEnd = handler.indexOf('function expectedPmSheetOrderMatches(', resolverStart);
+const resolver = handler.slice(resolverStart, resolverEnd);
+assert.ok(resolver.includes("check.profile==='PM_2026'") && resolver.includes("check.profile!=='PM_2026'"), 'PM template resolver must accept only the validated PM_2026 profile');
+assert.ok(resolver.includes('checkFormulas:true'), 'PM master formulas must be validated before copying');
+assert.ok(handler.includes('listPmTemplateCandidates(accessToken)'), 'A stale 28-sheet config must trigger safe Drive discovery for the exact PM master');
+assert.ok(handler.includes("normalizeDriveTemplateTitle(file.name)!==normalizeDriveTemplateTitle(basename)"), 'Drive discovery must reject unrelated spreadsheets');
+assert.ok(handler.includes('workbookHistory'), 'Replacing an incompatible legacy link must preserve the old workbook reference');
 assert.ok(!helper.includes('deleteGoogleDriveFile'), 'Existing workbooks must not be deleted during recovery');
 
 assert.ok(handler.includes('CREATE TABLE IF NOT EXISTS kk_pm_workbook_sync_locks'), 'Distributed workbook lock table missing');

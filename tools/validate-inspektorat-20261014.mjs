@@ -18,6 +18,9 @@ assert.ok(worker.includes('assertSessionCanAccessOpd(env, authSession, params.ye
 assert.ok(worker.includes("'template_source_year'"), 'LHE original-template-year migration missing');
 assert.ok(worker.includes('new Set([String(year),String(Number(year)-1)])'), 'LHE target years must be dynamic and current/previous');
 assert.ok(worker.includes('LIVE_KK_MASTER_ROWS_GENERATION'), 'Master cache generation guard missing');
+assert.ok(worker.includes('resolveMasterTargetSheetNames'), 'Master reader must resolve actual sheet titles before building A1 ranges');
+assert.ok(worker.includes("'KK3.1 (OPD)'"), 'Master reader must support legacy tab-name aliases without creating invalid A1 ranges');
+assert.ok(worker.includes('resolveKkPmTemplateSpreadsheet'), 'PM reads and syncs must validate/discover the latest PM template instead of using stale legacy ID');
 assert.ok(worker.includes('LIVE_KK_MASTER_ROWS_CACHE.delete(cacheKey)'), 'Master cache invalidation missing after sync');
 assert.ok(worker.includes("new Set(['syncKkPmMasterNow'])"), 'Secret-protected service webhook must bypass browser-session requirement');
 assert.ok(worker.includes('supplied!==configured'), 'Webhook secret comparison is missing');
