@@ -124,9 +124,15 @@ async function readLiveKkMasterRows(env,masterKind='PK',options={}){
     ?(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||'')
     :(env.GOOGLE_SHEETS_PK_MASTER_ID||env.GOOGLE_SHEETS_PK_TEMPLATE_ID||env.GOOGLE_SHEETS_TEMPLATE_ID||''));
   if(!spreadsheetId)return{live:false,masterKind:kind,message:kind==='PM'?'GOOGLE_SHEETS_PM_TEMPLATE_ID belum diatur.':'GOOGLE_SHEETS_PK_MASTER_ID belum diatur; aplikasi memakai snapshot master yang disertakan.'};
-  const cacheKey=`${kind}:${spreadsheetId}`;const now=Date.now();const cached=LIVE_KK_MASTER_ROWS_CACHE.get(cacheKey);
+  const cacheKey=`${kind}:${spreadsheetId}`;
+  if(options.forceRefresh){
+    LIVE_KK_MASTER_ROWS_GENERATION.set(cacheKey,(LIVE_KK_MASTER_ROWS_GENERATION.get(cacheKey)||0)+1);
+    LIVE_KK_MASTER_ROWS_CACHE.delete(cacheKey);
+  }
+  const generation=LIVE_KK_MASTER_ROWS_GENERATION.get(cacheKey)||0;
+  const now=Date.now();const cached=LIVE_KK_MASTER_ROWS_CACHE.get(cacheKey);
   if(!options.forceRefresh&&cached&&cached.expiresAt>now)return cached.payload;
-  const inflight=LIVE_KK_MASTER_ROWS_PENDING.get(cacheKey);if(inflight)return inflight;
+  const inflight=LIVE_KK_MASTER_ROWS_PENDING.get(cacheKey);if(inflight&&!options.forceRefresh)return inflight;
   const job=(async()=>{
     const token=await getGoogleAccessToken(env);
     const params=new URLSearchParams();params.set('majorDimension','ROWS');params.set('valueRenderOption','FORMATTED_VALUE');
@@ -136,11 +142,14 @@ async function readLiveKkMasterRows(env,masterKind='PK',options={}){
     const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error('Gagal membaca sumber master KK: '+JSON.stringify(body).slice(0,500));
     const ranges=body.valueRanges||[];const sheets={};Object.entries(mappings).forEach(([code,sheetName],i)=>{sheets[code]=Array.isArray(ranges[i]?.values)?ranges[i].values:[];});
     const payload={live:true,masterKind:kind,sheets,sheetNames:mappings,updatedAt:Date.now(),cacheSeconds:60};
-    LIVE_KK_MASTER_ROWS_CACHE.set(cacheKey,{expiresAt:Date.now()+60_000,payload});
+    // An old in-flight response must not overwrite a cache populated by a newer forced refresh.
+    if((LIVE_KK_MASTER_ROWS_GENERATION.get(cacheKey)||0)===generation){
+      LIVE_KK_MASTER_ROWS_CACHE.set(cacheKey,{expiresAt:Date.now()+60_000,payload});
+    }
     return payload;
   })();
   LIVE_KK_MASTER_ROWS_PENDING.set(cacheKey,job);
-  try{return await job;}finally{LIVE_KK_MASTER_ROWS_PENDING.delete(cacheKey);}
+  try{return await job;}finally{if(LIVE_KK_MASTER_ROWS_PENDING.get(cacheKey)===job)LIVE_KK_MASTER_ROWS_PENDING.delete(cacheKey);}
 }
 async function syncPmMasterColumnsToOpdWorkbooks(env,year,options={}){
   if(String(env.GOOGLE_SHEETS_PM_AUTO_PROPAGATE||'true').toLowerCase()==='false')return {skipped:true,reason:'disabled'};
@@ -257,6 +266,7 @@ let GOOGLE_ACTIVE=0;
 const GOOGLE_QUEUE=[];
 const LIVE_KK_MASTER_ROWS_CACHE=new Map();
 const LIVE_KK_MASTER_ROWS_PENDING=new Map();
+const LIVE_KK_MASTER_ROWS_GENERATION=new Map();
 
 async function withGoogleConcurrency(task, limit=3){
   if(GOOGLE_ACTIVE>=limit){
@@ -322,7 +332,8 @@ const OPD_INPUT_ACTIONS = new Set([
   'uploadReportFile','deleteReportFile','getReportFiles','getRtpEvidence','getLheFollowups','saveLheFollowup','uploadLheEvidence','deleteLheEvidence','getKkSheets','createKkSheets',
   'saveKkData','getRtpKkSheets','createRtpKkSheets','saveRtpKkData','getKkPmSheets','createKkPmSheets',
   'exportKkPmWorkbook','getKkPmData','getKkPmDataDetailed','saveKkPmData','saveKkPmItem','deleteKkPmItem',
-  'saveKkPmMeta','saveKkRpjmdMapping','getWorkbookEvidenceFiles','replaceWorkbookEvidenceFile','saveQaApipItem',
+  'saveKkPmMeta','saveKkRpjmdMapping','getKkRpjmdMappings','getWorkbookEvidenceFiles','replaceWorkbookEvidenceFile','saveQaApipItem',
+  'getQaApipData','getBpkpOfficialScore','syncKkComputedValues',
   'deleteQaApipItem','saveQaApipChecklistItem','deleteQaApipChecklistItem','getQaApipChecklistData',
   'getYears','getData','getSubunsurData','getKkMasterSheetRows','getEvidenceWorkflow','downloadEvidence','getLheFollowups'
 ]);
@@ -330,7 +341,12 @@ const AUDITOR_ALLOWED_ACTIONS = new Set([
   ...COMMON_READ_ACTIONS,...OPD_INPUT_ACTIONS,'saveEvidenceWorkflowStep'
 ]);
 const IRBAN_ALLOWED_ACTIONS = new Set([
-  ...COMMON_READ_ACTIONS,'saveAssessmentStatus','saveEvidenceVerification','saveRtpEvidenceVerification',
+  ...COMMON_READ_ACTIONS,
+  // Inspektorat/Irban may provision and refresh the PM workbook for an OPD in scope.
+  // These two actions remain protected by the per-OPD scope check below; the role
+  // is not granted general account-management or official-score finalization rights.
+  'createKkPmSheets','syncKkComputedValues',
+  'saveAssessmentStatus','saveEvidenceVerification','saveRtpEvidenceVerification',
   'saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','verifyKkRpjmdMapping','downloadEvidence','listBackups','getLheFollowups','saveLheFollowup','deleteLheFollowup','uploadLheEvidence','deleteLheEvidence'
 ]);
 const BPKP_ALLOWED_ACTIONS = new Set([
@@ -661,6 +677,12 @@ async function ensureOpdSchema(env){
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS kk_pm_master_sync_state (
       sync_key TEXT PRIMARY KEY, content_hash TEXT NOT NULL DEFAULT '', last_synced_at INTEGER NOT NULL DEFAULT 0,
       lease_until INTEGER NOT NULL DEFAULT 0, last_attempt_at INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT ''
+    )`).run();
+    // Distributed lock per OPD/year: independent Cloudflare isolates and accounts
+    // must not create two Google Sheets copies at the same time.
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS kk_pm_workbook_sync_locks (
+      lock_key TEXT PRIMARY KEY, lease_until INTEGER NOT NULL DEFAULT 0,
+      owner_token TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL DEFAULT 0
     )`).run();
 
     // Evidence registry migration (IMPORTANT):
@@ -1110,37 +1132,71 @@ function normalizeKkPmData(raw){
   return {version:2,workbook:{version:1,workbookSpreadsheetId:wb.workbookSpreadsheetId||null,workbookUrl:wb.workbookUrl||null,workbookName:wb.workbookName||null,templateSpreadsheetId:wb.templateSpreadsheetId||null,sheets:Array.isArray(wb.sheets)?wb.sheets:KK_PM_2026_SHEET_NAMES},cells:data.cells&&typeof data.cells==='object'?data.cells:{}};
 }
 async function ensureKkPmSpreadsheet(env,params){
-  if(!env.GOOGLE_DRIVE_CLIENT_ID||!env.GOOGLE_DRIVE_CLIENT_SECRET||!env.GOOGLE_DRIVE_REFRESH_TOKEN)throw new Error('Google OAuth untuk Spreadsheet PM belum dikonfigurasi');
-  if(!env.GOOGLE_DRIVE_FOLDER_ID)throw new Error('GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi');
+  if(!env.GOOGLE_DRIVE_CLIENT_ID||!env.GOOGLE_DRIVE_CLIENT_SECRET||!env.GOOGLE_DRIVE_REFRESH_TOKEN)throw new Error('Google OAuth untuk Spreadsheet PM belum dikonfigurasi. Periksa GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET, dan GOOGLE_DRIVE_REFRESH_TOKEN.');
   const accessToken=await getGoogleAccessToken(env);
-  const explicitPmTemplate=Boolean(env.GOOGLE_SHEETS_PM_TEMPLATE_ID);
-  const templateId=extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||env.GOOGLE_SHEETS_TEMPLATE_ID||DEFAULT_KK_TEMPLATE_SPREADSHEET_ID);
-  const tf=await getDriveFile(accessToken,templateId); if(!tf||tf.trashed)throw new Error(`Template Google Spreadsheet PM tidak dapat diakses (${templateId}).`);
-  if(tf.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error(`ID template ${templateId} bukan Google Spreadsheet.`);
-  const yearValue=params.year||'2026',opdName=safeDriveName(params.opd||'OPD Baru');
+  const yearValue=String(params.year||new Date().getFullYear());
+  const opdName=safeDriveName(params.opd||'OPD Baru');
+  const current=normalizeKkPmData(params.currentKkPmData).workbook;
+
+  // A valid existing workbook remains usable even if the master template setting is stale.
+  // We never delete or overwrite a previously linked workbook during recovery.
+  if(current.workbookSpreadsheetId){
+    try{
+      const currentCheck=await validateKkPmSpreadsheet(accessToken,current.workbookSpreadsheetId,{checkFormulas:false});
+      if(currentCheck.ok&&currentCheck.profile==='PM_2026'){
+        const ex=await getDriveFile(accessToken,current.workbookSpreadsheetId);
+        if(ex&&!ex.trashed&&ex.mimeType==='application/vnd.google-apps.spreadsheet'){
+          return {
+            version:2,
+            templateSpreadsheetId:current.templateSpreadsheetId||null,
+            workbookSpreadsheetId:String(current.workbookSpreadsheetId),
+            workbookUrl:current.workbookUrl||ex.webViewLink||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(current.workbookSpreadsheetId)}/edit`,
+            workbookName:current.workbookName||ex.name||`${opdName} - Kertas Kerja PM SPIP - ${yearValue}`,
+            sheets:(current.sheets&&current.sheets.length)?current.sheets:KK_PM_2026_SHEET_NAMES
+          };
+        }
+      }
+    }catch(err){
+      console.warn('Workbook PM tertaut tidak lolos validasi; akan mencoba membuat salinan baru tanpa menghapus workbook lama:',String(err?.message||err).slice(0,240));
+    }
+  }
+
+  // Do not silently fall back to GOOGLE_SHEETS_TEMPLATE_ID or a hard-coded legacy ID.
+  // That fallback caused the Inspektorat account to copy an obsolete workbook profile.
+  const configuredPmTemplate=String(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||'').trim();
+  const templateId=extractSpreadsheetId(configuredPmTemplate);
+  if(!templateId){
+    throw new Error('GOOGLE_SHEETS_PM_TEMPLATE_ID belum diatur. Workbook baru hanya boleh dibuat dari master Google Sheets PM terbaru (26 sheet); template legacy GOOGLE_SHEETS_TEMPLATE_ID tidak dipakai sebagai fallback. Impor workbook KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313.xlsx ke Google Sheets, lalu pasang ID-nya pada Cloudflare Pages > Settings > Variables and Secrets > GOOGLE_SHEETS_PM_TEMPLATE_ID.');
+  }
+  const tf=await getDriveFile(accessToken,templateId);
+  if(!tf||tf.trashed)throw new Error(`Master Google Sheets PM tidak dapat diakses (${templateId}). Pastikan ID benar dan akun OAuth memiliki akses Viewer/Editor.`);
+  if(tf.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error(`ID GOOGLE_SHEETS_PM_TEMPLATE_ID bukan Google Spreadsheet (mimeType: ${tf.mimeType||'unknown'}). Impor workbook Excel menjadi Google Sheets terlebih dahulu.`);
+
+  const templateCheck=await validateKkPmSpreadsheet(accessToken,templateId,{checkFormulas:true});
+  if(!templateCheck.ok||templateCheck.profile!=='PM_2026'){
+    const actual=(templateCheck.metadata?.sheets||[]).map(x=>normalizeSheetTitle(x.properties?.title||x.title));
+    const expected=KK_PM_2026_SHEET_NAMES;
+    let firstMismatch=-1;
+    for(let i=0;i<Math.max(actual.length,expected.length);i++)if(normalizeSheetTitle(actual[i]||'')!==normalizeSheetTitle(expected[i]||'')){firstMismatch=i;break;}
+    const profile=templateCheck.profile==='LEGACY_PK_28'?'terdeteksi template legacy 28 sheet':`jumlah sheet aktual ${actual.length} (diharapkan ${expected.length})`;
+    const mismatch=firstMismatch>=0?`; beda pertama di urutan ${firstMismatch+1}: aktual “${actual[firstMismatch]||'(tidak ada)'}”, diharapkan “${expected[firstMismatch]||'(tidak ada)'}”`:'';
+    const formulaMsg=templateCheck.formulaOk?'':`; formula inti tidak sesuai: ${templateCheck.formulaMismatches.map(x=>`${x.cell} aktual “${x.actual||'kosong'}”, diharapkan “${x.expected}”`).join('; ')}`;
+    const actualNames=actual.length?`; tab aktual: ${actual.slice(0,30).join(' | ')}`:'';
+    throw new Error(`Master GOOGLE_SHEETS_PM_TEMPLATE_ID tidak sesuai: ${profile}${mismatch}${formulaMsg}${actualNames}. Perbarui GOOGLE_SHEETS_PM_TEMPLATE_ID ke ID Google Sheets hasil impor workbook PM terbaru 26 sheet. Jangan memakai ID template PK/legacy. Workbook OPD lama tidak dihapus atau ditimpa.`);
+  }
+
+  if(!env.GOOGLE_DRIVE_FOLDER_ID)throw new Error('GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi; master PM sudah valid, tetapi folder tujuan Google Drive belum tersedia.');
   const root=await getOrCreateFolder(accessToken,env.GOOGLE_DRIVE_FOLDER_ID,'Kertas Kerja Spreadsheet');
   const yearFolder=await getOrCreateFolder(accessToken,root,String(yearValue));
   const opdFolder=await getOrCreateFolder(accessToken,yearFolder,opdName);
   const pmFolder=await getOrCreateFolder(accessToken,opdFolder,'Kertas Kerja PM SPIP');
-  const current=normalizeKkPmData(params.currentKkPmData).workbook;
-  if(current.workbookSpreadsheetId){
-    try{
-      const currentCheck=await validateKkPmSpreadsheet(accessToken,current.workbookSpreadsheetId,{checkFormulas:false});
-      if(currentCheck.ok){
-        const ex=await getDriveFile(accessToken,current.workbookSpreadsheetId); if(ex&&!ex.trashed)return{version:2,templateSpreadsheetId:templateId,workbookSpreadsheetId:String(current.workbookSpreadsheetId),workbookUrl:current.workbookUrl||ex.webViewLink||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(current.workbookSpreadsheetId)}/edit`,workbookName:current.workbookName||ex.name||`${opdName} - Kertas Kerja PM SPIP - ${yearValue}`,sheets:(current.sheets&&current.sheets.length)?current.sheets:KK_PM_2026_SHEET_NAMES};
-      }
-    }catch{}
+  const workbookName=`${opdName} - Kertas Kerja PM SPIP - ${yearValue}`;
+  const copied=await copyDriveFile(accessToken,templateId,workbookName,pmFolder);
+  const copiedCheck=await validateKkPmSpreadsheet(accessToken,copied.id,{checkFormulas:true});
+  if(!copiedCheck.ok||copiedCheck.profile!=='PM_2026'){
+    // Leave the source template untouched. The new copy is not linked in D1 unless validated.
+    throw new Error('Salinan Spreadsheet PM baru gagal validasi struktur/formula 26 sheet. Workbook tidak ditautkan ke OPD; periksa template sumber dan izin Google Drive.');
   }
-  const templateCheck=await validateKkPmSpreadsheet(accessToken,templateId,{checkFormulas:!explicitPmTemplate});
-  const newPmProfileOk=templateCheck.profile==='PM_2026';
-  if(!templateCheck.ok || !newPmProfileOk){
-    const shapeMsg=templateCheck.profile==='PM_2026'?'':'template bukan struktur PM terbaru 26 sheet';
-    const formulaMsg=templateCheck.formulaOk?'':`formula inti tidak sama (${templateCheck.formulaMismatches.map(x=>`${x.cell}: ${x.actual||'kosong'} ≠ ${x.expected}`).join('; ')})`;
-    throw new Error(`Template Google Spreadsheet PM belum sesuai workbook PM terbaru: ${[shapeMsg,formulaMsg].filter(Boolean).join(' dan ')}. Unggah/import workbook KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313.xlsx ke Google Sheets, lalu set GOOGLE_SHEETS_PM_TEMPLATE_ID ke ID spreadsheet baru tersebut. Workbook lama yang sudah tertaut tidak dihapus atau ditimpa.`);
-  }
-  const workbookName=`${opdName} - Kertas Kerja PM SPIP - ${yearValue}`;const copied=await copyDriveFile(accessToken,templateId,workbookName,pmFolder);
-  const copiedCheck=await validateKkPmSpreadsheet(accessToken,copied.id,{checkFormulas:!explicitPmTemplate});
-  if(!copiedCheck.ok||copiedCheck.profile!=='PM_2026')throw new Error('Salinan Spreadsheet PM gagal diverifikasi terhadap struktur 26 sheet dari workbook sumber.');
   return{version:2,templateSpreadsheetId:templateId,workbookSpreadsheetId:copied.id,workbookUrl:copied.webViewLink||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(copied.id)}/edit`,workbookName:copied.name||workbookName,sheets:KK_PM_2026_SHEET_NAMES};
 }
 async function getSpreadsheetMetadata(accessToken,spreadsheetId){
@@ -1894,10 +1950,16 @@ export async function onRequest({ request, env, ctx }) {
 
   // Login/legacy verification are the only paths allowed to establish a session.
   const SESSION_ESTABLISH_ACTIONS = new Set(['login','verifyAccess']);
-  if (!SAFE_PUBLIC_ACTIONS.has(action) && !SESSION_ESTABLISH_ACTIONS.has(action) && action !== 'logout' && !authSession) {
+  const configuredMasterSyncSecret=String(env.KK_MASTER_SYNC_SECRET||'').trim();
+  const suppliedMasterSyncSecret=String(params.secret||request.headers.get('X-KK-Master-Sync-Secret')||'').trim();
+  const isTrustedMasterWebhook=action==='syncKkPmMasterNow'&&request.method==='POST'&&configuredMasterSyncSecret.length>=32&&suppliedMasterSyncSecret.length===configuredMasterSyncSecret.length&&(()=>{let diff=0;for(let i=0;i<configuredMasterSyncSecret.length;i++)diff|=configuredMasterSyncSecret.charCodeAt(i)^suppliedMasterSyncSecret.charCodeAt(i);return diff===0;})();
+  if(action==='syncKkPmMasterNow'&&!isTrustedMasterWebhook){
+    return jsonResponse({status:'error',code:'INVALID_MASTER_SYNC_SECRET',message:'Webhook sinkronisasi master ditolak: secret belum valid atau belum dikonfigurasi (minimal 32 karakter).'},403);
+  }
+  if (!isTrustedMasterWebhook && !SAFE_PUBLIC_ACTIONS.has(action) && !SESSION_ESTABLISH_ACTIONS.has(action) && action !== 'logout' && !authSession) {
     return jsonResponse({ status: 'error', code: 'AUTH_REQUIRED', message: 'Sesi login tidak ditemukan atau sudah berakhir. Silakan masuk kembali.' }, 401);
   }
-  if (authSession && action && !SAFE_PUBLIC_ACTIONS.has(action) && !SESSION_ESTABLISH_ACTIONS.has(action) && action !== 'logout' && !isActionAllowedForRole(authSession, action, params)) {
+  if (!isTrustedMasterWebhook && authSession && action && !SAFE_PUBLIC_ACTIONS.has(action) && !SESSION_ESTABLISH_ACTIONS.has(action) && action !== 'logout' && !isActionAllowedForRole(authSession, action, params)) {
     return jsonResponse({ status: 'error', code: 'ROLE_FORBIDDEN', message: 'Role akun tidak memiliki izin untuk aksi ini.' }, 403);
   }
   // Any action addressed to a specific OPD is checked against the logged-in scope.
@@ -2067,10 +2129,24 @@ export async function onRequest({ request, env, ctx }) {
         if(status==='dikembalikan'&&note.trim().length<2)throw new Error('Catatan wajib diisi jika bukti dikembalikan.');
         await assertSessionCanAccessOpd(env,authSession,year,opdId);
         const fileRecord=await assertUploadBelongsToOpd(env,year,opdId,uploadId);
-        if(stage==='irban'){const prior=await env.DB.prepare("SELECT status FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage='auditor' LIMIT 1").bind(String(year),opdId,uploadId).first();if(!prior||prior.status!=='dikirim')throw new Error('Verifikasi Irban baru dapat dilakukan setelah Auditor mengirim evidence.');}
-        if(stage==='bpkp'){const prior=await env.DB.prepare("SELECT status FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage='irban' LIMIT 1").bind(String(year),opdId,uploadId).first();if(!prior||prior.status!=='diterima')throw new Error('Verifikasi akhir BPKP baru dapat dilakukan setelah Irban menyetujui evidence.');}
         const now=Date.now();
-        await env.DB.prepare(`INSERT INTO evidence_verification_steps(year,opd_id,upload_id,stage,status,examiner_name,note,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(year,opd_id,upload_id,stage) DO UPDATE SET status=excluded.status,examiner_name=excluded.examiner_name,note=excluded.note,updated_by=excluded.updated_by,updated_at=excluded.updated_at`).bind(String(year),opdId,uploadId,stage,status,examinerName,note,String(authSession.username||''),now).run();
+        const previousStage=stage==='irban'?'auditor':(stage==='bpkp'?'irban':'');
+        const previousStatus=stage==='irban'?'dikirim':(stage==='bpkp'?'diterima':'');
+        const baseValues=[String(year),opdId,uploadId,stage,status,examinerName,note,String(authSession.username||''),now];
+        let write;
+        if(previousStage){
+          // Check the prerequisite in the same atomic D1 statement as the write. A
+          // separate SELECT-then-INSERT allowed a downstream reviewer to commit a
+          // stale decision while an upstream reviewer was returning the same file.
+          write=await env.DB.prepare(`INSERT INTO evidence_verification_steps(year,opd_id,upload_id,stage,status,examiner_name,note,updated_by,updated_at)
+            SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (
+              SELECT 1 FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage=? AND status=?
+            ) ON CONFLICT(year,opd_id,upload_id,stage) DO UPDATE SET status=excluded.status,examiner_name=excluded.examiner_name,note=excluded.note,updated_by=excluded.updated_by,updated_at=excluded.updated_at`)
+            .bind(...baseValues,String(year),opdId,uploadId,previousStage,previousStatus).run();
+          if(!Number(write.meta?.changes||0))return jsonResponse({status:'error',code:'VERIFICATION_STAGE_CONFLICT',message:stage==='irban'?'Status Auditor belum Dikirim atau sudah berubah. Muat ulang status evidence sebelum memverifikasi.':'Status Irban bukan Diterima lagi. Muat ulang status evidence sebelum verifikasi akhir BPKP.'},409);
+        }else{
+          write=await env.DB.prepare(`INSERT INTO evidence_verification_steps(year,opd_id,upload_id,stage,status,examiner_name,note,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(year,opd_id,upload_id,stage) DO UPDATE SET status=excluded.status,examiner_name=excluded.examiner_name,note=excluded.note,updated_by=excluded.updated_by,updated_at=excluded.updated_at`).bind(...baseValues).run();
+        }
         // When an upstream reviewer re-submits or returns a file, downstream decisions are invalidated.
         if(stage==='auditor')await env.DB.prepare("DELETE FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage IN ('irban','bpkp')").bind(String(year),opdId,uploadId).run();
         if(stage==='irban')await env.DB.prepare("DELETE FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage='bpkp'").bind(String(year),opdId,uploadId).run();
@@ -2190,7 +2266,9 @@ export async function onRequest({ request, env, ctx }) {
         if(!configured||configured.length<32||supplied!==configured)return jsonResponse({status:'error',message:'Token sinkronisasi master tidak valid atau belum dikonfigurasi.'},403);
         try{
           const result=await syncPmMasterColumnsToOpdWorkbooks(env,year,{force:true});
-          return jsonResponse({status:'success',message:'Sinkronisasi master KK PM diproses.',...result});
+          const masterId=extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||'');
+          if(masterId){const key=`PM:${masterId}`;LIVE_KK_MASTER_ROWS_GENERATION.set(key,(LIVE_KK_MASTER_ROWS_GENERATION.get(key)||0)+1);LIVE_KK_MASTER_ROWS_CACHE.delete(key);}
+          return jsonResponse({status:'success',message:'Sinkronisasi master KK PM diproses; cache master lokal telah diinvalidasi.',...result});
         }catch(err){return jsonResponse({status:'error',message:String(err?.message||err).slice(0,600)},500);}
       }
 
@@ -2672,7 +2750,9 @@ export async function onRequest({ request, env, ctx }) {
           const v=computed.values||{};
           // Keep existing numeric columns if a formula cell is temporarily blank/error, but
           // never present an old cached result as current: computed_workbook_data is replaced.
-          await runD1WithRetry(()=>env.DB.prepare('UPDATE opd_data SET nilai_maturitas=COALESCE(?,nilai_maturitas),nilai_kapabilitas_apip=COALESCE(?,nilai_kapabilitas_apip),mri=COALESCE(?,mri),iepk=COALESCE(?,iepk),computed_workbook_data=? WHERE id=? AND year=?').bind(v.nilaiMaturitas,v.nilaiKapabilitasApip,v.mri,v.iepk,JSON.stringify(computed),opdId,String(year)));
+          const linkPath=usePm?'$.workbook.workbookSpreadsheetId':'$.workbookSpreadsheetId';
+          const update=await runD1WithRetry(()=>env.DB.prepare(`UPDATE opd_data SET nilai_maturitas=COALESCE(?,nilai_maturitas),nilai_kapabilitas_apip=COALESCE(?,nilai_kapabilitas_apip),mri=COALESCE(?,mri),iepk=COALESCE(?,iepk),computed_workbook_data=? WHERE id=? AND year=? AND json_extract(CASE WHEN json_valid(${usePm?'kk_pm_data':'kk_data'}) THEN ${usePm?'kk_pm_data':'kk_data'} ELSE '{}' END, ?) = ?`).bind(v.nilaiMaturitas,v.nilaiKapabilitasApip,v.mri,v.iepk,JSON.stringify(computed),opdId,String(year),linkPath,String(spreadsheetId)));
+          if(!Number(update.meta?.changes||0))return jsonResponse({status:'stale',message:'Workbook berubah saat nilai sedang dibaca. Nilai lama tidak disimpan; jalankan sinkronisasi ulang.',computed:{...computed,status:'stale'}});
           notifyRealtime(env,ctx,year,{action:'syncKkComputedValues',opdId,computed});
           return jsonResponse({status:'success',computed});
         }catch(err){
@@ -2681,7 +2761,8 @@ export async function onRequest({ request, env, ctx }) {
           const sameWorkbook=String(old.spreadsheetId||'')===String(spreadsheetId);
           const emptyValues={nilaiMaturitas:null,mri:null,iepk:null,nilaiKapabilitasApip:null};
           const computed={...(sameWorkbook?old:{}),status:'error',source:usePm?'KK PM SPIP workbook formula cells':'KK SPIP (legacy fallback) · formula workbook cells',spreadsheetId,spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`,values:sameWorkbook&&old.values?old.values:emptyValues,error:String(err.message||err),syncedAt:sameWorkbook?(old.syncedAt||null):null};
-          await runD1WithRetry(()=>env.DB.prepare('UPDATE opd_data SET computed_workbook_data=? WHERE id=? AND year=?').bind(JSON.stringify(computed),opdId,String(year)));
+          const errorLinkPath=usePm?'$.workbook.workbookSpreadsheetId':'$.workbookSpreadsheetId';
+          await runD1WithRetry(()=>env.DB.prepare(`UPDATE opd_data SET computed_workbook_data=? WHERE id=? AND year=? AND json_extract(CASE WHEN json_valid(${usePm?'kk_pm_data':'kk_data'}) THEN ${usePm?'kk_pm_data':'kk_data'} ELSE '{}' END, ?) = ?`).bind(JSON.stringify(computed),opdId,String(year),errorLinkPath,String(spreadsheetId)));
           return jsonResponse({status:'error',message:computed.error,computed},200);
         }
       }
@@ -2696,14 +2777,37 @@ export async function onRequest({ request, env, ctx }) {
       }
 
       case 'createKkPmSheets': {
-        const rec=await env.DB.prepare("SELECT kk_pm_data, opd FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(String(params.opdId||''),String(year)).all();
-        if(!rec.results?.length)return jsonResponse({status:'error',message:'OPD tidak ditemukan'},404);
-        const kkPmRaw=normalizeKkPmData(rec.results[0].kk_pm_data);const wb=await ensureKkPmSpreadsheet(env,{...params,opd:params.opd||rec.results[0].opd,currentKkPmData:kkPmRaw});
-        const accessToken=await getGoogleAccessToken(env);let sheets=[];try{const meta=await getSpreadsheetMetadata(accessToken,wb.workbookSpreadsheetId);if(!expectedPmSheetOrderMatches(meta.sheets||[]))throw new Error('Spreadsheet PM hasil sinkronisasi tidak mengikuti salah satu profil yang didukung. Gunakan template PM terbaru 26 sheet.');sheets=(meta.sheets||[]).map(s=>({sheetId:s.properties?.sheetId,title:s.properties?.title,index:s.properties?.index,rowCount:s.properties?.gridProperties?.rowCount||0,columnCount:s.properties?.gridProperties?.columnCount||0}));}catch(err){throw new Error(err.message||'Gagal memverifikasi struktur Spreadsheet PM.');}
-        const compact={version:2,workbook: {...wb,sheets:sheets.length?sheets:wb.sheets},cells:kkPmRaw.cells||{}};
-        await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET kk_pm_data=? WHERE id=? AND year=?").bind(JSON.stringify(compact),String(params.opdId),String(year)));
-        notifyRealtime(env,ctx,year,{action:'createKkPmSheets',opdId:params.opdId});
-        return jsonResponse({status:'success',message:'Spreadsheet KK PM SPIP lengkap berhasil dibuat/disinkronkan',kkPmData:compact.workbook,sheets:compact.workbook.sheets});
+        const opdId=String(params.opdId||'');
+        if(!opdId)throw new Error('ID OPD wajib diisi.');
+        const lockKey=`kk-pm-workbook:${String(year)}:${opdId}`;
+        const lockToken=crypto.randomUUID();
+        const lockNow=Date.now();
+        const leaseMs=5*60*1000;
+        const lock=await env.DB.prepare(`INSERT INTO kk_pm_workbook_sync_locks(lock_key,lease_until,owner_token,updated_at)
+          VALUES(?,?,?,?) ON CONFLICT(lock_key) DO UPDATE SET lease_until=excluded.lease_until,owner_token=excluded.owner_token,updated_at=excluded.updated_at
+          WHERE kk_pm_workbook_sync_locks.lease_until<?`).bind(lockKey,lockNow+leaseMs,lockToken,lockNow,lockNow).run();
+        if(!Number(lock.meta?.changes||0)){
+          return jsonResponse({status:'error',code:'WORKBOOK_SYNC_IN_PROGRESS',message:`Sinkronisasi workbook untuk OPD ini pada tahun ${year} sedang berjalan dari sesi lain. Tunggu beberapa detik lalu tekan Muat Link atau Sinkronkan sekali lagi.`,retryAfterSeconds:5},409);
+        }
+        try{
+          // Re-read only after acquiring the lock so a concurrent request cannot give us a stale workbook ID.
+          const rec=await env.DB.prepare("SELECT kk_pm_data,opd FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,String(year)).all();
+          if(!rec.results?.length)return jsonResponse({status:'error',message:'OPD tidak ditemukan'},404);
+          const latestRaw=normalizeKkPmData(rec.results[0].kk_pm_data);
+          const wb=await ensureKkPmSpreadsheet(env,{...params,opd:rec.results[0].opd,currentKkPmData:latestRaw});
+          const accessToken=await getGoogleAccessToken(env);
+          const meta=await getSpreadsheetMetadata(accessToken,wb.workbookSpreadsheetId);
+          if(!expectedPmSheetOrderMatches(meta.sheets||[])||getPmSheetProfile(meta.sheets||[])!=='PM_2026')throw new Error('Spreadsheet PM hasil sinkronisasi tidak mengikuti template resmi PM terbaru 26 sheet. Tidak ada referensi workbook yang diubah.');
+          const sheets=(meta.sheets||[]).map(x=>({sheetId:x.properties?.sheetId,title:x.properties?.title,index:x.properties?.index,rowCount:x.properties?.gridProperties?.rowCount||0,columnCount:x.properties?.gridProperties?.columnCount||0}));
+          const workbook={...wb,sheets:sheets.length?sheets:wb.sheets};
+          // Replace only $.workbook. D1 performs this atomically and preserves $.cells even if another tab saves a cell meanwhile.
+          const saved=await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET kk_pm_data=json_set(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,'$.version',2,'$.workbook',json(?)) WHERE id=? AND year=?").bind(JSON.stringify(workbook),opdId,String(year)).run());
+          if(!saved.meta?.changes)throw new Error('Referensi OPD/tahun tidak berubah karena rekaman tidak ditemukan saat menyimpan hasil sinkronisasi.');
+          notifyRealtime(env,ctx,year,{action:'createKkPmSheets',opdId});
+          return jsonResponse({status:'success',message:'Spreadsheet KK PM SPIP lengkap berhasil dibuat/disinkronkan',kkPmData:workbook,sheets:workbook.sheets});
+        }finally{
+          await env.DB.prepare("UPDATE kk_pm_workbook_sync_locks SET lease_until=0,owner_token='',updated_at=? WHERE lock_key=? AND owner_token=?").bind(Date.now(),lockKey,lockToken).run().catch(()=>{});
+        }
       }
 
       case 'exportKkPmWorkbook': {
@@ -2730,10 +2834,13 @@ export async function onRequest({ request, env, ctx }) {
         if (!kkPmData || typeof kkPmData !== 'object') kkPmData = {};
         // Hanya simpan sparse cell overrides agar database tetap ringan.
         const cells = kkPmData.cells && typeof kkPmData.cells === 'object' ? kkPmData.cells : {};
-        const compact = { version: 1, cells };
+        const compact = { version: 2, cells };
         const serialized = JSON.stringify(compact);
         if (serialized.length > 900000) throw new Error('Perubahan Kertas Kerja PM terlalu besar. Simpan secara bertahap.');
-        await env.DB.prepare("UPDATE opd_data SET kk_pm_data=? WHERE id=? AND year=?").bind(serialized, params.opdId, year).run();
+        // Merge sparse cell overrides atomically instead of replacing the entire JSON blob:
+        // keep the linked workbook metadata and preserve cells saved by other open sessions.
+        const result=await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET kk_pm_data=json_patch(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,json(?)) WHERE id=? AND year=?").bind(serialized,params.opdId,String(year)).run());
+        if(!Number(result.meta?.changes||0))throw new Error('OPD tidak ditemukan saat menyimpan Kertas Kerja PM.');
         notifyRealtime(env, ctx, year, { action: 'saveKkPmData', opdId: params.opdId });
         return jsonResponse({ status: 'success', message: 'Kertas Kerja PM tersimpan', kkPmData: compact });
       }
