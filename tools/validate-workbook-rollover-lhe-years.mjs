@@ -28,6 +28,7 @@ check(openCode.includes('newTab.location.replace(url)'), 'Only server-validated 
 check(openCode.includes("newTab.close()"), 'Open handler must close tab rather than fall back to stale link after validation fails');
 const targetInput=html.match(/<input[^>]*id="lheTargetYear"[^>]*>/)?.[0]||'';
 check(Boolean(targetInput)&&!targetInput.includes('value="2026"'), 'LHE target-year input must not ship with a hardcoded stale default');
-check(app.includes('lheMapDueDateToTargetYear(t.dueDate,t.sourceYear,years.current)'), 'Template due date must be projected to active target year');
-check(app.includes('Tahun TL ${sheetLinksEsc(item.year||currentYear)}')&&app.includes('Sumber LHE ${sheetLinksEsc(item.source_year||\'—\')}'),'LHE list must clearly separate target year from historical source year');
+check(app.includes('lheMapDueDateToTargetYear(t.dueDate,targetYear,targetYear)'), 'Template due date must be projected to active target year without hardcoded template source year');
+check(app.includes('sourceYear:targetYear'), 'New templated follow-ups must use the active year by default, not an archived template year');
+check(app.includes('Tahun TL ${sheetLinksEsc(item.year||currentYear)}')&&app.includes('Tahun LHE ${sheetLinksEsc(item.source_year||\'—\')}'),'LHE list must clearly separate target year from LHE document year');
 console.log(JSON.stringify({status:'PASS',checks,verified:['D1 workbook lineage preservation','sparse PM cell preservation','open uses authoritative live pointer','stale/deleted PM workbook is synchronized before open','LHE year auto-projection and source-year fidelity']},null,2));

@@ -1,0 +1,32 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+const root=path.resolve(path.dirname(new URL(import.meta.url).pathname),'..');
+const json=JSON.parse(fs.readFileSync(path.join(root,'public/lhe-followup-templates.json'),'utf8'));
+const app=fs.readFileSync(path.join(root,'public/script.js'),'utf8');
+const html=fs.readFileSync(path.join(root,'public/index.html'),'utf8');
+let checks=0;const check=(ok,msg)=>{assert.ok(ok,msg);checks++;};
+check(json.version===2,'Template library should use the neutral reusable-template schema');
+check(json.templates.length===40,'All 40 workbook-derived recommendation items should remain available');
+check(new Set(json.templates.map(t=>t.id)).size===json.templates.length,'Template IDs must be unique and neutral');
+for(const t of json.templates){
+  check(Boolean(t.category),'Every template must have a category for duplicate-reference disambiguation');
+  for(const key of ['recommendationRef','recommendation','actionPlan','indicator','evidenceRequired','pic','dueDate'])check(String(t[key]||'').trim().length>0,`${t.id} must have ${key}`);
+  check(!('sourceYear' in t),'Template data must not hard-code a source year');
+  check(!['sourceStatus','sourceActualAction','sourceEvidenceUrl','sourceApipNotes','templateStatus','source'].some(k=>k in t),`${t.id} must not carry stale status/realisasi as live template data`);
+  check(!/^202[45]-/.test(t.id),'Template IDs must not encode a historical year');
+  check(!/\b202[45]\b/.test(t.dueDate),'Template deadlines must be reusable, relative dates');
+}
+check(!app.includes('Sumber asli ${sheetLinksEsc(t.sourceYear)}'),'Template dropdown must not display source-original-year labels');
+check(app.includes("${sheetLinksEsc(t.category||'Rekomendasi umum')} · Ref."),'Template options must use category and recommendation reference');
+check(app.includes('sourceYear:targetYear'),'A newly selected template must default the document year to the active app year');
+check(app.includes('replace(/\\btahun berjalan\\b/gi,target).replace(/\\btahun berikutnya\\b/gi,String(Number(target)+1))'),'Relative deadlines must follow the active target year');
+check(html.includes('Templat rekomendasi</label>')&&!html.includes('Templat rekomendasi sumber'),'UI must use neutral template wording');
+check(html.includes('Tahun LHE (sesuai dokumen yang ditindaklanjuti)'),'Actual LHE document year must remain separately editable');
+const fn=app.match(/function lheMapDueDateToTargetYear\([^\n]+/);
+check(Boolean(fn),'Date projection helper must be present');
+const ctx={};vm.createContext(ctx);vm.runInContext(`${fn[0]};globalThis.project=lheMapDueDateToTargetYear;`,ctx);
+check(ctx.project('Bulan November tahun berjalan','2025','2026')==='Bulan November 2026','Current-year deadlines should follow the selected target year');
+check(ctx.project('Rencana 31 Desember tahun berjalan; pelaksanaan 30 Juni tahun berikutnya','2025','2027')==='Rencana 31 Desember 2027; pelaksanaan 30 Juni 2028','Next-year milestones should remain one year after target year');
+console.log(JSON.stringify({status:'PASS',checks,templates:json.templates.length,categories:[...new Set(json.templates.map(t=>t.category))].length,verified:['no source-year labels in dropdown','year-neutral template data','relative deadlines','legacy status/realisasi excluded from template data','all recommendation fields complete']},null,2));
