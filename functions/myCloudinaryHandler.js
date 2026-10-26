@@ -342,7 +342,7 @@ const SESSION_TTL_SECONDS = 12 * 60 * 60;
 const VALID_ACCOUNT_ROLES = new Set(['admin','auditor','ppupd','opd','irban','bpkp']);
 const SAFE_PUBLIC_ACTIONS = new Set(['authMe','login','verifyAccess','previewPublicEvidence']);
 const COMMON_READ_ACTIONS = new Set([
-  'getYears','getData','getSubunsurData','getKkMasterSheetRows','getKkSheets','getRtpKkSheets',
+  'getYears','getData','getPemdaSampling','getSubunsurData','getKkMasterSheetRows','getKkSheets','getRtpKkSheets',
   'getRtpEvidence','getReportFiles','getWorkbookEvidenceFiles','getKkPmSheets','getKkPmData',
   'getKkPmDataDetailed','getKkRpjmdMappings','getQaApipData','getQaApipChecklistData','getEvidenceWorkflow','previewEvidence','createEvidencePreviewLink','downloadEvidence',
   'getBpkpOfficialScore','exportKkPmWorkbook','getLheFollowups'
@@ -365,10 +365,10 @@ const OPD_INPUT_ACTIONS = new Set([
   'saveKkPmMeta','saveKkRpjmdMapping','getKkRpjmdMappings','createEvidencePreviewLink','previewEvidence','getWorkbookEvidenceFiles','replaceWorkbookEvidenceFile','saveQaApipItem',
   'getQaApipData','getBpkpOfficialScore','syncKkComputedValues',
   'deleteQaApipItem','saveQaApipChecklistItem','deleteQaApipChecklistItem','getQaApipChecklistData',
-  'getYears','getData','getSubunsurData','getKkMasterSheetRows','getEvidenceWorkflow','downloadEvidence','previewEvidence','createEvidencePreviewLink','getLheFollowups'
+  'getYears','getData','getSubunsurData','saveEvidenceWorkflowStep','getKkMasterSheetRows','getEvidenceWorkflow','downloadEvidence','previewEvidence','createEvidencePreviewLink','getLheFollowups'
 ]);
 const AUDITOR_ALLOWED_ACTIONS = new Set([
-  ...COMMON_READ_ACTIONS,...OPD_INPUT_ACTIONS,'saveEvidenceWorkflowStep',
+  ...COMMON_READ_ACTIONS,...OPD_INPUT_ACTIONS,'saveEvidenceWorkflowStep','savePemdaSampling',
   'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','deleteLheFollowup'
 ]);
 // PPUPD memiliki hak operasional yang sama dengan Auditor, tetap dibatasi oleh cakupan OPD sesi.
@@ -379,11 +379,11 @@ const IRBAN_ALLOWED_ACTIONS = new Set([
   // These two actions remain protected by the per-OPD scope check below; the role
   // is not granted general account-management or official-score finalization rights.
   'createKkPmSheets','syncKkComputedValues',
-  'saveAssessmentStatus','saveEvidenceVerification','saveRtpEvidenceVerification',
+  'saveAssessmentStatus','saveEvidenceVerification','saveRtpEvidenceVerification','getPemdaSampling','savePemdaSampling',
   'saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','verifyKkRpjmdMapping','downloadEvidence','listBackups','getLheFollowups','saveLheFollowup','deleteLheFollowup','uploadLheEvidence','deleteLheEvidence'
 ]);
 const BPKP_ALLOWED_ACTIONS = new Set([
-  ...COMMON_READ_ACTIONS,'saveEvidenceWorkflowStep','downloadEvidence','getLheFollowups','getBpkpOfficialScoreAdmin',
+  ...COMMON_READ_ACTIONS,'saveEvidenceWorkflowStep','getPemdaSampling','downloadEvidence','getLheFollowups','getBpkpOfficialScoreAdmin',
   'getBpkpOfficialAudit','saveBpkpOfficialScore','unlockBpkpOfficialScore'
 ]);
 const DESTRUCTIVE_ADMIN_ACTIONS = new Set([
@@ -580,6 +580,7 @@ function isActionAllowedForRole(session,action,params={}){
   if(role==='admin')return true;
   if(role==='opd'){
     if(!OPD_INPUT_ACTIONS.has(action))return false;
+    if(action==='saveEvidenceWorkflowStep'&&String(params.stage||'').toLowerCase()==='opd')return true;
     if(VERIFICATION_ACTIONS.has(action)||DESTRUCTIVE_ADMIN_ACTIONS.has(action))return false;
     if(action==='saveField'&&!['evidence','qaApip','rtp','status'].includes(String(params.field||'')))return false;
     if(action==='saveRow'||action==='saveData')return false;
@@ -590,7 +591,8 @@ function isActionAllowedForRole(session,action,params={}){
     // Finalisasi nilai resmi BPKP dan pengelolaan akun tetap dilarang.
     const allowed=role==='ppupd'?PPUPD_ALLOWED_ACTIONS:AUDITOR_ALLOWED_ACTIONS;
     if(!allowed.has(action)||DESTRUCTIVE_ADMIN_ACTIONS.has(action))return false;
-    if(action==='saveEvidenceWorkflowStep'&&String(params.stage||'').toLowerCase()!=='auditor')return false;
+    if(action==='saveEvidenceWorkflowStep'&&String(params.stage||'').toLowerCase()!=='qa')return false;
+    if(action==='savePemdaSampling')return false;
     return true;
   }
   if(role==='irban')return IRBAN_ALLOWED_ACTIONS.has(action);
@@ -724,6 +726,8 @@ async function ensureOpdSchema(env){
       updated_by TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL
     )`).run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_evidence_workflow_audit ON evidence_verification_audit(year,opd_id,upload_id,created_at)").run();
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS pemda_opd_sampling (year TEXT NOT NULL, opd_id TEXT NOT NULL, selected INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '', selected_by TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(year,opd_id))`).run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_pemda_sampling_year_selected ON pemda_opd_sampling(year,selected)").run();
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS lhe_followup_items (
       id TEXT PRIMARY KEY, year TEXT NOT NULL, opd_id TEXT NOT NULL, source_year TEXT NOT NULL DEFAULT '',
       recommendation_ref TEXT NOT NULL DEFAULT '', recommendation TEXT NOT NULL DEFAULT '', action_plan TEXT NOT NULL DEFAULT '',
@@ -2530,14 +2534,29 @@ export async function onRequest({ request, env, ctx }) {
         if(object.httpEtag)headers.set('ETag',object.httpEtag);
         return new Response(object.body,{status:200,headers});
       }
+      case 'getPemdaSampling': {
+        if(!['admin','irban','bpkp','auditor','ppupd'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',message:'Akses kertas kerja Pemda tidak diizinkan.'},403);
+        const result=await env.DB.prepare(`SELECT o.id AS opd_id,o.opd,o.assessment_status,COALESCE(s.selected,0) AS selected,COALESCE(s.note,'') AS note,COALESCE(s.selected_by,'') AS selected_by,COALESCE(s.updated_at,0) AS updated_at,(SELECT COUNT(*) FROM evidence_verification_steps v WHERE v.year=o.year AND v.opd_id=o.id AND v.stage='qa' AND v.status IN ('diterima','diterima_catatan')) AS qa_accepted,(SELECT COUNT(*) FROM evidence_verification_steps v WHERE v.year=o.year AND v.opd_id=o.id AND v.stage='bpkp' AND v.status IN ('diterima','diterima_catatan')) AS bpkp_accepted FROM opd_data o LEFT JOIN pemda_opd_sampling s ON s.year=o.year AND s.opd_id=o.id WHERE o.year=? ORDER BY o.opd COLLATE NOCASE`).bind(String(year)).all();
+        const items=(result.results||[]).filter(r=>sessionCanAccessOrg(authSession,String(r.opd_id),String(r.opd||''))||['admin','irban','bpkp'].includes(String(authSession?.role||''))).map(r=>({...r,selected:Number(r.selected)===1,qa_status:Number(r.qa_accepted)>0?'QA diterima':'Belum QA',bpkp_status:Number(r.bpkp_accepted)>0?'Diterima':'Belum diverifikasi'}));
+        const selected=items.filter(x=>x.selected).length;
+        return jsonResponse({status:'success',year:String(year),items,summary:{total:items.length,selected}});
+      }
+      case 'savePemdaSampling': {
+        if(!['admin','irban'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',message:'Pemilihan sampel hanya dapat dilakukan oleh Super Admin atau Irban.'},403);
+        const items=Array.isArray(params.items)?params.items:[];if(items.length>100)throw new Error('Maksimal 100 OPD per penyimpanan.');
+        const now=Date.now();const username=String(authSession.username||'');
+        for(const item of items){const opdId=String(item?.opdId||'');if(!opdId)continue;await assertSessionCanAccessOpd(env,authSession,year,opdId);const selected=item.selected?1:0;const note=sanitizeVerificationField(item.note,1000);await runD1WithRetry(()=>env.DB.prepare(`INSERT INTO pemda_opd_sampling(year,opd_id,selected,note,selected_by,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(year,opd_id) DO UPDATE SET selected=excluded.selected,note=excluded.note,selected_by=excluded.selected_by,updated_at=excluded.updated_at`).bind(String(year),opdId,selected,note,username,now).run());}
+        notifyRealtime(env,ctx,String(year),{action:'savePemdaSampling',year:String(year)});
+        return jsonResponse({status:'success',message:'Kertas Kerja Pemda dan pilihan sampling berhasil disimpan.',updatedAt:now});
+      }
       case 'getEvidenceWorkflow': {
         const opdId=String(params.opdId||''),uploadId=String(params.uploadId||'');
         await assertSessionCanAccessOpd(env,authSession,year,opdId);
         const file=await assertUploadBelongsToOpd(env,year,opdId,uploadId);
         if(!file)throw new Error('Evidence tidak ditemukan.');
         const rec=await env.DB.prepare('SELECT stage,status,examiner_name,note,updated_by,updated_at FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=?').bind(String(year),opdId,uploadId).all();
-        const stages={auditor:{stage:'auditor',status:'menunggu',examinerName:'',note:'',updatedBy:'',updatedAt:0},irban:{stage:'irban',status:'menunggu',examinerName:'',note:'',updatedBy:'',updatedAt:0},bpkp:{stage:'bpkp',status:'menunggu',examinerName:'',note:'',updatedBy:'',updatedAt:0}};
-        for(const row of (rec.results||[])){if(stages[row.stage])stages[row.stage]={stage:row.stage,status:row.status||'menunggu',examinerName:row.examiner_name||'',note:row.note||'',updatedBy:row.updated_by||'',updatedAt:Number(row.updated_at||0)};}
+        const stages={opd:{stage:'opd',status:'menunggu',examinerName:'',note:'',updatedBy:'',updatedAt:0},qa:{stage:'qa',status:'menunggu',examinerName:'',note:'',updatedBy:'',updatedAt:0},bpkp:{stage:'bpkp',status:'menunggu',examinerName:'',note:'',updatedBy:'',updatedAt:0}};
+        for(const row of (rec.results||[])){if(stages[row.stage])stages[row.stage]={stage:row.stage,status:row.status||'menunggu',examinerName:row.examiner_name||'',note:row.note||'',updatedBy:row.updated_by||'',updatedAt:Number(row.updated_at||0)};else if(row.stage==='irban'&&!stages.qa.updatedAt)stages.qa={stage:'qa',status:row.status||'menunggu',examinerName:row.examiner_name||'',note:row.note||'',updatedBy:row.updated_by||'',updatedAt:Number(row.updated_at||0)};}
         const history=(await env.DB.prepare('SELECT stage,status,examiner_name,note,updated_by,created_at FROM evidence_verification_audit WHERE year=? AND opd_id=? AND upload_id=? ORDER BY created_at DESC LIMIT 30').bind(String(year),opdId,uploadId).all()).results||[];
         return jsonResponse({status:'success',year:String(year),opdId,uploadId,fileName:file.fileName||'Evidence',stages,history});
       }
@@ -2546,17 +2565,19 @@ export async function onRequest({ request, env, ctx }) {
         const role=String(authSession?.role||''),status=String(params.status||'');
         const examinerName=sanitizeVerificationField(params.examinerName||authSession?.display_name||authSession?.username,100);
         const note=sanitizeVerificationField(params.note,2000);
-        if(!['auditor','irban','bpkp'].includes(stage))throw new Error('Tahap verifikasi tidak valid.');
-        const roleStage=(role==='ppupd'?'auditor':role);if(role!=='admin'&&roleStage!==stage)return jsonResponse({status:'error',message:'Akun hanya dapat mengisi tahap sesuai role masing-masing.'},403);
-        const allowedStatuses=stage==='auditor'?['dikirim']:['diterima','diterima_catatan','dikembalikan'];
-        if(!allowedStatuses.includes(status))throw new Error(stage==='auditor'?'Tahap Auditor / PPUPD hanya dapat diubah menjadi Dikirim.':'Pilih hasil Diterima atau Dikembalikan.');
+        if(!['opd','qa','bpkp'].includes(stage))throw new Error('Tahap verifikasi tidak valid.');
+        const roleStage=(role==='ppupd'||role==='auditor')?'qa':role;if(role!=='admin'&&roleStage!==stage)return jsonResponse({status:'error',message:'Akun hanya dapat mengisi tahap sesuai role masing-masing.'},403);
+        if(role==='opd'&&stage!=='opd')return jsonResponse({status:'error',message:'Akun OPD hanya dapat mengisi PM internal.'},403);
+        const allowedStatuses=['diterima','diterima_catatan','dikembalikan'];
+        if(!allowedStatuses.includes(status))throw new Error('Pilih hasil Diterima, Diterima dengan Catatan, atau Dikembalikan.');
         if(!opdId||!uploadId||!examinerName)throw new Error('OPD, file, dan nama pemeriksa wajib lengkap.');
         if(['diterima_catatan','dikembalikan'].includes(status)&&note.trim().length<2)throw new Error('Catatan wajib diisi untuk Diterima dengan Catatan atau Dikembalikan.');
         await assertSessionCanAccessOpd(env,authSession,year,opdId);
         const fileRecord=await assertUploadBelongsToOpd(env,year,opdId,uploadId);
+        if(stage==='bpkp'){const sample=await env.DB.prepare('SELECT selected FROM pemda_opd_sampling WHERE year=? AND opd_id=? LIMIT 1').bind(String(year),opdId).all();if(Number(sample.results?.[0]?.selected||0)!==1)return jsonResponse({status:'error',code:'OPD_NOT_SAMPLED',message:'OPD ini belum dipilih sebagai sampel pada Kertas Kerja Pemerintah Kabupaten Mahakam Ulu.'},409);}
         const now=Date.now();
-        const previousStage=stage==='irban'?'auditor':(stage==='bpkp'?'irban':'');
-        const previousStatuses=stage==='irban'?['dikirim']:(stage==='bpkp'?['diterima','diterima_catatan']:[]);
+        const previousStage=stage==='qa'?'opd':(stage==='bpkp'?'qa':'');
+        const previousStatuses=stage==='qa'?['diterima','diterima_catatan']:(stage==='bpkp'?['diterima','diterima_catatan']:[]);
         const baseValues=[String(year),opdId,uploadId,stage,status,examinerName,note,String(authSession.username||''),now];
         let write;
         if(previousStage){
@@ -2568,21 +2589,20 @@ export async function onRequest({ request, env, ctx }) {
               SELECT 1 FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage=? AND ${statusClause}
             ) ON CONFLICT(year,opd_id,upload_id,stage) DO UPDATE SET status=excluded.status,examiner_name=excluded.examiner_name,note=excluded.note,updated_by=excluded.updated_by,updated_at=excluded.updated_at`)
             .bind(...baseValues,String(year),opdId,uploadId,previousStage,...previousStatuses).run();
-          if(!Number(write.meta?.changes||0))return jsonResponse({status:'error',code:'VERIFICATION_STAGE_CONFLICT',message:stage==='irban'?'Status Auditor / PPUPD belum Dikirim atau sudah berubah. Muat ulang status evidence sebelum memverifikasi.':'Status Irban belum Diterima atau Diterima dengan Catatan lagi. Muat ulang status evidence sebelum verifikasi akhir BPKP.'},409);
+          if(!Number(write.meta?.changes||0))return jsonResponse({status:'error',code:'VERIFICATION_STAGE_CONFLICT',message:stage==='qa'?'PM internal asesor OPD belum Diterima atau Diterima dengan Catatan. Muat ulang status evidence sebelum QA.':'QA Auditor/PUPPD belum Diterima atau Diterima dengan Catatan. Muat ulang status sebelum verifikasi BPKP.'},409);
         }else{
           write=await env.DB.prepare(`INSERT INTO evidence_verification_steps(year,opd_id,upload_id,stage,status,examiner_name,note,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(year,opd_id,upload_id,stage) DO UPDATE SET status=excluded.status,examiner_name=excluded.examiner_name,note=excluded.note,updated_by=excluded.updated_by,updated_at=excluded.updated_at`).bind(...baseValues).run();
         }
         // When an upstream reviewer re-submits or returns a file, downstream decisions are invalidated.
-        if(stage==='auditor')await env.DB.prepare("DELETE FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage IN ('irban','bpkp')").bind(String(year),opdId,uploadId).run();
-        if(stage==='irban')await env.DB.prepare("DELETE FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage='bpkp'").bind(String(year),opdId,uploadId).run();
+        if(stage==='opd')await env.DB.prepare("DELETE FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage IN ('qa','bpkp')").bind(String(year),opdId,uploadId).run();
+        if(stage==='qa')await env.DB.prepare("DELETE FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage='bpkp'").bind(String(year),opdId,uploadId).run();
         await env.DB.prepare('INSERT INTO evidence_verification_audit(year,opd_id,upload_id,stage,status,examiner_name,note,updated_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(String(year),opdId,uploadId,stage,status,examinerName,note,String(authSession.username||''),now).run();
-        if(stage==='irban'){
-          // Keep the score-bearing evidence metadata and dashboard score synchronized
-          // with the authoritative Irban decision. Auditor's 'dikirim' is not a score.
+        if(stage==='qa'){
+          // Only QA decisions update the authoritative evidence verification score.
           await syncStructureVerificationForUpload(env,year,opdId,uploadId,status,examinerName,note,now);
         }
         if(fileRecord?.sourceType==='lhe_evidence'){
-          const summaryStatus=stage==='bpkp'?(status==='diterima'?'Terverifikasi akhir BPKP':'Dikembalikan oleh BPKP'):(stage==='irban'?(status==='diterima'?'Menunggu verifikasi akhir BPKP':'Perlu perbaikan oleh OPD'):'Menunggu verifikasi Irban');
+          const summaryStatus=stage==='bpkp'?(status==='diterima'?'Terverifikasi akhir BPKP':'Dikembalikan oleh BPKP'):(stage==='qa'?(status==='diterima'?'Menunggu verifikasi BPKP jika masuk sampel':'Perlu perbaikan oleh OPD'):'Menunggu QA Auditor/PUPPD');
           await env.DB.prepare('UPDATE lhe_followup_items SET verification_status=?,verifier_name=?,verifier_note=?,updated_by=?,updated_at=? WHERE id=? AND year=? AND opd_id=?').bind(summaryStatus,examinerName,note,String(authSession.username||''),now,String(fileRecord.followupId),String(year),opdId).run();
         }
         notifyRealtime(env,ctx,String(year),{action:'saveEvidenceWorkflowStep',opdId,uploadId,stage,status});
