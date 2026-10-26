@@ -2815,3 +2815,65 @@ button.danger, .confirm-actions button.danger,
 .pemda-footer-note{margin-right:auto;color:#64748b;font-size:11px;line-height:1.4}
 @media(max-width:1000px){.pemda-workflow-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.pemda-workflow-stage-forms{grid-template-columns:1fr}.pemda-workflow-audit{grid-template-columns:1fr}.pemda-workflow-table-wrap{max-height:48vh}}
 @media(max-width:620px){.pemda-workflow-modal{width:98vw;max-height:96vh}.pemda-workflow-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.pemda-workflow-modal .sheet-links-header{padding:14px}.pemda-workflow-modal .sheet-links-header h3{font-size:15px}.pemda-workflow-modal .sheet-links-body{padding:12px}.pemda-editor-heading{flex-direction:column}.pemda-workflow-modal .sheet-links-footer{flex-wrap:wrap;padding:10px}.pemda-footer-note{flex-basis:100%}}
+
+/* ===== KK PM SPIP khusus tingkat Pemerintah Kabupaten Mahakam Ulu ===== */
+.pemda-pm-dashboard-modal{width:min(1500px,96vw);max-width:1500px;max-height:94vh;display:flex;flex-direction:column}
+.pemda-pm-dashboard-modal .sheet-links-body{overflow:auto;min-height:0}
+.pemda-pm-dashboard-modal .sheet-links-header h3{margin:0;color:#0f172a}
+.pemda-pm-dashboard-summary{display:grid;grid-template-columns:repeat(5,minmax(130px,1fr));gap:10px;margin:14px 0 18px}
+.pemda-pm-stat-card{min-width:0;border:1px solid #dce5f0;border-radius:14px;padding:14px;background:linear-gradient(145deg,#fff,#f5f8fc);box-shadow:0 5px 15px rgba(15,23,42,.045)}
+.pemda-pm-stat-card span{display:block;color:#526277;font-size:12px;font-weight:700;line-height:1.35}
+.pemda-pm-stat-card strong{display:block;color:#0f172a;font-size:28px;line-height:1.25;margin:6px 0;font-variant-numeric:tabular-nums}
+.pemda-pm-stat-card small{display:block;color:#718096;font-size:11px;line-height:1.4}
+.pemda-pm-workbook-panel,.pemda-pm-samples-panel{border:1px solid #dbe4ef;border-radius:16px;background:#fff;padding:16px;margin:14px 0;box-shadow:0 6px 22px rgba(15,23,42,.04)}
+.pemda-pm-workbook-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.pemda-pm-kicker{font-size:10px;letter-spacing:.12em;font-weight:900;color:#2563eb}
+.pemda-pm-workbook-heading h4,.pemda-pm-sheet-list-heading h4{margin:4px 0 5px;color:#12233b;font-size:17px}
+.pemda-pm-workbook-heading p,.pemda-pm-sheet-list-heading p{margin:0;color:#64748b;font-size:12px;line-height:1.5}
+.pemda-pm-workbook-actions{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.pemda-pm-workbook-actions button,.pemda-pm-sheet-list-heading>button{border:1px solid #cbd5e1;background:#fff;color:#1e293b;padding:9px 12px;border-radius:9px;font-size:12px;font-weight:750;cursor:pointer}
+.pemda-pm-workbook-actions button.primary{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+.pemda-pm-workbook-actions button:disabled{opacity:.55;cursor:wait}
+.pemda-pm-workbook-notice{border:1px solid #bbf7d0;background:#f0fdf4;color:#166534;border-radius:10px;padding:11px 13px;margin:14px 0;font-size:12px;line-height:1.6}
+.pemda-pm-workbook-notice.warning{border-color:#fde68a;background:#fffbeb;color:#92400e}
+.pemda-pm-sheet-list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:18px 0 10px}
+.pemda-pm-sheet-list-heading h5{margin:0;color:#334155;font-size:13px}
+.pemda-pm-sheet-list-heading>span{font-size:11px;color:#64748b}
+.pemda-pm-sheet-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.pemda-pm-sheet-card{display:flex;align-items:center;gap:10px;min-width:0;text-align:left;border:1px solid #dbe4ef;background:#f8fafc;border-radius:11px;padding:10px;color:#0f172a}
+.pemda-pm-sheet-card.available{cursor:pointer;background:#fff;transition:border-color .15s,transform .15s,box-shadow .15s}
+.pemda-pm-sheet-card.available:hover{border-color:#60a5fa;transform:translateY(-1px);box-shadow:0 6px 15px rgba(37,99,235,.10)}
+.pemda-pm-sheet-card.preview{opacity:.85;cursor:default}
+.pemda-pm-sheet-order{display:flex;align-items:center;justify-content:center;flex:0 0 28px;height:28px;border-radius:8px;background:#e0e7ff;color:#3730a3;font-size:11px;font-weight:900}
+.pemda-pm-sheet-text{display:block;min-width:0;flex:1}
+.pemda-pm-sheet-text b{display:block;font-size:12px;overflow-wrap:anywhere}
+.pemda-pm-sheet-text small{display:block;margin-top:3px;color:#64748b;font-size:10px;line-height:1.35}
+.pemda-pm-sheet-action{white-space:nowrap;color:#2563eb;font-size:10px;font-weight:800}
+.pemda-pm-samples-panel .pemda-pm-sheet-list-heading{margin-top:0}
+.pemda-pm-table-wrap{width:100%;overflow:auto;border:1px solid #e2e8f0;border-radius:11px}
+.pemda-pm-table{border-collapse:separate;border-spacing:0;width:100%;min-width:1120px;font-size:11px}
+.pemda-pm-table th{position:sticky;top:0;background:#eef4fb;color:#334155;text-align:left;white-space:nowrap;padding:10px 9px;border-bottom:1px solid #dbe4ef;z-index:1}
+.pemda-pm-table td{padding:10px 9px;vertical-align:top;border-bottom:1px solid #edf2f7;color:#334155}
+.pemda-pm-table tbody tr:last-child td{border-bottom:0}
+.pemda-pm-table tbody tr:hover td{background:#f8fbff}
+.pemda-pm-table td:first-child{font-weight:800;text-align:center;color:#64748b}
+.pemda-pm-table td>b{color:#0f172a;font-variant-numeric:tabular-nums}
+.pemda-pm-table td:nth-child(2){min-width:220px;max-width:300px}
+.pemda-pm-table td:nth-child(2)>b{display:block;line-height:1.45;overflow-wrap:anywhere}
+.pemda-pm-table td:nth-child(2)>small{display:block;margin-top:4px;color:#64748b;line-height:1.45;white-space:normal}
+.pemda-pm-source-status{display:block;margin-top:6px;color:#64748b;font-size:10px;line-height:1.4}
+.pemda-pm-score-empty{color:#94a3b8}
+.pemda-pm-stage{display:inline-flex;align-items:center;max-width:130px;border-radius:99px;padding:5px 8px;font-weight:800;font-size:10px;line-height:1.25;white-space:normal}
+.pemda-pm-stage.done{background:#dcfce7;color:#166534}
+.pemda-pm-stage.progress{background:#dbeafe;color:#1d4ed8}
+.pemda-pm-stage.warning{background:#fef3c7;color:#92400e}
+.pemda-pm-stage.pending{background:#f1f5f9;color:#64748b}
+.pemda-pm-detail-btn{white-space:nowrap;border:1px solid #bfdbfe;color:#1d4ed8;background:#eff6ff;border-radius:8px;padding:7px 9px;font-weight:750;font-size:10px;cursor:pointer}
+.pemda-pm-detail-btn:hover{background:#dbeafe}
+.pemda-pm-empty{padding:20px;text-align:center;color:#64748b;font-size:12px;line-height:1.6}
+.pemda-pm-table-note{font-size:11px;color:#64748b;line-height:1.6;margin:10px 2px 0}
+.pemda-pm-source-note{line-height:1.6}
+@media(max-width:1050px){.pemda-pm-dashboard-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.pemda-pm-sheet-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){.pemda-pm-dashboard-modal{width:100vw;max-width:100vw;max-height:100dvh;border-radius:0}.pemda-pm-dashboard-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.pemda-pm-stat-card{padding:10px}.pemda-pm-stat-card strong{font-size:24px}.pemda-pm-sheet-list{grid-template-columns:1fr}.pemda-pm-workbook-panel,.pemda-pm-samples-panel{padding:11px}.pemda-pm-workbook-actions{width:100%}.pemda-pm-workbook-actions button{flex:1}.pemda-pm-sheet-list-heading{align-items:flex-start}}
+
+.pemda-pm-dashboard-modal [hidden]{display:none!important}

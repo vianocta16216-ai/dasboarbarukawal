@@ -50,6 +50,7 @@
     <button id="btnDashboardNav" class="nav-btn light" style="display: none;">📈 Dashboard</button>
     <button id="btnOpdListNav" class="nav-btn">🏢 Daftar OPD</button>
     <button id="btnAccountManagementNav" class="nav-btn" style="display:none;">👥 Manajemen Akun</button>
+    <button id="btnPemdaPmKk" class="nav-btn light" type="button" style="display:none;">📘 KK PM SPIP Pemda</button>
     <button id="btnPemdaWorkflow" class="nav-btn light" type="button" style="display:none;">🏛️ KK Pemda &amp; Sampling</button>
     
     <label style="color:#ffffff; font-size:14px; display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.1); padding:8px 12px; border-radius:10px;">
@@ -105,6 +106,30 @@
       </section>
     </div>
     <div class="sheet-links-footer"><span id="pemdaWorkflowFooterNote" class="pemda-footer-note"></span><button type="button" id="pemdaWorkflowSaveSampling" class="primary">💾 Simpan Pilihan Sampling</button><button type="button" id="pemdaWorkflowCloseFooter">Tutup</button></div>
+  </div>
+</div>
+
+<!-- ===== DASHBOARD KK PM SPIP KHUSUS PEMERINTAH KABUPATEN MAHAKAM ULU ===== -->
+<div class="sheet-links-overlay" id="pemdaPmDashboardModal" role="dialog" aria-modal="true" aria-labelledby="pemdaPmDashboardTitle">
+  <div class="sheet-links-modal pemda-pm-dashboard-modal">
+    <div class="sheet-links-header"><div><h3 id="pemdaPmDashboardTitle">📘 KK PM SPIP — Pemerintah Kabupaten Mahakam Ulu</h3><div class="pemda-workflow-subtitle">Workbook khusus tingkat Pemda · sumber master spreadsheet resmi · data OPD tetap terpisah</div></div><button class="sheet-links-close" id="pemdaPmDashboardClose" aria-label="Tutup">&times;</button></div>
+    <div class="sheet-links-body">
+      <div class="sheet-links-info pemda-pm-source-note"><b>Catatan sumber:</b> Workbook ini dibuat sebagai salinan tersendiri dari master KK PM SPIP yang dikonfigurasi pada server, divalidasi terhadap struktur 26 sheet dan tidak menautkan penyimpanan isian ke salah satu OPD. Ringkasan OPD sampling di bawah ditarik dari database aplikasi untuk tahun yang dipilih; nilai formula yang tersedia ditampilkan sebagai data sumber, bukan diubah oleh dashboard ini.</div>
+      <div id="pemdaPmDashboardStatus" class="sheet-links-status" role="status" aria-live="polite">Memuat dashboard Pemda...</div>
+      <div id="pemdaPmDashboardSummary" class="pemda-pm-dashboard-summary"></div>
+      <section class="pemda-pm-workbook-panel">
+        <div class="pemda-pm-workbook-heading"><div><span class="pemda-pm-kicker">WORKBOOK PEMDA TERSENDIRI</span><h4 id="pemdaPmWorkbookName">KK PM SPIP Pemda belum dibuat</h4><p id="pemdaPmWorkbookMeta">Gunakan master spreadsheet KK PM SPIP yang sudah dipakai aplikasi.</p></div><div class="pemda-pm-workbook-actions"><button id="pemdaPmWorkbookRefresh" type="button">↻ Muat Ulang</button><button id="pemdaPmWorkbookCreate" class="primary" type="button" hidden>＋ Buat dari Master</button><button id="pemdaPmWorkbookSync" type="button" hidden>↻ Sinkronkan Master</button><button id="pemdaPmWorkbookOpen" class="primary" type="button" hidden>↗ Buka KK PM SPIP Pemda</button></div></div>
+        <div id="pemdaPmWorkbookNotice" class="pemda-pm-workbook-notice">Belum ada workbook terverifikasi untuk tahun ini.</div>
+        <div class="pemda-pm-sheet-list-heading"><h5>Sheet dari template master</h5><span id="pemdaPmSheetCount">26 sheet sesuai master</span></div>
+        <div id="pemdaPmSheetList" class="pemda-pm-sheet-list"><div class="pemda-pm-empty">Memuat daftar sheet dari master...</div></div>
+      </section>
+      <section class="pemda-pm-samples-panel">
+        <div class="pemda-pm-sheet-list-heading"><div><h4>OPD Sampling Terpilih</h4><p>Nilai dan progres ditarik dari data OPD yang sudah tersimpan pada aplikasi untuk tahun aktif.</p></div><button id="pemdaPmSamplingManage" type="button">⚙ Kelola Sampling / Verifikasi</button></div>
+        <div class="pemda-pm-table-wrap"><table class="pemda-pm-table"><thead><tr><th>No.</th><th>OPD sampling / dasar pemilihan</th><th>Nilai Struktur &amp; Proses</th><th>Nilai Maturitas SPIP</th><th>MRI</th><th>IEPK</th><th>Kapabilitas APIP</th><th>PM Internal</th><th>QA Auditor/PPUPD</th><th>Verifikasi BPKP</th><th>Aksi</th></tr></thead><tbody id="pemdaPmSamplingBody"><tr><td colspan="11" class="pemda-pm-empty">Memuat data OPD sampling...</td></tr></tbody></table></div>
+        <p class="pemda-pm-table-note">Nilai ditampilkan sesuai sumber yang dilaporkan endpoint aplikasi. Jika nilai formula belum tersedia atau proses sinkronisasi mengalami error, dashboard menandainya sebagai “—” dan tidak membuat nilai pengganti. Gunakan detail OPD untuk membuka kertas kerja sumber.</p>
+      </section>
+    </div>
+    <div class="sheet-links-footer"><span id="pemdaPmDashboardFooter" class="pemda-footer-note">Dashboard untuk penilaian tingkat Pemerintah Kabupaten Mahakam Ulu.</span><button type="button" id="pemdaPmDashboardCloseFooter">Tutup</button></div>
   </div>
 </div>
 
