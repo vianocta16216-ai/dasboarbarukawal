@@ -345,7 +345,7 @@ const COMMON_READ_ACTIONS = new Set([
   'getYears','getData','getSubunsurData','getKkMasterSheetRows','getKkSheets','getRtpKkSheets',
   'getRtpEvidence','getReportFiles','getWorkbookEvidenceFiles','getKkPmSheets','getKkPmData',
   'getKkPmDataDetailed','getKkRpjmdMappings','getQaApipData','getQaApipChecklistData','getEvidenceWorkflow','previewEvidence','createEvidencePreviewLink','downloadEvidence',
-  'getBpkpOfficialScore','exportKkPmWorkbook','getLheFollowups','getPemdaWorkflow','getPemdaWorkflowAudit'
+  'getBpkpOfficialScore','exportKkPmWorkbook','getLheFollowups','getPemdaWorkflow','getPemdaWorkflowAudit','getPemdaKkPmWorkbook'
 ]);
 const ADMIN_ONLY_ACTIONS = new Set([
   'addOpd','deleteOpd','addYear','deleteYear','createBackup','restoreBackup','deleteBackup',
@@ -378,7 +378,7 @@ const IRBAN_ALLOWED_ACTIONS = new Set([
   // Inspektorat/Irban may provision and refresh the PM workbook for an OPD in scope.
   // These two actions remain protected by the per-OPD scope check below; the role
   // is not granted general account-management or official-score finalization rights.
-  'createKkPmSheets','syncKkComputedValues',
+  'createKkPmSheets','syncKkComputedValues','createPemdaKkPmWorkbook',
   'saveAssessmentStatus','saveEvidenceVerification','saveRtpEvidenceVerification',
   'saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','savePemdaSampling','verifyKkRpjmdMapping','downloadEvidence','listBackups','getLheFollowups','saveLheFollowup','deleteLheFollowup','uploadLheEvidence','deleteLheEvidence'
 ]);
@@ -813,6 +813,19 @@ async function ensureOpdSchema(env){
       created_at INTEGER NOT NULL DEFAULT 0
     )`).run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_pemda_sampling_audit_lookup ON pemda_sampling_audit(year,opd_id,created_at)").run();
+    // One distinct PM SPIP workbook per Pemda/year, copied from the same canonical
+    // spreadsheet master as OPD workbooks. It is not stored under an OPD row.
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS pemda_kk_pm_workbooks (
+      year TEXT PRIMARY KEY,
+      workbook_json TEXT NOT NULL DEFAULT '{}',
+      history_json TEXT NOT NULL DEFAULT '[]',
+      version INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0,
+      updated_by TEXT NOT NULL DEFAULT '',
+      lease_until INTEGER NOT NULL DEFAULT 0,
+      owner_token TEXT NOT NULL DEFAULT ''
+    )`).run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_pemda_kk_pm_workbooks_updated ON pemda_kk_pm_workbooks(updated_at)").run();
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS kk_pm_master_sync_state (
       sync_key TEXT PRIMARY KEY, content_hash TEXT NOT NULL DEFAULT '', last_synced_at INTEGER NOT NULL DEFAULT 0,
       lease_until INTEGER NOT NULL DEFAULT 0, last_attempt_at INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT ''
@@ -2338,7 +2351,7 @@ export async function onRequest({ request, env, ctx }) {
 
   // Daftar aksi sensitif yang tidak boleh diakses via GET
   const SENSITIVE_ACTIONS = [
-    'verifyAccess', 'verifyDelete', 'login', 'logout', 'createEvidencePreviewLink', 'saveEvidenceWorkflowStep', 'saveLheFollowup', 'deleteLheFollowup', 'uploadLheEvidence', 'deleteLheEvidence', 'addOpd', 'saveData', 'saveField', 'saveAssessmentStatus', 'saveBpkpOfficialScore', 'unlockBpkpOfficialScore', 'getBpkpOfficialScoreAdmin', 'getBpkpOfficialAudit', 'savePemdaSampling', 'savePemdaVerification',
+    'verifyAccess', 'verifyDelete', 'login', 'logout', 'createPemdaKkPmWorkbook', 'createEvidencePreviewLink', 'saveEvidenceWorkflowStep', 'saveLheFollowup', 'deleteLheFollowup', 'uploadLheEvidence', 'deleteLheEvidence', 'addOpd', 'saveData', 'saveField', 'saveAssessmentStatus', 'saveBpkpOfficialScore', 'unlockBpkpOfficialScore', 'getBpkpOfficialScoreAdmin', 'getBpkpOfficialAudit', 'savePemdaSampling', 'savePemdaVerification',
     'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'saveQaApipItem', 'deleteQaApipItem', 'getQaApipChecklistData', 'saveQaApipChecklistItem', 'deleteQaApipChecklistItem', 'deleteOpd', 'addYear', 'deleteYear',
     'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'syncKkPmMasterNow', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup',
     'listAuthUsers','createAuthUser','setAuthUserEnabled','resetAuthUserPassword'
@@ -2783,8 +2796,60 @@ export async function onRequest({ request, env, ctx }) {
         }catch(err){return jsonResponse({status:'error',message:String(err?.message||err).slice(0,600)},500);}
       }
 
+      case 'getPemdaKkPmWorkbook': {
+        const role=String(authSession?.role||'');
+        if(!['admin','irban','auditor','ppupd','bpkp'].includes(role))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'KK PM SPIP tingkat Pemda hanya tersedia untuk akun Inspektorat, Auditor/PPUPD, BPKP, atau Super Admin.'},403);
+        const saved=await env.DB.prepare('SELECT workbook_json,history_json,version,updated_at,updated_by FROM pemda_kk_pm_workbooks WHERE year=? LIMIT 1').bind(String(year)).first();
+        let workbook={};let history=[];try{workbook=JSON.parse(saved?.workbook_json||'{}')}catch{}try{history=JSON.parse(saved?.history_json||'[]')}catch{}
+        let sheets=[];let needsSync=!workbook.workbookSpreadsheetId;let needsSyncReason=needsSync?'KK PM SPIP khusus Pemda belum dibuat dari master spreadsheet.':'';let profile=null;
+        if(workbook.workbookSpreadsheetId){
+          try{
+            const token=await getGoogleAccessToken(env);const meta=await getSpreadsheetMetadata(token,workbook.workbookSpreadsheetId);
+            sheets=(meta.sheets||[]).map(x=>({sheetId:x.properties?.sheetId,title:x.properties?.title,index:x.properties?.index,rowCount:x.properties?.gridProperties?.rowCount||0,columnCount:x.properties?.gridProperties?.columnCount||0}));
+            profile=getPmSheetProfile(meta.sheets||[]);
+            if(profile!=='PM_2026'){needsSync=true;needsSyncReason=`Workbook Pemda memiliki profil ${profile||'tidak dikenal'}, bukan master PM 2026 dengan 26 sheet.`;}
+          }catch(err){needsSync=true;needsSyncReason=`Workbook Pemda belum dapat diverifikasi: ${String(err?.message||err).slice(0,220)}`;sheets=Array.isArray(workbook.sheets)?workbook.sheets.map((x,i)=>({sheetId:x?.sheetId||x?.properties?.sheetId||null,title:typeof x==='string'?x:(x?.title||x?.properties?.title||''),index:Number(x?.index??i),rowCount:Number(x?.rowCount||0),columnCount:Number(x?.columnCount||0)})):[];}
+          try{
+            const token=await getGoogleAccessToken(env);const active=await resolveKkPmTemplateSpreadsheet(env,token,extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||''));
+            const rev=String(active.file?.modifiedTime||'');
+            if(String(workbook.templateSpreadsheetId||'')!==String(active.id)||!String(workbook.templateRevision||workbook.templateModifiedTime||'')||(rev&&rev!==String(workbook.templateRevision||workbook.templateModifiedTime||''))){needsSync=true;needsSyncReason='Master spreadsheet PM berubah atau workbook Pemda tidak lagi tertaut ke revisi master terbaru. Sinkronkan untuk membuat salinan yang tervalidasi; file lama disimpan.';}
+          }catch(err){if(!needsSync){needsSync=true;needsSyncReason=`Revisi master PM belum dapat diverifikasi: ${String(err?.message||err).slice(0,220)}`;}}
+        }
+        return jsonResponse({status:'success',year:String(year),exists:!!workbook.workbookSpreadsheetId,workbook:workbook.workbookSpreadsheetId?workbook:null,sheets,needsSync,needsSyncReason,profile,history:Array.isArray(history)?history.slice(-10).reverse():[],version:Number(saved?.version||0),updatedAt:Number(saved?.updated_at||0),updatedBy:String(saved?.updated_by||''),permissions:{canManage:['admin','irban'].includes(role)}});
+      }
+      case 'createPemdaKkPmWorkbook': {
+        const role=String(authSession?.role||'');
+        if(!['admin','irban'].includes(role))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Hanya Super Admin atau Irban yang dapat membuat atau menyinkronkan workbook KK PM SPIP Pemda.'},403);
+        const y=String(year);const now=Date.now();const token=crypto.randomUUID();const leaseMs=10*60*1000;
+        await env.DB.prepare(`INSERT OR IGNORE INTO pemda_kk_pm_workbooks(year,workbook_json,history_json,version,updated_at,updated_by) VALUES(?,'{}','[]',0,0,'')`).bind(y).run();
+        const acquired=await env.DB.prepare('UPDATE pemda_kk_pm_workbooks SET lease_until=?,owner_token=? WHERE year=? AND lease_until<?').bind(now+leaseMs,token,y,now).run();
+        if(!Number(acquired.meta?.changes||0))return jsonResponse({status:'error',code:'WORKBOOK_SYNC_IN_PROGRESS',message:`Sinkronisasi KK PM SPIP Pemda tahun ${y} sedang berjalan. Tunggu beberapa detik lalu muat ulang.`},409);
+        try{
+          const saved=await env.DB.prepare('SELECT workbook_json,history_json,version FROM pemda_kk_pm_workbooks WHERE year=? AND owner_token=? LIMIT 1').bind(y,token).first();
+          if(!saved)throw new Error('Lease sinkronisasi Pemda tidak ditemukan.');
+          let current={};let history=[];try{current=JSON.parse(saved.workbook_json||'{}')}catch{}try{history=JSON.parse(saved.history_json||'[]')}catch{}
+          const currentKkPmData={version:3,workbook:{...current},cells:{}};
+          const workbook=await ensureKkPmSpreadsheet(env,{year:y,opd:'PEMERINTAH KABUPATEN MAHAKAM ULU',currentKkPmData});
+          const accessToken=await getGoogleAccessToken(env);const meta=await getSpreadsheetMetadata(accessToken,workbook.workbookSpreadsheetId);
+          if(!expectedPmSheetOrderMatches(meta.sheets||[])||getPmSheetProfile(meta.sheets||[])!=='PM_2026')throw new Error('Workbook Pemda gagal validasi master PM resmi 26 sheet. Referensi lama tetap tersimpan.');
+          const liveSheets=(meta.sheets||[]).map(x=>({sheetId:x.properties?.sheetId,title:x.properties?.title,index:x.properties?.index,rowCount:x.properties?.gridProperties?.rowCount||0,columnCount:x.properties?.gridProperties?.columnCount||0}));
+          const finalWorkbook={...workbook,workbookName:workbook.workbookName||`PEMERINTAH KABUPATEN MAHAKAM ULU - KK PM SPIP - ${y}`,sheets:liveSheets};
+          const priorId=String(current.workbookSpreadsheetId||'');
+          if(priorId&&priorId!==String(finalWorkbook.workbookSpreadsheetId||'')&&!history.some(x=>String(x.workbookSpreadsheetId||'')===priorId))history.push({...current,archivedAt:now,archiveReason:'Tautan workbook Pemda lama dipertahankan untuk pemulihan; file Google Drive tidak dihapus.'});
+          history=history.slice(-10);
+          const fresh=await env.DB.prepare('SELECT owner_token,lease_until,version FROM pemda_kk_pm_workbooks WHERE year=? LIMIT 1').bind(y).first();
+          if(!fresh||String(fresh.owner_token||'')!==token||Number(fresh.lease_until||0)<=Date.now())throw new Error('Lease sinkronisasi berakhir. Workbook tidak ditautkan oleh sesi ini; muat ulang lalu coba lagi.');
+          const write=await runD1WithRetry(()=>env.DB.prepare(`UPDATE pemda_kk_pm_workbooks SET workbook_json=?,history_json=?,version=version+1,updated_at=?,updated_by=? WHERE year=? AND owner_token=? AND version=?`).bind(JSON.stringify(finalWorkbook),JSON.stringify(history),Date.now(),String(authSession.username||''),y,token,Number(saved.version||0)));
+          if(!Number(write.meta?.changes||0))throw new Error('Data workbook Pemda berubah oleh sesi lain. Muat ulang dan coba lagi.');
+          notifyRealtime(env,ctx,y,{action:'createPemdaKkPmWorkbook',version:Number(saved.version||0)+1});
+          return jsonResponse({status:'success',message:workbook.syncDisposition==='created'?'Workbook KK PM SPIP Pemda berhasil dibuat dari master.':'Workbook KK PM SPIP Pemda berhasil diverifikasi.',year:y,exists:true,workbook:finalWorkbook,sheets:liveSheets,needsSync:false,needsSyncReason:'',profile:'PM_2026',version:Number(saved.version||0)+1,updatedAt:Date.now(),updatedBy:String(authSession.username||''),syncDisposition:workbook.syncDisposition||'reused'});
+        }finally{
+          await env.DB.prepare("UPDATE pemda_kk_pm_workbooks SET lease_until=0,owner_token='',updated_at=CASE WHEN updated_at=0 THEN ? ELSE updated_at END WHERE year=? AND owner_token=?").bind(Date.now(),y,token).run().catch(()=>{});
+        }
+      }
       case 'getPemdaWorkflow': {
         const opds=(await env.DB.prepare(`SELECT o.id,o.opd,o.assessment_status,o.kk_pm_data,o.pm_spip_reports,
+          o.nilai_struktur_proses,o.nilai_maturitas,o.nilai_kapabilitas_apip,o.mri,o.iepk,o.computed_workbook_data,
           COALESCE(p.is_sample,0) AS is_sample,COALESCE(p.sample_reason,'') AS sample_reason,
           COALESCE(p.pm_status,'belum') AS pm_status,COALESCE(p.pm_examiner,'') AS pm_examiner,COALESCE(p.pm_note,'') AS pm_note,COALESCE(p.pm_updated_by,'') AS pm_updated_by,COALESCE(p.pm_updated_at,0) AS pm_updated_at,
           COALESCE(p.qa_status,'belum') AS qa_status,COALESCE(p.qa_examiner,'') AS qa_examiner,COALESCE(p.qa_note,'') AS qa_note,COALESCE(p.qa_updated_by,'') AS qa_updated_by,COALESCE(p.qa_updated_at,0) AS qa_updated_at,
@@ -2797,10 +2862,14 @@ export async function onRequest({ request, env, ctx }) {
         const visible=opds.filter(r=>sessionCanAccessOrg(authSession,r.id,r.opd)).map(r=>{
           let wb={};try{wb=JSON.parse(r.kk_pm_data||'{}')}catch{}
           let reports=[];try{reports=JSON.parse(r.pm_spip_reports||'[]')}catch{}
+          let computed={};try{computed=JSON.parse(r.computed_workbook_data||'{}')}catch{}
+          const formulaValues=computed&&typeof computed.values==='object'?computed.values:{};
           const hasWorkbook=!!(wb?.workbook?.workbookSpreadsheetId||wb?.workbookSpreadsheetId||wb?.spreadsheetId);
+          const asNullableNumber=(v)=>v===null||v===undefined||v===''||!Number.isFinite(Number(v))?null:Number(v);
           return {
             opdId:String(r.id),opd:String(r.opd||''),sourceAssessmentStatus:String(r.assessment_status||'Belum Mengisi'),
             hasWorkbook,pmReportCount:Array.isArray(reports)?reports.length:0,evidenceCount:evidenceCount.get(String(r.id))||0,
+            scores:{nilaiStrukturProses:asNullableNumber(r.nilai_struktur_proses),nilaiMaturitas:String(computed.status||'')==='error'?null:asNullableNumber(formulaValues.nilaiMaturitas??r.nilai_maturitas),mri:String(computed.status||'')==='error'?null:asNullableNumber(formulaValues.mri??r.mri),iepk:String(computed.status||'')==='error'?null:asNullableNumber(formulaValues.iepk??r.iepk),nilaiKapabilitasApip:String(computed.status||'')==='error'?null:asNullableNumber(formulaValues.nilaiKapabilitasApip??r.nilai_kapabilitas_apip),formulaStatus:String(computed.status||'unknown'),source:String(computed.source||'Data rekap aplikasi')},
             isSample:Number(r.is_sample||0)===1,sampleReason:String(r.sample_reason||''),
             pm:{status:String(r.pm_status||'belum'),examiner:String(r.pm_examiner||''),note:String(r.pm_note||''),updatedBy:String(r.pm_updated_by||''),updatedAt:Number(r.pm_updated_at||0)},
             qa:{status:String(r.qa_status||'belum'),examiner:String(r.qa_examiner||''),note:String(r.qa_note||''),updatedBy:String(r.qa_updated_by||''),updatedAt:Number(r.qa_updated_at||0)},
