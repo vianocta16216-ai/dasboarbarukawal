@@ -2735,3 +2735,83 @@ button.danger, .confirm-actions button.danger,
 @media(max-width:760px){.kk-pm-rpjmd-card{padding:11px}.kk-pm-rpjmd-verify{grid-template-columns:1fr}.kk-pm-rpjmd-card-foot{align-items:stretch;flex-direction:column}.kk-pm-rpjmd-card-foot button{width:100%}}
 
 .kk-pm-rpjmd-reference{margin:10px 0 16px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#334155}.kk-pm-rpjmd-reference>summary{padding:11px 13px;cursor:pointer;font-size:12px;font-weight:800;color:#1e3a8a}.kk-pm-rpjmd-reference>section{padding:10px 13px;border-top:1px solid #e2e8f0}.kk-pm-rpjmd-reference h5{margin:3px 0 7px;font-size:12px;color:#0f172a}.kk-pm-rpjmd-indicator{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(240px,1.2fr);gap:6px 12px;padding:6px 0;border-bottom:1px dashed #e2e8f0;font-size:10px;line-height:1.5}.kk-pm-rpjmd-indicator b{color:#334155}.kk-pm-rpjmd-indicator span{color:#64748b;overflow-wrap:anywhere}@media(max-width:720px){.kk-pm-rpjmd-indicator{grid-template-columns:1fr;gap:2px}}
+
+
+/* ===== KERTAS KERJA PEMDA + VERIFIKASI BERJENJANG ===== */
+.pemda-workflow-modal{width:min(1540px,98vw);max-height:94vh}
+.pemda-workflow-subtitle{font-size:12px;color:#cbd5e1;margin-top:5px;line-height:1.4}
+.pemda-workflow-summary{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:10px;margin:12px 0 16px}
+.pemda-summary-card{border:1px solid #dbe4f0;border-radius:12px;padding:12px 14px;background:linear-gradient(145deg,#fff,#f6f9ff);min-width:0}
+.pemda-summary-card span{display:block;color:#64748b;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.pemda-summary-card strong{display:block;color:#0f172a;font-size:25px;line-height:1.15;margin:7px 0 4px;font-variant-numeric:tabular-nums}
+.pemda-summary-card small{display:block;color:#64748b;font-size:11px;line-height:1.4}
+.pemda-workflow-toolbar{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:8px 0 12px}
+.pemda-workflow-toolbar label{display:flex;flex-direction:column;gap:5px;color:#475569;font-size:12px;font-weight:800;min-width:min(300px,100%);flex:1}
+.pemda-workflow-toolbar input{box-sizing:border-box;width:100%;min-height:38px;border:1px solid #cbd5e1;border-radius:9px;padding:8px 11px;font:inherit;color:#0f172a;background:#fff}
+.pemda-workflow-toolbar-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pemda-workflow-toolbar-actions button{min-height:38px;border:1px solid #cbd5e1;border-radius:9px;padding:0 12px;font-size:12px;font-weight:800;color:#334155;background:#fff;cursor:pointer}
+.pemda-year-pill{display:inline-flex;align-items:center;border-radius:9px;background:#e0e7ff;color:#3730a3;font-size:12px;font-weight:900;padding:10px 12px;white-space:nowrap}
+.pemda-workflow-table-wrap{overflow:auto;border:1px solid #dbe3ee;border-radius:12px;max-height:52vh;background:#fff;overscroll-behavior:contain}
+.pemda-workflow-table{width:100%;min-width:1260px;border-collapse:separate;border-spacing:0;font-size:12px}
+.pemda-workflow-table th{position:sticky;top:0;z-index:2;background:#14243d;color:#fff;text-align:left;padding:11px 10px;font-weight:800;line-height:1.35;white-space:normal;border-bottom:1px solid #334155}
+.pemda-workflow-table th small{display:inline-block;color:#cbd5e1;font-size:10px;font-weight:600;margin-top:3px}
+.pemda-workflow-table td{padding:10px;border-bottom:1px solid #e8edf4;vertical-align:top;color:#334155;background:#fff}
+.pemda-workflow-table tbody tr:nth-child(even) td{background:#fbfdff}
+.pemda-workflow-table tbody tr.is-sample td{background:#f4f8ff}
+.pemda-workflow-table tbody tr:hover td{background:#f0f7ff}
+.pemda-workflow-table .pemda-num{width:36px;min-width:36px;text-align:center;color:#64748b;font-weight:800}
+.pemda-opd-name{font-weight:850;font-size:12px;color:#0f172a;min-width:175px;line-height:1.45;overflow-wrap:anywhere}
+.pemda-opd-meta{font-size:10px;color:#64748b;line-height:1.5;margin-top:5px;min-width:180px;overflow-wrap:anywhere}
+.pemda-sample-pill{display:inline-flex;font-size:10px;font-weight:850;border-radius:999px;padding:4px 7px;margin-top:6px}
+.pemda-sample-pill.yes{background:#dbeafe;color:#1d4ed8}.pemda-sample-pill.no{background:#f1f5f9;color:#64748b}
+.pemda-status-badge{display:inline-flex;align-items:center;gap:5px;max-width:180px;padding:6px 8px;border-radius:8px;font-size:10px;font-weight:850;line-height:1.35;white-space:normal}
+.pemda-status-badge i{display:inline-flex;align-items:center;justify-content:center;font-style:normal;width:16px;height:16px;border-radius:50%;flex-shrink:0;font-size:11px;font-weight:900;background:rgba(255,255,255,.6)}
+.pemda-status-badge.done{background:#dcfce7;color:#166534}.pemda-status-badge.progress{background:#fef3c7;color:#92400e}.pemda-status-badge.returned{background:#fee2e2;color:#b91c1c}.pemda-status-badge.pending{background:#e2e8f0;color:#475569}.pemda-status-badge.not-applicable{background:#f8fafc;color:#94a3b8;border:1px dashed #cbd5e1}
+.pemda-stage-meta{display:block;margin-top:5px;font-size:10px;color:#64748b;line-height:1.4;max-width:175px}
+.pemda-sample-toggle{display:flex;align-items:center;gap:7px;min-height:34px;font-size:11px;font-weight:850;color:#334155;cursor:pointer;white-space:nowrap}
+.pemda-sample-toggle input{width:17px;height:17px;accent-color:#2563eb;cursor:pointer}
+.pemda-sample-toggle input:disabled{cursor:not-allowed;opacity:.65}
+.pemda-sample-reason-wrap{min-width:170px}
+.pemda-sample-reason-wrap textarea{box-sizing:border-box;width:100%;min-width:165px;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font:inherit;font-size:11px;resize:vertical;min-height:54px;color:#0f172a;background:#fff;line-height:1.45}
+.pemda-sample-reason-wrap textarea:focus,.pemda-stage-form input:focus,.pemda-stage-form textarea:focus,.pemda-stage-form select:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.10)}
+.pemda-sample-reason-wrap textarea:disabled{background:#f8fafc;color:#94a3b8}
+.pemda-changed-note{display:block;font-size:10px;color:#b45309;margin-top:4px;font-weight:800}
+.pemda-row-detail{border:1px solid #cbd5e1;background:#fff;color:#1d4ed8;padding:7px 9px;border-radius:8px;white-space:nowrap;font-size:10px;font-weight:850;cursor:pointer}
+.pemda-row-detail:hover{background:#eff6ff;border-color:#93c5fd}
+.pemda-table-empty{text-align:center!important;color:#64748b!important;padding:28px!important}
+.pemda-workflow-footnote{margin:10px 0 0;color:#64748b;font-size:11px;line-height:1.55}
+.pemda-workflow-editor{margin-top:18px;border:1px solid #cbd5e1;border-radius:14px;padding:15px;background:#f8fafc}
+.pemda-workflow-editor[hidden]{display:none!important}
+.pemda-editor-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:13px}
+.pemda-editor-heading h4{font-size:16px;color:#0f172a;margin:0 0 4px}.pemda-editor-heading p{font-size:11px;color:#64748b;margin:0;line-height:1.5}
+.pemda-editor-close{border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:8px;padding:7px 10px;font-size:11px;font-weight:800;cursor:pointer}
+.pemda-workflow-stage-forms{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;align-items:stretch}
+.pemda-stage-form{border:1px solid #dbe3ee;border-radius:12px;padding:12px;background:#fff;min-width:0;display:flex;flex-direction:column;gap:9px}
+.pemda-stage-form.readonly{background:#fbfdff}
+.pemda-stage-form-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-height:47px}
+.pemda-stage-form-head>div{display:flex;align-items:flex-start;gap:8px;min-width:0}
+.pemda-stage-number{display:flex;align-items:center;justify-content:center;min-width:25px;height:25px;border-radius:8px;background:#dbeafe;color:#1d4ed8;font-size:13px;font-weight:900}
+.pemda-stage-form h5{font-size:12px;color:#0f172a;line-height:1.4;margin:0 0 3px}.pemda-stage-form p{font-size:10px;color:#64748b;line-height:1.45;margin:0}
+.pemda-stage-form-head .pemda-status-badge{font-size:9px;padding:5px 6px}
+.pemda-stage-form-grid{display:grid;grid-template-columns:1fr;gap:8px}
+.pemda-stage-form label{display:flex;flex-direction:column;gap:5px;font-size:10px;color:#475569;font-weight:850;min-width:0}
+.pemda-stage-form select,.pemda-stage-form input,.pemda-stage-form textarea{box-sizing:border-box;width:100%;min-width:0;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font:inherit;font-size:11px;color:#0f172a;background:#fff;line-height:1.4}
+.pemda-stage-form select:disabled,.pemda-stage-form input[readonly],.pemda-stage-form textarea[readonly]{background:#f8fafc;color:#64748b}
+.pemda-stage-note-label{margin-top:0}
+.pemda-prerequisite{padding:8px;border:1px solid #fde68a;border-radius:8px;background:#fffbeb;color:#92400e;font-size:10px;line-height:1.45}
+.pemda-stage-form-footer{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.pemda-stage-form-footer small{color:#64748b;font-size:9px;line-height:1.4;flex:1;min-width:95px}
+.pemda-stage-form-footer button{border:1px solid #0f766e;background:#0f766e;color:#fff;border-radius:8px;padding:8px 10px;font-size:10px;font-weight:850;cursor:pointer;white-space:nowrap}
+.pemda-stage-form-footer button:disabled{opacity:.45;cursor:not-allowed}
+.pemda-audit-heading{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:16px 0 8px}.pemda-audit-heading h5{font-size:12px;margin:0;color:#0f172a}.pemda-audit-heading span{font-size:10px;color:#64748b}
+.pemda-workflow-audit{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;max-height:230px;overflow:auto}
+.pemda-workflow-audit>p{grid-column:1/-1;color:#64748b;font-size:11px;margin:4px}
+.pemda-audit-row{display:flex;align-items:flex-start;gap:9px;border:1px solid #e2e8f0;background:#fff;border-radius:9px;padding:9px;min-width:0}
+.pemda-audit-dot{width:8px;height:8px;border-radius:50%;background:#0f766e;flex-shrink:0;margin-top:4px;box-shadow:0 0 0 4px #ccfbf1}
+.pemda-audit-row>div{min-width:0;overflow-wrap:anywhere}.pemda-audit-row b{display:block;color:#0f172a;font-size:10px}.pemda-audit-row small{display:block;color:#64748b;font-size:9px;margin-top:3px}.pemda-audit-row p{font-size:10px;color:#475569;margin:5px 0 0;white-space:pre-wrap;line-height:1.45}
+.pemda-step-inline{display:inline-flex;align-items:center;gap:5px;font-weight:700;color:#334155;margin:2px 4px 2px 0}
+.pemda-step-inline i{font-style:normal;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;width:18px;height:18px;background:#dbeafe;color:#1d4ed8;font-size:10px;font-weight:900;flex-shrink:0}
+.pemda-step-arrow{font-weight:900;color:#94a3b8;margin:0 3px}
+.pemda-footer-note{margin-right:auto;color:#64748b;font-size:11px;line-height:1.4}
+@media(max-width:1000px){.pemda-workflow-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.pemda-workflow-stage-forms{grid-template-columns:1fr}.pemda-workflow-audit{grid-template-columns:1fr}.pemda-workflow-table-wrap{max-height:48vh}}
+@media(max-width:620px){.pemda-workflow-modal{width:98vw;max-height:96vh}.pemda-workflow-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.pemda-workflow-modal .sheet-links-header{padding:14px}.pemda-workflow-modal .sheet-links-header h3{font-size:15px}.pemda-workflow-modal .sheet-links-body{padding:12px}.pemda-editor-heading{flex-direction:column}.pemda-workflow-modal .sheet-links-footer{flex-wrap:wrap;padding:10px}.pemda-footer-note{flex-basis:100%}}

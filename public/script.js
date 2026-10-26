@@ -134,6 +134,11 @@ function connectRealtime() {
           setRealtimeBadge('🟢 KK PM SPIP tersinkron', 'online');
           return;
         }
+        if (['savePemdaSampling','savePemdaVerification'].includes(msg.action)) {
+          if (document.getElementById('pemdaWorkflowModal')?.classList.contains('active') && !isEditingFormField()) loadPemdaWorkflow(false).catch(()=>{});
+          setRealtimeBadge('🟢 Alur verifikasi Pemda tersinkron', 'online');
+          return;
+        }
         if (msg.action === 'uploadWorkbookEvidence' || msg.action === 'deleteWorkbookEvidence' || msg.action === 'saveWorkbookEvidenceVerification' || msg.action === 'replaceWorkbookEvidenceFile' || msg.action === 'retryDriveBackup') {
           scheduleRealtimeRefresh('Evidence workbook diperbarui operator lain');
           if (msg.opdId && typeof qaApipCurrentRow !== 'undefined' && qaApipCurrentRow && String(qaApipCurrentRow.id) === String(msg.opdId) && document.getElementById('qaApipModal')?.classList.contains('active')) {
@@ -828,7 +833,7 @@ function escapeHtml(str) {
 // PERUBAHAN KEAMANAN: GANTI VERSI SEBELUMNYA DENGAN VERSI AMAN INI
 function callServer(action, params = {}) {
   const functionUrl='/myCloudinaryHandler';
-  const readOnlyActions=new Set(['getYears','getData','getSubunsurData','getKkSheets','getRtpKkSheets','getRtpEvidence','getReportFiles','listBackups']);
+  const readOnlyActions=new Set(['getYears','getData','getSubunsurData','getKkSheets','getRtpKkSheets','getRtpEvidence','getReportFiles','listBackups','getPemdaWorkflow','getPemdaWorkflowAudit']);
   const isForm=params instanceof FormData;
   const isBinary=params && params.__binaryFile instanceof File;
   const cleanParams=isBinary ? Object.fromEntries(Object.entries(params).filter(([k])=>k!=='__binaryFile')) : params;
@@ -945,6 +950,7 @@ async function finishLogin(user){
   if(badge){badge.style.display=currentUser?'inline-block':'none';badge.textContent=currentUser?`${currentUser.displayName||currentUser.username} · ${String(currentUser.role||'').toUpperCase()}`:'';}
   const logout=document.getElementById('btnLogout');if(logout)logout.style.display=currentUser?'inline-block':'none';
   const accountNav=document.getElementById('btnAccountManagementNav');if(accountNav)accountNav.style.display=currentUser?.role==='admin'?'inline-block':'none';
+  const pemdaNav=document.getElementById('btnPemdaWorkflow');if(pemdaNav)pemdaNav.style.display=currentUser?'inline-flex':'none';
   document.getElementById('opdAccessOverlay').style.display='none';
   document.getElementById('loadingOverlay').classList.remove('hidden');
   await initializeAppAfterAuth();
@@ -997,6 +1003,8 @@ document.getElementById('btnOpdAccessCancel').addEventListener('click', function
 document.getElementById('btnLogout')?.addEventListener('click',async()=>{
   try{await callServer('logout',{});}catch(e){console.warn('Logout server:',e.message);}
   closeRealtimeSocket();currentUser=null;opdUnlocked=false;appInitializedAfterAuth=false;rows=[];
+  const pemdaNav=document.getElementById('btnPemdaWorkflow');if(pemdaNav)pemdaNav.style.display='none';
+  const accountNav=document.getElementById('btnAccountManagementNav');if(accountNav)accountNav.style.display='none';
   const badge=document.getElementById('currentUserLabel');if(badge)badge.style.display='none';
   document.getElementById('btnLogout').style.display='none';
   document.getElementById('loadingOverlay').classList.add('hidden');
@@ -5397,36 +5405,202 @@ async function openEvidencePreview(info){
 }
 document.getElementById('evidencePreviewClose')?.addEventListener('click',closeEvidencePreview);document.getElementById('evidencePreviewCloseFooter')?.addEventListener('click',closeEvidencePreview);document.querySelectorAll('[data-preview-tab]').forEach(b=>b.addEventListener('click',()=>evidencePreviewSetTab(b.dataset.previewTab)));document.getElementById('evidencePreviewModal')?.addEventListener('click',e=>{if(e.target.id==='evidencePreviewModal')closeEvidencePreview();});
 
-// ====== ALUR VERIFIKASI BERTAHAP: ASESOR OPD → QA AUDITOR/PUPPD → BPKP ======
+// ====== ALUR VERIFIKASI BERTAHAP: AUDITOR / PPUPD → IRBAN → BPKP ======
 const workflowUi={opdId:null,uploadId:null,fileName:'Evidence',data:null};
-const workflowStageLabels={opd:'Asesor OPD (PM internal)',qa:'Auditor / PUPPD (QA)',bpkp:'BPKP (verifikasi sampel Pemda)'};
+const workflowStageLabels={auditor:'Auditor / PPUPD (input/pengiriman)',irban:'Irban (verifikator)',bpkp:'BPKP (verifikator akhir)'};
 function workflowDate(value){if(!value)return '—';try{return new Date(Number(value)).toLocaleString('id-ID');}catch{return '—';}}
-function workflowStatusLabel(status){return ({menunggu:'Menunggu',dikirim:'Dikirim',diterima:'Diterima',diterima_catatan:'Diterima dengan Catatan',dikembalikan:'Dikembalikan'})[status]||status||'Menunggu';}
+function workflowStatusLabel(status){return ({menunggu:'Menunggu',dikirim:'Dikirim Auditor / PPUPD',diterima:'Diterima',diterima_catatan:'Diterima dengan Catatan',dikembalikan:'Dikembalikan'})[status]||status||'Menunggu';}
 function workflowSetStatus(message,type=''){const el=document.getElementById('evidenceWorkflowStatus');if(!el)return;el.textContent=message||'';el.className='sheet-links-status'+(type?' '+type:'');el.style.display=message?'block':'none';}
 function workflowCanSubmit(stage,data){
-  const role=String(currentUser?.role||'');const roleStage=role==='admin'?'all':(['auditor','ppupd'].includes(role)?'qa':role);if(role!=='admin'&&roleStage!==stage)return false;
-  const stages=data?.stages||{};if(stage==='qa'&&!['diterima','diterima_catatan'].includes(stages.opd?.status))return false;
-  if(stage==='bpkp'&&!['diterima','diterima_catatan'].includes(stages.qa?.status))return false;
+  const role=String(currentUser?.role||'');const roleStage=role==='ppupd'?'auditor':role;if(role!=='admin'&&roleStage!==stage)return false;
+  const stages=data?.stages||{};
+  if(stage==='irban'&&stages.auditor?.status!=='dikirim')return false;
+  if(stage==='bpkp'&&!['diterima','diterima_catatan'].includes(stages.irban?.status))return false;
   return true;
 }
 function renderWorkflowStageCards(data){
   const root=document.getElementById('evidenceWorkflowStages');if(!root)return;
-  root.innerHTML=['opd','qa','bpkp'].map(stage=>{const item=data?.stages?.[stage]||{status:'menunggu'};const good=['diterima','diterima_catatan'].includes(item.status);const color=item.status==='dikembalikan'?'#b91c1c':good?'#166534':'#64748b';return `<div class="workflow-stage-card"><div><div class="workflow-stage-title">${workflowStageLabels[stage]}</div><div class="workflow-stage-status" style="color:${color};">${sheetLinksEsc(workflowStatusLabel(item.status))}</div></div><div><div style="font-size:12px;color:#475569;">Pemeriksa: ${sheetLinksEsc(item.examinerName||'—')} · ${sheetLinksEsc(workflowDate(item.updatedAt))}</div><p>${sheetLinksEsc(item.note||'Belum ada catatan.')}</p></div></div>`;}).join('');
-  const history=document.getElementById('evidenceWorkflowHistory');const events=Array.isArray(data?.history)?data.history:[];history.innerHTML=events.length?events.map(item=>`<div class="sheet-link-card" style="margin:6px 0;"><b>${sheetLinksEsc(workflowStageLabels[item.stage]||item.stage)}</b> · ${sheetLinksEsc(workflowStatusLabel(item.status))}<div style="font-size:11px;color:#64748b;margin-top:4px;">${sheetLinksEsc(item.examiner_name||item.updated_by||'')} · ${sheetLinksEsc(workflowDate(item.created_at))}</div><div style="font-size:12px;margin-top:5px;white-space:pre-wrap;">${sheetLinksEsc(item.note||'')}</div></div>`).join(''):'<div class="sheet-link-card">Belum ada riwayat verifikasi.</div>';workflowUpdateForm();
+  root.innerHTML=['auditor','irban','bpkp'].map(stage=>{
+    const item=data?.stages?.[stage]||{status:'menunggu'};
+    const good=item.status==='diterima'||item.status==='dikirim';
+    const color=item.status==='dikembalikan'?'#b91c1c':good?'#166534':'#64748b';
+    return `<div class="workflow-stage-card"><div><div class="workflow-stage-title">${workflowStageLabels[stage]}</div><div class="workflow-stage-status" style="color:${color};">${sheetLinksEsc(workflowStatusLabel(item.status))}</div></div><div><div style="font-size:12px;color:#475569;">Pemeriksa: ${sheetLinksEsc(item.examinerName||'—')} · ${sheetLinksEsc(workflowDate(item.updatedAt))}</div><p>${sheetLinksEsc(item.note||'Belum ada catatan.')}</p></div></div>`;
+  }).join('');
+  const history=document.getElementById('evidenceWorkflowHistory');const events=Array.isArray(data?.history)?data.history:[];
+  history.innerHTML=events.length?events.map(item=>`<div class="sheet-link-card" style="margin:6px 0;"><b>${sheetLinksEsc(workflowStageLabels[item.stage]||item.stage)}</b> · ${sheetLinksEsc(workflowStatusLabel(item.status))}<div style="font-size:11px;color:#64748b;margin-top:4px;">${sheetLinksEsc(item.examiner_name||item.updated_by||'')} · ${sheetLinksEsc(workflowDate(item.created_at))}</div><div style="font-size:12px;margin-top:5px;white-space:pre-wrap;">${sheetLinksEsc(item.note||'')}</div></div>`).join(''):'<div class="sheet-link-card">Belum ada riwayat verifikasi.</div>';
+  workflowUpdateForm();
 }
-function workflowUpdateForm(){const stageEl=document.getElementById('workflowStageSelect'),statusEl=document.getElementById('workflowStatusSelect'),save=document.getElementById('workflowSaveButton');if(!stageEl||!statusEl||!save)return;const role=String(currentUser?.role||'');const roleStage=role==='admin'?'all':(['auditor','ppupd'].includes(role)?'qa':role);if(role!=='admin'&&['opd','qa','bpkp'].includes(roleStage))stageEl.value=roleStage;stageEl.disabled=role!=='admin';const stage=stageEl.value;statusEl.innerHTML=[['diterima','Diterima'],['diterima_catatan','Diterima dengan Catatan'],['dikembalikan','Dikembalikan / perlu perbaikan']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('');const can=workflowCanSubmit(stage,workflowUi.data||{});const needsNote=['dikembalikan','diterima_catatan'].includes(statusEl.value);const ready=!needsNote||document.getElementById('workflowNote').value.trim().length>=2;save.disabled=!can||!ready;save.title=!can?'Role belum sesuai atau tahap sebelumnya belum disetujui':'';const me=document.getElementById('workflowExaminer');if(me&&!me.value)me.value=currentUser?.displayName||currentUser?.username||'';}
-async function openEvidenceWorkflowModal(info){workflowUi.opdId=String(info.opdId||'');workflowUi.uploadId=String(info.uploadId||'');workflowUi.fileName=String(info.fileName||'Evidence');workflowUi.data=null;document.getElementById('evidenceWorkflowFileName').textContent=workflowUi.fileName;document.getElementById('workflowExaminer').value=currentUser?.displayName||currentUser?.username||'';document.getElementById('workflowNote').value='';const modal=document.getElementById('evidenceWorkflowModal');modal.classList.add('active');workflowSetStatus('Memuat alur verifikasi…');try{const data=await callServer('getEvidenceWorkflow',{opdId:workflowUi.opdId,uploadId:workflowUi.uploadId,year:currentYear});workflowUi.data=data;renderWorkflowStageCards(data);workflowSetStatus('Tahapan dan riwayat verifikasi dimuat.','success');}catch(err){workflowSetStatus('Gagal memuat alur verifikasi: '+err.message,'error');}}
-async function saveEvidenceWorkflowStep(){const stage=document.getElementById('workflowStageSelect').value,status=document.getElementById('workflowStatusSelect').value,note=document.getElementById('workflowNote').value.trim(),examinerName=document.getElementById('workflowExaminer').value.trim();if(['dikembalikan','diterima_catatan'].includes(status)&&note.length<2){workflowSetStatus('Catatan wajib diisi untuk Diterima dengan Catatan atau Dikembalikan.','error');return;}try{document.getElementById('workflowSaveButton').disabled=true;workflowSetStatus('Menyimpan tahap verifikasi…');await callServer('saveEvidenceWorkflowStep',{opdId:workflowUi.opdId,uploadId:workflowUi.uploadId,year:currentYear,stage,status,note,examinerName});await openEvidenceWorkflowModal(workflowUi);workflowSetStatus('Tahap verifikasi tersimpan dan dicatat pada audit trail.','success');}catch(err){workflowSetStatus('Verifikasi gagal: '+err.message,'error');}finally{workflowUpdateForm();}}
-document.getElementById('workflowStageSelect')?.addEventListener('change',workflowUpdateForm);document.getElementById('workflowStatusSelect')?.addEventListener('change',workflowUpdateForm);document.getElementById('workflowNote')?.addEventListener('input',workflowUpdateForm);document.getElementById('workflowSaveButton')?.addEventListener('click',saveEvidenceWorkflowStep);document.getElementById('evidenceWorkflowRefresh')?.addEventListener('click',()=>openEvidenceWorkflowModal(workflowUi));function closeEvidenceWorkflowModal(){document.getElementById('evidenceWorkflowModal')?.classList.remove('active');}document.getElementById('evidenceWorkflowClose')?.addEventListener('click',closeEvidenceWorkflowModal);document.getElementById('evidenceWorkflowCloseFooter')?.addEventListener('click',closeEvidenceWorkflowModal);
+function workflowUpdateForm(){
+  const stageEl=document.getElementById('workflowStageSelect'),statusEl=document.getElementById('workflowStatusSelect'),save=document.getElementById('workflowSaveButton');if(!stageEl||!statusEl||!save)return;
+  const role=String(currentUser?.role||'');if(role!=='admin'&&['auditor','ppupd','irban','bpkp'].includes(role))stageEl.value=role==='ppupd'?'auditor':role;
+  stageEl.disabled=role!=='admin';
+  const stage=stageEl.value;const data=workflowUi.data||{};const statuses=stage==='auditor'?[['dikirim','Kirim ke Irban']]:[['diterima','Diterima'],['diterima_catatan','Diterima dengan Catatan'],['dikembalikan','Dikembalikan / perlu perbaikan']];
+  statusEl.innerHTML=statuses.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+  const can=workflowCanSubmit(stage,data);const ready=!['dikembalikan','diterima_catatan'].includes(statusEl.value)||document.getElementById('workflowNote').value.trim().length>=2;
+  save.disabled=!can||!ready;save.title=!can?'Role belum sesuai atau tahap sebelumnya belum disetujui':'';
+  const me=document.getElementById('workflowExaminer');if(me&&!me.value)me.value=currentUser?.displayName||currentUser?.username||'';
+}
+async function openEvidenceWorkflowModal(info){
+  workflowUi.opdId=String(info.opdId||'');workflowUi.uploadId=String(info.uploadId||'');workflowUi.fileName=String(info.fileName||'Evidence');workflowUi.data=null;
+  document.getElementById('evidenceWorkflowFileName').textContent=workflowUi.fileName;
+  document.getElementById('workflowExaminer').value=currentUser?.displayName||currentUser?.username||'';document.getElementById('workflowNote').value='';
+  const modal=document.getElementById('evidenceWorkflowModal');modal.classList.add('active');workflowSetStatus('Memuat alur verifikasi…');
+  try{const data=await callServer('getEvidenceWorkflow',{opdId:workflowUi.opdId,uploadId:workflowUi.uploadId,year:currentYear});workflowUi.data=data;renderWorkflowStageCards(data);workflowSetStatus('Tahapan dan riwayat verifikasi dimuat.','success');}
+  catch(err){workflowSetStatus('Gagal memuat alur verifikasi: '+err.message,'error');}
+}
+async function saveEvidenceWorkflowStep(){
+  const stage=document.getElementById('workflowStageSelect').value,status=document.getElementById('workflowStatusSelect').value,note=document.getElementById('workflowNote').value.trim(),examinerName=document.getElementById('workflowExaminer').value.trim();
+  if(['dikembalikan','diterima_catatan'].includes(status)&&note.length<2){workflowSetStatus('Catatan wajib diisi untuk Diterima dengan Catatan atau Dikembalikan.','error');return;}
+  try{document.getElementById('workflowSaveButton').disabled=true;workflowSetStatus('Menyimpan tahap verifikasi…');await callServer('saveEvidenceWorkflowStep',{opdId:workflowUi.opdId,uploadId:workflowUi.uploadId,year:currentYear,stage,status,note,examinerName});await openEvidenceWorkflowModal(workflowUi);workflowSetStatus('Tahap verifikasi tersimpan dan dicatat pada audit trail.','success');}
+  catch(err){workflowSetStatus('Verifikasi gagal: '+err.message,'error');}
+  finally{workflowUpdateForm();}
+}
+document.getElementById('workflowStageSelect')?.addEventListener('change',workflowUpdateForm);
+document.getElementById('workflowStatusSelect')?.addEventListener('change',workflowUpdateForm);
+document.getElementById('workflowNote')?.addEventListener('input',workflowUpdateForm);
+document.getElementById('workflowSaveButton')?.addEventListener('click',saveEvidenceWorkflowStep);
+document.getElementById('evidenceWorkflowRefresh')?.addEventListener('click',()=>openEvidenceWorkflowModal(workflowUi));
+function closeEvidenceWorkflowModal(){document.getElementById('evidenceWorkflowModal')?.classList.remove('active');}
+document.getElementById('evidenceWorkflowClose')?.addEventListener('click',closeEvidenceWorkflowModal);document.getElementById('evidenceWorkflowCloseFooter')?.addEventListener('click',closeEvidenceWorkflowModal);
 
-// ====== KERTAS KERJA PEMDA & PEMILIHAN SAMPLING OPD ======
-let pemdaSamplingItems=[];
-function pemdaSamplingSetStatus(message,type=''){const el=document.getElementById('pemdaSamplingStatus');if(el){el.textContent=message||'';el.className='sheet-links-status'+(type?' '+type:'');el.style.display=message?'block':'none';}}
-function renderPemdaSampling(){const body=document.getElementById('pemdaSamplingRows');if(!body)return;const q=String(document.getElementById('pemdaSamplingSearch')?.value||'').toLocaleLowerCase('id');const items=pemdaSamplingItems.filter(x=>String(x.opd||'').toLocaleLowerCase('id').includes(q));body.innerHTML=items.map(x=>`<tr data-opd-id="${sheetLinksEsc(x.opd_id)}"><td>${sheetLinksEsc(x.opd)}</td><td>${sheetLinksEsc(x.assessment_status||'Belum Mengisi')}</td><td>${sheetLinksEsc(x.qa_status||'Belum QA')}</td><td style="text-align:center"><input type="checkbox" data-sample-check="${sheetLinksEsc(x.opd_id)}" ${x.selected?'checked':''} ${!['admin','irban'].includes(String(currentUser?.role||''))?'disabled':''} aria-label="Jadikan ${sheetLinksEsc(x.opd)} sampel"></td><td><input data-sample-note="${sheetLinksEsc(x.opd_id)}" value="${sheetLinksEsc(x.note||'')}" maxlength="1000" placeholder="Dasar pemilihan sampel" style="min-width:220px;width:100%;padding:7px" ${!['admin','irban'].includes(String(currentUser?.role||''))?'disabled':''}></td><td>${x.bpkp_status?sheetLinksEsc(workflowStatusLabel(x.bpkp_status)):'Belum diverifikasi'}</td></tr>`).join('');document.getElementById('pemdaSamplingSummary').textContent=`Tahun ${currentYear} · ${pemdaSamplingItems.length} OPD · ${pemdaSamplingItems.filter(x=>x.selected).length} OPD dipilih sebagai sampel.`;const save=document.getElementById('pemdaSamplingSave');if(save)save.style.display=['admin','irban'].includes(String(currentUser?.role||''))?'inline-flex':'none';}
-async function loadPemdaSampling(){pemdaSamplingSetStatus('Memuat kertas kerja Pemda…');try{const result=await callServer('getPemdaSampling',{year:currentYear});pemdaSamplingItems=(result.items||[]).map(x=>({...x,selected:!!x.selected}));renderPemdaSampling();pemdaSamplingSetStatus('Rekap Pemda dimuat.','success');}catch(err){pemdaSamplingSetStatus('Gagal memuat sampling: '+err.message,'error');}}
-async function savePemdaSampling(){const items=pemdaSamplingItems.map(x=>({opdId:x.opd_id,selected:!!document.querySelector(`[data-sample-check="${CSS.escape(String(x.opd_id))}"]`)?.checked,note:document.querySelector(`[data-sample-note="${CSS.escape(String(x.opd_id))}"]`)?.value||''}));try{const button=document.getElementById('pemdaSamplingSave');button.disabled=true;pemdaSamplingSetStatus('Menyimpan pilihan sampel…');const result=await callServer('savePemdaSampling',{year:currentYear,items});pemdaSamplingSetStatus(result.message||'Sampling tersimpan.','success');await loadPemdaSampling();}catch(err){pemdaSamplingSetStatus('Gagal menyimpan sampling: '+err.message,'error');}finally{const button=document.getElementById('pemdaSamplingSave');if(button)button.disabled=false;}}
-function openPemdaSampling(){document.getElementById('pemdaSamplingModal')?.classList.add('active');loadPemdaSampling();}
-document.getElementById('btnPemdaSampling')?.addEventListener('click',openPemdaSampling);document.getElementById('pemdaSamplingRefresh')?.addEventListener('click',loadPemdaSampling);document.getElementById('pemdaSamplingSave')?.addEventListener('click',savePemdaSampling);document.getElementById('pemdaSamplingSearch')?.addEventListener('input',renderPemdaSampling);function closePemdaSampling(){document.getElementById('pemdaSamplingModal')?.classList.remove('active');}document.getElementById('pemdaSamplingClose')?.addEventListener('click',closePemdaSampling);document.getElementById('pemdaSamplingCloseFooter')?.addEventListener('click',closePemdaSampling);
+
+// ====== KERTAS KERJA PEMDA MAHAKAM ULU: SAMPLING + VERIFIKASI 3 TAHAP ======
+const pemdaWorkflowUi={rows:[],permissions:{},selectedOpdId:'',loading:false,saving:false,search:''};
+const pemdaStatusLabels={
+  pm:{belum:'Belum PM',dalam_proses:'Dalam proses PM',selesai:'PM selesai',perlu_perbaikan:'Perlu perbaikan'},
+  qa:{belum:'Belum QA',dalam_proses:'Dalam proses QA',diterima:'QA diterima',diterima_catatan:'Diterima dengan catatan',dikembalikan:'Dikembalikan'},
+  bpkp:{belum:'Belum diverifikasi',dalam_proses:'Dalam proses BPKP',diterima:'Diterima BPKP',diterima_catatan:'Diterima dengan catatan',dikembalikan:'Dikembalikan BPKP'}
+};
+function pemdaText(value){return escapeHtml(String(value??''));}
+function pemdaStageBadge(stage,status){const s=String(status||'belum');const label=pemdaStatusLabels[stage]?.[s]||s;const cls=['selesai','diterima'].includes(s)?'done':['diterima_catatan','dalam_proses'].includes(s)?'progress':['perlu_perbaikan','dikembalikan'].includes(s)?'returned':'pending';const icon=cls==='done'?'✓':cls==='progress'?'◷':cls==='returned'?'!':'○';return `<span class="pemda-status-badge ${cls}"><i>${icon}</i>${pemdaText(label)}</span>`;}
+function pemdaDate(value){const n=Number(value||0);return n?new Date(n).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'}):'Belum ada catatan';}
+function pemdaWorkflowSetStatus(message,type=''){const el=document.getElementById('pemdaWorkflowStatus');if(!el)return;el.textContent=message||'';el.className='sheet-links-status'+(type?' '+type:'');el.style.display=message?'block':'none';}
+function pemdaWorkflowCanShowEditor(){return !!(pemdaWorkflowUi.permissions.canPm||pemdaWorkflowUi.permissions.canQa||pemdaWorkflowUi.permissions.canBpkp||currentUser?.role==='admin');}
+function renderPemdaWorkflowSummary(){const box=document.getElementById('pemdaWorkflowSummary');if(!box)return;const a=pemdaWorkflowUi.rows||[];const selected=a.filter(r=>r.isSample).length;const pm=a.filter(r=>r.pm?.status==='selesai').length;const qa=a.filter(r=>['diterima','diterima_catatan'].includes(r.qa?.status)).length;const bpkp=a.filter(r=>r.isSample&&['diterima','diterima_catatan'].includes(r.bpkp?.status)).length;const stats=[['Total OPD',a.length,'data OPD pada tahun terpilih'],['OPD Sampel',selected,'ditetapkan Inspektorat'],['PM Internal Selesai',pm,'Verifikasi tahap 1'],['QA Selesai',qa,'Verifikasi tahap 2'],['BPKP Selesai',bpkp,'sampel tahap 3']];box.innerHTML=stats.map(x=>`<div class="pemda-summary-card"><span>${pemdaText(x[0])}</span><strong>${x[1]}</strong><small>${pemdaText(x[2])}</small></div>`).join('');}
+function renderPemdaWorkflowTable(){
+  const tbody=document.getElementById('pemdaWorkflowTableBody');if(!tbody)return;
+  const rows=(pemdaWorkflowUi.rows||[]).filter(r=>String(r.opd||'').toLowerCase().includes(String(pemdaWorkflowUi.search||'').toLowerCase()));
+  if(!rows.length){tbody.innerHTML=`<tr><td colspan="8" class="pemda-table-empty">${pemdaWorkflowUi.rows.length?'Tidak ada OPD yang cocok dengan pencarian.':'Belum ada data OPD untuk tahun ini.'}</td></tr>`;renderPemdaWorkflowSummary();return;}
+  tbody.innerHTML=rows.map((r,i)=>{
+    const draft=!!r.draftIsSample,reason=String(r.draftSampleReason??'');
+    const sampleDisabled=!pemdaWorkflowUi.permissions.canChooseSample||pemdaWorkflowUi.saving;
+    const samplingChanged=draft!==!!r.isSample||reason!==String(r.sampleReason||'');
+    const sourceStatus=String(r.sourceAssessmentStatus||'Belum Mengisi');
+    const completeness=`${r.hasWorkbook?'✓ Workbook PM':'○ Workbook PM belum tertaut'} · ${Number(r.pmReportCount||0)} laporan · ${Number(r.evidenceCount||0)} evidence`;
+    const selectedMark=r.isSample?'<span class="pemda-sample-pill yes">OPD sampel</span>':'<span class="pemda-sample-pill no">Bukan sampel</span>';
+    const locked=r.bpkp?.status&&r.bpkp.status!=='belum';
+    return `<tr data-pemda-opd="${pemdaText(r.opdId)}" class="${r.isSample?'is-sample':''}">
+      <td class="pemda-num">${i+1}</td>
+      <td><div class="pemda-opd-name">${pemdaText(r.opd)}</div><div class="pemda-opd-meta">Status pengisian: ${pemdaText(sourceStatus)}<br>${pemdaText(completeness)}</div>${selectedMark}</td>
+      <td>${pemdaStageBadge('pm',r.pm?.status)}${r.pm?.updatedAt?`<small class="pemda-stage-meta">${pemdaText(r.pm.examiner||r.pm.updatedBy)} · ${pemdaText(pemdaDate(r.pm.updatedAt))}</small>`:''}</td>
+      <td>${pemdaStageBadge('qa',r.qa?.status)}${r.qa?.updatedAt?`<small class="pemda-stage-meta">${pemdaText(r.qa.examiner||r.qa.updatedBy)} · ${pemdaText(pemdaDate(r.qa.updatedAt))}</small>`:''}</td>
+      <td><label class="pemda-sample-toggle"><input type="checkbox" data-pemda-sample="${pemdaText(r.opdId)}" ${draft?'checked':''} ${sampleDisabled?'disabled':''} aria-label="Jadikan ${pemdaText(r.opd)} sampel"><span></span><b>${draft?'Ya':'Tidak'}</b></label>${locked?'<small class="pemda-stage-meta">BPKP sudah memproses</small>':''}</td>
+      <td><div class="pemda-sample-reason-wrap"><textarea data-pemda-reason="${pemdaText(r.opdId)}" rows="2" maxlength="1000" placeholder="Dasar pemilihan sampel..." ${sampleDisabled?'disabled':''}>${pemdaText(reason)}</textarea>${samplingChanged&&pemdaWorkflowUi.permissions.canChooseSample?'<small class="pemda-changed-note">Belum tersimpan</small>':''}</div></td>
+      <td>${r.isSample?pemdaStageBadge('bpkp',r.bpkp?.status):'<span class="pemda-status-badge not-applicable"><i>—</i>Tidak menjadi sampel</span>'}${r.isSample&&r.bpkp?.updatedAt?`<small class="pemda-stage-meta">${pemdaText(r.bpkp.examiner||r.bpkp.updatedBy)} · ${pemdaText(pemdaDate(r.bpkp.updatedAt))}</small>`:''}${r.isSample&&!r.readyForBpkp&&r.bpkp?.status==='belum'?'<small class="pemda-stage-meta">Menunggu PM dan QA selesai</small>':''}</td>
+      <td><button type="button" class="pemda-row-detail" data-pemda-detail="${pemdaText(r.opdId)}">${pemdaWorkflowCanShowEditor()?'📝 Detail / Verifikasi':'📜 Riwayat'}</button></td>
+    </tr>`;
+  }).join('');
+  renderPemdaWorkflowSummary();
+}
+async function loadPemdaWorkflow(showStatus=true){
+  if(pemdaWorkflowUi.loading)return;const modal=document.getElementById('pemdaWorkflowModal');if(!modal)return;
+  pemdaWorkflowUi.loading=true;const refresh=document.getElementById('pemdaWorkflowRefresh');if(refresh)refresh.disabled=true;
+  if(showStatus)pemdaWorkflowSetStatus('Memuat kertas kerja Pemda dan status verifikasi dari database pusat...');
+  try{
+    const res=await callServer('getPemdaWorkflow',{year:currentYear});
+    pemdaWorkflowUi.permissions=res.permissions||{};
+    const previous=new Map((pemdaWorkflowUi.rows||[]).map(r=>[String(r.opdId),r]));
+    pemdaWorkflowUi.rows=(Array.isArray(res.rows)?res.rows:[]).map(r=>{
+      const p=previous.get(String(r.opdId));
+      const hasUnsaved=p&&(p.draftIsSample!==p.isSample||p.draftSampleReason!==p.sampleReason);
+      return {...r,draftIsSample:hasUnsaved?p.draftIsSample:!!r.isSample,draftSampleReason:hasUnsaved?p.draftSampleReason:String(r.sampleReason||'')};
+    });
+    const yr=document.getElementById('pemdaWorkflowYear');if(yr)yr.textContent=`Tahun ${currentYear}`;
+    const saveBtn=document.getElementById('pemdaWorkflowSaveSampling');if(saveBtn){saveBtn.style.display=pemdaWorkflowUi.permissions.canChooseSample?'inline-flex':'none';saveBtn.disabled=pemdaWorkflowUi.saving;}
+    const note=document.getElementById('pemdaWorkflowFooterNote');if(note)note.textContent=pemdaWorkflowUi.permissions.canChooseSample?'Pilih OPD sampel dan isi dasar pemilihannya, lalu simpan.':'Pemilihan sampel hanya untuk Irban/Super Admin; verifikasi tiap tahap mengikuti peran akun.';
+    renderPemdaWorkflowTable();if(showStatus)pemdaWorkflowSetStatus('Data berhasil dimuat. Tahapan tiap OPD ditampilkan terpisah dan mengikuti hak akses akun.','success');
+    if(pemdaWorkflowUi.selectedOpdId){const current=pemdaWorkflowUi.rows.find(r=>String(r.opdId)===String(pemdaWorkflowUi.selectedOpdId));if(current)renderPemdaWorkflowEditor(current);else closePemdaWorkflowEditor();}
+  }catch(err){pemdaWorkflowSetStatus('Gagal memuat Kertas Kerja Pemda: '+(err?.message||err),'error');}
+  finally{pemdaWorkflowUi.loading=false;if(refresh)refresh.disabled=false;}
+}
+function pemdaSelectOptions(stage,current){const options=stage==='pm'?[['belum','Belum PM'],['dalam_proses','Dalam proses PM'],['selesai','PM selesai'],['perlu_perbaikan','Perlu perbaikan']]:[['belum',stage==='qa'?'Belum QA':'Belum diverifikasi'],['dalam_proses',stage==='qa'?'Dalam proses QA':'Dalam proses BPKP'],['diterima',stage==='qa'?'QA diterima':'Diterima'],['diterima_catatan','Diterima dengan catatan'],['dikembalikan',stage==='qa'?'Dikembalikan / perlu perbaikan':'Dikembalikan / perlu perbaikan']];return options.map(([v,l])=>`<option value="${v}" ${String(current||'belum')===v?'selected':''}>${pemdaText(l)}</option>`).join('');}
+function renderPemdaWorkflowEditor(r){
+  const editor=document.getElementById('pemdaWorkflowEditor'),forms=document.getElementById('pemdaWorkflowStageForms');if(!editor||!forms)return;
+  pemdaWorkflowUi.selectedOpdId=String(r.opdId);editor.hidden=false;
+  document.getElementById('pemdaWorkflowEditorTitle').textContent=`Detail Verifikasi — ${r.opd}`;
+  document.getElementById('pemdaWorkflowEditorMeta').textContent=`Tahun ${currentYear} · Status PM pengisian saat ini: ${r.sourceAssessmentStatus} · Versi data ${r.version}`;
+  const perms=pemdaWorkflowUi.permissions,sections=[];
+  const makeForm=(stage,label,desc,canSave)=>{
+    const d=r[stage]||{status:'belum',examiner:'',note:'',updatedAt:0};
+    const prerequisite=stage==='qa'&&r.pm?.status!=='selesai'?'Verif 1 belum selesai. Asesor OPD harus menandai PM internal selesai.':stage==='bpkp'&&!r.isSample?'OPD belum dipilih sebagai sampel.':stage==='bpkp'&&!r.readyForBpkp?'Verif BPKP terkunci sampai PM internal selesai dan QA diterima.':'';
+    return `<section class="pemda-stage-form ${canSave?'editable':'readonly'}"><div class="pemda-stage-form-head"><div><span class="pemda-stage-number">${stage==='pm'?'1':stage==='qa'?'2':'3'}</span><div><h5>${pemdaText(label)}</h5><p>${pemdaText(desc)}</p></div></div>${pemdaStageBadge(stage,d.status)}</div>
+      ${prerequisite?`<div class="pemda-prerequisite">🔒 ${pemdaText(prerequisite)}</div>`:''}
+      <div class="pemda-stage-form-grid"><label>Hasil tahap<select data-pemda-stage-status="${stage}" ${canSave?'':'disabled'}>${pemdaSelectOptions(stage,d.status)}</select></label><label>Nama pemeriksa<input data-pemda-stage-examiner="${stage}" maxlength="100" value="${pemdaText(d.examiner||currentUser?.displayName||currentUser?.username||'')}" ${canSave?'':'readonly'}></label></div>
+      <label class="pemda-stage-note-label">Catatan / alasan pengembalian<textarea data-pemda-stage-note="${stage}" maxlength="2000" rows="2" placeholder="Wajib diisi jika perlu perbaikan, dikembalikan, atau diterima dengan catatan" ${canSave?'':'readonly'}>${pemdaText(d.note||'')}</textarea></label>
+      <div class="pemda-stage-form-footer"><small>${d.updatedAt?`Terakhir diubah ${pemdaText(pemdaDate(d.updatedAt))} · ${pemdaText(d.updatedBy||d.examiner||'')}`:'Belum ada catatan tahap ini.'}</small>${canSave?`<button type="button" data-pemda-stage-save="${stage}" class="primary" ${stage==='qa'&&r.pm?.status!=='selesai'||stage==='bpkp'&&!r.readyForBpkp?'disabled':''}>💾 Simpan Verif ${stage==='pm'?'1':stage==='qa'?'2':'3'}</button>`:''}</div>
+    </section>`;
+  };
+  if(perms.canPm)sections.push(makeForm('pm','PM Internal oleh Asesor OPD','Verif 1: periksa dokumen yang diunggah anggota dan kelengkapan pengisian kertas kerja.',true));
+  else sections.push(makeForm('pm','PM Internal oleh Asesor OPD','Verif 1: periksa dokumen yang diunggah anggota dan kelengkapan pengisian kertas kerja.',false));
+  if(perms.canQa)sections.push(makeForm('qa','Quality Assurance oleh Auditor / PPUPD','Verif 2: aktif setelah PM internal selesai. Catatan pengembalian wajib jelas.',true));
+  else sections.push(makeForm('qa','Quality Assurance oleh Auditor / PPUPD','Verif 2: aktif setelah PM internal selesai. Catatan pengembalian wajib jelas.',false));
+  if(perms.canBpkp)sections.push(makeForm('bpkp','Verifikasi BPKP atas PM Pemda','Verif 3: hanya aktif bagi OPD yang dipilih sebagai sampel dan sudah lolos QA.',true));
+  else sections.push(makeForm('bpkp','Verifikasi BPKP atas PM Pemda','Verif 3: hanya aktif bagi OPD yang dipilih sebagai sampel dan sudah lolos QA.',false));
+  forms.innerHTML=sections.join('');
+  const audit=document.getElementById('pemdaWorkflowAudit');if(audit)audit.innerHTML='<p>Memuat riwayat audit...</p>';
+  callServer('getPemdaWorkflowAudit',{opdId:r.opdId,year:currentYear}).then(res=>{
+    if(String(pemdaWorkflowUi.selectedOpdId)!==String(r.opdId))return;
+    const list=Array.isArray(res.entries)?res.entries:[];
+    audit.innerHTML=list.length?list.map(e=>`<div class="pemda-audit-row"><span class="pemda-audit-dot"></span><div><b>${pemdaText(({sampling:'Perubahan sampling',pm:'PM internal / Verif 1',qa:'QA Auditor/PPUPD / Verif 2',bpkp:'Verifikasi BPKP / Verif 3','qa-reset':'Reset QA','bpkp-reset':'Reset verifikasi BPKP'})[e.action]||e.action)}</b><small>${pemdaText(e.updatedBy||'Pengguna')} · ${pemdaText(String(e.role||'').toUpperCase())} · ${pemdaText(pemdaDate(e.createdAt))}</small>${e.oldValue||e.newValue?`<p>${pemdaText(e.oldValue)} → ${pemdaText(e.newValue)}</p>`:''}${e.note?`<p>${pemdaText(e.note)}</p>`:''}</div></div>`).join(''):'<p>Belum ada riwayat perubahan.</p>';
+  }).catch(err=>{audit.innerHTML=`<p>Riwayat belum dapat dimuat: ${pemdaText(err.message||err)}</p>`;});
+}
+function closePemdaWorkflowEditor(){pemdaWorkflowUi.selectedOpdId='';const editor=document.getElementById('pemdaWorkflowEditor');if(editor)editor.hidden=true;}
+async function savePemdaWorkflowStage(stage,button){
+  const row=pemdaWorkflowUi.rows.find(r=>String(r.opdId)===String(pemdaWorkflowUi.selectedOpdId));if(!row)return;
+  const status=document.querySelector(`[data-pemda-stage-status="${stage}"]`)?.value||'';
+  const examinerName=document.querySelector(`[data-pemda-stage-examiner="${stage}"]`)?.value.trim()||'';
+  const note=document.querySelector(`[data-pemda-stage-note="${stage}"]`)?.value.trim()||'';
+  if(!examinerName){pemdaWorkflowSetStatus('Nama pemeriksa wajib diisi.','error');return;}
+  if(['perlu_perbaikan','diterima_catatan','dikembalikan'].includes(status)&&note.length<2){pemdaWorkflowSetStatus('Catatan wajib diisi untuk status ini.','error');return;}
+  if(button)button.disabled=true;pemdaWorkflowSetStatus(`Menyimpan Verifikasi ${stage.toUpperCase()}...`);
+  try{await callServerWithRetry('savePemdaVerification',{opdId:row.opdId,year:currentYear,stage,status,examinerName,note,version:row.version},1);pemdaWorkflowSetStatus('Tahap verifikasi tersimpan. Riwayat audit sudah dicatat.','success');await loadPemdaWorkflow(false);}
+  catch(err){pemdaWorkflowSetStatus('Verifikasi gagal disimpan: '+(err.message||err),'error');}
+  finally{if(button)button.disabled=false;}
+}
+async function savePemdaSamplingChanges(){
+  if(pemdaWorkflowUi.saving)return;const changed=pemdaWorkflowUi.rows.filter(r=>!!r.draftIsSample!==!!r.isSample||String(r.draftSampleReason??'')!==String(r.sampleReason||''));
+  if(!changed.length){pemdaWorkflowSetStatus('Tidak ada perubahan pilihan sampling untuk disimpan.','success');return;}
+  for(const r of changed){if(r.draftIsSample&&String(r.draftSampleReason||'').trim().length<3){pemdaWorkflowSetStatus(`Dasar/catatan sampling untuk “${r.opd}” wajib diisi minimal 3 karakter.`,'error');return;}}
+  pemdaWorkflowUi.saving=true;const btn=document.getElementById('pemdaWorkflowSaveSampling');if(btn){btn.disabled=true;btn.textContent='Menyimpan...';}
+  const results=[];let index=0;
+  try{
+    // Small concurrency window keeps a batch of OPD selections responsive under D1 load.
+    const workers=Array.from({length:Math.min(4,changed.length)},async()=>{while(index<changed.length){const r=changed[index++];try{const result=await callServerWithRetry('savePemdaSampling',{opdId:r.opdId,year:currentYear,isSample:!!r.draftIsSample,sampleReason:String(r.draftSampleReason||'').trim(),version:r.version},2);results.push({ok:true,opd:r.opd,result});}catch(err){results.push({ok:false,opd:r.opd,error:err.message||String(err)});}}});
+    await Promise.all(workers);
+    const ok=results.filter(x=>x.ok).length,failed=results.filter(x=>!x.ok);
+    if(failed.length){pemdaWorkflowSetStatus(`${ok} perubahan tersimpan, ${failed.length} gagal. ${failed.slice(0,3).map(x=>x.opd+': '+x.error).join(' | ')} Data dimuat ulang agar status server tetap menjadi sumber utama.`,'error');await loadPemdaWorkflow(false);}
+    else{pemdaWorkflowSetStatus(`${ok} perubahan sampling berhasil disimpan beserta catatan audit.`,'success');await loadPemdaWorkflow(false);}
+  }finally{pemdaWorkflowUi.saving=false;if(btn){btn.disabled=false;btn.textContent='💾 Simpan Pilihan Sampling';}renderPemdaWorkflowTable();}
+}
+function openPemdaWorkflow(){const modal=document.getElementById('pemdaWorkflowModal');if(!modal)return;if(!currentUser){alert('Silakan login terlebih dahulu.');return;}modal.classList.add('active');pemdaWorkflowUi.search='';const search=document.getElementById('pemdaWorkflowSearch');if(search)search.value='';closePemdaWorkflowEditor();loadPemdaWorkflow(true);}
+function closePemdaWorkflow(){document.getElementById('pemdaWorkflowModal')?.classList.remove('active');closePemdaWorkflowEditor();}
+document.getElementById('btnPemdaWorkflow')?.addEventListener('click',openPemdaWorkflow);
+document.getElementById('pemdaWorkflowClose')?.addEventListener('click',closePemdaWorkflow);
+document.getElementById('pemdaWorkflowCloseFooter')?.addEventListener('click',closePemdaWorkflow);
+document.getElementById('pemdaWorkflowRefresh')?.addEventListener('click',()=>loadPemdaWorkflow(true));
+document.getElementById('pemdaWorkflowSaveSampling')?.addEventListener('click',savePemdaSamplingChanges);
+document.getElementById('pemdaWorkflowEditorClose')?.addEventListener('click',closePemdaWorkflowEditor);
+document.getElementById('pemdaWorkflowSearch')?.addEventListener('input',e=>{pemdaWorkflowUi.search=e.target.value||'';renderPemdaWorkflowTable();});
+document.getElementById('pemdaWorkflowTableBody')?.addEventListener('change',e=>{
+  const sample=e.target.closest('[data-pemda-sample]');if(sample){const row=pemdaWorkflowUi.rows.find(r=>String(r.opdId)===String(sample.dataset.pemdaSample));if(row){row.draftIsSample=sample.checked;renderPemdaWorkflowTable();}return;}
+  const reason=e.target.closest('[data-pemda-reason]');if(reason){const row=pemdaWorkflowUi.rows.find(r=>String(r.opdId)===String(reason.dataset.pemdaReason));if(row){row.draftSampleReason=reason.value;renderPemdaWorkflowTable();}}
+});
+document.getElementById('pemdaWorkflowTableBody')?.addEventListener('input',e=>{
+  const reason=e.target.closest('[data-pemda-reason]');if(reason){const row=pemdaWorkflowUi.rows.find(r=>String(r.opdId)===String(reason.dataset.pemdaReason));if(row)row.draftSampleReason=reason.value;}
+});
+document.getElementById('pemdaWorkflowTableBody')?.addEventListener('click',e=>{const btn=e.target.closest('[data-pemda-detail]');if(!btn)return;const row=pemdaWorkflowUi.rows.find(r=>String(r.opdId)===String(btn.dataset.pemdaDetail));if(row)renderPemdaWorkflowEditor(row);});
+document.getElementById('pemdaWorkflowStageForms')?.addEventListener('click',e=>{const btn=e.target.closest('[data-pemda-stage-save]');if(btn)savePemdaWorkflowStage(btn.dataset.pemdaStageSave,btn);});
+document.addEventListener('click',event=>{if(event.target===document.getElementById('pemdaWorkflowModal'))closePemdaWorkflow();});
 
 // ====== MODE NILAI RESMI BPKP TINGKAT PEMDA ======
 (function initDashboardModes(){

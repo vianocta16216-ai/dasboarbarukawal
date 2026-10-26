@@ -50,6 +50,7 @@
     <button id="btnDashboardNav" class="nav-btn light" style="display: none;">📈 Dashboard</button>
     <button id="btnOpdListNav" class="nav-btn">🏢 Daftar OPD</button>
     <button id="btnAccountManagementNav" class="nav-btn" style="display:none;">👥 Manajemen Akun</button>
+    <button id="btnPemdaWorkflow" class="nav-btn light" type="button" style="display:none;">🏛️ KK Pemda &amp; Sampling</button>
     
     <label style="color:#ffffff; font-size:14px; display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.1); padding:8px 12px; border-radius:10px;">
       <span>Tahun:</span>
@@ -68,7 +69,7 @@
 <!-- ===== VIEW: DASHBOARD (KPI) ===== -->
 <div id="dashboardView" class="view-section hidden">
   <section class="dashboard-mode-panel" aria-label="Mode penilaian SPIP">
-    <div class="dashboard-mode-heading"><div><strong>Mode Tampilan Penilaian</strong><small>Pisahkan pemantauan mandiri OPD dari nilai resmi tingkat Pemerintah Daerah.</small></div><div class="dashboard-mode-actions"><button id="modeInternalBtn" class="active" type="button">📊 Monitoring Internal</button><button id="modeBpkpBtn" type="button">🏛️ Hasil Resmi BPKP</button><button id="btnBpkpOfficialInput" type="button">✍️ Input Nilai Resmi</button><button id="btnPemdaSampling" type="button">🗂️ Kertas Kerja Pemda &amp; Sampling OPD</button></div></div>
+    <div class="dashboard-mode-heading"><div><strong>Mode Tampilan Penilaian</strong><small>Pisahkan pemantauan mandiri OPD dari nilai resmi tingkat Pemerintah Daerah.</small></div><div class="dashboard-mode-actions"><button id="modeInternalBtn" class="active" type="button">📊 Monitoring Internal</button><button id="modeBpkpBtn" type="button">🏛️ Hasil Resmi BPKP</button><button id="btnBpkpOfficialInput" type="button">✍️ Input Nilai Resmi</button></div></div>
     <div id="dashboardModeBanner" class="dashboard-mode-banner internal">Menampilkan data berjalan / Self-Assessment per OPD. Nilai mandiri tidak sama dengan nilai final Pemda.</div>
     <div class="assessment-progress-wrap"><div class="assessment-progress-title"><strong>Progres Verifikasi OPD</strong><span id="assessmentProgressText">0% · 0 dari 0 OPD selesai verifikasi</span></div><div class="assessment-progress-track"><div id="assessmentProgressBar" style="width:0%"></div></div></div>
   </section>
@@ -83,6 +84,27 @@
     <div class="kpi" id="kpi-card-8" onclick="showChart('rtpSelesai')"><div class="kpi-header"><span class="kpi-label">RTP Selesai</span></div><div class="kpi-value" id="kpiRtpSelesai">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiRtpSelesaiBar" style="width:0%"></div></div><div class="kpi-note" id="kpiRtpSelesaiNote">0 dari 0 OPD</div></div>
     <div class="kpi" id="kpi-card-9" onclick="showChart('evidenceRtp')"><div class="kpi-header"><span class="kpi-label">Evidence RTP Terisi</span></div><div class="kpi-value" id="kpiEvidenceRtp">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiEvidenceRtpBar" style="width:0%"></div></div><div class="kpi-note" id="kpiEvidenceRtpNote">0 dari 0 OPD</div></div>
     <div class="kpi" id="kpi-card-10" onclick="showChart('verifikasiDokumen')"><div class="kpi-header"><span class="kpi-label">Persentase Verifikasi Dokumen</span><span class="kpi-icon">🛡️</span></div><div class="kpi-value" id="kpiVerifikasiDokumen">0%</div><div class="kpi-bar"><div class="kpi-fill" id="kpiVerifikasiDokumenBar" style="width:0%"></div></div><div class="kpi-note" id="kpiVerifikasiDokumenNote">0 dari 0 dokumen</div></div>
+  </div>
+</div>
+
+<!-- ===== KERTAS KERJA PEMDA MAHAKAM ULU & VERIFIKASI BERJENJANG ===== -->
+<div class="sheet-links-overlay" id="pemdaWorkflowModal" role="dialog" aria-modal="true" aria-labelledby="pemdaWorkflowTitle">
+  <div class="sheet-links-modal pemda-workflow-modal">
+    <div class="sheet-links-header"><div><h3 id="pemdaWorkflowTitle">🏛️ Kertas Kerja Pemerintah Kabupaten Mahakam Ulu</h3><div class="pemda-workflow-subtitle">PM internal OPD → QA Auditor/PPUPD → Verifikasi BPKP untuk OPD sampel</div></div><button class="sheet-links-close" id="pemdaWorkflowClose" aria-label="Tutup">&times;</button></div>
+    <div class="sheet-links-body">
+      <div class="sheet-links-info"><b>Urutan verifikasi:</b> <span class="pemda-step-inline"><i>1</i> Asesor OPD — PM internal atas dokumen yang diunggah dan pengisian kertas kerja</span> <span class="pemda-step-arrow">→</span> <span class="pemda-step-inline"><i>2</i> Auditor / PPUPD — QA</span> <span class="pemda-step-arrow">→</span> <span class="pemda-step-inline"><i>3</i> BPKP — evaluasi atas PM Pemda pada OPD yang dipilih sebagai sampel</span>. Tahap lanjutan terkunci hingga tahap sebelumnya memenuhi syarat. Setiap perubahan disimpan ke D1 Cloudflare dan dicatat pada riwayat audit.</div>
+      <div id="pemdaWorkflowStatus" class="sheet-links-status" role="status" aria-live="polite"></div>
+      <div id="pemdaWorkflowSummary" class="pemda-workflow-summary"></div>
+      <div class="pemda-workflow-toolbar"><label for="pemdaWorkflowSearch">Cari OPD<input id="pemdaWorkflowSearch" type="search" maxlength="180" placeholder="Ketik nama OPD..." autocomplete="off"></label><div class="pemda-workflow-toolbar-actions"><span id="pemdaWorkflowYear" class="pemda-year-pill"></span><button id="pemdaWorkflowRefresh" type="button">↻ Muat Ulang</button></div></div>
+      <div class="pemda-workflow-table-wrap"><table class="pemda-workflow-table"><thead><tr><th class="pemda-num">No.</th><th>OPD dan kelengkapan PM</th><th>Status PM<br><small>Verif 1 · internal</small></th><th>Status QA<br><small>Verif 2 · Auditor/PPUPD</small></th><th>Jadikan Sampel</th><th>Dasar / Catatan Sampling</th><th>Status Verifikasi BPKP<br><small>Verif 3 · sampel saja</small></th><th>Aksi</th></tr></thead><tbody id="pemdaWorkflowTableBody"><tr><td colspan="8" class="pemda-table-empty">Memuat data...</td></tr></tbody></table></div>
+      <p class="pemda-workflow-footnote">Indikator kelengkapan di bawah nama OPD bersumber dari data aplikasi: tautan workbook PM, laporan hasil PM, dan evidence yang sudah tersimpan. Status pada tiga tahap verifikasi merupakan rekam jejak terpisah dan tidak mengubah nilai/formula kertas kerja OPD.</p>
+      <section id="pemdaWorkflowEditor" class="pemda-workflow-editor" hidden>
+        <div class="pemda-editor-heading"><div><h4 id="pemdaWorkflowEditorTitle">Detail verifikasi OPD</h4><p id="pemdaWorkflowEditorMeta"></p></div><button type="button" id="pemdaWorkflowEditorClose" class="pemda-editor-close">Tutup detail</button></div>
+        <div id="pemdaWorkflowStageForms" class="pemda-workflow-stage-forms"></div>
+        <div class="pemda-audit-heading"><h5>Riwayat perubahan dan verifikasi</h5><span>Terbaru di atas · maksimal 60 catatan per OPD</span></div><div id="pemdaWorkflowAudit" class="pemda-workflow-audit"><p>Belum dimuat.</p></div>
+      </section>
+    </div>
+    <div class="sheet-links-footer"><span id="pemdaWorkflowFooterNote" class="pemda-footer-note"></span><button type="button" id="pemdaWorkflowSaveSampling" class="primary">💾 Simpan Pilihan Sampling</button><button type="button" id="pemdaWorkflowCloseFooter">Tutup</button></div>
   </div>
 </div>
 
@@ -550,32 +572,17 @@
   </div>
 </div>
 
-<!-- ===== KERTAS KERJA PEMDA & SAMPLING OPD ===== -->
-<div class="sheet-links-overlay" id="pemdaSamplingModal" role="dialog" aria-modal="true" aria-labelledby="pemdaSamplingTitle">
-  <div class="sheet-links-modal" style="max-width:1000px;">
-    <div class="sheet-links-header"><h3 id="pemdaSamplingTitle">🏛️ Kertas Kerja Pemerintah Kabupaten Mahakam Ulu</h3><button class="sheet-links-close" id="pemdaSamplingClose" aria-label="Tutup">&times;</button></div>
-    <div class="sheet-links-body">
-      <div class="sheet-links-info">Kertas kerja Pemda merangkum status PM dan QA setiap OPD. Pilih OPD yang menjadi sampel evaluasi Pemda/BPKP, isi alasan pemilihan, lalu simpan. Pemilihan sampel tidak mengubah data PM atau QA OPD.</div>
-      <div class="sheet-links-status" id="pemdaSamplingStatus"></div>
-      <label style="display:block;font-weight:700;margin:12px 0 6px;">Cari OPD<input id="pemdaSamplingSearch" type="search" placeholder="Cari nama OPD…" style="display:block;width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;margin-top:5px;"></label>
-      <div id="pemdaSamplingSummary" class="sheet-links-info">Memuat rekap…</div>
-      <div style="overflow:auto;max-height:55vh;"><table style="width:100%;border-collapse:collapse;min-width:760px;"><thead><tr><th>OPD</th><th>Status PM</th><th>Status QA</th><th>Jadikan Sampel</th><th>Dasar / Catatan Sampling</th><th>Status Verifikasi BPKP</th></tr></thead><tbody id="pemdaSamplingRows"></tbody></table></div>
-    </div>
-    <div class="sheet-links-footer"><button id="pemdaSamplingRefresh" type="button">↻ Muat Ulang</button><button id="pemdaSamplingSave" class="primary" type="button">💾 Simpan Kertas Kerja Pemda</button><button id="pemdaSamplingCloseFooter" type="button">Tutup</button></div>
-  </div>
-</div>
-
-<!-- ===== VERIFIKASI BERJENJANG OPD → QA APIP → BPKP ===== -->
+<!-- ===== VERIFIKASI BERJENJANG AUDITOR → IRBAN → BPKP ===== -->
 <div class="sheet-links-overlay" id="evidenceWorkflowModal">
   <div class="sheet-links-modal" style="max-width:800px;">
     <div class="sheet-links-header"><h3>🛡️ Alur Verifikasi Evidence</h3><button class="sheet-links-close" id="evidenceWorkflowClose" aria-label="Tutup">&times;</button></div>
     <div class="sheet-links-body">
-      <div class="sheet-links-info"><strong id="evidenceWorkflowFileName">File evidence</strong><br>Urutan resmi: <b>Asesor OPD melakukan PM internal → Auditor dan PUPPD melakukan QA → BPKP memverifikasi hasil PM Pemda berdasarkan OPD sampel</b>. Tahap berikutnya hanya aktif setelah tahap sebelumnya memenuhi syarat.</div>
+      <div class="sheet-links-info"><strong id="evidenceWorkflowFileName">File evidence</strong><br>Urutan resmi: <b>Auditor / PPUPD mengirim → Irban memverifikasi → BPKP sebagai verifikator akhir</b>. Tahap berikutnya hanya aktif setelah tahap sebelumnya memenuhi syarat.</div>
       <div class="sheet-links-status" id="evidenceWorkflowStatus"></div>
       <div id="evidenceWorkflowStages" style="display:grid;gap:10px;margin:12px 0;"></div>
       <div style="border:1px solid #cbd5e1;background:#f8fafc;border-radius:12px;padding:14px;">
         <h4 style="margin:0 0 10px;">Catat verifikasi tahap</h4>
-        <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Tahap<select id="workflowStageSelect" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"><option value="opd">Asesor OPD (PM internal)</option><option value="qa">Auditor / PUPPD (QA)</option><option value="bpkp">BPKP (verifikasi sampel Pemda)</option></select></label>
+        <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Tahap<select id="workflowStageSelect" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"><option value="auditor">Auditor / PPUPD</option><option value="irban">Irban</option><option value="bpkp">BPKP (final)</option></select></label>
         <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Hasil<select id="workflowStatusSelect" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></select></label>
         <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Nama pemeriksa<input id="workflowExaminer" maxlength="100" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></label>
         <label style="display:block;font-size:12px;font-weight:700;margin:8px 0 4px;">Catatan / alasan pengembalian<textarea id="workflowNote" maxlength="2000" rows="3" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;"></textarea></label>
