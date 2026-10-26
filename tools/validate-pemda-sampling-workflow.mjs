@@ -1,0 +1,28 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+const root=path.resolve(new URL('..',import.meta.url).pathname);
+const backend=fs.readFileSync(path.join(root,'functions/myCloudinaryHandler.js'),'utf8');
+const frontend=fs.readFileSync(path.join(root,'public/script.js'),'utf8');
+const html=fs.readFileSync(path.join(root,'public/index.html'),'utf8');
+const css=fs.readFileSync(path.join(root,'public/style.css'),'utf8');
+const migration=fs.readFileSync(path.join(root,'database/migrations/20261026_pemda_sampling_workflow.sql'),'utf8');
+const checks=[];
+function check(name,condition){assert.ok(condition,`FAIL: ${name}`);checks.push(name);}
+check('workflow table and status columns exist',/CREATE TABLE IF NOT EXISTS pemda_sampling_workflow/.test(backend)&&/qa_status TEXT NOT NULL DEFAULT 'belum'/.test(backend)&&/bpkp_status TEXT NOT NULL DEFAULT 'belum'/.test(backend));
+check('dedicated audit trail and indexes exist',/CREATE TABLE IF NOT EXISTS pemda_sampling_audit/.test(backend)&&/idx_pemda_sampling_audit_lookup/.test(backend));
+check('all mutating D1 retry calls use statement factories for new workflow',/runD1WithRetry\(\(\)=>env\.DB\.prepare\(`UPDATE pemda_sampling_workflow/.test(backend)&&/runD1WithRetry\(\(\)=>env\.DB\.prepare\(`INSERT INTO pemda_sampling_audit/.test(backend));
+check('sampling limited to Irban/Admin',/Pemilihan OPD sampling hanya dapat dilakukan oleh Super Admin atau Irban/.test(backend)&&/\['admin','irban'\]\.includes\(role\)/.test(backend));
+check('PM/QA/BPKP role permissions are distinct',/pm:\['admin','opd'\],qa:\['admin','auditor','ppupd'\],bpkp:\['admin','bpkp'\]/.test(backend));
+check('QA requires PM selesai',/stage==='qa'&&String\(current\.pm_status\|\|'belum'\)!=='selesai'/.test(backend));
+check('BPKP requires sampling and accepted QA',/Number\(current\.is_sample\|\|0\)!==1/.test(backend)&&/\['diterima','diterima_catatan'\]\.includes\(String\(current\.qa_status\|\|'belum'\)\)/.test(backend));
+check('optimistic version checks protect concurrent saves',/WHERE year=\? AND opd_id=\? AND version=\?/.test(backend)&&/VERSION_CONFLICT/.test(backend));
+check('PM changes reset downstream QA/BPKP',/QA direset karena status PM internal berubah/.test(backend)&&/Verifikasi BPKP direset karena status PM internal berubah/.test(backend));
+check('QA changes reset BPKP',/Verifikasi BPKP direset karena status QA berubah/.test(backend));
+check('workflow audit is restricted to the OPD scope',/await assertSessionCanAccessOpd\(env,authSession,year,opdId\)/.test(backend));
+check('workflow screen exists with requested title and all stages',html.includes('Kertas Kerja Pemerintah Kabupaten Mahakam Ulu')&&html.includes('Verif 1 · internal')&&html.includes('Verif 2 · Auditor/PPUPD')&&html.includes('Verif 3 · sampel saja'));
+check('sampling UI and verification forms are wired',frontend.includes("addEventListener('click',openPemdaWorkflow)")&&frontend.includes("callServerWithRetry('savePemdaVerification'")&&frontend.includes("callServerWithRetry('savePemdaSampling'"));
+check('logout hides Pemda and account navigation',/const pemdaNav=document\.getElementById\('btnPemdaWorkflow'\);if\(pemdaNav\)pemdaNav\.style\.display='none'/.test(frontend));
+check('responsive style included',css.includes('.pemda-workflow-table')&&css.includes('@media'));
+check('standalone D1 migration is idempotent',migration.includes('CREATE TABLE IF NOT EXISTS pemda_sampling_workflow')&&migration.includes('CREATE TABLE IF NOT EXISTS pemda_sampling_audit'));
+console.log(JSON.stringify({status:'PASS',checks:checks.length,verified:checks},null,2));

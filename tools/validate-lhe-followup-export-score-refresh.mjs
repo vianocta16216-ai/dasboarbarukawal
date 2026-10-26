@@ -16,7 +16,7 @@ check(app.includes("function lheCanEdit(){return ['admin','auditor','ppupd','opd
 check(server.includes("'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','deleteLheFollowup'"),'Auditor role must be authorized to invoke the scoped delete action');
 check(server.includes("'uploadReportFile','deleteReportFile','deleteLheFollowup'"),'OPD input role must be authorized for scoped LHE item deletion');
 check(app.includes('Hapus Butir')&&app.includes('deleteLheFollowup')&&app.includes('Tindakan ini tidak dapat dibatalkan.'),'Every saved LHE item must expose a confirmed per-item delete action');
-check(server.includes('QA Auditor/PUPPD belum Diterima') && server.includes('PM internal asesor OPD belum Diterima'),'Verification prerequisite messages must enforce OPD PM → Auditor/PUPPD QA → BPKP');
+check(server.includes('Auditor / PPUPD belum Dikirim'),'Verification prerequisite message must mention Auditor / PPUPD');
 check(!server.includes("'deleteBackup','deleteYear','deleteLheFollowup','syncKkPmMasterNow'"),'LHE item deletion must not be blocked as admin-only for scoped auditors');
 check(server.includes('Only currently active normalized workbook rows can contribute to the score.'),'Score recalculation must ignore legacy-only cached evidence so old values cannot return');
 check(server.includes("if(!String(file?.r2_key||file?.r2Key||'').trim()||!String(file?.file_name||file?.fileName||'').trim())continue;"),'Score calculation must ignore deleted/tombstone evidence rows');
