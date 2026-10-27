@@ -4793,17 +4793,37 @@ async function kkRpjmdVerifyMapping(workpaperCode,decision){
  try{await callServerWithRetry('verifyKkRpjmdMapping',{opdId:kkPmCurrentRow.id,year:currentYear,workpaperCode,decision,verifierName:verifier,note},2);await loadKkRpjmdMappings(kkPmCurrentRow);kkPmSetStatus('Keputusan verifikasi tersimpan.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('Verifikasi gagal: '+(err.message||err),'error');}
 }
 async function ensureKkFullWorkbookManifestLoaded(sheetMeta=kkPmWorkbookSheets){
-  const sheetCount=Array.isArray(sheetMeta)?sheetMeta.length:0;
-  const legacy=sheetCount===28;
-  const file=legacy?'/kk-full-workbook-manifest.json?v=20261008.6':'/kk-pm-full-workbook-manifest.json?v=20261015.2';
-  const expectedKey=legacy?'legacy28':'pm26';
-  if(kkFullWorkbookManifest?.__profile===expectedKey)return kkFullWorkbookManifest;
-  const r=await fetch(file,{cache:'force-cache'});
-  if(!r.ok)throw new Error('Manifest seluruh workbook KK tidak dapat dimuat');
-  const manifest=await r.json();
-  if(legacy){if(Number(manifest.allSheetCount)!==28||Number(manifest.workpaperSheetCount)!==21)throw new Error('Manifest workbook legacy tidak valid.');}
-  else if(Number(manifest.allSheetCount)!==26||Number(manifest.workpaperSheetCount)!==20)throw new Error('Manifest KK PM terbaru tidak valid: seharusnya 26 sheet total dan 20 sheet kertas kerja.');
-  kkFullWorkbookManifest={...manifest,__profile:expectedKey};
+  const live=Array.isArray(sheetMeta)?sheetMeta.filter(x=>String(x?.title||x?.sheetName||'').trim()):[];
+  const sheetCount=live.length;
+  const fullWorkbook=sheetCount>=28;
+  const file=fullWorkbook?'/kk-full-workbook-manifest.json?v=20261027-master28-dynamic':'/kk-pm-full-workbook-manifest.json?v=20261027-master28-dynamic';
+  const expectedKey=fullWorkbook?'full-dynamic':'pm-dynamic';
+  let manifestBase=kkFullWorkbookManifest?.__baseProfile===expectedKey?kkFullWorkbookManifest.__baseManifest:null;
+  if(!manifestBase){
+    const r=await fetch(file,{cache:'no-store'});
+    if(!r.ok)throw new Error('Manifest seluruh workbook KK tidak dapat dimuat');
+    manifestBase=await r.json();
+    if(!Array.isArray(manifestBase.sheets)||!manifestBase.sheets.length)throw new Error('Manifest workbook tidak memuat daftar sheet.');
+  }
+  const baseSheets=Array.isArray(manifestBase.sheets)?manifestBase.sheets:[];
+  // The live Sheets API metadata is authoritative for sheet name, order, grid size and sheet ID.
+  // Reconcile by exact normalized title first, then by position for the canonical 28-sheet workbook.
+  const normalizeTitle=value=>String(value||'').trim().replace(/\s+/g,' ').toLocaleUpperCase('en-US');
+  const byTitle=new Map(baseSheets.map(x=>[normalizeTitle(x.sheetName||x.title),x]));
+  const sourceRows=live.length?live:baseSheets.map((x,i)=>({title:x.sheetName||x.title,index:i,rowCount:0,columnCount:0,sheetId:null}));
+  const merged=sourceRows.map((x,i)=>{
+    const title=String(x.title||x.sheetName||`Sheet ${i+1}`);
+    const base=byTitle.get(normalizeTitle(title))||(sourceRows.length===baseSheets.length?baseSheets[i]:null)||{};
+    const rowCount=Number(x.rowCount||0),columnCount=Number(x.columnCount||0);
+    const columnName=n=>{let out='';for(let v=Math.max(0,n);v>0;v=Math.floor((v-1)/26))out=String.fromCharCode(65+(v-1)%26)+out;return out||'A';};
+    return {...base,sheetName:title,order:Number.isFinite(Number(x.index))?Number(x.index)+1:i+1,sheetId:x.sheetId||x.properties?.sheetId||base.sheetId||null,
+      dimension:rowCount&&columnCount?`A1:${columnName(columnCount)}${rowCount}`:(base.dimension||''),
+      type:base.type||(i>=baseSheets.length?'support':'support'),phase:base.phase||(i>=baseSheets.length?'Sheet Tambahan Master':'Pendukung'),description:base.description||(i>=baseSheets.length?'Sheet tambahan dari Google Sheets master':'Sheet dari master KK PM SPIP'),
+      formulaCount:Number(base.formulaCount||0),sampleRows:Array.isArray(base.sampleRows)?base.sampleRows:[]};
+  });
+  const countForManifest=merged.length||Number(manifestBase.allSheetCount||baseSheets.length);
+  const workpaperCount=merged.filter(x=>x.type==='workpaper').length;
+  kkFullWorkbookManifest={...manifestBase,allSheetCount:countForManifest,workpaperSheetCount:workpaperCount||Number(manifestBase.workpaperSheetCount||0),sheets:merged,__profile:expectedKey,__baseProfile:expectedKey,__baseManifest:manifestBase};
   return kkFullWorkbookManifest;
 }
 async function loadKkPmWorkbookData(row){
@@ -5043,7 +5063,7 @@ async function openLatestKkPmWorkbook(sheetName=''){
     if(newTab&&!newTab.closed)newTab.location.replace(url);else window.open(url,'_blank','noopener,noreferrer');
   }catch(err){
     if(newTab&&!newTab.closed)newTab.close();
-    kkPmSetStatus('❌ Spreadsheet tidak dibuka karena tautan terbaru belum tervalidasi: '+(err?.message||err)+' Periksa GOOGLE_SHEETS_PM_TEMPLATE_ID, izin Google Drive, dan master PM 26 tab. File lama tetap aman.','error');
+    kkPmSetStatus('❌ Spreadsheet tidak dibuka karena tautan terbaru belum tervalidasi: '+(err?.message||err)+' Periksa GOOGLE_SHEETS_PM_TEMPLATE_ID, izin Google Drive, semua tab inti, dan formula master. File lama tetap aman.','error');
   }finally{kkPmWorkbookOpenBusy=false;if(openBtn)openBtn.disabled=false;}
 }
 async function exportKkPmFullWorkbook(){
@@ -5658,6 +5678,7 @@ function pemdaPmScore(value){return value===null||value===undefined||value===''|
 function pemdaPmScoreCell(value){return value===null||value===undefined||value===''||!Number.isFinite(Number(value))?'<span class="pemda-pm-score-empty">—</span>':`<b>${escapeHtml(pemdaPmScore(value))}</b>`;}
 function pemdaPmStatusLabel(stage,status){const map={belum:'Belum',dalam_proses:stage==='pm'?'Dalam proses PM':stage==='qa'?'Dalam proses QA':'Dalam proses BPKP',selesai:'Selesai',diterima:'Diterima',diterima_catatan:'Diterima + catatan',perlu_perbaikan:'Perlu perbaikan',dikembalikan:'Dikembalikan'};return map[String(status||'belum')]||String(status||'Belum');}
 function pemdaPmStageClass(status){return ['selesai','diterima','diterima_catatan'].includes(String(status||''))?'done':['dalam_proses'].includes(String(status||''))?'progress':['perlu_perbaikan','dikembalikan'].includes(String(status||''))?'warning':'pending';}
+function liveSheetCountFromState(){const s=pemdaPmDash?.sheets;return Array.isArray(s)&&s.length?s.length:(Array.isArray(pemdaPmDash?.manifest)?pemdaPmDash.manifest.length:0);}
 function renderPemdaPmDashboard(){
   const rows=Array.isArray(pemdaPmDash.workflow)?pemdaPmDash.workflow:[];const samples=rows.filter(r=>r.isSample);const wb=pemdaPmDash.workbook||{};const canManage=!!pemdaPmDash.permissions.canManage;
   const templatePanel=document.getElementById('pemdaPmTemplateAdminPanel');if(templatePanel)templatePanel.hidden=!['admin','irban'].includes(pemdaPmRole());
@@ -5669,12 +5690,12 @@ function renderPemdaPmDashboard(){
   const createBtn=document.getElementById('pemdaPmWorkbookCreate'),syncBtn=document.getElementById('pemdaPmWorkbookSync'),openBtn=document.getElementById('pemdaPmWorkbookOpen');
   const exists=!!(wb.workbookSpreadsheetId||wb.workbookUrl);if(name)name.textContent=exists?(wb.workbookName||`PEMERINTAH KABUPATEN MAHAKAM ULU - KK PM SPIP - ${currentYear}`):'KK PM SPIP Pemda belum dibuat';
   if(meta)meta.textContent=exists?`Tahun ${currentYear} · Terakhir disimpan ${pemdaDate(wb.updatedAt||0)}${wb.updatedBy?` oleh ${wb.updatedBy}`:''} · workbook Pemda tersendiri`:`Tahun ${currentYear} · Master template tersedia melalui konfigurasi Google Sheets PM pada server.`;
-  if(notice){notice.className='pemda-pm-workbook-notice'+(pemdaPmDash.workbook?.needsSync?' warning':'');notice.textContent=exists?(pemdaPmDash.workbook.needsSync?`⚠️ Workbook saat ini perlu diverifikasi/disinkronkan: ${pemdaPmDash.workbook.needsSyncReason||'revisi master berubah'}. File lama tidak akan dihapus.`:`✅ Workbook aktif tersambung dan telah tervalidasi sebagai master PM_2026 (26 sheet). Isian dilakukan pada Google Spreadsheet khusus Pemda; data workbook OPD tidak ditimpa.`):'Belum ada salinan workbook Pemda pada database. Klik “Buat dari Master” untuk membuat workbook mandiri dari template resmi.';}
+  if(notice){notice.className='pemda-pm-workbook-notice'+(pemdaPmDash.workbook?.needsSync?' warning':'');notice.textContent=exists?(pemdaPmDash.workbook.needsSync?`⚠️ Workbook saat ini perlu diverifikasi/disinkronkan: ${pemdaPmDash.workbook.needsSyncReason||'revisi master berubah'}. File lama tidak akan dihapus.`:`✅ Workbook aktif tersambung dan telah tervalidasi sebagai master PM_2026 (${Array.isArray(wb.sheets)?wb.sheets.length:liveSheetCountFromState()} sheet). Isian dilakukan pada Google Spreadsheet khusus Pemda; semua tab master dipertahankan dan data workbook OPD tetap terpisah.`):'Belum ada salinan workbook Pemda pada database. Klik “Buat dari Master” untuk membuat workbook mandiri dari template resmi.';}
   if(createBtn){createBtn.hidden=exists||!canManage;createBtn.disabled=pemdaPmDash.creating;createBtn.textContent=pemdaPmDash.creating?'Membuat...':'＋ Buat dari Master';}
   if(syncBtn){syncBtn.hidden=!exists||!pemdaPmDash.workbook?.needsSync||!canManage;syncBtn.disabled=pemdaPmDash.creating;}
   if(openBtn){openBtn.hidden=!exists||!!pemdaPmDash.workbook?.needsSync;openBtn.disabled=pemdaPmDash.creating;}
   const liveSheets=Array.isArray(pemdaPmDash.sheets)?pemdaPmDash.sheets:[];const fallback=Array.isArray(pemdaPmDash.manifest)?pemdaPmDash.manifest:[];const sheetRows=liveSheets.length?liveSheets.map((x,i)=>({sheetName:x.title||x.sheetName||`Sheet ${i+1}`,sheetId:x.sheetId,order:Number(x.index??i)+1,rowCount:x.rowCount,columnCount:x.columnCount,live:true})):fallback.map((x,i)=>({sheetName:x.sheetName||x.title||'',sheetId:null,order:Number(x.order||i+1),rowCount:x.dimension||'',columnCount:'',live:false})).filter(x=>x.sheetName);
-  const list=document.getElementById('pemdaPmSheetList'),count=document.getElementById('pemdaPmSheetCount');if(count)count.textContent=`${liveSheets.length||26} sheet ${liveSheets.length?'terbaca dari workbook aktif':'mengikuti manifest master'}`;
+  const list=document.getElementById('pemdaPmSheetList'),count=document.getElementById('pemdaPmSheetCount');if(count)count.textContent=`${liveSheets.length||fallback.length} sheet ${liveSheets.length?'terbaca dari workbook aktif':'mengikuti manifest master'}`;
   if(list)list.innerHTML=sheetRows.length?sheetRows.map(x=>`<button type="button" class="pemda-pm-sheet-card ${x.live&&exists&&!pemdaPmDash.workbook?.needsSync?'available':'preview'}" data-pemda-pm-sheet="${escapeHtml(String(x.sheetName))}" ${x.live&&exists&&!pemdaPmDash.workbook?.needsSync?'':'disabled'}><span class="pemda-pm-sheet-order">${x.order}</span><span class="pemda-pm-sheet-text"><b>${escapeHtml(x.sheetName)}</b><small>${x.live?`${Number(x.rowCount||0).toLocaleString('id-ID')} baris · ${Number(x.columnCount||0)} kolom · workbook aktif`:'Struktur dari manifest template master'}</small></span><span class="pemda-pm-sheet-action">${x.live&&exists&&!pemdaPmDash.workbook?.needsSync?'Buka ↗':'Pratinjau'}</span></button>`).join(''):'<div class="pemda-pm-empty">Manifest sheet master belum dapat dimuat. Pembuatan workbook tetap akan divalidasi pada server.</div>';
   const tbody=document.getElementById('pemdaPmSamplingBody');if(!tbody)return;
   if(!samples.length){tbody.innerHTML=`<tr><td colspan="11" class="pemda-pm-empty">Belum ada OPD sampling yang tersimpan untuk tahun ${escapeHtml(String(currentYear))}. Buka “KK Pemda & Sampling”, pilih OPD, isi dasar pemilihan, lalu simpan. Daftar ini akan terisi otomatis.</td></tr>`;return;}
@@ -5682,7 +5703,7 @@ function renderPemdaPmDashboard(){
 }
 async function loadPemdaPmManifest(){
   if(pemdaPmManifestPromise)return pemdaPmManifestPromise;
-  pemdaPmManifestPromise=fetch(`/kk-pm-full-workbook-manifest.json?v=pemda-kkpm-20261026&_=${Date.now()}`,{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('Manifest master belum dapat dimuat');return r.json();}).then(d=>Array.isArray(d.sheets)?d.sheets:[]).catch(()=>[]);
+  pemdaPmManifestPromise=fetch(`/kk-pm-full-workbook-manifest.json?v=pemda-kkpm-20261027-master28&_=${Date.now()}`,{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('Manifest master belum dapat dimuat');return r.json();}).then(d=>Array.isArray(d.sheets)?d.sheets:[]).catch(()=>[]);
   pemdaPmDash.manifest=await pemdaPmManifestPromise;return pemdaPmDash.manifest;
 }
 const PEMDA_PM_ALLOWED_TARGETS=['T2','T3','T4'];
@@ -5847,13 +5868,13 @@ async function refreshPemdaPmWorkbooks({bulk=true,masterId=null,throwOnError=fal
   const raw=String(masterId||document.getElementById('pemdaPmTemplateId')?.value||pemdaPmDash.templateConfig?.spreadsheetId||'').trim();
   if(!raw){const err=new Error('Masukkan ID atau link master terlebih dahulu.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
   try{
-    pemdaPmTemplateStatus('Memvalidasi master PM_2026: 26 tab, formula inti, dan izin Google Drive…');
+    pemdaPmTemplateStatus('Memvalidasi seluruh tab master PM, formula inti, dan izin Google Drive…');
     const config=await callServerWithRetry('updateKkPmTemplateConfig',{spreadsheetId:raw},3);pemdaPmDash.templateConfig=config;
     const link=document.getElementById('pemdaPmTemplateLink');if(link){link.href=config.spreadsheetUrl||'#';link.textContent=config.spreadsheetId||raw;}
     const updated=document.getElementById('pemdaPmTemplateUpdated');if(updated)updated.textContent=` · Diperbarui ${new Date(config.updatedAt||Date.now()).toLocaleString('id-ID')}${config.updatedBy?' oleh '+config.updatedBy:''}`;
     const state=document.getElementById('pemdaPmTemplateValidationState');if(state){state.textContent='Profil PM_2026 tervalidasi';state.className='pemda-pm-template-state success';}
     const input=document.getElementById('pemdaPmTemplateId');if(input){input.value=config.spreadsheetId||raw;delete input.dataset.dirty;}
-    pemdaPmTemplateStatus('Master valid. Memperbarui workbook khusus Pemda dan mirror XLSX R2…');
+    pemdaPmTemplateStatus(`Master valid (${Array.isArray(config.sheets)?config.sheets.length:'semua'} sheet). Memperbarui workbook khusus Pemda dan mirror XLSX R2…`);
     const pemdaResult=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear,forceRefresh:true},3);
     if(pemdaResult?.status==='error')throw new Error(pemdaResult.message||'Sinkronisasi workbook Pemda gagal.');
     const targetsResult=await callServerWithRetry('getKkPmWorkbookRefreshTargets',{year:currentYear},2);
@@ -5902,7 +5923,7 @@ async function loadPemdaPmDashboard(showStatus=true){
 }
 function openPemdaPmDashboard(){if(!currentUser){alert('Silakan login terlebih dahulu.');return;}const modal=document.getElementById('pemdaPmDashboardModal');if(!modal)return;modal.classList.add('active');loadPemdaPmDashboard(true);}
 function closePemdaPmDashboard(){document.getElementById('pemdaPmDashboardModal')?.classList.remove('active');}
-async function createOrSyncPemdaPmWorkbook(){if(!['admin','irban'].includes(pemdaPmRole()))return pemdaPmDashStatus('Hanya akun Pemda dan Irban yang dapat memperbarui workbook Pemda.','error');if(pemdaPmDash.creating)return;const btn=document.getElementById(pemdaPmDash.workbook?.exists?'pemdaPmWorkbookSync':'pemdaPmWorkbookCreate');pemdaPmDash.creating=true;if(btn)btn.disabled=true;pemdaPmDashStatus('Membuat / memverifikasi salinan KK PM SPIP Pemda dari master 26 sheet...');renderPemdaPmDashboard();
+async function createOrSyncPemdaPmWorkbook(){if(!['admin','irban'].includes(pemdaPmRole()))return pemdaPmDashStatus('Hanya akun Pemda dan Irban yang dapat memperbarui workbook Pemda.','error');if(pemdaPmDash.creating)return;const btn=document.getElementById(pemdaPmDash.workbook?.exists?'pemdaPmWorkbookSync':'pemdaPmWorkbookCreate');pemdaPmDash.creating=true;if(btn)btn.disabled=true;pemdaPmDashStatus('Membuat / memverifikasi salinan KK PM SPIP Pemda mengikuti seluruh sheet master...');renderPemdaPmDashboard();
   try{const result=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear},2);pemdaPmDash.workbook={...(result.workbook||{}),exists:true,needsSync:!!result.needsSync,needsSyncReason:result.needsSyncReason||'',updatedAt:Number(result.updatedAt||Date.now()),updatedBy:result.updatedBy||'',permissions:{canManage:['admin','irban'].includes(String(currentUser?.role||'')),canRefreshAll:['admin','irban'].includes(String(currentUser?.role||''))}};pemdaPmDash.sheets=Array.isArray(result.sheets)?result.sheets:[];pemdaPmDash.lastLoadedAt=Date.now();renderPemdaPmDashboard();pemdaPmDashStatus(result.message||'Workbook KK PM SPIP Pemda berhasil diverifikasi.','success');}
   catch(err){pemdaPmDashStatus('Workbook Pemda belum berhasil dibuat/disinkronkan: '+(err.message||err),'error');await loadPemdaPmDashboard(false);}
   finally{pemdaPmDash.creating=false;if(btn)btn.disabled=false;renderPemdaPmDashboard();}}

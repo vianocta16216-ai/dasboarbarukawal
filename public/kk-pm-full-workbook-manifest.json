@@ -1,1 +1,1985 @@
-{"schemaVersion":1,"sourceWorkbook":"KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313.xlsx","sourceSha256":"7331bb6b9aaebe85d2933e58dd9a204654fdecbf3f8fad237e2792c66445fa72","allSheetCount":26,"workpaperSheetCount":20,"sheets":[{"order":1,"sheetName":"FAQ","dimension":"A1:AA1004","formulaCount":10,"sampleRows":[{"row":1,"cells":[["A1","Frequently Asked Questions (FAQ) Penilaian Penyelenggaraan SPIP Tahun 2026"]]},{"row":3,"cells":[["A3","No"],["B3","Q & A"],["C3","Questions and Answer"],["D3","Log"]]},{"row":4,"cells":[["A4","1"],["B4","Q"],["C4","Tools apa yang paling direkomendasikan untuk melakukan pengisian KK Penilaian?"],["D4","46108"]]},{"row":5,"cells":[["B5","A"],["C5","1. KKE Manual SPIP Pemda dirancang dan diformat untuk pengerjaan dalam file Microsoft Excel; \n2. Pengerjaan KKE Manual SPIP Pemda dengan menggunakan WPS Sangat Tidak Dianjurkan;\n3. Apabila terlanjur menggunakan WPS maka akan muncul tanda seru di beberapa baris/kolom. Tanda tersebut bisa diabaikan selama data hasil tarikan dari sheet sebelumnya telah sesuai (kasus di sheet 5.1 abc dan 5.2)."]]}],"type":"support","phase":"Pendukung","description":"FAQ / Panduan"},{"order":2,"sheetName":"DAFTAR KK","dimension":"A1:W1005","formulaCount":0,"sampleRows":[{"row":1,"cells":[["A1","No"],["B1","Judul KK"],["C1","Deskripsi"]]},{"row":2,"cells":[["A2","1."],["B2","KKLEAD_SPIP"],["C2","PENYIMPULAN NILAI MATURITAS PENYELENGGARAAN SPIP, MRI, DAN IEPK"]]},{"row":3,"cells":[["A3","2."],["B3","KKLEAD I"],["C3","PENETAPAN TUJUAN PEMDA"]]},{"row":4,"cells":[["A4","3."],["B4","KK 1.1"],["C4","PENILAIAN KUALITAS SASARAN STRATEGIS PEMDA"]]}],"type":"support","phase":"Pendukung","description":"Daftar Kertas Kerja"},{"order":3,"sheetName":"NAMA OPD","dimension":"A1:Z1000","formulaCount":3,"sampleRows":[{"row":1,"cells":[["B1","<<Kembali ke Daftar KK"]]},{"row":4,"cells":[["C4","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":6,"cells":[["C6","No"],["D6","Nama OPD"],["E6","Anggaran OPD"],["F6","Fokus/Sektor yang Dilakukan Pengujian"]]},{"row":47,"cells":[["B47","Catatan:"]]}],"type":"support","phase":"Master OPD","description":"Master Nama OPD"},{"order":4,"sheetName":"KKLEAD_SPIP","dimension":"A1:Z1004","formulaCount":108,"sampleRows":[{"row":1,"cells":[["B1","<<Kembali ke Daftar KK"]]},{"row":6,"cells":[["C6","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"],["L6","Control Skor per Unsur Penilaian\n(Untuk memudahkan melihat simpulan SPIP-T)"]]},{"row":7,"cells":[["C7","SIMPULAN NILAI MATURITAS PENYELENGGARAAN SPIP"],["L7","SPIP"]]},{"row":8,"cells":[["L8","MRI"]]}],"type":"workpaper","phase":"Lead","description":"Ringkasan Nilai SPIP, MRI, dan IEPK Pemda"},{"order":5,"sheetName":"KKLEAD I","dimension":"A1:Z246","formulaCount":33,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN PENETAPAN TUJUAN\nKK LEAD I - PENETAPAN TUJUAN"],["E4","Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"],["H4",": ...\n: ...\n: ...\n\n: …"]]},{"row":6,"cells":[["A6","A. Kualitas Sasaran Strategis (KK 1)"]]}],"type":"workpaper","phase":"Penetapan Tujuan","description":"KK Lead I — Penetapan Tujuan Pemda"},{"order":6,"sheetName":"KKE 1.1 SASTRA","dimension":"A1:AH1004","formulaCount":13,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KK 1.1 - PENILAIAN PENETAPAN TUJUAN - SASARAN STRATEGIS PEMDA"]]},{"row":6,"cells":[["F6","25"],["K6","25"]]}],"type":"workpaper","phase":"Penetapan Tujuan Pemda","description":"KK 1.1 — Sasaran Strategis Pemda (BP4D)"},{"order":7,"sheetName":"KKE 1.2 SASTRA OPD","dimension":"A1:AP1004","formulaCount":14,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KK 1.2 - PENILAIAN PENETAPAN TUJUAN - SASARAN STRATEGIS OPD"]]},{"row":6,"cells":[["I6","0"]]}],"type":"workpaper","phase":"Penetapan Tujuan OPD","description":"KK 1.2 — Sasaran Strategis OPD"},{"order":8,"sheetName":"KKE 2.1 SASPRO","dimension":"A1:AN1003","formulaCount":16,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KK 2.1 - PENILAIAN PENETAPAN TUJUAN - SASARAN PROGRAM"]]},{"row":6,"cells":[["L6","0"]]}],"type":"workpaper","phase":"Penetapan Tujuan OPD","description":"KK 2.1 — Sasaran Program"},{"order":9,"sheetName":"KKE 2.2 SASKEG","dimension":"A1:AO1004","formulaCount":14,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KK 2.2 - PENILAIAN PENETAPAN TUJUAN - SASARAN KEGIATAN"]]},{"row":9,"cells":[["A9","NO"],["B9","URAIAN SASARAN STRATEGIS"],["C9","NO"],["D9","OPD"],["E9","SASARAN STRATEGIS OPD"],["F9","NO"],["G9","SASARAN PROGRAM"],["I9","NO"]]}],"type":"workpaper","phase":"Penetapan Tujuan OPD","description":"KK 2.2 — Sasaran Kegiatan"},{"order":10,"sheetName":"KKE 2.3 SASSUBKEG","dimension":"A1:AM1005","formulaCount":12,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KK 2.3 - PENILAIAN PENETAPAN TUJUAN - SUB KEGIATAN"]]},{"row":9,"cells":[["A9","NO"],["B9","URAIAN SASARAN STRATEGIS"],["C9","NO"],["D9","OPD"],["E9","SASARAN STRATEGIS OPD"],["F9","NO"],["G9","SASARAN PROGRAM"],["I9","NO"]]}],"type":"workpaper","phase":"Penetapan Tujuan OPD","description":"KK 2.3 — Sasaran Subkegiatan"},{"order":11,"sheetName":"KKLEAD II","dimension":"A1:W1002","formulaCount":286,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN STRUKTUR DAN PROSES\nKK LEAD II - STRUKTUR DAN PROSES"],["J4","Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"]]},{"row":5,"cells":[["A5","Kode"],["B5","Uraian Subunsur"],["C5","No"],["D5","Uraian Parameter"],["E5","Kode Parameter"],["H5","2E\nNILAI"],["I5","KEUANGAN\nNILAI"],["J5","ASET\nNILAI"]]}],"type":"workpaper","phase":"Lead","description":"KK Lead II — Struktur dan Proses"},{"order":12,"sheetName":"KK3.1","dimension":"A1:SL450","formulaCount":348,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN STRUKTUR DAN PROSES\nKK 3.1 - PENILAIAN STRUKTUR DAN PROSES EFEKTIVITAS DAN EFISIENSI PENCAPAIAN TUJUAN ORGANISASI (T1)"],["K4","Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"]]},{"row":5,"cells":[["A5","Kode"],["B5","Uraian Subunsur"],["C5","No"],["D5","Uraian Parameter"],["E5","Kode Parameter"],["H5","Grade"],["I5","Kriteria"],["J5","Penjelasan"]]}],"type":"workpaper","phase":"Struktur dan Proses — T1","description":"KK3.1 — Struktur dan Proses OPD (T1)"},{"order":13,"sheetName":"KK3.2","dimension":"A1:XFC459","formulaCount":356,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN STRUKTUR DAN PROSES\nKK 3.2 - PENILAIAN STRUKTUR DAN PROSES KEANDALAN PELAPORAN KEUANGAN (T2)"],["K4","Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"]]},{"row":5,"cells":[["A5","Kode"],["B5","Uraian Subunsur"],["C5","No"],["D5","Uraian Parameter"],["E5","Kode Parameter"],["H5","Grade"],["I5","Kriteria"],["J5","Penjelasan"]]}],"type":"workpaper","phase":"Struktur dan Proses — T2","description":"KK3.2 — Keandalan Pelaporan Keuangan (T2, BPKAD)"},{"order":14,"sheetName":"KK3.3","dimension":"A1:SE450","formulaCount":354,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN STRUKTUR DAN PROSES\nKK 3.3 - PENILAIAN STRUKTUR DAN PROSES PENGAMANAN ASET NEGARA/DAERAH (T3)"],["K4","Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"]]},{"row":5,"cells":[["A5","Kode"],["B5","Uraian Subunsur"],["C5","No"],["D5","Uraian Parameter"],["E5","Kode Parameter"],["H5","Grade"],["I5","Kriteria"],["J5","Penjelasan"]]}],"type":"workpaper","phase":"Struktur dan Proses — T3","description":"KK3.3 — Pengamanan Aset (T3, BPKAD)"},{"order":15,"sheetName":"KK3.4","dimension":"A1:SJ519","formulaCount":871,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN STRUKTUR DAN PROSES\nKK 3.4 - PENILAIAN STRUKTUR DAN PROSES KETAATAN PADA PERATURAN PERUNDANG-UNDANGAN (T4)"],["K4","Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"]]},{"row":5,"cells":[["A5","Kode"],["B5","Uraian Subunsur"],["C5","No"],["D5","Uraian Parameter"],["E5","Kode Parameter"],["H5","Grad."],["I5","Kriteria"],["J5","Penjelasan"]]}],"type":"workpaper","phase":"Struktur dan Proses — T4","description":"KK3.4 — Ketaatan Peraturan (T4, Inspektorat)"},{"order":16,"sheetName":"KKLEAD III","dimension":"A1:Z1002","formulaCount":8,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP\nKK LEAD III - PENILAIAN PENCAPAIAN TUJUAN SPIP"],["F4","Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"],["G4",":\n:\n:\n:"]]},{"row":5,"cells":[["A5","No."],["B5","Pencapaian Tujuan"],["G5","Capaian K/L/D"]]}],"type":"workpaper","phase":"Lead","description":"KK Lead III — Pencapaian Tujuan"},{"order":17,"sheetName":"KK 5.1 A","dimension":"A1:U1002","formulaCount":252,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP\nTUJUAN 1: EFEKTIVITAS DAN EFISIENSI PENCAPAIAN TUJUAN ORGANISASI\nKK 5.1A - PENILAIAN CAPAIAN SASARAN STRATEGIS K/L/D"]]},{"row":5,"cells":[["F5","RATA-RATA CAPAIAN KINERJA"]]}],"type":"workpaper","phase":"Pencapaian Tujuan Pemda","description":"KK 5.1 A — RPJMD/Pemda (BP4D)"},{"order":18,"sheetName":"KK 5.1 B ","dimension":"A1:V4810","formulaCount":1502,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP\nTUJUAN 1: EFEKTIVITAS DAN EFISIENSI PENCAPAIAN TUJUAN ORGANISASI\nKK 5.1B - PENILAIAN CAPAIAN SASARAN STRATEGIS OPD"]]},{"row":5,"cells":[["K5","RATA-RATA CAPAIAN KINERJA"]]}],"type":"workpaper","phase":"Pencapaian Tujuan","description":"PENILAIAN CAPAIAN OUTCOME"},{"order":19,"sheetName":"KK 5.1 C","dimension":"A1:Q25009","formulaCount":12500,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP \nTUJUAN 1: EFEKTIVITAS DAN EFISIENSI PENCAPAIAN TUJUAN ORGANISASI \nKK 5.2 - PENILAIAN CAPAIAN OUTPUT"]]},{"row":7,"cells":[["A7","NO"],["B7","SASARAN STRATEGIS PEMDA"],["C7","KESIMPULAN SASTRA PEMDA"],["D7","NO"],["E7","OPD"],["F7","SASARAN STRATEGIS OPD"],["G7","KESIMPUILAN SASTRA OPD"],["H7","NO"]]}],"type":"workpaper","phase":"Pencapaian Tujuan OPD","description":"KK 5.1 C — OPD"},{"order":20,"sheetName":"KK 5.2","dimension":"A1:Z15011","formulaCount":45239,"sampleRows":[{"row":1,"cells":[["A1","<<Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP \nTUJUAN 1: EFEKTIVITAS DAN EFISIENSI PENCAPAIAN TUJUAN ORGANISASI \nKK 5.2 - PENILAIAN CAPAIAN OUTPUT"]]},{"row":7,"cells":[["A7","NO"],["B7","SASARAN STRATEGIS PEMDA"],["C7","KESIMPULAN SASTRA PEMDA"],["D7","NO"],["E7","OPD"],["F7","SASARAN STRATEGIS OPD"],["G7","KESIMPUILAN SASTRA OPD"],["H7","NO"]]}],"type":"workpaper","phase":"Pencapaian Tujuan OPD","description":"KK 5.2 — OPD"},{"order":21,"sheetName":"KK 6","dimension":"A1:AF1002","formulaCount":23,"sampleRows":[{"row":1,"cells":[["A1","<< Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP\nTUJUAN 2: KEANDALAN PELAPORAN KEUANGAN\nKK 6 - PENILAIAN PENCAPAIAN TUJUAN KEANDALAN PELAPORAN KEUANGAN"]]},{"row":5,"cells":[["A5","No"],["B5","Tahun (T-1)"],["H5","Tahun (T-2)"]]}],"type":"workpaper","phase":"Inspektorat","description":"KK 6 — Inspektorat"},{"order":22,"sheetName":"KK 7","dimension":"A1:AK1002","formulaCount":12,"sampleRows":[{"row":1,"cells":[["A1","<< Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP\nTUJUAN 3: PENGAMANAN ASET NEGARA/DAERAH\nKK 7 - PENILAIAN PENCAPAIAN TUJUAN PENGAMANAN ASET NEGARA/DAERAH"]]},{"row":6,"cells":[["A6","No"],["B6","Tahun (T-1)"],["I6","Tahun (T-2)"]]}],"type":"workpaper","phase":"Inspektorat","description":"KK 7 — Inspektorat"},{"order":23,"sheetName":"KK 8","dimension":"A1:AG1002","formulaCount":2,"sampleRows":[{"row":1,"cells":[["A1","<< Kembali ke Daftar KK"]]},{"row":3,"cells":[["A3","PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"]]},{"row":4,"cells":[["A4","KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP\nTUJUAN 4: KETAATAN PADA PERATURAN PERUNDANG-UNDANGAN\nKK 8 - PENILAIAN PENCAPAIAN TUJUAN KETAATAN PADA PERATURAN PERUNDANG-UNDANGAN"]]},{"row":5,"cells":[["A5","No"],["B5","T-1"],["H5","T-2"]]}],"type":"workpaper","phase":"Inspektorat","description":"KK 8 — Inspektorat"},{"order":24,"sheetName":"Ref PCT","dimension":"A1:O5256","formulaCount":3851,"sampleRows":[{"row":1,"cells":[["C1","Nama Sastra"],["D1","Nama OPD"],["E1","Nama Sastra OPD"],["F1","Sasaran Program"],["H1","Nama Sastra"],["I1","Nama OPD"],["J1","Nama Sastra OPD"]]},{"row":2,"cells":[["C2","T1.S1. Meningkatnya kualitas kesehatan masyarakat"],["D2","0"],["E2","0"],["F2","0"],["H2","T1.S1. Meningkatnya kualitas kesehatan masyarakat"],["I2","0"],["J2","0"],["L2","='KK 5.1 C'!I"]]},{"row":3,"cells":[["C3","T1.S2. Meningkatnya kualitas pendidikan"],["D3","0"],["E3","0"],["F3","0"],["H3","T1.S2. Meningkatnya kualitas pendidikan"],["L3","='KK 5.1 C'!I"]]},{"row":4,"cells":[["C4","T1.S3. Meningkatnya kualitas keluarga dan kesetaraan gender"],["D4","0"],["E4","0"],["F4","0"],["H4","T1.S3. Meningkatnya kualitas keluarga dan kesetaraan gender"],["L4","='KK 5.1 C'!I"]]}],"type":"support","phase":"Referensi","description":"Referensi PCT"},{"order":25,"sheetName":"REF","dimension":"A1:AE1000","formulaCount":0,"sampleRows":[{"row":1,"cells":[["B1","KUALITAS SASARAN"],["E1","KUALITAS INDIKATOR"],["H1","KUALITAS TARGET"],["K1","KLASTER PENYEBAB"]]},{"row":2,"cells":[["B2","Sasaran tidak berorientasi hasil"],["E2","Indikator tidak spesifik dan relevan"],["H2","Target tidak SMART-C"],["K2","Man"]]},{"row":3,"cells":[["B3","Sasaran tidak menggambarkan isu strategis"],["E3","Indikator tidak realistis"],["H3","Target tidak memperhatikan capaian tahun lalu"],["K3","Method"]]},{"row":4,"cells":[["B4","Sasaran tidak sesuai mandat, tugas, dan fungsi organisasi"],["E4","Indikator overlapping antar sasaran/program/kegiatan"],["H4","Target tidak proyektif"],["K4","Money"]]}],"type":"support","phase":"Referensi","description":"Referensi"},{"order":26,"sheetName":"INDIKATOR HASIL","dimension":"A1:Z1000","formulaCount":0,"sampleRows":[{"row":3,"cells":[["B3","RESULTS"],["F3","SKOR"]]},{"row":4,"cells":[["B4","NO"],["C4","INDIKATOR"],["D4","DEFINISI INDIKATOR"],["E4","CARA PENGUKURAN"],["F4","A"],["G4","B"],["H4","C"],["I4","D"]]},{"row":5,"cells":[["B5","A"],["C5","Efektivitas dan Efisiensi "]]},{"row":6,"cells":[["B6","1."],["C6","Capaian Outcome"],["D6","Mengukur efektivitas pencapaian tujuan organisasi"],["E6","Menghitung rata-rata pencapaian indikator kinerja utama dari sasaran strategis K/L/D"],["F6","≥ 90%"],["G6","≥ 70% dan <90%"],["H6","≥ 50% dan <70%"],["I6","≥ 30% dan <50%"]]}],"type":"support","phase":"Referensi","description":"Indikator Hasil"}],"sectionOrder":["Pendukung","Lead","Penetapan Tujuan","Struktur dan Proses","Pencapaian Tujuan","Inspektorat","Referensi"],"performancePolicy":{"mode":"metadata-and-small-preview","description":"Manifest PM untuk buku kerja sumber terbaru; dashboard hanya memuat metadata dan preview terbatas. Isi/rumus penuh tetap berada di Google Spreadsheet sumber.","largeSheetThresholdRows":500,"largeSheetThresholdFormulas":100}}
+{
+  "schemaVersion": 2,
+  "sourceWorkbook": "KK_PM_Evaluasi_SPIP_Pemda_RPJMD_2026_REVISI_SASARAN.xlsx",
+  "sourceSha256": "a0e11302a103a7ae4a697d65dc79e59a76bc1c13bc9c8b542e16d1ffe5fd2e69",
+  "allSheetCount": 28,
+  "workpaperSheetCount": 21,
+  "sheets": [
+    {
+      "order": 1,
+      "sheetName": "FAQ",
+      "dimension": "",
+      "formulaCount": 10,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "Frequently Asked Questions (FAQ) Penilaian Penyelenggaraan SPIP Tahun 2026"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "No"
+            ],
+            [
+              "B3",
+              "Q & A"
+            ],
+            [
+              "C3",
+              "Questions and Answer"
+            ],
+            [
+              "D3",
+              "Log"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "1.0"
+            ],
+            [
+              "B4",
+              "Q"
+            ],
+            [
+              "C4",
+              "Tools apa yang paling direkomendasikan untuk melakukan pengisian KK Penilaian?"
+            ],
+            [
+              "D4",
+              "46108.0"
+            ]
+          ]
+        },
+        {
+          "row": 5,
+          "cells": [
+            [
+              "B5",
+              "A"
+            ],
+            [
+              "C5",
+              "1. KKE Manual SPIP Pemda dirancang dan diformat untuk pengerjaan dalam file Microsoft Excel; \n2. Pengerjaan KKE Manual SPIP Pemda dengan menggunakan WPS Sangat Tidak Dianjurkan;\n3. Apabila terlanjur menggunakan WPS maka akan muncul tanda seru di beberapa baris/kolom. Tanda tersebut bisa diabaikan selama data hasil tarikan dari sheet sebelumnya telah sesuai (kasus di sheet 5.1 abc dan 5.2)."
+            ]
+          ]
+        }
+      ],
+      "type": "support",
+      "phase": "Pendukung",
+      "description": "FAQ / Panduan"
+    },
+    {
+      "order": 2,
+      "sheetName": "DAFTAR KK",
+      "dimension": "",
+      "formulaCount": 0,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "No"
+            ],
+            [
+              "B1",
+              "Judul KK"
+            ],
+            [
+              "C1",
+              "Deskripsi"
+            ]
+          ]
+        },
+        {
+          "row": 2,
+          "cells": [
+            [
+              "A2",
+              "1."
+            ],
+            [
+              "B2",
+              "KKLEAD_SPIP"
+            ],
+            [
+              "C2",
+              "PENYIMPULAN NILAI MATURITAS PENYELENGGARAAN SPIP, MRI, DAN IEPK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "2."
+            ],
+            [
+              "B3",
+              "KKLEAD I"
+            ],
+            [
+              "C3",
+              "PENETAPAN TUJUAN PEMDA"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "3."
+            ],
+            [
+              "B4",
+              "KK 1.1"
+            ],
+            [
+              "C4",
+              "PENILAIAN KUALITAS SASARAN STRATEGIS PEMDA"
+            ],
+            [
+              "D4",
+              "BP4D"
+            ]
+          ]
+        }
+      ],
+      "type": "support",
+      "phase": "Pendukung",
+      "description": "Daftar Kertas Kerja"
+    },
+    {
+      "order": 3,
+      "sheetName": "NAMA OPD",
+      "dimension": "",
+      "formulaCount": 0,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "B1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "C4",
+              "PENJAMINAN KUALITAS/ EVALUASI ATAS PENILAIAN MANDIRI MATURITAS PENYELENGGARAAN SPIP\n...........................................................................\nPeriode Penilaian 01 Juli 202X-1 sampai dengan 30 Juni 202X"
+            ]
+          ]
+        },
+        {
+          "row": 6,
+          "cells": [
+            [
+              "C6",
+              "No"
+            ],
+            [
+              "D6",
+              "Nama OPD"
+            ],
+            [
+              "E6",
+              "Anggaran OPD"
+            ],
+            [
+              "F6",
+              "Fokus/Sektor yang Dilakukan Pengujian"
+            ]
+          ]
+        },
+        {
+          "row": 48,
+          "cells": [
+            [
+              "B48",
+              "Catatan:"
+            ]
+          ]
+        }
+      ],
+      "type": "support",
+      "phase": "Pendukung",
+      "description": "Master Nama OPD"
+    },
+    {
+      "order": 4,
+      "sheetName": "CHECKLIST PK",
+      "dimension": "",
+      "formulaCount": 1,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "FORM PENJAMINAN KUALITAS ATAS PENILAIAN PENYELENGGARAAN SPIP PADA PEMERINTAH DAERAH TAHUN 20XX"
+            ]
+          ]
+        },
+        {
+          "row": 6,
+          "cells": [
+            [
+              "A6",
+              "NO"
+            ],
+            [
+              "B6",
+              "ASPEK PENILAIAN"
+            ],
+            [
+              "C6",
+              "PERNYATAAN"
+            ],
+            [
+              "D6",
+              "CHECKLIST (√ / X)"
+            ],
+            [
+              "E6",
+              "KETERANGAN"
+            ]
+          ]
+        }
+      ],
+      "type": "support",
+      "phase": "Penjaminan Kualitas",
+      "description": "Checklist Penjaminan Kualitas / QA APIP"
+    },
+    {
+      "order": 5,
+      "sheetName": "KKLEAD_SPIP",
+      "dimension": "",
+      "formulaCount": 152,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "B1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 6,
+          "cells": [
+            [
+              "C6",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 7,
+          "cells": [
+            [
+              "C7",
+              "PENYIMPULAN NILAI MATURITAS PENYELENGGARAAN SPIP"
+            ]
+          ]
+        },
+        {
+          "row": 9,
+          "cells": [
+            [
+              "C9",
+              "Komponen, Unsur, dan Subunsur "
+            ],
+            [
+              "D9",
+              "Skor"
+            ],
+            [
+              "E9",
+              "Bobot\nUnsur"
+            ],
+            [
+              "F9",
+              "Bobot Komponen"
+            ],
+            [
+              "G9",
+              "Nilai\nUnsur"
+            ],
+            [
+              "H9",
+              "Nilai Komponen"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Lead",
+      "description": "PENYIMPULAN NILAI MATURITAS PENYELENGGARAAN SPIP, MRI, DAN IEPK"
+    },
+    {
+      "order": 6,
+      "sheetName": "KKLEAD I_PEMDA",
+      "dimension": "",
+      "formulaCount": 33,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN PENETAPAN TUJUAN\nKK LEAD I - PENETAPAN TUJUAN"
+            ],
+            [
+              "E4",
+              "Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"
+            ],
+            [
+              "H4",
+              ":\n\n:\n\n:\n\n:"
+            ]
+          ]
+        },
+        {
+          "row": 6,
+          "cells": [
+            [
+              "A6",
+              "A. Kualitas Sasaran Strategis (KK 1)"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Penetapan Tujuan",
+      "description": "PENETAPAN TUJUAN PEMDA"
+    },
+    {
+      "order": 7,
+      "sheetName": "KKE 1.1 SASTRA PEMDA (BP4D)",
+      "dimension": "",
+      "formulaCount": 29,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KK 1.1 - PENILAIAN PENETAPAN TUJUAN - SASARAN STRATEGIS PEMDA"
+            ]
+          ]
+        },
+        {
+          "row": 6,
+          "cells": [
+            [
+              "F6",
+              "=COUNTIF(F12:F65,\"Y\")"
+            ],
+            [
+              "K6",
+              "=COUNTIF(K12:K65,\"Y\")"
+            ],
+            [
+              "P6",
+              "=COUNTIF(P12:P65,\"Y\")"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Penetapan Tujuan",
+      "description": "PENILAIAN KUALITAS SASARAN STRATEGIS PEMDA"
+    },
+    {
+      "order": 8,
+      "sheetName": "KKE 1.2 SASTRA OPD",
+      "dimension": "",
+      "formulaCount": 240,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KK 1.2 - PENILAIAN PENETAPAN TUJUAN - SASARAN STRATEGIS OPD"
+            ]
+          ]
+        },
+        {
+          "row": 6,
+          "cells": [
+            [
+              "I6",
+              "=COUNTIF(I12:I113,\"Y\")"
+            ],
+            [
+              "N6",
+              "=COUNTIF(N12:N113,\"Y\")"
+            ],
+            [
+              "S6",
+              "=COUNTIF(S12:S113,\"Y\")"
+            ],
+            [
+              "X6",
+              "=COUNTIF(X12:X113,\"Y\")"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Penetapan Tujuan",
+      "description": "PENILAIAN KUALITAS SASARAN STRATEGIS OPD"
+    },
+    {
+      "order": 9,
+      "sheetName": "KKE 2.1 SASPRO OPD",
+      "dimension": "",
+      "formulaCount": 344,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KK 2.1 - PENILAIAN PENETAPAN TUJUAN - SASARAN PROGRAM"
+            ]
+          ]
+        },
+        {
+          "row": 6,
+          "cells": [
+            [
+              "L6",
+              "=COUNTIF(L13:L114,\"Y\")"
+            ],
+            [
+              "Q6",
+              "=COUNTIF(Q13:Q114,\"Y\")"
+            ],
+            [
+              "V6",
+              "=COUNTIF(V13:V114,\"Y\")"
+            ],
+            [
+              "AA6",
+              "=COUNTIF(AA13:AA114,\"Y\")"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Penetapan Tujuan",
+      "description": "PENILAIAN KUALITAS SASARAN PROGRAM PEMDA"
+    },
+    {
+      "order": 10,
+      "sheetName": "KKE 2.2 SASKEG OPD",
+      "dimension": "",
+      "formulaCount": 452,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KK 2.2 - PENILAIAN PENETAPAN TUJUAN - SASARAN KEGIATAN"
+            ]
+          ]
+        },
+        {
+          "row": 6,
+          "cells": [
+            [
+              "P6",
+              "=COUNTIF(P13:P115,\"Y\")"
+            ],
+            [
+              "U6",
+              "=COUNTIF(U13:U115,\"Y\")"
+            ],
+            [
+              "Z6",
+              "=COUNTIF(Z13:Z115,\"Y\")"
+            ],
+            [
+              "AE6",
+              "=COUNTIF(AE13:AE115,\"Y\")"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Penetapan Tujuan",
+      "description": "PENILAIAN KUALITAS SASARAN KEGIATAN PEMDA"
+    },
+    {
+      "order": 11,
+      "sheetName": "KKE 2.3 SASSUBKEG OPD",
+      "dimension": "",
+      "formulaCount": 549,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KK 2.3 - PENILAIAN PENETAPAN TUJUAN - SUB KEGIATAN"
+            ]
+          ]
+        },
+        {
+          "row": 6,
+          "cells": [
+            [
+              "S6",
+              "=COUNTIF(S13:S115,\"Y\")"
+            ],
+            [
+              "X6",
+              "=COUNTIF(X13:X115,\"Y\")"
+            ],
+            [
+              "AC6",
+              "=COUNTIF(AC13:AC115,\"Y\")"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Penetapan Tujuan",
+      "description": "PENILAIAN KUALITAS SASARAN SUB KEGIATAN PEMDA"
+    },
+    {
+      "order": 12,
+      "sheetName": "KKLEAD II",
+      "dimension": "",
+      "formulaCount": 520,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN STRUKTUR DAN PROSES\nKK LEAD II - STRUKTUR DAN PROSES"
+            ],
+            [
+              "J4",
+              "Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"
+            ]
+          ]
+        },
+        {
+          "row": 5,
+          "cells": [
+            [
+              "A5",
+              "Kode"
+            ],
+            [
+              "B5",
+              "Uraian Subunsur"
+            ],
+            [
+              "C5",
+              "No"
+            ],
+            [
+              "D5",
+              "Uraian Parameter"
+            ],
+            [
+              "E5",
+              "Kode Parameter"
+            ],
+            [
+              "H5",
+              "2E\nNILAI"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Lead",
+      "description": "STRUKTUR DAN PROSES"
+    },
+    {
+      "order": 13,
+      "sheetName": "KK3.1 OPD",
+      "dimension": "",
+      "formulaCount": 363,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN STRUKTUR DAN PROSES\nKK 3.1 - PENILAIAN STRUKTUR DAN PROSES EFEKTIVITAS DAN EFISIENSI PENCAPAIAN TUJUAN ORGANISASI (T1)"
+            ],
+            [
+              "K4",
+              "Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"
+            ],
+            [
+              "N4",
+              ":\n:\n:\n:"
+            ]
+          ]
+        },
+        {
+          "row": 5,
+          "cells": [
+            [
+              "A5",
+              "Kode"
+            ],
+            [
+              "B5",
+              "Uraian Subunsur"
+            ],
+            [
+              "C5",
+              "No"
+            ],
+            [
+              "D5",
+              "Uraian Parameter"
+            ],
+            [
+              "E5",
+              "Kode Parameter"
+            ],
+            [
+              "H5",
+              "Grade"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Struktur & Proses",
+      "description": "PENILAIAN STRUKTUR DAN PROSES EFEKTIVITAS DAN EFISIENSI PENCAPAIAN TUJUAN (T1)"
+    },
+    {
+      "order": 14,
+      "sheetName": "KK3.2 BPKAD AKUN",
+      "dimension": "",
+      "formulaCount": 347,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN STRUKTUR DAN PROSES\nKK 3.2 - PENILAIAN STRUKTUR DAN PROSES KEANDALAN PELAPORAN KEUANGAN (T2)"
+            ],
+            [
+              "K4",
+              "Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"
+            ],
+            [
+              "N4",
+              ":\n:\n:\n:"
+            ]
+          ]
+        },
+        {
+          "row": 5,
+          "cells": [
+            [
+              "A5",
+              "Kode"
+            ],
+            [
+              "B5",
+              "Uraian Subunsur"
+            ],
+            [
+              "C5",
+              "No"
+            ],
+            [
+              "D5",
+              "Uraian Parameter"
+            ],
+            [
+              "E5",
+              "Kode Parameter"
+            ],
+            [
+              "H5",
+              "Grade"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Struktur & Proses",
+      "description": "PENILAIAN STRUKTUR DAN PROSES KEANDALAN PELAPORAN KEUANGAN (T2)"
+    },
+    {
+      "order": 15,
+      "sheetName": "KK3.3 BPKAD ASET",
+      "dimension": "",
+      "formulaCount": 357,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN STRUKTUR DAN PROSES\nKK 3.3 - PENILAIAN STRUKTUR DAN PROSES PENGAMANAN ASET NEGARA/DAERAH (T3)"
+            ],
+            [
+              "K4",
+              "Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"
+            ],
+            [
+              "N4",
+              ":\n:\n:\n:"
+            ]
+          ]
+        },
+        {
+          "row": 5,
+          "cells": [
+            [
+              "A5",
+              "Kode"
+            ],
+            [
+              "B5",
+              "Uraian Subunsur"
+            ],
+            [
+              "C5",
+              "No"
+            ],
+            [
+              "D5",
+              "Uraian Parameter"
+            ],
+            [
+              "E5",
+              "Kode Parameter"
+            ],
+            [
+              "H5",
+              "Grade"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Struktur & Proses",
+      "description": "PENILAIAN STRUKTUR DAN PROSES PENGAMANAN ATAS ASET NEGARA/DAERAH (T3)"
+    },
+    {
+      "order": 16,
+      "sheetName": "KK3.4 (INSPEKTORAT)",
+      "dimension": "",
+      "formulaCount": 422,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN STRUKTUR DAN PROSES\nKK 3.4 - PENILAIAN STRUKTUR DAN PROSES KETAATAN PADA PERATURAN PERUNDANG-UNDANGAN (T4)"
+            ],
+            [
+              "K4",
+              "Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"
+            ],
+            [
+              "N4",
+              ":\n:\n:\n:"
+            ]
+          ]
+        },
+        {
+          "row": 5,
+          "cells": [
+            [
+              "A5",
+              "Kode"
+            ],
+            [
+              "B5",
+              "Uraian Subunsur"
+            ],
+            [
+              "C5",
+              "No"
+            ],
+            [
+              "D5",
+              "Uraian Parameter"
+            ],
+            [
+              "E5",
+              "Kode Parameter"
+            ],
+            [
+              "H5",
+              "Grad."
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Struktur & Proses",
+      "description": "PENILAIAN STRUKTUR DAN PROSES KETAATAN PADA PERATURAN PERUNDANG-UNDANGAN (T4)"
+    },
+    {
+      "order": 17,
+      "sheetName": "KK 4 INSPEKTORAT",
+      "dimension": "",
+      "formulaCount": 1,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENALTI/PENGURANGAN NILAI"
+            ]
+          ]
+        },
+        {
+          "row": 6,
+          "cells": [
+            [
+              "A6",
+              "STRUKTUR DAN PROSES"
+            ],
+            [
+              "C6",
+              "PENGURANGAN NILAI"
+            ],
+            [
+              "D6",
+              "GRADASI PENURUNAN LEVEL"
+            ],
+            [
+              "E6",
+              "HASIL ANALISIS PENJAMINAN KUALITAS/EVALUASI"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Penalti / Inspektorat",
+      "description": "Kertas kerja khusus Inspektorat"
+    },
+    {
+      "order": 18,
+      "sheetName": "KKLEAD III",
+      "dimension": "",
+      "formulaCount": 8,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP\nKK LEAD III - PENILAIAN PENCAPAIAN TUJUAN SPIP"
+            ],
+            [
+              "F4",
+              "Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"
+            ],
+            [
+              "G4",
+              ":\n:\n:\n:"
+            ]
+          ]
+        },
+        {
+          "row": 5,
+          "cells": [
+            [
+              "A5",
+              "No."
+            ],
+            [
+              "B5",
+              "Pencapaian Tujuan"
+            ],
+            [
+              "G5",
+              "Capaian K/L/D"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Lead",
+      "description": "PENCAPAIAN TUJUAN"
+    },
+    {
+      "order": 19,
+      "sheetName": "KK 5.1 A RPJMD (BP4D)",
+      "dimension": "",
+      "formulaCount": 2352,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP\nTUJUAN 1: EFEKTIVITAS DAN EFISIENSI PENCAPAIAN TUJUAN ORGANISASI\nKK 5.1A - PENILAIAN CAPAIAN SASARAN STRATEGIS K/L/D"
+            ]
+          ]
+        },
+        {
+          "row": 5,
+          "cells": [
+            [
+              "F5",
+              "RATA-RATA CAPAIAN KINERJA"
+            ],
+            [
+              "M5",
+              "=IFERROR(AVERAGE($M$11:$M$810),\"\")"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Pencapaian Tujuan",
+      "description": "PENILAIAN CAPAIAN OUTCOME"
+    },
+    {
+      "order": 20,
+      "sheetName": "KK 5.1 B  OPD",
+      "dimension": "",
+      "formulaCount": 14401,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP\nTUJUAN 1: EFEKTIVITAS DAN EFISIENSI PENCAPAIAN TUJUAN ORGANISASI\nKK 5.1B - PENILAIAN CAPAIAN SASARAN STRATEGIS OPD"
+            ]
+          ]
+        },
+        {
+          "row": 5,
+          "cells": [
+            [
+              "K5",
+              "RATA-RATA CAPAIAN KINERJA"
+            ],
+            [
+              "R5",
+              "=IFERROR(AVERAGE($R$11:$R$4810),\"\")"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Pencapaian Tujuan",
+      "description": "PENILAIAN CAPAIAN OUTCOME"
+    },
+    {
+      "order": 21,
+      "sheetName": "KK 5.1 C OPD",
+      "dimension": "",
+      "formulaCount": 34999,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP \nTUJUAN 1: EFEKTIVITAS DAN EFISIENSI PENCAPAIAN TUJUAN ORGANISASI \nKK 5.2 - PENILAIAN CAPAIAN OUTPUT"
+            ]
+          ]
+        },
+        {
+          "row": 7,
+          "cells": [
+            [
+              "A7",
+              "NO"
+            ],
+            [
+              "B7",
+              "SASARAN STRATEGIS PEMDA"
+            ],
+            [
+              "C7",
+              "KESIMPULAN SASTRA PEMDA"
+            ],
+            [
+              "D7",
+              "NO"
+            ],
+            [
+              "E7",
+              "OPD"
+            ],
+            [
+              "F7",
+              "SASARAN STRATEGIS OPD"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Pencapaian Tujuan",
+      "description": "PENILAIAN CAPAIAN OUTCOME"
+    },
+    {
+      "order": 22,
+      "sheetName": "KK 5.2 OPD",
+      "dimension": "",
+      "formulaCount": 149999,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<<Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP \nTUJUAN 1: EFEKTIVITAS DAN EFISIENSI PENCAPAIAN TUJUAN ORGANISASI \nKK 5.2 - PENILAIAN CAPAIAN OUTPUT"
+            ]
+          ]
+        },
+        {
+          "row": 5,
+          "cells": [
+            [
+              "P5",
+              "RATA-RATA CAPAIAN KINERJA"
+            ],
+            [
+              "V5",
+              "=IFERROR(AVERAGE(V11:V15010),\"\")"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Pencapaian Tujuan",
+      "description": "PENILAIAN CAPAIAN OUTPUT"
+    },
+    {
+      "order": 23,
+      "sheetName": "KK 6 INSPEKTORAT",
+      "dimension": "",
+      "formulaCount": 35,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<< Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP\nTUJUAN 2: KEANDALAN PELAPORAN KEUANGAN\nKK 6 - PENILAIAN PENCAPAIAN TUJUAN KEANDALAN PELAPORAN KEUANGAN"
+            ],
+            [
+              "AK4",
+              "Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"
+            ],
+            [
+              "AN4",
+              ":\n:\n:\n:"
+            ]
+          ]
+        },
+        {
+          "row": 5,
+          "cells": [
+            [
+              "A5",
+              "No"
+            ],
+            [
+              "B5",
+              "Tahun (T-1)"
+            ],
+            [
+              "H5",
+              "No"
+            ],
+            [
+              "I5",
+              "Tahun (T-2)"
+            ],
+            [
+              "O5",
+              "No"
+            ],
+            [
+              "P5",
+              "Tahun (T-3)"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Pencapaian Tujuan",
+      "description": "PENILAIAN PENCAPAIAN TUJUAN KEANDALAN LAPORAN KEUANGAN"
+    },
+    {
+      "order": 24,
+      "sheetName": "KK 7 INSPEKTORAT",
+      "dimension": "",
+      "formulaCount": 36,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<< Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP\nTUJUAN 3: PENGAMANAN ASET NEGARA/DAERAH\nKK 7 - PENILAIAN PENCAPAIAN TUJUAN PENGAMANAN ASET NEGARA/DAERAH"
+            ],
+            [
+              "AH4",
+              "Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"
+            ],
+            [
+              "AJ4",
+              ":\n:\n:\n:"
+            ]
+          ]
+        },
+        {
+          "row": 6,
+          "cells": [
+            [
+              "A6",
+              "No"
+            ],
+            [
+              "B6",
+              "Tahun (T-1)"
+            ],
+            [
+              "I6",
+              "Tahun (T-2)"
+            ],
+            [
+              "P6",
+              "Tahun (T-3)"
+            ],
+            [
+              "W6",
+              "Tahun (T-4)"
+            ],
+            [
+              "AD6",
+              "Tahun (T-5)"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Pencapaian Tujuan",
+      "description": "PENILAIAN PENCAPAIAN TUJUAN PENGAMANAN ATAS ASET NEGARA/DAERAH"
+    },
+    {
+      "order": 25,
+      "sheetName": "KK 8 INSPEKTORAT",
+      "dimension": "",
+      "formulaCount": 31,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "A1",
+              "<< Kembali ke Daftar KK"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "A3",
+              "='NAMA OPD'!C4"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "A4",
+              "KERTAS KERJA PENILAIAN PENCAPAIAN TUJUAN SPIP\nTUJUAN 4: KETAATAN PADA PERATURAN PERUNDANG-UNDANGAN\nKK 9 - PENILAIAN PENCAPAIAN TUJUAN KETAATAN PADA PERATURAN PERUNDANG-UNDANGAN"
+            ],
+            [
+              "AC4",
+              "Indeks KK No.\nDisusun oleh/Tanggal\nDireviu oleh/Tanggal\nDisetujui oleh/Tanggal"
+            ],
+            [
+              "AE4",
+              ":\n:\n:\n:"
+            ]
+          ]
+        },
+        {
+          "row": 5,
+          "cells": [
+            [
+              "A5",
+              "No"
+            ],
+            [
+              "B5",
+              "T-1"
+            ],
+            [
+              "H5",
+              "T-2"
+            ],
+            [
+              "N5",
+              "T-3"
+            ],
+            [
+              "T5",
+              "T-4"
+            ],
+            [
+              "Z5",
+              "T-5"
+            ]
+          ]
+        }
+      ],
+      "type": "workpaper",
+      "phase": "Pencapaian Tujuan",
+      "description": "PENILAIAN PENCAPAIAN TUJUAN KETAATAN PADA PERATURAN PERUNDANG-UNDANGAN"
+    },
+    {
+      "order": 26,
+      "sheetName": "Ref PCT",
+      "dimension": "",
+      "formulaCount": 14318,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "C1",
+              "Nama Sastra"
+            ],
+            [
+              "D1",
+              "Nama OPD"
+            ],
+            [
+              "E1",
+              "Nama Sastra OPD"
+            ],
+            [
+              "F1",
+              "Sasaran Program"
+            ],
+            [
+              "H1",
+              "Nama Sastra"
+            ],
+            [
+              "I1",
+              "Nama OPD"
+            ]
+          ]
+        },
+        {
+          "row": 2,
+          "cells": [
+            [
+              "C2",
+              "=_xludf.IFNA('KK 5.1 A RPJMD (BP4D)'!B11,\"\")"
+            ],
+            [
+              "D2",
+              "='KK 5.1 B  OPD'!E11"
+            ],
+            [
+              "E2",
+              "='KK 5.1 B  OPD'!F11"
+            ],
+            [
+              "F2",
+              "='KK 5.1 C OPD'!I10"
+            ],
+            [
+              "H2",
+              "=IFERROR(INDEX($C$2:$C$51,MATCH(0,COUNTIF($H$1:H1,$C$2:$C$51),0)),\"\")"
+            ],
+            [
+              "I2",
+              "=IFERROR(INDEX($D$2:$D$301,MATCH(0,COUNTIF($I$1:I1,$D$2:$D$301),0)),\"\")"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "C3",
+              "='KK 5.1 A RPJMD (BP4D)'!B27"
+            ],
+            [
+              "D3",
+              "='KK 5.1 B  OPD'!E27"
+            ],
+            [
+              "E3",
+              "='KK 5.1 B  OPD'!F27"
+            ],
+            [
+              "F3",
+              "='KK 5.1 C OPD'!I20"
+            ],
+            [
+              "H3",
+              "=IFERROR(INDEX($C$2:$C$51,MATCH(0,COUNTIF($H$1:H2,$C$2:$C$51),0)),\"\")"
+            ],
+            [
+              "I3",
+              "=IFERROR(INDEX($D$2:$D$301,MATCH(0,COUNTIF($I$1:I2,$D$2:$D$301),0)),\"\")"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "C4",
+              "='KK 5.1 A RPJMD (BP4D)'!B43"
+            ],
+            [
+              "D4",
+              "='KK 5.1 B  OPD'!E43"
+            ],
+            [
+              "E4",
+              "='KK 5.1 B  OPD'!F43"
+            ],
+            [
+              "F4",
+              "='KK 5.1 C OPD'!I30"
+            ],
+            [
+              "H4",
+              "=IFERROR(INDEX($C$2:$C$51,MATCH(0,COUNTIF($H$1:H3,$C$2:$C$51),0)),\"\")"
+            ],
+            [
+              "I4",
+              "=IFERROR(INDEX($D$2:$D$301,MATCH(0,COUNTIF($I$1:I3,$D$2:$D$301),0)),\"\")"
+            ]
+          ]
+        }
+      ],
+      "type": "support",
+      "phase": "Referensi",
+      "description": "Referensi PCT"
+    },
+    {
+      "order": 27,
+      "sheetName": "REF",
+      "dimension": "",
+      "formulaCount": 0,
+      "sampleRows": [
+        {
+          "row": 1,
+          "cells": [
+            [
+              "B1",
+              "KUALITAS SASARAN"
+            ],
+            [
+              "E1",
+              "KUALITAS INDIKATOR"
+            ],
+            [
+              "H1",
+              "KUALITAS TARGET"
+            ],
+            [
+              "K1",
+              "KLASTER PENYEBAB"
+            ],
+            [
+              "P1",
+              "Struktur dan Proses (25 Sub Unsur)"
+            ]
+          ]
+        },
+        {
+          "row": 2,
+          "cells": [
+            [
+              "B2",
+              "Sasaran tidak berorientasi hasil"
+            ],
+            [
+              "E2",
+              "Indikator tidak spesifik dan relevan"
+            ],
+            [
+              "H2",
+              "Target tidak SMART-C"
+            ],
+            [
+              "K2",
+              "Man"
+            ],
+            [
+              "P2",
+              "Penegakan Integritas dan Nilai Etika (1.1)"
+            ]
+          ]
+        },
+        {
+          "row": 3,
+          "cells": [
+            [
+              "B3",
+              "Sasaran tidak menggambarkan isu strategis"
+            ],
+            [
+              "E3",
+              "Indikator tidak realistis"
+            ],
+            [
+              "H3",
+              "Target tidak memperhatikan capaian tahun lalu"
+            ],
+            [
+              "K3",
+              "Method"
+            ],
+            [
+              "P3",
+              "Komitmen terhadap Kompetensi (1.2)"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "B4",
+              "Sasaran tidak sesuai mandat, tugas, dan fungsi organisasi"
+            ],
+            [
+              "E4",
+              "Indikator overlapping antar sasaran/program/kegiatan"
+            ],
+            [
+              "H4",
+              "Target tidak proyektif"
+            ],
+            [
+              "K4",
+              "Money"
+            ],
+            [
+              "P4",
+              "Kepemimpinan yang Kondusif (1.3)"
+            ]
+          ]
+        }
+      ],
+      "type": "support",
+      "phase": "Referensi",
+      "description": "Referensi Utama"
+    },
+    {
+      "order": 28,
+      "sheetName": "INDIKATOR HASIL",
+      "dimension": "",
+      "formulaCount": 0,
+      "sampleRows": [
+        {
+          "row": 3,
+          "cells": [
+            [
+              "B3",
+              "RESULTS"
+            ],
+            [
+              "F3",
+              "SKOR"
+            ]
+          ]
+        },
+        {
+          "row": 4,
+          "cells": [
+            [
+              "B4",
+              "NO"
+            ],
+            [
+              "C4",
+              "INDIKATOR"
+            ],
+            [
+              "D4",
+              "DEFINISI INDIKATOR"
+            ],
+            [
+              "E4",
+              "CARA PENGUKURAN"
+            ],
+            [
+              "F4",
+              "A"
+            ],
+            [
+              "G4",
+              "B"
+            ]
+          ]
+        },
+        {
+          "row": 5,
+          "cells": [
+            [
+              "B5",
+              "A"
+            ],
+            [
+              "C5",
+              "Efektivitas dan Efisiensi "
+            ]
+          ]
+        },
+        {
+          "row": 6,
+          "cells": [
+            [
+              "B6",
+              "1."
+            ],
+            [
+              "C6",
+              "Capaian Outcome"
+            ],
+            [
+              "D6",
+              "Mengukur efektivitas pencapaian tujuan organisasi"
+            ],
+            [
+              "E6",
+              "Menghitung rata-rata pencapaian indikator kinerja utama dari sasaran strategis K/L/D"
+            ],
+            [
+              "F6",
+              "≥ 90%"
+            ],
+            [
+              "G6",
+              "≥ 70% dan <90%"
+            ]
+          ]
+        }
+      ],
+      "type": "support",
+      "phase": "Referensi",
+      "description": "Indikator Hasil"
+    }
+  ],
+  "sectionOrder": [
+    "Pendukung",
+    "Referensi",
+    "Lead",
+    "Penetapan Tujuan",
+    "Struktur & Proses",
+    "Penalti / Inspektorat",
+    "Pencapaian Tujuan",
+    "Penjaminan Kualitas"
+  ],
+  "performancePolicy": {
+    "mode": "lazy",
+    "description": "Dashboard hanya memuat metadata/preview kecil; seluruh formula dan data lengkap tetap berada di workbook Google Sheets hasil copy template.",
+    "largeSheetThresholdRows": 5000,
+    "largeSheetThresholdFormulas": 10000
+  }
+}
