@@ -1,37 +1,22 @@
-# Perbaikan Validasi Master PM SPIP yang Fleksibel — 27 Oktober 2026
+# Validasi master KK PM SPIP — 27 Oktober 2026
 
-## Masalah yang diperbaiki
+## Aturan source aktif
 
-Dashboard menolak master yang ditunjuk oleh ID `1hLqUceQprwRxh1q5y0ZmW6PdI2-28H9mkYdA227vg1s` karena tab fisik berjumlah 28, bukan tepat 26. Empat tab inti hadir dengan nama berbeda dari manifest:
+Gunakan ID master baru yang ditetapkan dalam `GOOGLE_SHEETS_PM_TEMPLATE_ID` di Cloudflare Pages. Nilai environment ini menjadi sumber utama di runtime; ID bootstrap lama pada D1 tidak akan menimpanya. Jangan menanam ID workbook lama secara manual ke frontend.
 
-| Nama pada master saat ini | Tab inti yang dikenali aplikasi |
-|---|---|
-| `KKE 2.3 SASSUBKES` | `KKE 2.3 SASSUBKEG` |
-| `KK 5.1 A RPJMD (BP4D)` | `KK 5.1 A` |
-| `KK 6 INSPEKTORAT` | `KK 6` |
-| `KK 7 INSPEKTORAT` | `KK 7` |
-| `KK 8 INSPEKTORAT` | `KK 8` |
+## Aturan validasi yang berlaku pada source ini
 
-Tab `CHECKLIST PK` dan `KK 4 INSPEKTORAT` dianggap sebagai tab ekstra. Keberadaan tab ekstra tidak lagi menggagalkan pembaruan.
+1. Master harus berupa Google Sheets asli yang dapat diakses akun OAuth Google.
+2. Master harus memiliki 26 tab PM_2026 kanonis unik, setelah alias nama sheet yang memang didukung dinormalisasi. Urutan tab tidak harus identik, tetapi tab hilang, duplikat, tidak dikenal, atau jumlah tab fisik selain 26 ditolak.
+3. Formula inti yang digunakan aplikasi pada `KKLEAD_SPIP!I11`, `I68`, `I85`, dan `I106` harus valid.
+4. ID environment yang eksplisit tidak boleh diam-diam diganti dengan hasil pencarian Drive lain. Jika ID itu tidak dapat diakses atau gagal validasi, perbaiki ID/izin OAuth di Cloudflare sebelum mengulang sinkronisasi.
+5. Workbook Pemda/OPD lama tidak dihapus permanen. Tautan baru hanya disimpan setelah salinan baru berhasil dibuat dan diverifikasi.
 
-## Aturan validasi baru
+## Langkah pemulihan error 404
 
-1. Semua 26 tab inti PM harus ada tepat satu kali setelah normalisasi nama/alias.
-2. Urutan tab bebas; jumlah fisik tab boleh lebih dari 26.
-3. Tab ekstra (termasuk tab admin/legacy) dicatat sebagai informasi dan diizinkan selama tidak menggantikan atau menggandakan tab inti.
-4. Empat formula inti pada `KKLEAD_SPIP!I11`, `I68`, `I85`, dan `I106` tetap harus valid.
-5. Workbook lama tetap dipertahankan jika validasi gagal. Pembaruan massal tetap hanya dapat dijalankan oleh akun Pemda/Super Admin (`admin`) dan Irban.
-6. Alias juga digunakan oleh antarmuka saat mencocokkan tab manifest terhadap `sheetId`/`gid` aktual, supaya tombol “Buka Sheet Ini” tidak gagal hanya karena label tab diberi tambahan `BP4D` atau `INSPEKTORAT`.
+1. Periksa `GOOGLE_SHEETS_PM_TEMPLATE_ID` di **Cloudflare Pages → Settings → Variables and Secrets → Production**.
+2. Pastikan ID tersebut adalah master baru, bukan ID workbook Pemda/OPD lama, dan beri akun Google pada `GOOGLE_DRIVE_REFRESH_TOKEN` akses baca/menyalin.
+3. Deploy ulang setelah mengubah variable, kemudian buka dashboard dan periksa label **Sumber aktif**.
+4. Tekan **Sinkronkan Master** untuk membuat ulang workbook Pemda dari master yang aktif. Untuk seluruh OPD, gunakan aksi pembaruan massal setelah workbook Pemda berhasil.
 
-## Pasang dan jalankan
-
-1. Backup repository GitHub yang saat ini digunakan Cloudflare Pages.
-2. Ekstrak ZIP source terbaru dan ganti source aplikasi dengan isi ZIP tersebut.
-3. Commit/push dan deploy ulang ke Cloudflare Pages.
-4. Login ke aplikasi menggunakan akun Pemda (`admin`) atau Irban.
-5. Pada dashboard KK PM SPIP Pemda, pertahankan/masukkan ID master di atas lalu klik **Validasi ID & Perbarui Semua Workbook**.
-6. Tunggu ringkasan selesai. Periksa jumlah workbook Pemda dan OPD yang berhasil/gagal, status mirror R2, serta status arsip Google Drive. Jika formula inti tidak cocok atau tab inti benar-benar hilang/duplikat, aplikasi akan menolak dengan diagnosis yang lebih spesifik.
-
-## Batasan verifikasi
-
-Validasi source dan regresi dilaksanakan lokal. Saya tidak memiliki sesi OAuth produksi di percakapan ini, sehingga tidak bisa menjalankan penulisan langsung ke Google Drive, D1 produksi, atau bucket R2 produksi. Penggantian workbook aktif dilakukan oleh source ini setelah dideploy dan aksi massal dijalankan di dashboard.
+Lihat `PATCH_FIX_GOOGLE_SHEETS_PM_TEMPLATE_ID_20261027.md` dan `DEPLOYMENT_KK_PM_SPIP_EXACT.md` sebagai panduan operasional.
