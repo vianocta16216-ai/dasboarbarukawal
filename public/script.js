@@ -5784,10 +5784,11 @@ async function loadPemdaPmTemplateConfig(){
   const role=pemdaPmRole(),canManage=['admin','irban'].includes(role);panel.hidden=!canManage;if(!canManage)return;
   try{
     const result=await callServer('getKkPmTemplateConfig',{});pemdaPmDash.templateConfig=result;
-    const input=document.getElementById('pemdaPmTemplateId'),link=document.getElementById('pemdaPmTemplateLink'),state=document.getElementById('pemdaPmTemplateValidationState'),updated=document.getElementById('pemdaPmTemplateUpdated');
+    const input=document.getElementById('pemdaPmTemplateId'),link=document.getElementById('pemdaPmTemplateLink'),state=document.getElementById('pemdaPmTemplateValidationState'),updated=document.getElementById('pemdaPmTemplateUpdated'),sourceNote=document.getElementById('pemdaPmTemplateSourceNote');
     if(input&&(!input.value||!input.dataset.dirty))input.value=result.spreadsheetId||'';
     if(link){link.href=result.spreadsheetUrl||'#';link.textContent=result.spreadsheetId||'ID master belum dikonfigurasi';}
-    if(state){state.textContent=result.validationProfile==='PM_2026'?'Profil PM_2026 tervalidasi':(result.validationProfile==='pending_validation'?'Menunggu validasi pertama':'Perlu validasi');state.className='pemda-pm-template-state'+(result.validationProfile==='PM_2026'?' success':' warning');}
+    if(sourceNote){sourceNote.textContent=result.source==='cloudflare-environment'?'Sumber aktif: GOOGLE_SHEETS_PM_TEMPLATE_ID dari Cloudflare. ID D1 lama tidak menimpa variabel ini.':'Sumber aktif: konfigurasi aplikasi (D1/default), karena GOOGLE_SHEETS_PM_TEMPLATE_ID belum diisi.';}
+    if(state){state.textContent=result.validationProfile==='PM_2026'?'Profil PM_2026 tervalidasi':(result.validationProfile==='pending_validation'?'Menunggu validasi master aktif':'Perlu validasi');state.className='pemda-pm-template-state'+(result.validationProfile==='PM_2026'?' success':' warning');}
     if(updated)updated.textContent=result.updatedAt?` · Diperbarui ${new Date(result.updatedAt).toLocaleString('id-ID')}${result.updatedBy?' oleh '+result.updatedBy:''}`:'';
     const bulk=document.getElementById('pemdaPmTemplateRefreshAll');if(bulk)bulk.hidden=!['admin','irban'].includes(role);
     const save=document.getElementById('pemdaPmTemplateUpdate');if(save)save.textContent='✓ Validasi ID & Perbarui Semua Workbook';
