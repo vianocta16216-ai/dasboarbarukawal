@@ -19,7 +19,7 @@ const helperStart = handler.indexOf('async function ensureKkPmSpreadsheet(env,pa
 const helperEnd = handler.indexOf('async function getSpreadsheetMetadata(', helperStart);
 assert.ok(helperStart >= 0 && helperEnd > helperStart, 'PM workbook helper not found');
 const helper = handler.slice(helperStart, helperEnd);
-assert.ok(helper.includes('GOOGLE_SHEETS_PM_TEMPLATE_ID'), 'PM template must use dedicated environment variable');
+assert.ok(handler.includes('getConfiguredKkPmTemplateId(env)') && helper.includes('await getConfiguredKkPmTemplateId(env)'), 'PM workbook must resolve its validated master ID from the editable D1 configuration');
 assert.ok(!helper.includes('env.GOOGLE_SHEETS_PM_TEMPLATE_ID||env.GOOGLE_SHEETS_TEMPLATE_ID'), 'PM workbook must not silently fall back to legacy PK template');
 const resolverStart = handler.indexOf('async function resolveKkPmTemplateSpreadsheet(');
 const resolverEnd = handler.indexOf('function expectedPmSheetOrderMatches(', resolverStart);

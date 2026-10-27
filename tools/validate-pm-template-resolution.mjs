@@ -76,19 +76,20 @@ const configured=makeResolverContext([]);
 const configuredResult=await configured.ctx.resolveKkPmTemplateSpreadsheet({GOOGLE_SHEETS_PM_TEMPLATE_ID:'pm-good'},'token','pm-good');
 assert.equal(configuredResult.id,'pm-good');
 assert.equal(configuredResult.source,'configured');
-assert.ok(configured.getSearchCalls()>=1,'Configured valid ID must still be compared with newer canonical-name masters');
+assert.equal(configured.getSearchCalls(),0,'A valid configured master is authoritative; do not silently replace it through Drive discovery');
 const oldConfigured={id:'pm-config-old',name:'KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313',mimeType:'application/vnd.google-apps.spreadsheet',modifiedTime:'2026-10-14T00:00:00Z',trashed:false};
 const freshCandidate={id:'pm-new',name:'KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313 - BARU',mimeType:'application/vnd.google-apps.spreadsheet',modifiedTime:'2026-10-15T00:00:00Z',trashed:false};
 const latest=makeResolverContext([freshCandidate]);
 latest.ctx.getDriveFile=async(_token,id)=>String(id)==='pm-config-old'?oldConfigured:(String(id)==='legacy'?{id:'legacy',name:'Kawal SPIP PK Lama',mimeType:'application/vnd.google-apps.spreadsheet',modifiedTime:'2024-01-01T00:00:00Z',trashed:false}:([freshCandidate].find(x=>x.id===id)||null));
 const latestChosen=await latest.ctx.resolveKkPmTemplateSpreadsheet({GOOGLE_SHEETS_PM_TEMPLATE_ID:'pm-config-old'},'token','pm-config-old');
-assert.equal(latestChosen.id,'pm-new','A newer valid canonical master must replace a stale-but-valid configured ID');
-assert.equal(latestChosen.source,'drive-discovery');
+assert.equal(latestChosen.id,'pm-config-old','A valid configured master remains authoritative until an operator explicitly changes its ID');
+assert.equal(latestChosen.source,'configured');
+assert.equal(latest.getSearchCalls(),0,'Drive discovery must not silently replace the configured master');
 const notFound=makeResolverContext([]);
 await assert.rejects(()=>notFound.ctx.resolveKkPmTemplateSpreadsheet({GOOGLE_SHEETS_PM_TEMPLATE_ID:'legacy'},'token','legacy'),/Master PM terbaru belum dapat ditemukan dan divalidasi/);
 const backupLookalike={id:'pm-backup',name:'KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313 BACKUP LAMA',mimeType:'application/vnd.google-apps.spreadsheet',modifiedTime:'2026-10-16T00:00:00Z',trashed:false};
 const backupOnly=makeResolverContext([backupLookalike]);
 await assert.rejects(()=>backupOnly.ctx.resolveKkPmTemplateSpreadsheet({GOOGLE_SHEETS_PM_TEMPLATE_ID:'legacy'},'token','legacy'),/Master PM terbaru belum dapat ditemukan dan divalidasi/);
 
-console.log(JSON.stringify({status:'PASS',checks:23,verified:['PM tab aliases resolve before ranges are built','legacy T1-T4 sheet names are supported for safe resolution','missing target tabs fail with useful diagnostics','exact named master discovery handles .xlsx import names and duplicate suffix','stale 28-sheet IDs are rejected and valid PM masters are discovered','valid configured IDs are compared against newest canonical-name masters',
-    'newer PM master wins over an older configured 26-sheet master','no-candidate failure explains the required master setup','shared-drive search uses native Google Sheets only','discovered templates and propagation targets require PM_2026 validation']},null,2));
+console.log(JSON.stringify({status:'PASS',checks:23,verified:['PM tab aliases resolve before ranges are built','legacy T1-T4 sheet names are supported for safe resolution','missing target tabs fail with useful diagnostics','exact named master discovery handles .xlsx import names and duplicate suffix','stale 28-sheet IDs are rejected and valid PM masters are discovered','valid configured IDs remain authoritative and do not trigger silent auto-selection',
+    'valid configured master is not silently replaced by a newer Drive candidate','no-candidate failure explains the required master setup','shared-drive search uses native Google Sheets only','discovered templates and propagation targets require PM_2026 validation']},null,2));
