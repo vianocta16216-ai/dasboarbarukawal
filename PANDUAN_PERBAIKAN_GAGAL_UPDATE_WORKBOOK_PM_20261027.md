@@ -2,13 +2,12 @@
 
 ## Akar masalah yang terlihat pada rekaman
 
-Saat tombol pembaruan ditekan, server menolak ID master sebelum pembaruan workbook dimulai. Pesan yang tampak adalah pemeriksaan 26 tab/nama/urutan dan formula inti tidak lolos. Pada tab yang tampak di rekaman, terdapat variasi nama seperti `KKE 2.3 SASSUBKES`, sedangkan nama kanonis manifest adalah `KKE 2.3 SASSUBKEG`. Pemeriksaan lama menganggap variasi tersebut tidak cocok dan memblokir pembaruan karena jumlah tab fisik harus tepat 26. Screenshot terbaru juga memperlihatkan empat tab inti dengan nama alias BP4D/Inspektorat serta dua tab pendukung tambahan.
+Saat tombol pembaruan ditekan, server menolak ID master sebelum pembaruan workbook dimulai. Pesan yang tampak adalah pemeriksaan 26 tab/nama/urutan dan formula inti tidak lolos. Pada tab yang tampak di rekaman, terdapat variasi nama seperti `KKE 2.3 SASSUBKES`, sedangkan nama kanonis manifest adalah `KKE 2.3 SASSUBKEG`. Pemeriksaan lama menganggap variasi tersebut tidak cocok dan pesan error tidak menjelaskan tab yang bermasalah.
 
 Source terbaru:
 - Menerima perubahan urutan tab karena urutan bukan identitas sheet.
-- Menerima variasi nama yang dikenal dan dipetakan secara eksplisit: `KKE 2.3 SASSUBKES` → `KKE 2.3 SASSUBKEG`; `KK 5.1 A RPJMD (BP4D)` → `KK 5.1 A`; `KK 6 INSPEKTORAT` → `KK 6`; `KK 7 INSPEKTORAT` → `KK 7`; `KK 8 INSPEKTORAT` → `KK 8`; termasuk variasi PEMDA/OPD/BPKAD lainnya.
-- Mewajibkan seluruh 26 tab inti PM tersedia tepat satu kali; urutan bebas dan tab tambahan (misalnya `CHECKLIST PK` dan `KK 4 INSPEKTORAT`) tidak menggagalkan validasi.
-- Menjadikan tab tambahan sebagai informasi diagnostik, bukan alasan penolakan. Namun tab inti yang hilang/duplikat dan formula utama yang salah tetap diblokir. Alias nama tab juga digunakan oleh UI untuk menemukan `gid` saat pengguna membuka sheet dari dashboard.
+- Menerima variasi nama yang dikenal dan dipetakan secara eksplisit, termasuk `KKE 2.3 SASSUBKES`, variasi PEMDA/OPD, BPKAD, BP4D, dan Inspektorat.
+- Tetap mewajibkan tepat 26 tab kanonis unik; tab hilang, duplikat, tab tidak dikenal, dan formula inti yang tidak cocok tetap ditolak dengan diagnosis yang menyebutkan masalah.
 - Memvalidasi salinan baru sebelum mengubah tautan aktif.
 
 ## Perilaku pembaruan yang diperbaiki

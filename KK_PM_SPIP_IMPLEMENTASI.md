@@ -1,4 +1,4 @@
-> **STATUS DOKUMEN:** Catatan berikut adalah catatan workbook legacy. Validasi PM aktif sekarang mewajibkan 26 tab inti unik dan formula inti benar; urutan tab bebas dan tab tambahan diperbolehkan. Variasi rilis PM yang memakai label BP4D/Inspektorat untuk tab inti didukung. Workbook 28-tab legacy dengan nama tab lama persis tetap teridentifikasi sebagai legacy dan perlu diperbarui dari master PM aktif. Ikuti `DEPLOYMENT_KK_PM_SPIP_EXACT.md` untuk provisioning terbaru.
+> **STATUS DOKUMEN:** Catatan ini merekam rancangan/workbook legacy 28 tab. Untuk provisioning dan sinkronisasi workbook PM aktif, ikuti `DEPLOYMENT_KK_PM_SPIP_EXACT.md`: sumber aktif `PM_2026` harus tepat 26 tab dan formula inti tervalidasi. Jangan gunakan instruksi 28 tab di bawah untuk menetapkan `GOOGLE_SHEETS_PM_TEMPLATE_ID`.
 
 # KK PM SPIP — Integrasi Exact Workbook
 
