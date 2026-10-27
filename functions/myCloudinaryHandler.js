@@ -13,6 +13,9 @@ const FIELD_MAP = { opd:'opd', qaApip:'qa_apip', nilaiStrukturProses:'nilai_stru
 const DB_FILE_NAME = 'SAKIP_DB.json';
 const DEFAULT_KK_TEMPLATE_SPREADSHEET_ID='1ozFUON9VcxDZdgZ-v4HvhP54ulPxkqoRvV2G3SNlolE';
 const DEFAULT_RTP_TEMPLATE_SPREADSHEET_ID='1WO_caRMgUjTlUcf6SoLpG242vRTOhe1Euz9UI-AuyJY';
+// Default canonical PM master requested for the 2026 workbook. Admin/Irban can
+// replace this validated pointer from the Pemda dashboard without editing code.
+const DEFAULT_PM_TEMPLATE_SPREADSHEET_ID='1hLqUceQprwRxh1q5y0ZmW6PdI2-28H9mkYdA227vg1s';
 const KK_TEMPLATE_SHEET_NAMES = [
   'KKLEAD_SPIP',
   'KKLEAD I_PEMDA',
@@ -118,7 +121,7 @@ function getPmSheetProfile(sheets){
 async function readLiveKkMasterRows(env,masterKind='PK',options={}){
   const kind=String(masterKind||'PK').toUpperCase()==='PM'?'PM':'PK';
   const configuredId=extractSpreadsheetId(kind==='PM'
-    ?(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||'')
+    ?(await getConfiguredKkPmTemplateId(env))
     :(env.GOOGLE_SHEETS_PK_MASTER_ID||env.GOOGLE_SHEETS_PK_TEMPLATE_ID||env.GOOGLE_SHEETS_TEMPLATE_ID||''));
   if(!configuredId&&kind!=='PM')return{live:false,masterKind:kind,message:'GOOGLE_SHEETS_PK_MASTER_ID belum diatur; aplikasi memakai snapshot master yang disertakan.'};
   const token=await getGoogleAccessToken(env);
@@ -162,7 +165,7 @@ async function readLiveKkMasterRows(env,masterKind='PK',options={}){
 }
 async function syncPmMasterColumnsToOpdWorkbooks(env,year,options={}){
   if(String(env.GOOGLE_SHEETS_PM_AUTO_PROPAGATE||'true').toLowerCase()==='false')return {skipped:true,reason:'disabled'};
-  const configuredId=extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||'');
+  const configuredId=await getConfiguredKkPmTemplateId(env);
   const token=await getGoogleAccessToken(env);
   const resolved=await resolveKkPmTemplateSpreadsheet(env,token,configuredId);
   const masterId=resolved.id;
@@ -345,7 +348,7 @@ const COMMON_READ_ACTIONS = new Set([
   'getYears','getData','getSubunsurData','getKkMasterSheetRows','getKkSheets','getRtpKkSheets',
   'getRtpEvidence','getReportFiles','getWorkbookEvidenceFiles','getKkPmSheets','getKkPmData',
   'getKkPmDataDetailed','getKkRpjmdMappings','getQaApipData','getQaApipChecklistData','getEvidenceWorkflow','previewEvidence','createEvidencePreviewLink','downloadEvidence',
-  'getBpkpOfficialScore','exportKkPmWorkbook','getLheFollowups','getPemdaWorkflow','getPemdaWorkflowAudit','getPemdaKkPmWorkbook'
+  'getBpkpOfficialScore','exportKkPmWorkbook','getLheFollowups','getPemdaWorkflow','getPemdaWorkflowAudit','getPemdaKkPmWorkbook','getPemdaWorkbookEvidenceFiles','downloadPemdaEvidence'
 ]);
 const ADMIN_ONLY_ACTIONS = new Set([
   'addOpd','deleteOpd','addYear','deleteYear','createBackup','restoreBackup','deleteBackup',
@@ -368,7 +371,7 @@ const OPD_INPUT_ACTIONS = new Set([
   'getYears','getData','getSubunsurData','getKkMasterSheetRows','getEvidenceWorkflow','downloadEvidence','previewEvidence','createEvidencePreviewLink','getLheFollowups','getPemdaWorkflow','getPemdaWorkflowAudit','savePemdaVerification'
 ]);
 const AUDITOR_ALLOWED_ACTIONS = new Set([
-  ...COMMON_READ_ACTIONS,...OPD_INPUT_ACTIONS,'saveEvidenceWorkflowStep',
+  ...COMMON_READ_ACTIONS,...OPD_INPUT_ACTIONS,'saveEvidenceWorkflowStep','uploadPemdaWorkbookEvidence','deletePemdaWorkbookEvidence','savePemdaWorkbookEvidenceVerification',
   'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','deleteLheFollowup'
 ]);
 // PPUPD memiliki hak operasional yang sama dengan Auditor, tetap dibatasi oleh cakupan OPD sesi.
@@ -378,12 +381,12 @@ const IRBAN_ALLOWED_ACTIONS = new Set([
   // Inspektorat/Irban may provision and refresh the PM workbook for an OPD in scope.
   // These two actions remain protected by the per-OPD scope check below; the role
   // is not granted general account-management or official-score finalization rights.
-  'createKkPmSheets','syncKkComputedValues','createPemdaKkPmWorkbook',
+  'createKkPmSheets','syncKkComputedValues','createPemdaKkPmWorkbook','getKkPmTemplateConfig','updateKkPmTemplateConfig','uploadPemdaWorkbookEvidence','deletePemdaWorkbookEvidence','savePemdaWorkbookEvidenceVerification',
   'saveAssessmentStatus','saveEvidenceVerification','saveRtpEvidenceVerification',
-  'saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','savePemdaSampling','verifyKkRpjmdMapping','downloadEvidence','listBackups','getLheFollowups','saveLheFollowup','deleteLheFollowup','uploadLheEvidence','deleteLheEvidence'
+  'saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','retryDriveBackup','savePemdaSampling','verifyKkRpjmdMapping','downloadEvidence','listBackups','getLheFollowups','saveLheFollowup','deleteLheFollowup','uploadLheEvidence','deleteLheEvidence'
 ]);
 const BPKP_ALLOWED_ACTIONS = new Set([
-  ...COMMON_READ_ACTIONS,'saveEvidenceWorkflowStep','savePemdaVerification','downloadEvidence','getLheFollowups','getBpkpOfficialScoreAdmin',
+  ...COMMON_READ_ACTIONS,'saveEvidenceWorkflowStep','savePemdaVerification','downloadEvidence','getLheFollowups','getBpkpOfficialScoreAdmin','savePemdaWorkbookEvidenceVerification',
   'getBpkpOfficialAudit','saveBpkpOfficialScore','unlockBpkpOfficialScore'
 ]);
 const DESTRUCTIVE_ADMIN_ACTIONS = new Set([
@@ -826,6 +829,27 @@ async function ensureOpdSchema(env){
       owner_token TEXT NOT NULL DEFAULT ''
     )`).run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_pemda_kk_pm_workbooks_updated ON pemda_kk_pm_workbooks(updated_at)").run();
+    // Canonical PM template pointer is validated before it can be changed. Seed the
+    // requested 2026 master once; later updates are made through the admin UI and
+    // preserved across deployments.
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS kk_pm_template_config (
+      config_key TEXT PRIMARY KEY, spreadsheet_id TEXT NOT NULL DEFAULT '', spreadsheet_name TEXT NOT NULL DEFAULT '',
+      updated_at INTEGER NOT NULL DEFAULT 0, updated_by TEXT NOT NULL DEFAULT '', validation_profile TEXT NOT NULL DEFAULT ''
+    )`).run();
+    await env.DB.prepare("INSERT OR IGNORE INTO kk_pm_template_config(config_key,spreadsheet_id,spreadsheet_name,updated_at,updated_by,validation_profile) VALUES('active',?,'',0,'bootstrap','pending_validation')").bind(DEFAULT_PM_TEMPLATE_SPREADSHEET_ID).run();
+    // Pemda evidence is separate from opd_workbook_evidence_items. It cannot be tied
+    // to a fictitious OPD ID or accidentally change any OPD's score/workbook.
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS pemda_workbook_evidence_items (
+      upload_id TEXT PRIMARY KEY, year TEXT NOT NULL, evidence_key TEXT NOT NULL, target_code TEXT NOT NULL,
+      subunsur TEXT NOT NULL, param_id TEXT NOT NULL, grade TEXT NOT NULL, level INTEGER NOT NULL DEFAULT 0,
+      file_name TEXT NOT NULL DEFAULT '', file_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+      r2_key TEXT, gdrive_id TEXT, sync_status TEXT NOT NULL DEFAULT 'pending', sync_error TEXT,
+      verification_status TEXT NOT NULL DEFAULT '', verification_examiner TEXT NOT NULL DEFAULT '',
+      verification_note TEXT NOT NULL DEFAULT '', verification_at INTEGER, created_at INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    )`).run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_pemda_wbe_target ON pemda_workbook_evidence_items(year,target_code,subunsur,param_id,grade)").run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_pemda_wbe_updated ON pemda_workbook_evidence_items(year,updated_at)").run();
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS kk_pm_master_sync_state (
       sync_key TEXT PRIMARY KEY, content_hash TEXT NOT NULL DEFAULT '', last_synced_at INTEGER NOT NULL DEFAULT 0,
       lease_until INTEGER NOT NULL DEFAULT 0, last_attempt_at INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT ''
@@ -1252,6 +1276,22 @@ function extractSpreadsheetId(value) {
   return m ? m[1] : raw;
 }
 
+async function getConfiguredKkPmTemplateId(env){
+  // Runtime pointer is editable by authorized administrators and takes precedence
+  // over Cloudflare's legacy secret, so a refreshed spreadsheet ID is used by both
+  // Pemda and OPD workbook creation after it has been validated by Google APIs.
+  try{
+    const row=await env.DB.prepare("SELECT spreadsheet_id FROM kk_pm_template_config WHERE config_key='active' LIMIT 1").first();
+    const id=extractSpreadsheetId(row?.spreadsheet_id||'');
+    if(id)return id;
+  }catch{}
+  return extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||DEFAULT_PM_TEMPLATE_SPREADSHEET_ID||'');
+}
+function privatePemdaEvidenceUrl(year,uploadId){
+  const q=new URLSearchParams({action:'downloadPemdaEvidence',year:String(year),uploadId:String(uploadId)});
+  return `/myCloudinaryHandler?${q.toString()}`;
+}
+
 function normalizeWorkbookData(raw,fallbackSheets=[]){
   if(!raw)return{version:1,workbookSpreadsheetId:null,workbookUrl:null,workbookName:null,templateSpreadsheetId:null,sheets:fallbackSheets};
   let d=raw;if(typeof d==='string'){try{d=JSON.parse(d)}catch{return{version:1,workbookSpreadsheetId:null,workbookUrl:null,workbookName:null,templateSpreadsheetId:null,sheets:fallbackSheets}}}
@@ -1296,7 +1336,7 @@ async function ensureKkPmSpreadsheet(env,params){
 
   // Resolve the canonical master BEFORE accepting a linked workbook. A workbook can have
   // 26 correct tabs and still be stale because it was copied from an earlier master.
-  const resolvedTemplate=await resolveKkPmTemplateSpreadsheet(env,accessToken,extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||''),{forceRefresh:true});
+  const resolvedTemplate=await resolveKkPmTemplateSpreadsheet(env,accessToken,await getConfiguredKkPmTemplateId(env),{forceRefresh:true});
   const templateId=String(resolvedTemplate.id||'');
   const templateFile=resolvedTemplate.file||{};
   const templateModifiedTime=String(templateFile.modifiedTime||'');
@@ -1405,7 +1445,7 @@ async function listPmTemplateCandidates(accessToken){
   return {candidates,searchError:errors.join('; ')};
 }
 async function resolveKkPmTemplateSpreadsheet(env,accessToken,configuredId='',options={}){
-  const configured=extractSpreadsheetId(configuredId||env.GOOGLE_SHEETS_PM_TEMPLATE_ID||'');
+  const configured=extractSpreadsheetId(configuredId||await getConfiguredKkPmTemplateId(env));
   const cacheKey=configured||'(unset)';const now=Date.now();
   if(options.forceRefresh)PM_TEMPLATE_RESOLUTION_CACHE.delete(cacheKey);
   const cached=PM_TEMPLATE_RESOLUTION_CACHE.get(cacheKey);
@@ -1427,11 +1467,15 @@ async function resolveKkPmTemplateSpreadsheet(env,accessToken,configuredId='',op
           }
         }else configuredProblem=`ID ${configured} tidak ditemukan, sudah dihapus, atau bukan Google Sheets.`;
       }catch(err){configuredProblem=`ID ${configured} gagal divalidasi: ${String(err?.message||err).slice(0,240)}.`;}
-    }else configuredProblem='GOOGLE_SHEETS_PM_TEMPLATE_ID belum diatur.';
+    }else configuredProblem='ID master PM belum dikonfigurasi.';
 
-    // Never assume an explicitly configured but old 26-tab file is the newest master.
-    // Compare it with valid canonical-name candidates; the newest Drive modifiedTime wins.
-    // If a candidate search fails, an independently validated configured ID remains usable.
+    // A valid, explicitly configured master is authoritative. Never silently replace it
+    // with a different Drive file merely because that file has a newer modifiedTime.
+    // Discovery is only a recovery path when the configured ID is absent or invalid.
+    if(configuredValue){
+      PM_TEMPLATE_RESOLUTION_CACHE.set(cacheKey,{expiresAt:Date.now()+60_000,value:configuredValue});
+      return configuredValue;
+    }
     const discovery=await listPmTemplateCandidates(accessToken);
     let discoveredValue=null;
     for(const candidate of discovery.candidates){
@@ -1442,17 +1486,6 @@ async function resolveKkPmTemplateSpreadsheet(env,accessToken,configuredId='',op
         discoveredValue={id:candidate.id,file:candidate,check,source:'drive-discovery',configuredProblem};
         break; // candidates are sorted newest-first
       }catch(err){console.warn('Kandidat master PM dilewati karena validasi gagal:',candidate.name,String(err?.message||err).slice(0,180));}
-    }
-    if(configuredValue){
-      const configuredTime=Date.parse(configuredValue.file?.modifiedTime||'')||0;
-      const discoveredTime=Date.parse(discoveredValue?.file?.modifiedTime||'')||0;
-      if(discoveredValue&&discoveredTime>configuredTime){
-        PM_TEMPLATE_RESOLUTION_CACHE.set(cacheKey,{expiresAt:Date.now()+60_000,value:discoveredValue});
-        console.warn('Master PM kanonis yang lebih baru dipilih menggantikan ID konfigurasi lama:',discoveredValue.file.name,'(',discoveredValue.id,')');
-        return discoveredValue;
-      }
-      PM_TEMPLATE_RESOLUTION_CACHE.set(cacheKey,{expiresAt:Date.now()+60_000,value:configuredValue});
-      return configuredValue;
     }
     if(discoveredValue){
       PM_TEMPLATE_RESOLUTION_CACHE.set(cacheKey,{expiresAt:Date.now()+60_000,value:discoveredValue});
@@ -2351,7 +2384,7 @@ export async function onRequest({ request, env, ctx }) {
 
   // Daftar aksi sensitif yang tidak boleh diakses via GET
   const SENSITIVE_ACTIONS = [
-    'verifyAccess', 'verifyDelete', 'login', 'logout', 'createPemdaKkPmWorkbook', 'createEvidencePreviewLink', 'saveEvidenceWorkflowStep', 'saveLheFollowup', 'deleteLheFollowup', 'uploadLheEvidence', 'deleteLheEvidence', 'addOpd', 'saveData', 'saveField', 'saveAssessmentStatus', 'saveBpkpOfficialScore', 'unlockBpkpOfficialScore', 'getBpkpOfficialScoreAdmin', 'getBpkpOfficialAudit', 'savePemdaSampling', 'savePemdaVerification',
+    'verifyAccess', 'verifyDelete', 'login', 'logout', 'createPemdaKkPmWorkbook', 'updateKkPmTemplateConfig', 'uploadPemdaWorkbookEvidence', 'deletePemdaWorkbookEvidence', 'savePemdaWorkbookEvidenceVerification', 'createEvidencePreviewLink', 'saveEvidenceWorkflowStep', 'saveLheFollowup', 'deleteLheFollowup', 'uploadLheEvidence', 'deleteLheEvidence', 'addOpd', 'saveData', 'saveField', 'saveAssessmentStatus', 'saveBpkpOfficialScore', 'unlockBpkpOfficialScore', 'getBpkpOfficialScoreAdmin', 'getBpkpOfficialAudit', 'savePemdaSampling', 'savePemdaVerification',
     'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'saveQaApipItem', 'deleteQaApipItem', 'getQaApipChecklistData', 'saveQaApipChecklistItem', 'deleteQaApipChecklistItem', 'deleteOpd', 'addYear', 'deleteYear',
     'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'syncKkPmMasterNow', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup',
     'listAuthUsers','createAuthUser','setAuthUserEnabled','resetAuthUserPassword'
@@ -2362,7 +2395,7 @@ export async function onRequest({ request, env, ctx }) {
     try {
       const contentType=request.headers.get('content-type')||'';
       // Binary upload mode: metadata stays in the query string; the request body is the file stream.
-      if(action==='uploadFile' || action==='uploadRtpEvidence' || action==='replaceEvidenceFile' || action==='replaceRtpEvidence' || action==='replaceWorkbookEvidenceFile' || action==='uploadReportFile' || action==='uploadLheEvidence'){
+      if(action==='uploadPemdaWorkbookEvidence' || action==='uploadFile' || action==='uploadRtpEvidence' || action==='replaceEvidenceFile' || action==='replaceRtpEvidence' || action==='replaceWorkbookEvidenceFile' || action==='uploadReportFile' || action==='uploadLheEvidence'){
         url.searchParams.forEach((value,key)=>{params[key]=value;});
         params.fileType=params.fileType||contentType||'application/octet-stream';
         params.fileName=params.fileName||request.headers.get('X-File-Name')||'evidence';
@@ -2600,6 +2633,22 @@ export async function onRequest({ request, env, ctx }) {
         if(object.httpEtag)headers.set('ETag',object.httpEtag);
         return new Response(object.body,{status:200,headers});
       }
+      case 'downloadPemdaEvidence': {
+        if(!['admin','irban','auditor','ppupd','bpkp'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Akun ini tidak diizinkan mengunduh evidence Pemda.'},403);
+        const uploadId=String(params.uploadId||'');
+        const file=await env.DB.prepare("SELECT file_name,file_type,r2_key FROM pemda_workbook_evidence_items WHERE upload_id=? AND year=? AND target_code IN ('T2','T3','T4') LIMIT 1").bind(uploadId,String(year)).first();
+        if(!file?.r2_key)return jsonResponse({status:'error',message:'Evidence Pemda tidak ditemukan atau telah dihapus.'},404);
+        const object=await env.EVIDENCE_BUCKET.get(file.r2_key);if(!object)return jsonResponse({status:'error',message:'File evidence tidak ditemukan pada R2.'},404);
+        const name=String(file.file_name||'evidence').replace(/[\r\n"\\]/g,'_').slice(0,180)||'evidence';
+        const safeEncoded=encodeURIComponent(name).replace(/['()*]/g,ch=>'%'+ch.charCodeAt(0).toString(16).toUpperCase());
+        const contentType=String(file.file_type||object.httpMetadata?.contentType||'application/octet-stream').split(';')[0].trim().toLowerCase();
+        const inlineSafeTypes=new Set(['application/pdf','image/png','image/jpeg','image/gif','image/webp']);
+        const disposition=inlineSafeTypes.has(contentType)?'inline':'attachment';
+        const headers=new Headers({'Content-Type':contentType,'Content-Disposition':`${disposition}; filename="${name.replace(/[^\x20-\x7E]/g,'_')}"; filename*=UTF-8''${safeEncoded}`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"sandbox; default-src 'none'; base-uri 'none'; frame-ancestors 'none'"});
+        if(object.httpEtag)headers.set('ETag',object.httpEtag);
+        return new Response(object.body,{status:200,headers});
+      }
+
       case 'getEvidenceWorkflow': {
         const opdId=String(params.opdId||''),uploadId=String(params.uploadId||'');
         await assertSessionCanAccessOpd(env,authSession,year,opdId);
@@ -2790,10 +2839,108 @@ export async function onRequest({ request, env, ctx }) {
         if(!configured||configured.length<32||supplied!==configured)return jsonResponse({status:'error',message:'Token sinkronisasi master tidak valid atau belum dikonfigurasi.'},403);
         try{
           const result=await syncPmMasterColumnsToOpdWorkbooks(env,year,{force:true});
-          const masterId=String(result.masterSpreadsheetId||extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||''));
+          const masterId=String(result.masterSpreadsheetId||await getConfiguredKkPmTemplateId(env));
           if(masterId){const key=`PM:${masterId}`;LIVE_KK_MASTER_ROWS_GENERATION.set(key,(LIVE_KK_MASTER_ROWS_GENERATION.get(key)||0)+1);LIVE_KK_MASTER_ROWS_CACHE.delete(key);}
           return jsonResponse({status:'success',message:'Sinkronisasi master KK PM diproses; cache master lokal telah diinvalidasi.',...result});
         }catch(err){return jsonResponse({status:'error',message:String(err?.message||err).slice(0,600)},500);}
+      }
+
+      case 'getKkPmTemplateConfig': {
+        if(!['admin','irban'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Hanya Super Admin atau Irban yang dapat melihat pengaturan master KK PM.'},403);
+        const row=await env.DB.prepare("SELECT spreadsheet_id,spreadsheet_name,updated_at,updated_by,validation_profile FROM kk_pm_template_config WHERE config_key='active' LIMIT 1").first();
+        const spreadsheetId=extractSpreadsheetId(row?.spreadsheet_id||await getConfiguredKkPmTemplateId(env));
+        return jsonResponse({status:'success',spreadsheetId,spreadsheetUrl:spreadsheetId?`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`:'',spreadsheetName:String(row?.spreadsheet_name||''),updatedAt:Number(row?.updated_at||0),updatedBy:String(row?.updated_by||''),validationProfile:String(row?.validation_profile||'pending_validation'),canManage:true});
+      }
+      case 'updateKkPmTemplateConfig': {
+        if(!['admin','irban'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Hanya Super Admin atau Irban yang dapat memperbarui master KK PM.'},403);
+        const submitted=String(params.spreadsheetId||params.spreadsheetUrl||params.value||'').trim();
+        const spreadsheetId=extractSpreadsheetId(submitted);
+        if(!/^[A-Za-z0-9_-]{20,}$/.test(spreadsheetId))throw new Error('Masukkan ID atau link Google Spreadsheet yang valid.');
+        const token=await getGoogleAccessToken(env);
+        const file=await getDriveFile(token,spreadsheetId);
+        if(!file||file.trashed||file.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error('ID tidak dapat diakses sebagai Google Sheets. Pastikan spreadsheet sudah dikonversi ke Google Sheets dan akun OAuth memiliki akses.');
+        const checked=await validateKkPmSpreadsheet(token,spreadsheetId,{checkFormulas:true});
+        if(!checked.ok||checked.profile!=='PM_2026'){
+          const mismatch=(checked.formulaMismatches||[]).map(x=>`${x.cell} seharusnya ${x.expected}, ditemukan ${x.actual||'(kosong)'}`).join('; ');
+          throw new Error(`Master ditolak: harus memiliki 26 tab KK PM 2026 dengan urutan/nama yang benar serta formula inti valid${mismatch?'. Formula: '+mismatch:''}. ID belum disimpan agar workbook lama tidak berubah.`);
+        }
+        const now=Date.now();
+        await runD1WithRetry(()=>env.DB.prepare("INSERT INTO kk_pm_template_config(config_key,spreadsheet_id,spreadsheet_name,updated_at,updated_by,validation_profile) VALUES('active',?,?,?,?,?) ON CONFLICT(config_key) DO UPDATE SET spreadsheet_id=excluded.spreadsheet_id,spreadsheet_name=excluded.spreadsheet_name,updated_at=excluded.updated_at,updated_by=excluded.updated_by,validation_profile=excluded.validation_profile").bind(spreadsheetId,String(file.name||checked.metadata?.properties?.title||''),now,String(authSession.username||''),'PM_2026').run());
+        PM_TEMPLATE_RESOLUTION_CACHE.clear();LIVE_KK_MASTER_ROWS_CACHE.clear();LIVE_KK_MASTER_ROWS_PENDING.clear();
+        notifyRealtime(env,ctx,year,{action:'updateKkPmTemplateConfig',spreadsheetId,updatedBy:String(authSession.username||'')});
+        return jsonResponse({status:'success',message:'ID master PM berhasil divalidasi dan diperbarui. Workbook Pemda dan OPD dapat disinkronkan dari sumber baru.',spreadsheetId,spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`,spreadsheetName:String(file.name||checked.metadata?.properties?.title||''),updatedAt:now,updatedBy:String(authSession.username||''),validationProfile:'PM_2026'});
+      }
+
+      case 'getPemdaWorkbookEvidenceFiles': {
+        if(!['admin','irban','auditor','ppupd','bpkp'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Akun ini tidak diizinkan melihat evidence Struktur dan Proses Pemda.'},403);
+        const q=await env.DB.prepare("SELECT upload_id,evidence_key,target_code,subunsur,param_id,grade,level,file_name,file_type,r2_key,gdrive_id,sync_status,sync_error,verification_status,verification_examiner,verification_note,verification_at,created_at,updated_at FROM pemda_workbook_evidence_items WHERE year=? AND target_code IN ('T2','T3','T4') AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>'' ORDER BY CASE target_code WHEN 'T2' THEN 1 WHEN 'T3' THEN 2 WHEN 'T4' THEN 3 ELSE 9 END,subunsur,param_id,CASE grade WHEN 'E' THEN 1 WHEN 'D' THEN 2 WHEN 'C' THEN 3 WHEN 'B' THEN 4 WHEN 'A' THEN 5 ELSE 9 END,created_at").bind(String(year)).all();
+        const files=(q.results||[]).map(x=>({uploadId:String(x.upload_id),evidenceKey:String(x.evidence_key||''),targetCode:String(x.target_code||''),subunsur:String(x.subunsur||''),paramId:String(x.param_id||''),grade:String(x.grade||''),level:Number(x.level||0),fileName:x.file_name||'Evidence',fileType:x.file_type||'application/octet-stream',url:privatePemdaEvidenceUrl(year,String(x.upload_id)),gdriveId:x.gdrive_id||null,syncStatus:x.sync_status||'pending',syncError:x.sync_error||null,verificationStatus:x.verification_status||'',verificationExaminer:x.verification_examiner||'',verificationNote:x.verification_note||'',verificationAt:x.verification_at?Number(x.verification_at):null,createdAt:Number(x.created_at||0),updatedAt:Number(x.updated_at||0)}));
+        const summary={total:files.length,verified:files.filter(x=>['diterima','diterima_catatan'].includes(normalizeVerificationStatus(x.verificationStatus))).length,returned:files.filter(x=>normalizeVerificationStatus(x.verificationStatus)==='dikembalikan').length,byTarget:{T2:files.filter(x=>x.targetCode==='T2').length,T3:files.filter(x=>x.targetCode==='T3').length,T4:files.filter(x=>x.targetCode==='T4').length}};
+        return jsonResponse({status:'success',files,summary,allowedTargets:['T2','T3','T4']});
+      }
+      case 'uploadPemdaWorkbookEvidence': {
+        if(!['admin','irban','auditor','ppupd'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Hanya Admin, Irban, Auditor, atau PPUPD yang dapat mengunggah evidence Struktur dan Proses Pemda.'},403);
+        const targetCode=String(params.targetCode||'').toUpperCase();
+        if(!['T2','T3','T4'].includes(targetCode))throw new Error('Upload Pemda hanya diizinkan untuk KK3.2/T2, KK3.3/T3, dan KK3.4/T4.');
+        const sheetForTarget={T2:'KK3.2',T3:'KK3.3',T4:'KK3.4'}[targetCode];
+        const subCode=String(params.subunsur||'').trim(),paramId=String(params.paramId||'').trim(),grade=String(params.grade||'').toUpperCase();
+        if(!/^\d{1,2}\.\d{1,2}$/.test(subCode)||!/^\d{1,2}\.\d{1,2}\.\d{1,3}$/.test(paramId))throw new Error('Kode subunsur/parameter tidak valid untuk workbook PM.');
+        const levelByGrade={A:5,B:4,C:3,D:2,E:1};if(!Object.prototype.hasOwnProperty.call(levelByGrade,grade))throw new Error('Grade evidence harus A, B, C, D, atau E.');
+        const evidenceKey=`${targetCode}|${subCode}|${paramId}`;
+        if(String(params.evidenceKey||'')!==evidenceKey)throw new Error('Kunci evidence tidak cocok dengan target/subunsur/parameter yang dipilih.');
+        let file=params.file||null;let bytes=null;let fileBody=null;let fileName=String(params.fileName||'evidence');let fileType=String(params.fileType||'application/octet-stream');
+        if(file){if(Number(file.size||0)>10*1024*1024)throw new Error('File melebihi batas 10 MB.');fileName=file.name||fileName;fileType=file.type||fileType;bytes=new Uint8Array(await file.arrayBuffer());}
+        else if(params.fileData){bytes=decodeBase64File(params.fileData,10);}
+        else if(request.body){if(Number(params.fileSize||0)>10*1024*1024)throw new Error('File melebihi batas 10 MB.');fileBody=request.body;}
+        else throw new Error('File evidence tidak diterima.');
+        if(bytes?.byteLength>10*1024*1024)throw new Error('File melebihi batas 10 MB.');
+        if(!/^[a-zA-Z0-9!#$&^_.+-]+\/[a-zA-Z0-9!#$&^_.+-]+$/.test(fileType))fileType='application/octet-stream';
+        const sanitizePart=(v,fallback,max=100)=>sanitizeString(String(v||fallback)).replace(/[\/:*?"<>|#%{}]/g,' ').replace(/\s+/g,' ').trim().slice(0,max)||fallback;
+        const org='PEMERINTAH KABUPATEN MAHAKAM ULU';
+        const subFolder=sanitizePart(params.subunsurName||`Sub Unsur ${subCode}`,`Sub Unsur ${subCode}`,100);
+        const paramFolder=sanitizePart(params.paramName||`Parameter ${paramId}`,`Parameter ${paramId}`,120);
+        const targetFolder={T2:'KK3.2 - T2 Keandalan Pelaporan Keuangan',T3:'KK3.3 - T3 Pengamanan Aset Daerah',T4:'KK3.4 - T4 Ketaatan Peraturan'}[targetCode];
+        const safeName=sanitizePart(fileName,'evidence',150);const uploadId=String(params.uploadId||crypto.randomUUID());const now=Date.now();
+        const r2Key=`kawal_spip/${year}/${safeDriveName(org)}/Evidence Struktur dan Proses/${targetFolder}/${sanitizePart(`Unsur ${subCode.split('.')[0]}`,`Unsur ${subCode.split('.')[0]}`,60)}/${subFolder}/${paramFolder}/Level_${levelByGrade[grade]}_Grade_${grade}/${uploadId}-${safeName.replace(/[^A-Za-z0-9._ -]/g,'_')}`;
+        const old=await env.DB.prepare('SELECT * FROM pemda_workbook_evidence_items WHERE upload_id=? AND year=? LIMIT 1').bind(uploadId,String(year)).first();
+        if(old&&(String(old.evidence_key)!==evidenceKey||String(old.target_code)!==targetCode))throw new Error('Upload ID sudah digunakan untuk evidence lain.');
+        if(!old)await runD1WithRetry(()=>env.DB.prepare("INSERT INTO pemda_workbook_evidence_items(upload_id,year,evidence_key,target_code,subunsur,param_id,grade,level,file_name,file_type,r2_key,sync_status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)").bind(uploadId,String(year),evidenceKey,targetCode,subCode,paramId,grade,levelByGrade[grade],safeName,fileType,r2Key,now,now));
+        try{await env.EVIDENCE_BUCKET.put(r2Key,fileBody||bytes,{httpMetadata:{contentType:fileType}});}catch(storageError){if(!old)await env.DB.prepare('DELETE FROM pemda_workbook_evidence_items WHERE upload_id=? AND year=?').bind(uploadId,String(year)).run().catch(()=>{});throw storageError;}
+        const job={type:'pemda_workbook_evidence',uploadId,year:String(year),opdName:org,r2Key,fileName:safeName,fileType,evidenceKey,targetCode,subunsur:subCode,paramId,grade,level:levelByGrade[grade]};
+        try{
+          const gdriveId=await directGoogleDriveBackup(env,job);
+          await runD1WithRetry(()=>env.DB.prepare("UPDATE pemda_workbook_evidence_items SET gdrive_id=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=? AND year=?").bind(gdriveId,Date.now(),uploadId,String(year)));
+          notifyRealtime(env,ctx,year,{action:'uploadPemdaWorkbookEvidence',uploadId,targetCode});
+          return jsonResponse({status:'success',message:'Evidence Pemda tersimpan di R2 dan Google Drive.',uploadId,fileName:safeName,targetCode,level:levelByGrade[grade],url:privatePemdaEvidenceUrl(year,uploadId),gdriveId,syncStatus:'done'});
+        }catch(err){
+          const message=String(err?.message||err).slice(0,500);
+          await runD1WithRetry(()=>env.DB.prepare("UPDATE pemda_workbook_evidence_items SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=? AND year=?").bind(message,Date.now(),uploadId,String(year)));
+          notifyRealtime(env,ctx,year,{action:'uploadPemdaWorkbookEvidence',uploadId,targetCode,syncStatus:'retrying'});
+          return jsonResponse({status:'pending',message:'Evidence tersimpan aman di R2, tetapi sinkronisasi Google Drive tertunda. Gunakan Muat Ulang atau ulangi sinkronisasi.',uploadId,fileName:safeName,targetCode,level:levelByGrade[grade],url:privatePemdaEvidenceUrl(year,uploadId),syncStatus:'retrying',driveError:message});
+        }
+      }
+      case 'savePemdaWorkbookEvidenceVerification': {
+        if(!['admin','irban','auditor','ppupd','bpkp'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'VERIFICATION_ROLE_REQUIRED',message:'Akun ini tidak dapat memverifikasi evidence Pemda.'},403);
+        const uploadId=String(params.uploadId||'');if(!uploadId)throw new Error('Identitas evidence wajib diisi.');
+        const verificationStatus=normalizeVerificationStatus(params.verificationStatus),examiner=sanitizeQaText(params.verificationExaminer,100),note=sanitizeQaText(params.verificationNote,2000);
+        if(!['diterima','diterima_catatan','dikembalikan'].includes(verificationStatus))throw new Error('Status verifikasi tidak valid.');
+        if(examiner.length<2)throw new Error('Nama pemeriksa wajib diisi.');
+        if(['diterima_catatan','dikembalikan'].includes(verificationStatus)&&note.length<2)throw new Error('Catatan pemeriksa wajib diisi untuk status tersebut.');
+        const now=Date.now();
+        const saved=await runD1WithRetry(()=>env.DB.prepare("UPDATE pemda_workbook_evidence_items SET verification_status=?,verification_examiner=?,verification_note=?,verification_at=?,updated_at=? WHERE upload_id=? AND year=? AND target_code IN ('T2','T3','T4')").bind(verificationStatus,examiner,note,now,now,uploadId,String(year)));
+        if(!Number(saved.meta?.changes||0))throw new Error('Evidence Pemda tidak ditemukan pada tahun aktif atau bukan target T2–T4.');
+        notifyRealtime(env,ctx,year,{action:'savePemdaWorkbookEvidenceVerification',uploadId,verificationStatus});
+        return jsonResponse({status:'success',uploadId,verificationStatus,verificationExaminer:examiner,verificationNote:note,verificationAt:now,score:verificationStatus==='diterima'?100:verificationStatus==='diterima_catatan'?75:0});
+      }
+      case 'deletePemdaWorkbookEvidence': {
+        if(!['admin','irban','auditor','ppupd'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Akun ini tidak dapat menghapus evidence Pemda.'},403);
+        const uploadId=String(params.uploadId||'');if(!uploadId)throw new Error('Identitas evidence wajib diisi.');
+        const item=await env.DB.prepare("SELECT * FROM pemda_workbook_evidence_items WHERE upload_id=? AND year=? AND target_code IN ('T2','T3','T4') LIMIT 1").bind(uploadId,String(year)).first();
+        if(!item)throw new Error('Evidence Pemda tidak ditemukan pada tahun aktif atau bukan target T2–T4.');
+        if(item.gdrive_id)await deleteGoogleDriveFile(env,item.gdrive_id);if(item.r2_key)await env.EVIDENCE_BUCKET.delete(item.r2_key);
+        await runD1WithRetry(()=>env.DB.prepare("UPDATE pemda_workbook_evidence_items SET r2_key='',gdrive_id=NULL,sync_status='deleted',sync_error=NULL,verification_status='',verification_examiner='',verification_note='',verification_at=NULL,updated_at=? WHERE upload_id=? AND year=?").bind(Date.now(),uploadId,String(year)));
+        notifyRealtime(env,ctx,year,{action:'deletePemdaWorkbookEvidence',uploadId,targetCode:item.target_code});
+        return jsonResponse({status:'success',uploadId,fileName:item.file_name||'Evidence'});
       }
 
       case 'getPemdaKkPmWorkbook': {
@@ -2810,7 +2957,7 @@ export async function onRequest({ request, env, ctx }) {
             if(profile!=='PM_2026'){needsSync=true;needsSyncReason=`Workbook Pemda memiliki profil ${profile||'tidak dikenal'}, bukan master PM 2026 dengan 26 sheet.`;}
           }catch(err){needsSync=true;needsSyncReason=`Workbook Pemda belum dapat diverifikasi: ${String(err?.message||err).slice(0,220)}`;sheets=Array.isArray(workbook.sheets)?workbook.sheets.map((x,i)=>({sheetId:x?.sheetId||x?.properties?.sheetId||null,title:typeof x==='string'?x:(x?.title||x?.properties?.title||''),index:Number(x?.index??i),rowCount:Number(x?.rowCount||0),columnCount:Number(x?.columnCount||0)})):[];}
           try{
-            const token=await getGoogleAccessToken(env);const active=await resolveKkPmTemplateSpreadsheet(env,token,extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||''));
+            const token=await getGoogleAccessToken(env);const active=await resolveKkPmTemplateSpreadsheet(env,token,await getConfiguredKkPmTemplateId(env));
             const rev=String(active.file?.modifiedTime||'');
             if(String(workbook.templateSpreadsheetId||'')!==String(active.id)||!String(workbook.templateRevision||workbook.templateModifiedTime||'')||(rev&&rev!==String(workbook.templateRevision||workbook.templateModifiedTime||''))){needsSync=true;needsSyncReason='Master spreadsheet PM berubah atau workbook Pemda tidak lagi tertaut ke revisi master terbaru. Sinkronkan untuk membuat salinan yang tervalidasi; file lama disimpan.';}
           }catch(err){if(!needsSync){needsSync=true;needsSyncReason=`Revisi master PM belum dapat diverifikasi: ${String(err?.message||err).slice(0,220)}`;}}
@@ -3505,7 +3652,7 @@ export async function onRequest({ request, env, ctx }) {
         // Google API traffic during simultaneous access by many accounts.
         try{
           token=token||await getGoogleAccessToken(env);
-          const active=await resolveKkPmTemplateSpreadsheet(env,token,extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||''),{forceRefresh:params.forceRefresh===true||String(params.forceRefresh||'').toLowerCase()==='true'});
+          const active=await resolveKkPmTemplateSpreadsheet(env,token,await getConfiguredKkPmTemplateId(env),{forceRefresh:params.forceRefresh===true||String(params.forceRefresh||'').toLowerCase()==='true'});
           const activeRevision=String(active.file?.modifiedTime||'');
           const savedRevision=String(data.workbook.templateRevision||data.workbook.templateModifiedTime||'');
           if(data.workbook.workbookSpreadsheetId&&(String(data.workbook.templateSpreadsheetId||'')!==String(active.id)||!savedRevision||(activeRevision&&savedRevision!==activeRevision))){
@@ -4430,7 +4577,7 @@ export async function onRequest({ request, env, ctx }) {
       case 'retryDriveBackup': {
         const {opdId, year: retryYear, uploadId, type='evidence', subunsur, paramId, level} = params;
         const targetYear=String(retryYear||year);
-        if(!opdId || !uploadId) throw new Error('opdId dan uploadId wajib diisi');
+        if((type!=='pemda_workbook_evidence'&&!opdId) || !uploadId) throw new Error(type==='pemda_workbook_evidence'?'uploadId wajib diisi':'opdId dan uploadId wajib diisi');
         let job=null;
         if(type==='report'){
           const cfg=reportFieldConfig(params.reportType);
@@ -4448,6 +4595,10 @@ export async function onRequest({ request, env, ctx }) {
         } else if(type==='workbook_evidence') {
           const q=await env.DB.prepare('SELECT o.opd,e.upload_id,e.evidence_key,e.target_code,e.subunsur,e.param_id,e.grade,e.level,e.file_name,e.file_type,e.r2_key,e.gdrive_id FROM opd_workbook_evidence_items e JOIN opd_data o ON o.id=e.opd_id AND o.year=e.year WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uploadId,targetYear,opdId).all();
           const item=q.results?.[0];if(!item)throw new Error('Evidence workbook tidak ditemukan pada OPD/lokasi yang sama.');job={type:'workbook_evidence',uploadId,year:targetYear,opdId,opdName:item.opd||'OPD',r2Key:item.r2_key||'',fileName:item.file_name||'evidence',fileType:item.file_type||'application/octet-stream',evidenceKey:item.evidence_key||'',targetCode:item.target_code||'',subunsur:item.subunsur||'',paramId:item.param_id||'',grade:item.grade||'',level:Number(item.level||0)};
+        } else if(type==='pemda_workbook_evidence') {
+          const item=await env.DB.prepare("SELECT upload_id,evidence_key,target_code,subunsur,param_id,grade,level,file_name,file_type,r2_key,gdrive_id FROM pemda_workbook_evidence_items WHERE upload_id=? AND year=? AND target_code IN ('T2','T3','T4') LIMIT 1").bind(uploadId,targetYear).first();
+          if(!item)throw new Error('Evidence workbook Pemda tidak ditemukan pada tahun yang sama atau target bukan T2–T4.');
+          job={type:'pemda_workbook_evidence',uploadId,year:targetYear,opdName:'PEMERINTAH KABUPATEN MAHAKAM ULU',r2Key:item.r2_key||'',fileName:item.file_name||'evidence',fileType:item.file_type||'application/octet-stream',evidenceKey:item.evidence_key||'',targetCode:item.target_code||'',subunsur:item.subunsur||'',paramId:item.param_id||'',grade:item.grade||'',level:Number(item.level||0)};
         } else if(type==='lhe') {
           const rec=await env.DB.prepare('SELECT o.opd,l.evidence_json FROM lhe_followup_items l JOIN opd_data o ON o.id=l.opd_id AND o.year=l.year WHERE l.id=? AND l.year=? AND l.opd_id=? LIMIT 1').bind(String(params.followupId||''),targetYear,opdId).first();
           if(!rec)throw new Error('Butir tindak lanjut LHE tidak ditemukan pada OPD/tahun yang sama.');
@@ -4485,6 +4636,7 @@ export async function onRequest({ request, env, ctx }) {
           if(job.type==='rtp') await updateRtpFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
           else if(job.type==='report') await updateReportFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
           else if(job.type==='workbook_evidence') await updateWorkbookEvidenceFileStatus(env,job,{gdriveId,syncStatus:'done',syncError:null});
+          else if(job.type==='pemda_workbook_evidence') await runD1WithRetry(()=>env.DB.prepare("UPDATE pemda_workbook_evidence_items SET gdrive_id=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=? AND year=?").bind(gdriveId,Date.now(),uploadId,targetYear));
           else if(job.type==='lhe_evidence') await updateLheEvidenceStatus(env,job,{gdriveId,syncStatus:'done',syncError:null});
           else{
             await updateEvidenceFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
