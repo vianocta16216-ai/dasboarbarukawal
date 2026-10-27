@@ -1,53 +1,35 @@
-# Panduan Perbaikan Master KK PM SPIP dan Evidence Pemda
+# Panduan Perbaikan Gagal Perbarui Workbook KK PM SPIP — 27 Oktober 2026
 
-Tanggal: 27 Oktober 2026
+## Akar masalah yang terlihat pada rekaman
 
-## Perubahan utama
+Saat tombol pembaruan ditekan, server menolak ID master sebelum pembaruan workbook dimulai. Pesan yang tampak adalah pemeriksaan 26 tab/nama/urutan dan formula inti tidak lolos. Pada tab yang tampak di rekaman, terdapat variasi nama seperti `KKE 2.3 SASSUBKES`, sedangkan nama kanonis manifest adalah `KKE 2.3 SASSUBKEG`. Pemeriksaan lama menganggap variasi tersebut tidak cocok dan pesan error tidak menjelaskan tab yang bermasalah.
 
-1. ID master PM default mengikuti ID yang diberikan: `1hLqUceQprwRxh1q5y0ZmW6PdI2-28H9mkYdA227vg1s`.
-2. Pemda dan seluruh workbook OPD menggunakan satu resolver master yang sama. Jika ID yang dikonfigurasi valid, aplikasi mempertahankannya sebagai sumber utama dan tidak menggantinya diam-diam hanya karena menemukan spreadsheet lain yang lebih baru.
-3. Tombol pengaturan master menyimpan ID/URL baru ke D1 setelah validasi Google Sheets. Validasi memeriksa tipe file Google Sheets, profil 26 tab `PM_2026`, urutan/nama tab, serta formula inti berikut:
-   - `KKLEAD_SPIP!I11` = `=H16+H50+H64`
-   - `KKLEAD_SPIP!I68` = `=F83`
-   - `KKLEAD_SPIP!I85` = `=F104`
-   - `KKLEAD_SPIP!I106` = `='KKLEAD II'!L35`
-4. Pembuatan ulang workbook dilakukan sebagai salinan dari master yang tervalidasi. Workbook lama tidak ditimpa atau dihapus; riwayat tautannya dipertahankan.
-5. Dashboard KK PM SPIP Pemda memiliki penyimpanan evidence terpisah dari evidence OPD. Upload dibatasi server ke T2/KK3.2, T3/KK3.3, dan T4/KK3.4.
-6. Form evidence Pemda mendukung nama pemeriksa, catatan pemeriksa, status `Diterima`, `Diterima dengan Catatan`, dan `Dikembalikan`, serta percobaan ulang sinkronisasi Google Drive ketika diperlukan.
+Source terbaru:
+- Menerima perubahan urutan tab karena urutan bukan identitas sheet.
+- Menerima variasi nama yang dikenal dan dipetakan secara eksplisit, termasuk `KKE 2.3 SASSUBKES`, variasi PEMDA/OPD, BPKAD, BP4D, dan Inspektorat.
+- Tetap mewajibkan tepat 26 tab kanonis unik; tab hilang, duplikat, tab tidak dikenal, dan formula inti yang tidak cocok tetap ditolak dengan diagnosis yang menyebutkan masalah.
+- Memvalidasi salinan baru sebelum mengubah tautan aktif.
 
-## Cara menerapkan di Cloudflare Pages
+## Perilaku pembaruan yang diperbaiki
 
-1. Ekstrak ZIP ini dan unggah/push semua isinya ke repository GitHub yang terhubung dengan Cloudflare Pages. Jangan mengunggah file rahasia atau file `.dev.vars`.
-2. Pastikan konfigurasi Pages tetap menggunakan direktori keluaran `public` dan Cloudflare Functions tetap aktif.
-3. Periksa bindings yang sudah dipakai aplikasi:
-   - D1 `DB` mengarah ke database `kawal-spip-db`.
-   - R2 `EVIDENCE_BUCKET` mengarah ke bucket `kawal-spip-files`.
-   - Kredensial Google OAuth tetap tersedia sebagai secrets/environment variables: `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN`, dan `GOOGLE_DRIVE_FOLDER_ID`.
-   - `GOOGLE_SHEETS_PM_TEMPLATE_ID` merupakan fallback konfigurasi lama. Setelah tabel konfigurasi D1 terisi, ID aktif dikelola dari panel dashboard, bukan dengan mengedit secret setiap kali master berubah.
-4. Tabel baru akan dibuat oleh bootstrap schema aplikasi. File migration manual juga tersedia di `database/migrations/20261027_kk_pm_template_config_and_pemda_evidence.sql` apabila prosedur deployment Anda menerapkan migrasi D1 secara manual.
-5. Tunggu deployment selesai, lalu login sebagai Super Admin (`admin`) atau Irban.
+1. Hanya role `admin` (akun Pemda/Super Admin Daerah) dan `irban` yang dapat mengganti master global dan menjalankan pembaruan massal workbook Pemda + seluruh OPD untuk tahun yang sedang dipilih.
+2. Satu operasi pembaruan memvalidasi master, membuat salinan baru dari master yang valid, menautkan workbook Pemda dan workbook OPD satu per satu di D1, serta menampilkan hasil per OPD.
+3. Setelah tautan baru tersimpan, file Google Drive lama yang digantikan diubah namanya dengan awalan `ARSIP <timestamp> -`. File lama tidak dihapus permanen, sehingga masih dapat dipulihkan. ID master aktif maupun master sumber lama dilindungi agar tidak ikut diarsipkan.
+4. Mirror XLSX ke R2 ditulis pada kunci stabil `kawal_spip/workbooks/pm_2026/<tahun>/<nama-organisasi>/current.xlsx`; manifest yang bersesuaian adalah `current.json`. PUT ke kunci yang sama mengganti mirror workbook sebelumnya. Berkas evidence tidak disentuh karena disimpan di namespace/kunci yang berbeda.
+5. Kegagalan penggantian tautan, mirror R2, dan pengarsipan Drive dicatat terpisah. Kegagalan mirror R2 tidak membatalkan tautan Google Drive baru yang sudah disimpan, dan status akhir tidak diklaim sukses penuh bila ada kegagalan yang perlu ditindaklanjuti.
+6. Pembaruan dipaksa membuat workbook baru meskipun ID/revisi master sama, agar seluruh workbook aktif benar-benar disegarkan dari sumber yang telah divalidasi.
 
-## Validasi dan pembaruan workbook
+## Cara memasang
 
-1. Buka dashboard **KK PM SPIP Pemda**.
-2. Di panel **Pengaturan Master KK PM SPIP**, periksa ID yang tampil. ID awalnya adalah `1hLqUceQprwRxh1q5y0ZmW6PdI2-28H9mkYdA227vg1s`.
-3. Tekan **Validasi ID & Perbarui Workbook**. Aplikasi akan meminta Google Drive/Sheets memvalidasi ID, 26 tab, dan formula. Jika validasi gagal, ID tidak disimpan dan workbook lama tidak dilepas.
-4. Akun Super Admin dapat menggunakan **Perbarui Workbook Pemda + Semua OPD** atau tombol validasi/pembaruan yang berlabel memperbarui semua workbook. Pemrosesan OPD dilakukan bertahap dan hasil gagal/berhasil dilaporkan.
-5. Akun Irban hanya memperbarui konfigurasi master dan workbook khusus Pemda. Sinkronisasi workbook OPD tetap mengikuti cakupan kewenangan akunnya.
-6. Bila ada OPD yang gagal, baca nama OPD dan pesan error yang tampil. Periksa izin Google OAuth, akses folder tujuan, dan validitas master; kemudian jalankan sinkronisasi ulang untuk OPD tersebut. Jangan menghapus workbook lama secara manual sebelum tautan baru terverifikasi.
+1. Buat salinan/backup repository GitHub sebelum mengganti source.
+2. Ekstrak ZIP perbaikan dan unggah seluruh isi source ke repository yang dipakai Cloudflare Pages.
+3. Deploy ulang dari GitHub.
+4. Pastikan Cloudflare memiliki binding D1 `DB`, binding R2 `EVIDENCE_BUCKET`, serta secrets OAuth yang telah dipakai aplikasi: `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN`, dan `GOOGLE_DRIVE_FOLDER_ID`.
+5. Login dengan akun Pemda (`admin`) atau Irban. Buka dashboard KK PM SPIP Pemda atau modal KK PM, masukkan ID/URL master:
+   `1hLqUceQprwRxh1q5y0ZmW6PdI2-28H9mkYdA227vg1s`
+6. Klik tombol pembaruan global dan setujui konfirmasi. Operasi ini berlaku untuk tahun aktif yang dipilih.
+7. Tunggu sampai status merinci jumlah workbook OPD berhasil/gagal, mirror R2 berhasil/gagal, dan file Drive lama yang berhasil diarsipkan. Jika ada kegagalan, jalankan ulang setelah memperbaiki izin/koneksi untuk entitas yang dilaporkan.
 
-## Upload evidence Struktur dan Proses pada dashboard Pemda
+## Batas validasi
 
-1. Di dashboard **KK PM SPIP Pemda**, buka panel **Evidence Struktur dan Proses Pemda**.
-2. Pilih target:
-   - **T2 → KK3.2**
-   - **T3 → KK3.3**
-   - **T4 → KK3.4**
-3. Pilih subunsur dan parameter dari data master, pilih grade A–E, lalu pilih file. Batas ukuran per file adalah 10 MB.
-4. Upload disimpan di R2 dan disinkronkan ke Google Drive ke folder Pemda dengan subfolder target, unsur, subunsur, parameter, dan level. Jika sinkronisasi Drive tertunda, file tetap tersedia di R2 dan tombol **Ulangi Sinkronisasi Drive** dapat digunakan.
-5. Pemeriksa yang berwenang dapat menyimpan nama pemeriksa, catatan, dan status verifikasi. `Diterima dengan Catatan` dan `Dikembalikan` memerlukan catatan.
-6. Upload Pemda memakai tabel evidence terpisah dan tidak menulis data ke baris/penyimpanan evidence OPD. Backend menolak target selain T2, T3, dan T4, walaupun permintaan dikirim langsung ke API.
-
-## Batasan validasi
-
-Source code dan tes regresi lokal telah diperiksa. Validasi live terhadap ID Google Sheets, izin OAuth, serta folder Google Drive hanya dapat dipastikan setelah kode berjalan di deployment Cloudflare dengan kredensial Google Anda. Bila master di ID tersebut tidak dapat dibaca atau tidak lolos profil 26 tab/formula, aplikasi akan menolak pembaruan dan menyampaikan pesan error daripada mengubah tautan workbook secara diam-diam.
+Pengujian lokal/source code dapat dijalankan tanpa kredensial produksi. Pada sesi ini, Google Drive, D1 produksi, dan bucket R2 produksi tidak diubah langsung karena koneksi OAuth produksi tidak tersedia di lingkungan pengeditan. Perubahan nyata terjadi saat source hasil perbaikan dideploy dan pembaruan dijalankan di aplikasi menggunakan secrets/bindings Cloudflare Anda.

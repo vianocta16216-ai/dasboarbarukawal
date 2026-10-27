@@ -1,0 +1,215 @@
+HASIL UJI PERBAIKAN GAGAL UPDATE WORKBOOK PM SPIP
+Tanggal: 27 Oktober 2026
+
+[LULUS] node --check functions/myCloudinaryHandler.js
+[LULUS] node --check public/script.js
+[LULUS] node tools/validate-all-accounts-pm-workbook-update.mjs
+{
+  "status": "PASS",
+  "checks": 13,
+  "message": "Pembaruan massal hanya tersedia untuk akun Pemda/admin dan Irban; validasi, arsip Drive, dan mirror R2 diperkuat."
+}
+[LULUS] node tools/validate-evidence-score-preview-ppupd.mjs
+{
+  "status": "PASS",
+  "checks": 19,
+  "scoringCases": 5,
+  "notes": [
+    "newest decision applies to the same active upload",
+    "highest accepted level drives per-parameter score",
+    "deleted and legacy-only files cannot revive old scores",
+    "PPUPD/verifier access, preview, folder order and concurrency guards present"
+  ]
+}
+[LULUS] node tools/validate-inspektorat-20261014.mjs
+{
+  "status": "PASS",
+  "checks": 60,
+  "areas": [
+    "role access/scoping",
+    "PM master revision and link migration",
+    "D1 concurrency lock ownership",
+    "fresh links for every PM-open action",
+    "LHE dynamic target year and historical source-year integrity"
+  ]
+}
+[LULUS] node tools/validate-lhe-followup-export-score-refresh.mjs
+{
+  "status": "PASS",
+  "checks": 29
+}
+[LULUS] node tools/validate-lhe-neutral-templates.mjs
+{
+  "status": "PASS",
+  "checks": 492,
+  "templates": 40,
+  "categories": 9,
+  "verified": [
+    "no source-year labels in dropdown",
+    "year-neutral template data",
+    "relative deadlines",
+    "legacy status/realisasi excluded from template data",
+    "all recommendation fields complete"
+  ]
+}
+[LULUS] node tools/validate-pemda-kkpm-dashboard.mjs
+{
+  "status": "PASS",
+  "checks": 18,
+  "verified": [
+    "dedicated per-year Pemda workbook table is independent from opd_id",
+    "get endpoint allows only non-OPD review roles",
+    "creation/update endpoint only permits Pemda/admin and Irban and serializes by year",
+    "new workbook comes from the same master helper and Pemda folder identity, with optional forced refresh",
+    "new workbook is validated as PM_2026 26-sheet template before persistence",
+    "workbook update uses lock ownership and optimistic version",
+    "new action is available to authorized supervisory roles for read and refresh",
+    "sampling response includes stored OPD score values",
+    "navigation has a distinct KK PM SPIP Pemda button",
+    "dashboard has separate workbook section, sheet list, and selected sampling table",
+    "frontend loads distinct workbook and source OPD data",
+    "frontend create/sync button is wired to dedicated endpoint",
+    "sheet opens to the actual selected gid and original source workbook remains separate",
+    "realtime refresh includes sampling and workbook changes",
+    "dashboard access hides new menu for OPD role",
+    "responsive dashboard styles are added",
+    "migration is rerunnable and matches schema",
+    "master manifest declares 26 sheets"
+  ]
+}
+[LULUS] node tools/validate-pemda-pm-evidence-template.mjs
+{
+  "status": "PASS",
+  "checks": 18,
+  "verified": [
+    "requested master ID is the seeded default",
+    "runtime template pointer is stored in D1 and preserves admin edits",
+    "master updates require native Google Sheets, PM_2026 profile and core formula validation",
+    "valid configured ID takes priority instead of being silently replaced by Drive discovery",
+    "Pemda and all OPD use the same configurable master helper",
+    "Pemda evidence has separate storage and no OPD foreign key",
+    "server upload and retrieval are limited to T2/T3/T4",
+    "backend validates subCode, paramId, grade, evidence key and 10 MB cap",
+    "Pemda evidence verification supports examiner, note and three required statuses",
+    "private evidence download requires authenticated roles and stored R2 key",
+    "Pemda UI exposes only the T2/T3/T4 targets and master update controls",
+    "front-end builds selectors from live master target data, rather than hardcoded parameter lists",
+    "front-end includes upload, retry, delete and verification actions",
+    "Pemda/Irban bulk refresh processes server-scoped OPD targets and logs workbook/R2 errors",
+    "mobile styling is included for the new panels",
+    "D1 migration creates configuration and Pemda evidence tables/indexes idempotently",
+    "master source itself maps T2/T3/T4 to KK3.2/KK3.3/KK3.4",
+    "no Pemda evidence is written into OPD workbook evidence storage"
+  ]
+}
+[LULUS] node tools/validate-pemda-sampling-workflow.mjs
+{
+  "status": "PASS",
+  "checks": 16,
+  "verified": [
+    "workflow table and status columns exist",
+    "dedicated audit trail and indexes exist",
+    "all mutating D1 retry calls use statement factories for new workflow",
+    "sampling limited to Irban/Admin",
+    "PM/QA/BPKP role permissions are distinct",
+    "QA requires PM selesai",
+    "BPKP requires sampling and accepted QA",
+    "optimistic version checks protect concurrent saves",
+    "PM changes reset downstream QA/BPKP",
+    "QA changes reset BPKP",
+    "workflow audit is restricted to the OPD scope",
+    "workflow screen exists with requested title and all stages",
+    "sampling UI and verification forms are wired",
+    "logout hides Pemda and account navigation",
+    "responsive style included",
+    "standalone D1 migration is idempotent"
+  ]
+}
+[LULUS] node tools/validate-pm-template-profile-refresh.mjs
+{
+  "status": "PASS",
+  "checks": 8,
+  "verified": [
+    "26 canonical tabs accepted",
+    "reordered tabs accepted",
+    "approved OPD/PEMDA/BPKAD/BP4D and KKE 2.3 SASSUBKES aliases accepted",
+    "duplicate tab rejected",
+    "unexpected/missing tab rejected",
+    "legacy profile identified",
+    "bulk action forces fresh workbook copies",
+    "R2 mirror errors are recoverable and master update role restricted"
+  ]
+}
+[LULUS] node tools/validate-pm-template-resolution.mjs
+{
+  "status": "PASS",
+  "checks": 23,
+  "verified": [
+    "PM tab aliases resolve before ranges are built",
+    "legacy T1-T4 sheet names are supported for safe resolution",
+    "missing target tabs fail with useful diagnostics",
+    "exact named master discovery handles .xlsx import names and duplicate suffix",
+    "stale 28-sheet IDs are rejected and valid PM masters are discovered",
+    "valid configured IDs remain authoritative and do not trigger silent auto-selection",
+    "valid configured master is not silently replaced by a newer Drive candidate",
+    "no-candidate failure explains the required master setup",
+    "shared-drive search uses native Google Sheets only",
+    "discovered templates and propagation targets require PM_2026 validation"
+  ]
+}
+[LULUS] node tools/validate-realtime-scope-isolation.mjs
+{
+  "status": "PASS",
+  "checks": 14,
+  "verified": [
+    "authoritative identity",
+    "per-year OPD scope resolution",
+    "message-level filtering",
+    "no cookie forwarding",
+    "multiple hashed sessions per account"
+  ]
+}
+[LULUS] node tools/validate-spip-integration.mjs
+{
+  "status": "PASS",
+  "objectives": 4,
+  "strategicGoals": 21,
+  "indicators": 31,
+  "workpapers": 8,
+  "apiActions": 3,
+  "checks": 11
+}
+[LULUS] node tools/validate-verification-roles-score.mjs
+Verification role/score regression: 9 assertions passed
+[LULUS] node tools/validate-workbook-concurrency.mjs
+{
+  "status": "PASS",
+  "checks": 37,
+  "verified": [
+    "scoped-account permissions for dashboard reads and formula synchronization",
+    "Inspektorat/Irban is explicitly allowed to synchronize PM workbooks within its OPD scope",
+    "dedicated PM template configuration (no silent legacy template fallback)",
+    "PM_2026 26-sheet + formula validation",
+    "distributed D1 lease for concurrent workbook creation",
+    "atomic merge of sparse PM cells without losing workbook links or other cells",
+    "cache generation protection against stale in-flight responses",
+    "PM UI revalidates master source on each open and avoids stale browser-cached snapshot",
+    "secret-protected Apps Script master webhook",
+    "conditional score sync only from the workbook currently linked to the OPD/year"
+  ]
+}
+[LULUS] node tools/validate-workbook-rollover-lhe-years.mjs
+{
+  "status": "PASS",
+  "checks": 18,
+  "verified": [
+    "D1 workbook lineage preservation",
+    "sparse PM cell preservation",
+    "open uses authoritative live pointer",
+    "stale/deleted PM workbook is synchronized before open",
+    "LHE year auto-projection and source-year fidelity"
+  ]
+}
+
+Ringkasan: 2 pemeriksaan sintaks JavaScript dan 15 skrip validasi; gagal 0.
+Cakupan: alias tab KKE 2.3 SASSUBKES dan varian tab lain; 26 sheet unik tanpa mensyaratkan urutan; formula inti; diagnosis; pembaruan massal Pemda+semua OPD; hak akses admin/Irban; mirror R2; arsip Drive lama setelah pointer baru tersimpan; perlindungan ID master dari pengarsipan; regresi fitur lainnya.
