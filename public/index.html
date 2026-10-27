@@ -16,7 +16,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KAWAL SPIP - Dashboard Lengkap</title>
 <link rel="icon" type="image/png" href="/favicon.png">
-<link rel="stylesheet" href="/style.css?v=20261015-kawal-fix2">
+<link rel="stylesheet" href="/style.css?v=20261027-all-accounts-pm-workbook">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -127,7 +127,7 @@
         <div class="pemda-pm-panel-title"><div><span class="pemda-pm-kicker">SUMBER MASTER GOOGLE SHEETS</span><h4>Perbarui ID / Link Template KK PM SPIP</h4><p>Masukkan ID atau link spreadsheet master. Sistem akan memvalidasi 26 nama/urutan sheet dan formula inti sebelum menyimpan perubahan.</p></div><span class="pemda-pm-template-state" id="pemdaPmTemplateValidationState">Memuat konfigurasi…</span></div>
         <div class="pemda-pm-template-controls"><label for="pemdaPmTemplateId">ID atau Link Google Spreadsheet Master<input id="pemdaPmTemplateId" type="text" placeholder="Tempel ID atau URL Google Sheets" autocomplete="off" spellcheck="false"></label><div class="pemda-pm-template-actions"><button type="button" id="pemdaPmTemplateOpenLink">↗ Buka Master</button><button type="button" class="primary" id="pemdaPmTemplateUpdate">✓ Validasi ID &amp; Perbarui Workbook</button></div></div>
         <div class="pemda-pm-template-meta">Master aktif: <a id="pemdaPmTemplateLink" href="https://docs.google.com/spreadsheets/d/1hLqUceQprwRxh1q5y0ZmW6PdI2-28H9mkYdA227vg1s/edit" target="_blank" rel="noopener">1hLqUceQprwRxh1q5y0ZmW6PdI2-28H9mkYdA227vg1s</a><span id="pemdaPmTemplateUpdated"></span></div>
-        <div class="pemda-pm-template-admin-actions"><button type="button" id="pemdaPmTemplateRefreshAll">↻ Perbarui Workbook Pemda + Semua OPD</button><small>Penggantian template membuat salinan workbook baru per tahun/OPD. Workbook sebelumnya tetap dipertahankan sebagai riwayat; file lama tidak dihapus atau ditimpa.</small></div>
+        <div class="pemda-pm-template-admin-actions"><button type="button" id="pemdaPmTemplateRefreshAll">↻ Perbarui Workbook Pemda + Semua OPD</button><small>Khusus akun Pemda dan Irban. Sistem memvalidasi master, mengganti tautan aktif ke format terbaru, memperbarui mirror XLSX di R2, dan menyimpan workbook lama sebagai riwayat pemulihan. Evidence di R2 tidak disentuh.</small></div>
         <div id="pemdaPmTemplateStatus" class="pemda-pm-inline-status" role="status" aria-live="polite"></div>
       </section>
       <section class="pemda-pm-evidence-panel" id="pemdaPmEvidencePanel">
@@ -239,6 +239,11 @@
         <button type="button" id="kkPmExport" class="kk-pm-action">⬇️ Export Rekap PM</button>
       </div>
     </div>
+    <section class="kk-pm-account-master-panel" aria-label="Pengaturan master dan pembaruan seluruh workbook KK PM SPIP" hidden>
+      <div class="kk-pm-account-master-heading"><div><b>Perbarui ID Master &amp; Seluruh Workbook KK PM SPIP</b><small>Khusus akun Pemda (Super Admin Daerah) dan Irban. ID master berlaku global; aksi ini memperbarui workbook Pemda dan seluruh workbook OPD untuk tahun yang dipilih, serta mengganti mirror XLSX di R2. Workbook sebelumnya tetap disimpan sebagai riwayat pemulihan.</small></div><button type="button" id="kkPmMasterReload" class="kk-pm-action">↻ Muat ID Aktif</button></div>
+      <div class="kk-pm-account-master-controls"><label for="kkPmMasterIdInput">ID / Link Google Spreadsheet master<input id="kkPmMasterIdInput" type="text" placeholder="Tempel ID atau URL Google Sheets master" autocomplete="off" spellcheck="false"></label><button type="button" id="kkPmMasterUpdateAndSync" class="kk-pm-action primary">✓ Validasi ID &amp; Perbarui Semua Workbook</button></div>
+      <div id="kkPmMasterUpdateStatus" class="kk-pm-account-master-status" role="status" aria-live="polite">Memuat konfigurasi master…</div>
+    </section>
     <div class="kk-pm-status" id="kkPmStatus"></div>
     <div class="kk-pm-body" id="kkPmContent"></div>
     <div class="modal-actions kk-pm-footer"><button id="kkPmCloseFooter">Tutup</button></div>
@@ -693,4 +698,4 @@
 
 </style>
 
-<script src="/script.js?v=20261015-kawal-fix2" defer></script>
+<script src="/script.js?v=20261027-all-accounts-pm-workbook" defer></script>

@@ -5078,9 +5078,49 @@ function exportKkPmExcel(){
     const safe=(kkPmCurrentRow.opd||'OPD').replace(/[\\/:*?"<>|]/g,' ').trim().substring(0,65)||'OPD'; XLSX.writeFile(wb,`${safe}-${currentYear}-KK-PM-SPIP.xlsx`);kkPmSetStatus('✓ Export Excel berhasil: Rekap + KK3.1–KK3.4.','success');
   }catch(err){kkPmSetStatus('❌ Export gagal: '+(err.message||err),'error');}
 }
+function kkPmMasterUpdateStatus(message,state=''){
+  const el=document.getElementById('kkPmMasterUpdateStatus');if(el){el.textContent=message||'';el.className='kk-pm-account-master-status'+(state?' '+state:'');}
+}
+async function loadKkPmAccountTemplateConfig({force=false}={}){
+  const input=document.getElementById('kkPmMasterIdInput');if(!input)return;
+  const panel=input.closest('.kk-pm-account-master-panel');
+  const role=String(currentUser?.role||'').toLowerCase();
+  const allowed=['admin','irban'].includes(role);
+  if(panel)panel.hidden=!allowed;
+  if(!allowed)return;
+  try{
+    const config=await callServerWithRetry('getKkPmTemplateConfig',{},2);
+    if(force||!input.value||!input.dataset.dirty)input.value=String(config.spreadsheetId||'');
+    const updated=config.updatedAt?` · diperbarui ${new Date(config.updatedAt).toLocaleString('id-ID')}${config.updatedBy?' oleh '+config.updatedBy:''}`:'';
+    kkPmMasterUpdateStatus(`Master aktif: ${config.spreadsheetId||'belum dikonfigurasi'}${updated}. Profil: ${config.validationProfile||'belum divalidasi'}. Hanya akun Pemda/Irban dapat mengganti master dan memperbarui seluruh workbook.`,'success');
+    input.dataset.currentMaster=String(config.spreadsheetId||'');
+  }catch(err){kkPmMasterUpdateStatus('Gagal membaca ID master aktif: '+(err.message||err),'error');throw err;}
+}
+async function updateKkPmAccountMasterAndWorkbook(){
+  const role=String(currentUser?.role||'').toLowerCase();
+  if(!['admin','irban'].includes(role))return kkPmMasterUpdateStatus('Aksi ini khusus akun Pemda (Super Admin Daerah) dan Irban.','error');
+  const input=document.getElementById('kkPmMasterIdInput'),button=document.getElementById('kkPmMasterUpdateAndSync');
+  const submitted=String(input?.value||'').trim();
+  if(!submitted)return kkPmMasterUpdateStatus('Masukkan ID atau URL Google Sheets master terlebih dahulu.','error');
+  const confirmed=confirm('Tindakan ini mengganti master global, memperbarui workbook Pemda dan SELURUH OPD untuk tahun yang dipilih, lalu mengganti mirror XLSX di R2. Workbook sebelumnya disimpan sebagai riwayat pemulihan dan evidence R2 tidak dihapus. Lanjutkan?');
+  if(!confirmed)return;
+  if(button)button.disabled=true;
+  try{
+    const dashboardInput=document.getElementById('pemdaPmTemplateId');
+    if(dashboardInput){dashboardInput.value=submitted;dashboardInput.dataset.dirty='1';}
+    kkPmMasterUpdateStatus('Memvalidasi master, lalu memperbarui workbook Pemda dan seluruh OPD…');
+    const result=await refreshPemdaPmWorkbooks({bulk:true,masterId:submitted,throwOnError:true,accountModal:true});
+    if(input){input.value=result?.config?.spreadsheetId||submitted;input.dataset.currentMaster=String(result?.config?.spreadsheetId||submitted);delete input.dataset.dirty;}
+    kkPmMasterUpdateStatus(`Selesai. OPD: ${result?.updatedOpd||0}/${result?.totalOpd||0}; kegagalan workbook ${result?.failedOpd?.length||0}; kegagalan mirror R2 ${result?.failedR2?.length||0}; kegagalan arsip Drive ${result?.failedDriveArchive?.length||0}.`,(result?.ok?'success':'error'));
+  }catch(err){kkPmMasterUpdateStatus('Pembaruan gagal: '+(err.message||err)+'. Periksa rincian error; referensi lama tetap dipertahankan bila proses belum selesai.','error');}
+  finally{if(button)button.disabled=false;}
+}
+
 async function openKkPmModal(id){
   const row=rows.find(r=>String(r.id)===String(id)); if(!row)return; kkPmCurrentRow=row;kkPmEditingRowId=row.id;kkPmTab='allSheets';kkPmSelectedSheet='FAQ';kkPmFilters={search:'',unsur:'all',subunsur:'all'};const modal=document.getElementById('kkPmModal');if(!modal)return;
   document.getElementById('kkPmModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;modal.classList.add('active');kkPmSetStatus('Memuat workbook lengkap, PM detail, evidence terhubung, dan nilai formula...');
+  const masterPanel=document.querySelector('.kk-pm-account-master-panel');if(masterPanel)masterPanel.hidden=!['admin','irban'].includes(String(currentUser?.role||'').toLowerCase());
+  loadKkPmAccountTemplateConfig().catch(()=>{});
   try{
     const results=await Promise.all([ensureKkPmMasterLoaded(true),ensureKkRpjmdMasterLoaded(),loadKkPmData(row),loadKkPmWorkbookData(row),loadKkRpjmdMappings(row),syncKkComputedValues(row,false)]);
     const workbookState=results[3]||{};
@@ -5097,6 +5137,10 @@ async function openKkPmModal(id){
 }
 
 function closeKkPmModal(){document.getElementById('kkPmModal')?.classList.remove('active');kkPmEditingRowId=null;kkPmCurrentRow=null;kkPmWorkbookData=null;kkPmWorkbookSheets=[];kkPmSelectedSheet='';kkPmStateMap=new Map();kkPmMetaMap=new Map();kkPmSaveTimers.forEach(t=>clearTimeout(t));kkPmSaveTimers.clear();kkPmMetaSaveTimers.forEach(t=>clearTimeout(t));kkPmMetaSaveTimers.clear();}
+
+document.getElementById('kkPmMasterReload')?.addEventListener('click',()=>loadKkPmAccountTemplateConfig({force:true}).catch(()=>{}));
+document.getElementById('kkPmMasterIdInput')?.addEventListener('input',e=>{e.target.dataset.dirty='1';});
+document.getElementById('kkPmMasterUpdateAndSync')?.addEventListener('click',()=>updateKkPmAccountMasterAndWorkbook());
 
 document.addEventListener('click',e=>{
   const sheet=e.target.closest('#kkPmContent [data-pm-sheet]'); if(sheet){kkPmSelectedSheet=sheet.dataset.pmSheet||''; kkPmTab='allSheets'; kkPmRenderModal(); return;}
@@ -5697,8 +5741,8 @@ async function loadPemdaPmTemplateConfig(){
     if(link){link.href=result.spreadsheetUrl||'#';link.textContent=result.spreadsheetId||'ID master belum dikonfigurasi';}
     if(state){state.textContent=result.validationProfile==='PM_2026'?'Profil PM_2026 tervalidasi':(result.validationProfile==='pending_validation'?'Menunggu validasi pertama':'Perlu validasi');state.className='pemda-pm-template-state'+(result.validationProfile==='PM_2026'?' success':' warning');}
     if(updated)updated.textContent=result.updatedAt?` · Diperbarui ${new Date(result.updatedAt).toLocaleString('id-ID')}${result.updatedBy?' oleh '+result.updatedBy:''}`:'';
-    const bulk=document.getElementById('pemdaPmTemplateRefreshAll');if(bulk)bulk.hidden=role!=='admin';
-    const save=document.getElementById('pemdaPmTemplateUpdate');if(save)save.textContent=role==='admin'?'✓ Validasi ID & Perbarui Semua Workbook':'✓ Validasi ID & Perbarui Workbook Pemda';
+    const bulk=document.getElementById('pemdaPmTemplateRefreshAll');if(bulk)bulk.hidden=!['admin','irban'].includes(role);
+    const save=document.getElementById('pemdaPmTemplateUpdate');if(save)save.textContent='✓ Validasi ID & Perbarui Semua Workbook';
   }catch(err){const state=document.getElementById('pemdaPmTemplateValidationState');if(state){state.textContent='Gagal memuat konfigurasi';state.className='pemda-pm-template-state warning';}pemdaPmTemplateStatus('Gagal memuat konfigurasi master: '+(err.message||err),'error');}
 }
 function pemdaPmTemplateStatus(message,state=''){const el=document.getElementById('pemdaPmTemplateStatus');if(el){el.textContent=message||'';el.className='pemda-pm-inline-status'+(state?' '+state:'');}}
@@ -5745,53 +5789,59 @@ async function retryPemdaPmEvidenceDrive(uploadId){
   try{await callServerWithRetry('retryDriveBackup',{type:'pemda_workbook_evidence',year:currentYear,uploadId},3);await loadPemdaPmEvidenceFiles();pemdaPmEvidenceStatus('Sinkronisasi Google Drive berhasil.','success');}
   catch(err){pemdaPmEvidenceStatus('Sinkronisasi Google Drive belum berhasil: '+(err.message||err),'error');}
 }
-async function refreshPemdaPmWorkbooks({bulk=false}={}){
-  if(!['admin','irban'].includes(pemdaPmRole()))return pemdaPmTemplateStatus('Akses perubahan master hanya untuk Super Admin atau Irban.','error');
-  const btn=document.getElementById(bulk?'pemdaPmTemplateRefreshAll':'pemdaPmTemplateUpdate');if(btn)btn.disabled=true;
-  const raw=String(document.getElementById('pemdaPmTemplateId')?.value||pemdaPmDash.templateConfig?.spreadsheetId||'').trim();if(!raw){if(btn)btn.disabled=false;return pemdaPmTemplateStatus('Masukkan ID atau link master terlebih dahulu.','error');}
+async function refreshPemdaPmWorkbooks({bulk=true,masterId=null,throwOnError=false,accountModal=false}={}){
+  const role=pemdaPmRole(),canUpdate=['admin','irban'].includes(role);
+  if(!canUpdate){const err=new Error('Pembaruan seluruh workbook hanya tersedia untuk akun Pemda (Super Admin Daerah) dan Irban.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
+  if(!bulk){const err=new Error('Pembaruan master global harus memproses workbook Pemda dan seluruh OPD sekaligus.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
+  const btn=document.getElementById('pemdaPmTemplateRefreshAll')||document.getElementById('pemdaPmTemplateUpdate');if(btn)btn.disabled=true;
+  const raw=String(masterId||document.getElementById('pemdaPmTemplateId')?.value||pemdaPmDash.templateConfig?.spreadsheetId||'').trim();
+  if(!raw){const err=new Error('Masukkan ID atau link master terlebih dahulu.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
   try{
-    let config=pemdaPmDash.templateConfig;
-    if(!bulk||raw!==String(config?.spreadsheetId||'')){
-      pemdaPmTemplateStatus('Memvalidasi ID master melalui Google Drive/Sheets, nama 26 tab, dan formula inti…');
-      config=await callServerWithRetry('updateKkPmTemplateConfig',{spreadsheetId:raw},3);pemdaPmDash.templateConfig=config;
-    }else{
-      pemdaPmTemplateStatus('Memvalidasi ulang master aktif sebelum pembaruan workbook…');
-      config=await callServerWithRetry('updateKkPmTemplateConfig',{spreadsheetId:raw},3);pemdaPmDash.templateConfig=config;
-    }
+    pemdaPmTemplateStatus('Memvalidasi master PM_2026: 26 tab, formula inti, dan izin Google Drive…');
+    const config=await callServerWithRetry('updateKkPmTemplateConfig',{spreadsheetId:raw},3);pemdaPmDash.templateConfig=config;
     const link=document.getElementById('pemdaPmTemplateLink');if(link){link.href=config.spreadsheetUrl||'#';link.textContent=config.spreadsheetId||raw;}
     const updated=document.getElementById('pemdaPmTemplateUpdated');if(updated)updated.textContent=` · Diperbarui ${new Date(config.updatedAt||Date.now()).toLocaleString('id-ID')}${config.updatedBy?' oleh '+config.updatedBy:''}`;
     const state=document.getElementById('pemdaPmTemplateValidationState');if(state){state.textContent='Profil PM_2026 tervalidasi';state.className='pemda-pm-template-state success';}
-    document.getElementById('pemdaPmTemplateId')?.removeAttribute('data-dirty');
-    // First refresh the separate Pemda workbook. Any prior copy remains in history.
-    pemdaPmTemplateStatus('Master tervalidasi. Memperbarui workbook khusus Pemda…');
-    await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear},3);
-    let updatedOpd=0,failedOpd=[];
-    if(pemdaPmRole()==='admin'){
-      const ids=[...new Map((Array.isArray(rows)?rows:[]).filter(r=>r?.id).map(r=>[String(r.id),r])).values()];
-      if(ids.length){
-        let finished=0;const pool=3;
-        for(let offset=0;offset<ids.length;offset+=pool){
-          const batch=ids.slice(offset,offset+pool);
-          const outcome=await Promise.all(batch.map(async row=>{try{const result=await callServerWithRetry('createKkPmSheets',{opdId:row.id,year:currentYear},2);if(result?.status==='error')throw new Error(result.message||'Gagal sinkron');return{ok:true,row,result};}catch(error){return{ok:false,row,error};}}));
-          for(const item of outcome){finished++;if(item.ok){updatedOpd++;const row=item.row;let root={};try{root=typeof row.kkPmData==='string'?JSON.parse(row.kkPmData):(row.kkPmData||{});}catch{}row.kkPmData={...root,version:3,workbook:item.result.kkPmData,workbookHistory:item.result.workbookHistory||root.workbookHistory||[]};}else failedOpd.push(`${item.row.opd||item.row.id}: ${item.error?.message||item.error}`);}
-          pemdaPmTemplateStatus(`Master valid. Workbook Pemda diperbarui; progres OPD ${Math.min(finished,ids.length)}/${ids.length}. Berhasil ${updatedOpd}, gagal ${failedOpd.length}…`);
-        }
-        try{await loadData();}catch{}
-      }else failedOpd.push('Daftar OPD belum termuat pada halaman.');
+    const input=document.getElementById('pemdaPmTemplateId');if(input){input.value=config.spreadsheetId||raw;delete input.dataset.dirty;}
+    pemdaPmTemplateStatus('Master valid. Memperbarui workbook khusus Pemda dan mirror XLSX R2…');
+    const pemdaResult=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear,forceRefresh:true},3);
+    if(pemdaResult?.status==='error')throw new Error(pemdaResult.message||'Sinkronisasi workbook Pemda gagal.');
+    const targetsResult=await callServerWithRetry('getKkPmWorkbookRefreshTargets',{year:currentYear},2);
+    const targets=Array.isArray(targetsResult?.targets)?targetsResult.targets:[];
+    if(!targets.length)throw new Error('Server tidak menemukan daftar OPD. Tidak ada workbook OPD yang diproses.');
+    let updatedOpd=0,r2Updated=Number(pemdaResult?.workbook?.r2MirrorKey&&!pemdaResult?.workbook?.r2MirrorError?1:0),driveArchived=Number(pemdaResult?.workbook?.driveArchiveStatus==='archived'?1:0),failedOpd=[],failedR2=[],failedDriveArchive=[];
+    if(pemdaResult?.workbook?.r2MirrorError)failedR2.push(`Pemda: ${pemdaResult.workbook.r2MirrorError}`);
+    if(pemdaResult?.workbook?.driveArchiveError)failedDriveArchive.push(`Pemda: ${pemdaResult.workbook.driveArchiveError}`);
+    let finished=0;const pool=2;
+    for(let offset=0;offset<targets.length;offset+=pool){
+      const batch=targets.slice(offset,offset+pool);
+      const outcome=await Promise.all(batch.map(async target=>{try{const result=await callServerWithRetry('createKkPmSheets',{opdId:target.id,year:currentYear,massRefresh:true,forceRefresh:true},3);if(result?.status==='error')throw new Error(result.message||'Gagal sinkron');return{ok:true,target,result};}catch(error){return{ok:false,target,error};}}));
+      for(const item of outcome){finished++;if(item.ok){updatedOpd++;if(item.result?.kkPmData?.r2MirrorKey&&!item.result?.kkPmData?.r2MirrorError)r2Updated++;if(item.result?.kkPmData?.driveArchiveStatus==='archived')driveArchived++;if(item.result?.kkPmData?.r2MirrorError)failedR2.push(`${item.target.opd||item.target.id}: ${item.result.kkPmData.r2MirrorError}`);if(item.result?.kkPmData?.driveArchiveError)failedDriveArchive.push(`${item.target.opd||item.target.id}: ${item.result.kkPmData.driveArchiveError}`);const row=(Array.isArray(rows)?rows:[]).find(r=>String(r.id)===String(item.target.id));if(row){let root={};try{root=typeof row.kkPmData==='string'?JSON.parse(row.kkPmData):(row.kkPmData||{});}catch{}row.kkPmData={...root,version:3,workbook:item.result.kkPmData,workbookHistory:item.result.workbookHistory||root.workbookHistory||[]};}}else failedOpd.push(`${item.target.opd||item.target.id}: ${item.error?.message||item.error}`);}
+      const progress=`Master valid. Pemda selesai; OPD ${Math.min(finished,targets.length)}/${targets.length}. Workbook berhasil ${updatedOpd}, gagal ${failedOpd.length}; mirror R2 ${r2Updated}/${targets.length+1}; file Drive lama diarsipkan ${driveArchived}/${targets.length+1}…`;
+      pemdaPmTemplateStatus(progress);if(accountModal)kkPmMasterUpdateStatus(progress);
     }
+    try{await loadData();}catch{}
     await loadPemdaPmDashboard(false);
-    const msg=pemdaPmRole()==='admin'?`Master ${config.spreadsheetId} tervalidasi. Workbook Pemda diperbarui; OPD berhasil ${updatedOpd}, gagal ${failedOpd.length}${failedOpd.length?': '+failedOpd.slice(0,5).join(' · '):'.'} Workbook lama tetap tersimpan di riwayat.`:`Master ${config.spreadsheetId} tervalidasi dan workbook Pemda diperbarui. Workbook OPD akan memakai master baru saat disinkronkan oleh akun dalam cakupan.`;
-    pemdaPmTemplateStatus(msg,failedOpd.length?'error':'success');pemdaPmDashStatus('Master PM_2026 aktif telah diperbarui. Pemda/OPD menggunakan ID master yang tervalidasi.','success');
-  }catch(err){pemdaPmTemplateStatus('Pembaruan gagal: '+(err.message||err),'error');}
-  finally{if(btn)btn.disabled=false;await loadPemdaPmTemplateConfig().catch(()=>{});renderPemdaPmDashboard();}
+    const hasFailures=failedOpd.length>0||failedR2.length>0||failedDriveArchive.length>0;
+    const msg=`Master ${config.spreadsheetId} tervalidasi. Workbook Pemda tertaut; workbook OPD berhasil ${updatedOpd}/${targets.length}, gagal ${failedOpd.length}${failedOpd.length?': '+failedOpd.slice(0,8).join(' · '):'.'} Mirror XLSX R2 berhasil ${r2Updated}/${targets.length+1}, gagal ${failedR2.length}${failedR2.length?': '+failedR2.slice(0,5).join(' · '):'.'} File Drive lama berhasil diarsipkan ${driveArchived}/${targets.length+1}, gagal ${failedDriveArchive.length}${failedDriveArchive.length?': '+failedDriveArchive.slice(0,5).join(' · '):'.'} Workbook lama tidak dihapus permanen dan evidence R2 tidak disentuh.`;
+    pemdaPmTemplateStatus(msg,hasFailures?'error':'success');pemdaPmDashStatus(msg,hasFailures?'error':'success');if(accountModal)kkPmMasterUpdateStatus(msg,hasFailures?'error':'success');
+    const result={ok:!hasFailures,config,pemdaResult,updatedOpd,totalOpd:targets.length,failedOpd,failedR2,failedDriveArchive,driveArchived,r2Updated,totalR2:targets.length+1};
+    if(throwOnError&&hasFailures)throw new Error(msg);
+    return result;
+  }catch(err){
+    pemdaPmTemplateStatus('Pembaruan gagal: '+(err.message||err),'error');if(accountModal)kkPmMasterUpdateStatus('Pembaruan gagal: '+(err.message||err),'error');
+    if(throwOnError)throw err;
+    return null;
+  }finally{if(btn)btn.disabled=false;await loadPemdaPmTemplateConfig().catch(()=>{});renderPemdaPmDashboard();}
 }
+
 async function loadPemdaPmDashboard(showStatus=true){
   if(pemdaPmDash.loading)return;pemdaPmDash.loading=true;
   const refresh=document.getElementById('pemdaPmWorkbookRefresh');if(refresh)refresh.disabled=true;
   if(showStatus)pemdaPmDashStatus(`Memuat KK PM SPIP Pemda dan tarikan data OPD sampling tahun ${currentYear}...`);
   try{
     const [workflow,workbook]=await Promise.all([callServer('getPemdaWorkflow',{year:currentYear}),callServer('getPemdaKkPmWorkbook',{year:currentYear})]);
-    pemdaPmDash.workflow=Array.isArray(workflow.rows)?workflow.rows:[];pemdaPmDash.workbook={...(workbook?.workbook||{}),exists:!!workbook?.exists,needsSync:!!workbook?.needsSync,needsSyncReason:workbook?.needsSyncReason||'',permissions:workbook?.permissions||{},version:Number(workbook?.version||0),updatedAt:Number(workbook?.updatedAt||0),updatedBy:workbook?.updatedBy||''};pemdaPmDash.sheets=Array.isArray(workbook.sheets)?workbook.sheets:[];pemdaPmDash.permissions=workbook.permissions||{canManage:['admin','irban'].includes(String(currentUser?.role||''))};pemdaPmDash.lastLoadedAt=Date.now();
+    pemdaPmDash.workflow=Array.isArray(workflow.rows)?workflow.rows:[];pemdaPmDash.workbook={...(workbook?.workbook||{}),exists:!!workbook?.exists,needsSync:!!workbook?.needsSync,needsSyncReason:workbook?.needsSyncReason||'',permissions:workbook?.permissions||{},version:Number(workbook?.version||0),updatedAt:Number(workbook?.updatedAt||0),updatedBy:workbook?.updatedBy||''};pemdaPmDash.sheets=Array.isArray(workbook.sheets)?workbook.sheets:[];pemdaPmDash.permissions=workbook.permissions||{canManage:['admin','irban'].includes(String(currentUser?.role||'')),canRefreshAll:['admin','irban'].includes(String(currentUser?.role||''))};pemdaPmDash.lastLoadedAt=Date.now();
     await loadPemdaPmManifest();
     try{await ensureKkPmMasterLoaded(false);}catch(err){pemdaPmDash.evidenceError='Master parameter KK PM belum dapat dimuat: '+(err.message||err);}
     await Promise.all([loadPemdaPmTemplateConfig(),loadPemdaPmEvidenceFiles()]);
@@ -5802,8 +5852,8 @@ async function loadPemdaPmDashboard(showStatus=true){
 }
 function openPemdaPmDashboard(){if(!currentUser){alert('Silakan login terlebih dahulu.');return;}const modal=document.getElementById('pemdaPmDashboardModal');if(!modal)return;modal.classList.add('active');loadPemdaPmDashboard(true);}
 function closePemdaPmDashboard(){document.getElementById('pemdaPmDashboardModal')?.classList.remove('active');}
-async function createOrSyncPemdaPmWorkbook(){if(pemdaPmDash.creating)return;const btn=document.getElementById(pemdaPmDash.workbook?.exists?'pemdaPmWorkbookSync':'pemdaPmWorkbookCreate');pemdaPmDash.creating=true;if(btn)btn.disabled=true;pemdaPmDashStatus('Membuat / memverifikasi salinan KK PM SPIP Pemda dari master 26 sheet...');renderPemdaPmDashboard();
-  try{const result=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear},2);pemdaPmDash.workbook={...(result.workbook||{}),exists:true,needsSync:!!result.needsSync,needsSyncReason:result.needsSyncReason||'',updatedAt:Number(result.updatedAt||Date.now()),updatedBy:result.updatedBy||'',permissions:{canManage:['admin','irban'].includes(String(currentUser?.role||''))}};pemdaPmDash.sheets=Array.isArray(result.sheets)?result.sheets:[];pemdaPmDash.lastLoadedAt=Date.now();renderPemdaPmDashboard();pemdaPmDashStatus(result.message||'Workbook KK PM SPIP Pemda berhasil diverifikasi.','success');}
+async function createOrSyncPemdaPmWorkbook(){if(!['admin','irban'].includes(pemdaPmRole()))return pemdaPmDashStatus('Hanya akun Pemda dan Irban yang dapat memperbarui workbook Pemda.','error');if(pemdaPmDash.creating)return;const btn=document.getElementById(pemdaPmDash.workbook?.exists?'pemdaPmWorkbookSync':'pemdaPmWorkbookCreate');pemdaPmDash.creating=true;if(btn)btn.disabled=true;pemdaPmDashStatus('Membuat / memverifikasi salinan KK PM SPIP Pemda dari master 26 sheet...');renderPemdaPmDashboard();
+  try{const result=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear},2);pemdaPmDash.workbook={...(result.workbook||{}),exists:true,needsSync:!!result.needsSync,needsSyncReason:result.needsSyncReason||'',updatedAt:Number(result.updatedAt||Date.now()),updatedBy:result.updatedBy||'',permissions:{canManage:['admin','irban'].includes(String(currentUser?.role||'')),canRefreshAll:['admin','irban'].includes(String(currentUser?.role||''))}};pemdaPmDash.sheets=Array.isArray(result.sheets)?result.sheets:[];pemdaPmDash.lastLoadedAt=Date.now();renderPemdaPmDashboard();pemdaPmDashStatus(result.message||'Workbook KK PM SPIP Pemda berhasil diverifikasi.','success');}
   catch(err){pemdaPmDashStatus('Workbook Pemda belum berhasil dibuat/disinkronkan: '+(err.message||err),'error');await loadPemdaPmDashboard(false);}
   finally{pemdaPmDash.creating=false;if(btn)btn.disabled=false;renderPemdaPmDashboard();}}
 async function openPemdaPmWorkbook(sheetName=''){const win=window.open('about:blank','_blank');try{let d=await callServerWithRetry('getPemdaKkPmWorkbook',{year:currentYear},1);if(!d.exists||d.needsSync){if(!d.permissions?.canManage){throw new Error(d.needsSyncReason||'Workbook Pemda belum dibuat atau perlu disinkronkan oleh Irban/Super Admin.');}d=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear},2);}
@@ -5815,7 +5865,7 @@ document.getElementById('btnPemdaPmKk')?.addEventListener('click',openPemdaPmDas
 document.getElementById('pemdaPmDashboardClose')?.addEventListener('click',closePemdaPmDashboard);
 document.getElementById('pemdaPmDashboardCloseFooter')?.addEventListener('click',closePemdaPmDashboard);
 document.getElementById('pemdaPmTemplateId')?.addEventListener('input',e=>e.target.dataset.dirty='1');
-document.getElementById('pemdaPmTemplateUpdate')?.addEventListener('click',()=>refreshPemdaPmWorkbooks({bulk:false}));
+document.getElementById('pemdaPmTemplateUpdate')?.addEventListener('click',()=>refreshPemdaPmWorkbooks({bulk:true}));
 document.getElementById('pemdaPmTemplateRefreshAll')?.addEventListener('click',()=>refreshPemdaPmWorkbooks({bulk:true}));
 document.getElementById('pemdaPmTemplateOpenLink')?.addEventListener('click',()=>{const id=String(document.getElementById('pemdaPmTemplateId')?.value||pemdaPmDash.templateConfig?.spreadsheetId||'').trim();const found=id.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);const clean=found?found[1]:id;if(/^[A-Za-z0-9_-]{20,}$/.test(clean))window.open(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(clean)}/edit`,'_blank','noopener,noreferrer');else pemdaPmTemplateStatus('ID/URL master belum valid.','error');});
 document.getElementById('pemdaEvidenceTarget')?.addEventListener('change',()=>renderPemdaPmEvidenceSelectors());
