@@ -113,9 +113,8 @@ async function assertAssessmentInputEditable(env,year,opdId){
 }
 function canonicalPmSheetKey(value){
   const key=String(value||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-  // Sheet titles may carry local ownership labels (OPD/PEMDA/BPKAD/BP4D/INSPEKTORAT).
-  // These aliases resolve to the same required PM core sheet; optional legacy/administrative
-  // tabs are allowed separately and do not change the required core profile.
+  // Sheet names can be decorated by local workbook owners (OPD/PEMDA/BPKAD/BP4D).
+  // Normalize only explicit known variants; the exact 26-sheet set is still enforced.
   const aliases={
     KKLEADSPIPPEMDA:'KKLEADSPIP',KKLEADSPIPPEMERINTAHDAERAH:'KKLEADSPIP',
     KKLEADIP:'KKLEADI',KKLEADIPEMDA:'KKLEADI',KKLEADIPPEMDA:'KKLEADI',KKLEADIPOPD:'KKLEADI',
@@ -125,9 +124,8 @@ function canonicalPmSheetKey(value){
     KKE22SASKEGOPD:'KKE22SASKEG',KKE22SASKEGIATAN:'KKE22SASKEG',
     KKE23SASSUBKES:'KKE23SASSUBKEG',KKE23SASSUBKEGIATAN:'KKE23SASSUBKEG',KKE23SASARANSUBKEGIATAN:'KKE23SASSUBKEG',KKE23SASSUBKEGOPD:'KKE23SASSUBKEG',
     KK31OPD:'KK31',KK32BPKAD:'KK32',KK32BPKADAKUN:'KK32',KK33BPKAD:'KK33',KK33BPKADASET:'KK33',KK34INSPEKTORAT:'KK34',
-    KK51A:'KK51A',KK51ALAKIPRPJMD:'KK51A',KK51ARPJMD:'KK51A',KK51ARPJMDBP4D:'KK51A',KK51ALAKIPRPJMDBP4D:'KK51A',
-    KK51B:'KK51B',KK51BOPD:'KK51B',KK51C:'KK51C',KK51COPD:'KK51C',
-    KK52OPD:'KK52',KK6INSP:'KK6',KK6INSPEKTORAT:'KK6',KK6APIP:'KK6',KK7INSP:'KK7',KK7INSPEKTORAT:'KK7',KK7APIP:'KK7',KK8INSP:'KK8',KK8INSPEKTORAT:'KK8',KK8APIP:'KK8',
+    KK51A:'KK51A',KK51ALAKIPRPJMD:'KK51A',KK51B:'KK51B',KK51BOPD:'KK51B',KK51C:'KK51C',KK51COPD:'KK51C',
+    KK52OPD:'KK52',KK6INSP:'KK6',KK7INSP:'KK7',KK8INSP:'KK8',
     REFPEMANTAUANCAPAIANTUJUAN:'REFPCT',REFPENCAPAIANTUJUAN:'REFPCT'
   };
   return aliases[key]||key;
@@ -139,29 +137,18 @@ function pmSheetStructureDiagnostics(sheets){
   const expectedSet=new Set(expectedKeys);
   const counts=new Map();for(const key of actualKeys)counts.set(key,(counts.get(key)||0)+1);
   const missing=KK_PM_2026_SHEET_NAMES.filter((_,i)=>(counts.get(expectedKeys[i])||0)===0);
-  // A duplicate blocks validation only when two actual tabs both claim the same required
-  // PM core sheet. Extra administrative/legacy tabs are permitted and reported as warnings.
-  const duplicateKeys=[...counts.entries()].filter(([key,count])=>expectedSet.has(key)&&count>1).map(([key])=>key);
+  const duplicateKeys=[...counts.entries()].filter(([,count])=>count>1).map(([key])=>key);
   const unexpected=actual.filter((title,i)=>!expectedSet.has(actualKeys[i]));
-  const valid=missing.length===0&&duplicateKeys.length===0;
-  return{valid,actual,missing,unexpected,duplicates:duplicateKeys,expected:KK_PM_2026_SHEET_NAMES,requiredCount:KK_PM_2026_SHEET_NAMES.length,recognizedCount:KK_PM_2026_SHEET_NAMES.length-missing.length,optionalCount:unexpected.length};
+  const valid=actual.length===KK_PM_2026_SHEET_NAMES.length&&missing.length===0&&duplicateKeys.length===0&&unexpected.length===0;
+  return{valid,actual,missing,unexpected,duplicates:duplicateKeys,expected:KK_PM_2026_SHEET_NAMES};
 }
 function getPmSheetProfile(sheets){
   const diagnostic=pmSheetStructureDiagnostics(sheets);
-  const actualTitles=(sheets||[]).map(sheetTitleOf);
-  const actual=actualTitles.map(x=>normalizeSheetTitle(x).toLocaleUpperCase('en-US'));
+  if(diagnostic.valid)return 'PM_2026';
+  // Historical 28-tab workbook is recognized as legacy regardless of tab order, never as PM_2026.
+  const actual=(sheets||[]).map(sheetTitleOf).map(x=>normalizeSheetTitle(x).toLocaleUpperCase('en-US'));
   const legacyExpected=KK_FULL_TEMPLATE_SHEET_NAMES.map(x=>normalizeSheetTitle(x).toLocaleUpperCase('en-US'));
-  const exactLegacy28=actual.length===legacyExpected.length&&legacyExpected.every(x=>actual.filter(y=>y===x).length===1);
-  const rawKeys=actualTitles.map(x=>String(x||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,''));
-  const hasPmReleaseAliases=rawKeys.some(key=>['KK51ARPJMDBP4D','KK51ALAKIPRPJMD','KK6INSPEKTORAT','KK7INSPEKTORAT','KK8INSPEKTORAT'].includes(key));
-  // Keep identifying the exact historical PK template so stale workbooks refresh safely.
-  // The customized 28-tab PM release is different: explicit BP4D/Inspektorat aliases mark
-  // it as the intended PM source even though CHECKLIST PK and KK 4 remain as extra tabs.
-  if(diagnostic.valid){
-    if(exactLegacy28&&!hasPmReleaseAliases)return 'LEGACY_PK_28';
-    return 'PM_2026';
-  }
-  if(exactLegacy28)return 'LEGACY_PK_28';
+  if(actual.length===legacyExpected.length&&legacyExpected.every(x=>actual.filter(y=>y===x).length===1))return 'LEGACY_PK_28';
   return null;
 }
 async function readLiveKkMasterRows(env,masterKind='PK',options={}){
@@ -1492,7 +1479,7 @@ async function ensureKkPmSpreadsheet(env,params){
   const copiedCheck=await validateKkPmSpreadsheet(accessToken,copied.id,{checkFormulas:true});
   if(!copiedCheck.ok||copiedCheck.profile!=='PM_2026'){
     const actual=(copiedCheck.actualTitles||[]).join(' | ');
-    throw new Error(`Salinan Spreadsheet PM baru gagal validasi 26 tab inti/formula. Profil=${copiedCheck.profile||'tidak dikenal'}; jumlah tab=${(copiedCheck.actualTitles||[]).length}; tab terdeteksi: ${actual||'(kosong)'}. Workbook lama tetap tertaut; periksa template sumber.`);
+    throw new Error(`Salinan Spreadsheet PM baru gagal validasi struktur/formula 26 sheet. Profil=${copiedCheck.profile||'tidak dikenal'}; jumlah tab=${(copiedCheck.actualTitles||[]).length}; tab terdeteksi: ${actual||'(kosong)'}. Workbook lama tetap tertaut; periksa template sumber.`);
   }
   return {
     version:3,templateSpreadsheetId:templateId,templateModifiedTime,templateRevision,
@@ -1571,10 +1558,10 @@ async function resolveKkPmTemplateSpreadsheet(env,accessToken,configuredId='',op
           const check=await validateKkPmSpreadsheet(accessToken,configured,{checkFormulas:true});
           if(check.ok&&check.profile==='PM_2026')configuredValue={id:configured,file,check,source:'configured'};
           else{
-            const profile=check.profile==='LEGACY_PK_28'?'master konfigurasi adalah workbook legacy PK, bukan rilis PM khusus yang diharapkan':`master konfigurasi belum memenuhi 26 tab inti PM`;
-            const detail=check.shapeOk&&check.profile==='PM_2026'?` (${(check.actualTitles||[]).length} tab total; tab tambahan diizinkan)`:check.shapeOk?`; profil terdeteksi ${check.profile||'tidak dikenal'}`:`; tab inti kurang: ${(check.missingTitles||[]).join(', ')||'tidak ada'}; duplikasi tab inti: ${(check.duplicateCanonicalTitles||[]).join(', ')||'tidak ada'}`;
+            const actual=(check.metadata?.sheets||[]).map(x=>normalizeSheetTitle(x.properties?.title||x.title));
+            const profile=check.profile==='LEGACY_PK_28'?'master konfigurasi adalah workbook legacy 28 tab':`master konfigurasi memiliki ${actual.length} tab, sedangkan PM terbaru memerlukan 26 tab`;
             const formula=check.formulaOk?'':`; formula inti tidak sesuai: ${(check.formulaMismatches||[]).map(x=>`${x.cell}=${x.actual||'(kosong)'}`).join(', ')}`;
-            configuredProblem=`ID ${configured}: ${profile}${detail}${formula}.`;
+            configuredProblem=`ID ${configured}: ${profile}${formula}.`;
           }
         }else configuredProblem=`ID ${configured} tidak ditemukan, sudah dihapus, atau bukan Google Sheets.`;
       }catch(err){configuredProblem=`ID ${configured} gagal divalidasi: ${String(err?.message||err).slice(0,240)}.`;}
@@ -1604,7 +1591,7 @@ async function resolveKkPmTemplateSpreadsheet(env,accessToken,configuredId='',op
       return discoveredValue;
     }
     const searchDetail=discovery.searchError?` Pencarian Drive: ${discovery.searchError}.`:'';
-    throw new Error(`Master PM terbaru belum dapat ditemukan dan divalidasi. ${configuredProblem} Sistem sudah mencari Google Sheets bernama “${PM_TEMPLATE_FILE_BASENAME}” dan variasi namanya, tetapi tidak menemukan sumber PM_2026 yang valid.${searchDetail} Pastikan seluruh 26 tab inti tersedia tepat satu kali, tab tambahan diperbolehkan, formula KKLEAD_SPIP!I11/I68/I85/I106 sesuai, dan akun OAuth memiliki izin membacanya. Workbook OPD lama tidak dihapus, diubah, atau ditimpa.`);
+    throw new Error(`Master PM terbaru belum dapat ditemukan dan divalidasi. ${configuredProblem} Sistem sudah mencari Google Sheets bernama “${PM_TEMPLATE_FILE_BASENAME}” dan variasi namanya, tetapi tidak menemukan sumber PM_2026 yang valid.${searchDetail} Pastikan master baru sudah diimpor sebagai Google Sheets, memiliki 26 tab beserta formula KKLEAD_SPIP!I11/I68/I85/I106, dan akun OAuth memiliki izin membacanya. Workbook OPD lama tidak dihapus, diubah, atau ditimpa.`);
   })();
   PM_TEMPLATE_RESOLUTION_PENDING.set(cacheKey,job);
   try{return await job;}finally{if(PM_TEMPLATE_RESOLUTION_PENDING.get(cacheKey)===job)PM_TEMPLATE_RESOLUTION_PENDING.delete(cacheKey);}
@@ -2989,10 +2976,8 @@ export async function onRequest({ request, env, ctx }) {
         const checked=await validateKkPmSpreadsheet(token,spreadsheetId,{checkFormulas:true});
         if(!checked.ok||checked.profile!=='PM_2026'){
           const mismatch=(checked.formulaMismatches||[]).map(x=>`${x.cell} seharusnya ${x.expected}, ditemukan ${x.actual||'(kosong)'}`).join('; ');
-          const extraNote=(checked.unexpectedTitles||[]).length?`; ${(checked.unexpectedTitles||[]).length} tab tambahan diizinkan: ${(checked.unexpectedTitles||[]).slice(0,10).join(', ')}${(checked.unexpectedTitles||[]).length>10?'…':''}`:'';
-          const shapeDetail=checked.shapeOk?`26 tab inti valid (${(checked.actualTitles||[]).length} tab total)${extraNote}`:`26 tab inti belum lengkap. Tab inti kurang: ${(checked.missingTitles||[]).join(', ')||'tidak ada'}; duplikasi tab inti: ${(checked.duplicateCanonicalTitles||[]).join(', ')||'tidak ada'}; jumlah tab terbaca ${(checked.actualTitles||[]).length}${extraNote}`;
-          const profileDetail=checked.profile&&checked.profile!=='PM_2026'?`; profil terdeteksi ${checked.profile}`:'';
-          throw new Error(`Master ditolak: ${shapeDetail}${profileDetail}${mismatch?'; formula inti tidak cocok: '+mismatch:''}. Urutan tab tidak diwajibkan; alias nama yang dikenal dan tab tambahan diperbolehkan, tetapi seluruh 26 tab inti harus ada tepat satu kali dan formula inti wajib valid. ID belum disimpan; workbook lama tetap aktif.`);
+          const shapeDetail=checked.shapeOk?'struktur 26 tab valid':`struktur tab tidak cocok (terbaca ${(checked.actualTitles||[]).length}/26). Tab kurang: ${(checked.missingTitles||[]).join(', ')||'tidak ada'}; tab tambahan/tidak dikenal: ${(checked.unexpectedTitles||[]).join(', ')||'tidak ada'}; tab duplikat: ${(checked.duplicateCanonicalTitles||[]).join(', ')||'tidak ada'}`;
+          throw new Error(`Master ditolak: ${shapeDetail}${mismatch?'; formula inti tidak cocok: '+mismatch:''}. Urutan tab tidak diwajibkan; nama standar/alias resmi dan formula inti wajib valid. ID belum disimpan; workbook lama tetap aktif.`);
         }
         const now=Date.now();
         await runD1WithRetry(()=>env.DB.prepare("INSERT INTO kk_pm_template_config(config_key,spreadsheet_id,spreadsheet_name,updated_at,updated_by,validation_profile) VALUES('active',?,?,?,?,?) ON CONFLICT(config_key) DO UPDATE SET spreadsheet_id=excluded.spreadsheet_id,spreadsheet_name=excluded.spreadsheet_name,updated_at=excluded.updated_at,updated_by=excluded.updated_by,validation_profile=excluded.validation_profile").bind(spreadsheetId,String(file.name||checked.metadata?.properties?.title||''),now,String(authSession.username||''),'PM_2026').run());
@@ -3090,7 +3075,7 @@ export async function onRequest({ request, env, ctx }) {
             const token=await getGoogleAccessToken(env);const meta=await getSpreadsheetMetadata(token,workbook.workbookSpreadsheetId);
             sheets=(meta.sheets||[]).map(x=>({sheetId:x.properties?.sheetId,title:x.properties?.title,index:x.properties?.index,rowCount:x.properties?.gridProperties?.rowCount||0,columnCount:x.properties?.gridProperties?.columnCount||0}));
             profile=getPmSheetProfile(meta.sheets||[]);
-            if(profile!=='PM_2026'){needsSync=true;needsSyncReason=`Workbook Pemda memiliki profil ${profile||'tidak dikenal'}, bukan master PM 2026 dengan 26 tab inti.`;}
+            if(profile!=='PM_2026'){needsSync=true;needsSyncReason=`Workbook Pemda memiliki profil ${profile||'tidak dikenal'}, bukan master PM 2026 dengan 26 sheet.`;}
           }catch(err){needsSync=true;needsSyncReason=`Workbook Pemda belum dapat diverifikasi: ${String(err?.message||err).slice(0,220)}`;sheets=Array.isArray(workbook.sheets)?workbook.sheets.map((x,i)=>({sheetId:x?.sheetId||x?.properties?.sheetId||null,title:typeof x==='string'?x:(x?.title||x?.properties?.title||''),index:Number(x?.index??i),rowCount:Number(x?.rowCount||0),columnCount:Number(x?.columnCount||0)})):[];}
           try{
             const token=await getGoogleAccessToken(env);const active=await resolveKkPmTemplateSpreadsheet(env,token,await getConfiguredKkPmTemplateId(env));
@@ -3114,7 +3099,7 @@ export async function onRequest({ request, env, ctx }) {
           const currentKkPmData={version:3,workbook:{...current},cells:{}};
           const workbook=await ensureKkPmSpreadsheet(env,{year:y,opd:'PEMERINTAH KABUPATEN MAHAKAM ULU',currentKkPmData,forceRefresh:Boolean(params.forceRefresh||params.massRefresh||params.forceTemplateRefresh)});
           const accessToken=await getGoogleAccessToken(env);const meta=await getSpreadsheetMetadata(accessToken,workbook.workbookSpreadsheetId);
-          if(!expectedPmSheetOrderMatches(meta.sheets||[])||getPmSheetProfile(meta.sheets||[])!=='PM_2026')throw new Error('Workbook Pemda gagal validasi master PM resmi (26 tab inti dan formula). Referensi lama tetap tersimpan.');
+          if(!expectedPmSheetOrderMatches(meta.sheets||[])||getPmSheetProfile(meta.sheets||[])!=='PM_2026')throw new Error('Workbook Pemda gagal validasi master PM resmi 26 sheet. Referensi lama tetap tersimpan.');
           const liveSheets=(meta.sheets||[]).map(x=>({sheetId:x.properties?.sheetId,title:x.properties?.title,index:x.properties?.index,rowCount:x.properties?.gridProperties?.rowCount||0,columnCount:x.properties?.gridProperties?.columnCount||0}));
           let finalWorkbook={...workbook,workbookName:workbook.workbookName||`PEMERINTAH KABUPATEN MAHAKAM ULU - KK PM SPIP - ${y}`,sheets:liveSheets};
           const priorId=String(current.workbookSpreadsheetId||'');
@@ -3793,7 +3778,7 @@ export async function onRequest({ request, env, ctx }) {
             const meta=await getSpreadsheetMetadata(token,data.workbook.workbookSpreadsheetId);
             sheets=(meta.sheets||[]).map(s=>({sheetId:s.properties?.sheetId,title:s.properties?.title,index:s.properties?.index,rowCount:s.properties?.gridProperties?.rowCount||0,columnCount:s.properties?.gridProperties?.columnCount||0}));
             profile=getPmSheetProfile(meta.sheets||[]);
-            if(profile!=='PM_2026'){needsSync=true;needsSyncReason=`Workbook tertaut memiliki profil ${profile||'tidak dikenal'}; PM terbaru memerlukan 26 tab inti yang unik. Tab tambahan diperbolehkan.`;}
+            if(profile!=='PM_2026'){needsSync=true;needsSyncReason=`Workbook tertaut memiliki profil ${profile||'tidak dikenal'}; PM terbaru harus 26 tab.`;}
           }catch(err){needsSync=true;needsSyncReason=`Workbook tertaut tidak dapat divalidasi: ${String(err?.message||err).slice(0,220)}`;sheets=Array.isArray(data.workbook.sheets)?data.workbook.sheets.map((x,i)=>({sheetId:x?.sheetId||x?.properties?.sheetId||null,title:typeof x==='string'?x:(x?.title||x?.properties?.title||''),index:Number.isFinite(Number(x?.index))?Number(x.index):i,rowCount:Number(x?.rowCount||x?.properties?.gridProperties?.rowCount||0),columnCount:Number(x?.columnCount||x?.properties?.gridProperties?.columnCount||0)})):[];}
         }else {needsSync=true;needsSyncReason='Belum ada workbook PM yang tertaut untuk OPD/tahun ini.';}
         // Check template lineage as well as tab count. A legacy workbook can have the right
@@ -3836,7 +3821,7 @@ export async function onRequest({ request, env, ctx }) {
           const wb=await ensureKkPmSpreadsheet(env,{...params,opd:rec.results[0].opd,currentKkPmData:latestRaw});
           const accessToken=await getGoogleAccessToken(env);
           const meta=await getSpreadsheetMetadata(accessToken,wb.workbookSpreadsheetId);
-          if(!expectedPmSheetOrderMatches(meta.sheets||[])||getPmSheetProfile(meta.sheets||[])!=='PM_2026')throw new Error('Spreadsheet PM hasil sinkronisasi tidak mengikuti template resmi PM terbaru (26 tab inti dan formula). Tidak ada referensi workbook yang diubah.');
+          if(!expectedPmSheetOrderMatches(meta.sheets||[])||getPmSheetProfile(meta.sheets||[])!=='PM_2026')throw new Error('Spreadsheet PM hasil sinkronisasi tidak mengikuti template resmi PM terbaru 26 sheet. Tidak ada referensi workbook yang diubah.');
           const sheets=(meta.sheets||[]).map(x=>({sheetId:x.properties?.sheetId,title:x.properties?.title,index:x.properties?.index,rowCount:x.properties?.gridProperties?.rowCount||0,columnCount:x.properties?.gridProperties?.columnCount||0}));
           let workbook={...wb,sheets:sheets.length?sheets:wb.sheets};
           // Keep a minimal recovery record if a legacy workbook must be replaced. The old
