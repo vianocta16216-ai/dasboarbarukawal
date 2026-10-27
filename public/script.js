@@ -4792,9 +4792,30 @@ async function kkRpjmdVerifyMapping(workpaperCode,decision){
  const verifier=document.querySelector(`[data-rpjmd-verifier="${CSS.escape(workpaperCode)}"]`)?.value||'';const note=document.querySelector(`[data-rpjmd-verifier-note="${CSS.escape(workpaperCode)}"]`)?.value||'';
  try{await callServerWithRetry('verifyKkRpjmdMapping',{opdId:kkPmCurrentRow.id,year:currentYear,workpaperCode,decision,verifierName:verifier,note},2);await loadKkRpjmdMappings(kkPmCurrentRow);kkPmSetStatus('Keputusan verifikasi tersimpan.','success');kkPmRenderModal();}catch(err){kkPmSetStatus('Verifikasi gagal: '+(err.message||err),'error');}
 }
+function kkPmCanonicalSheetKey(value){
+  const key=String(value||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const aliases={
+    KKLEADSPIPPEMDA:'KKLEADSPIP',KKLEADSPIPPEMERINTAHDAERAH:'KKLEADSPIP',KKLEADIP:'KKLEADI',KKLEADIPEMDA:'KKLEADI',KKLEADIPPEMDA:'KKLEADI',KKLEADIPOPD:'KKLEADI',
+    KKE11SASTRAPEMDA:'KKE11SASTRA',KKE11SASTRAPEMDABP4D:'KKE11SASTRA',KKE11SASTRABP4D:'KKE11SASTRA',KKE11SASTRAOPD:'KKE11SASTRA',
+    KKE21SASPROGRAMP:'KKE21SASPRO',KKE21SASPROGRAM:'KKE21SASPRO',KKE21SASPROOPD:'KKE21SASPRO',KKE22SASKEGOPD:'KKE22SASKEG',KKE22SASKEGIATAN:'KKE22SASKEG',
+    KKE23SASSUBKES:'KKE23SASSUBKEG',KKE23SASSUBKEGIATAN:'KKE23SASSUBKEG',KKE23SASARANSUBKEGIATAN:'KKE23SASSUBKEG',KKE23SASSUBKEGOPD:'KKE23SASSUBKEG',
+    KK31OPD:'KK31',KK32BPKAD:'KK32',KK32BPKADAKUN:'KK32',KK33BPKAD:'KK33',KK33BPKADASET:'KK33',KK34INSPEKTORAT:'KK34',
+    KK51ALAKIPRPJMD:'KK51A',KK51ARPJMD:'KK51A',KK51ARPJMDBP4D:'KK51A',KK51ALAKIPRPJMDBP4D:'KK51A',KK51BOPD:'KK51B',KK51COPD:'KK51C',KK52OPD:'KK52',
+    KK6INSP:'KK6',KK6INSPEKTORAT:'KK6',KK6APIP:'KK6',KK7INSP:'KK7',KK7INSPEKTORAT:'KK7',KK7APIP:'KK7',KK8INSP:'KK8',KK8INSPEKTORAT:'KK8',KK8APIP:'KK8',
+    REFPEMANTAUANCAPAIANTUJUAN:'REFPCT',REFPENCAPAIANTUJUAN:'REFPCT'
+  };
+  return aliases[key]||key;
+}
+function kkPmHasDecoratedCoreAlias(sheetMeta){
+  const rawKeys=(Array.isArray(sheetMeta)?sheetMeta:[]).map(x=>String(x?.title||x?.properties?.title||x||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,''));
+  return rawKeys.some(k=>['KK51ARPJMDBP4D','KK51ALAKIPRPJMD','KK6INSPEKTORAT','KK7INSPEKTORAT','KK8INSPEKTORAT'].includes(k));
+}
 async function ensureKkFullWorkbookManifestLoaded(sheetMeta=kkPmWorkbookSheets){
   const sheetCount=Array.isArray(sheetMeta)?sheetMeta.length:0;
-  const legacy=sheetCount===28;
+  // The customized current PM master can contain 28 physical tabs: the 26 required
+  // PM sheets plus administrative tabs, with some core tabs decorated by BP4D/Inspektorat.
+  // Do not misclassify that current template as the old PK manifest based on count alone.
+  const legacy=sheetCount===28&&!kkPmHasDecoratedCoreAlias(sheetMeta);
   const file=legacy?'/kk-full-workbook-manifest.json?v=20261008.6':'/kk-pm-full-workbook-manifest.json?v=20261015.2';
   const expectedKey=legacy?'legacy28':'pm26';
   if(kkFullWorkbookManifest?.__profile===expectedKey)return kkFullWorkbookManifest;
@@ -4928,7 +4949,8 @@ function kkPmWorkbookSheetByName(name){
   return (kkFullWorkbookManifest?.sheets||[]).find(x=>String(x.sheetName)===String(name));
 }
 function kkPmWorkbookGid(name){
-  return (kkPmWorkbookSheets||[]).find(x=>String(x.title)===String(name))?.sheetId;
+  const key=kkPmCanonicalSheetKey(name);
+  return (kkPmWorkbookSheets||[]).find(x=>kkPmCanonicalSheetKey(x.title||x.properties?.title)===key)?.sheetId;
 }
 function kkPmWorkbookUrl(name=''){
   const base=kkPmWorkbookData?.workbookUrl||''; if(!base)return '';
@@ -5032,8 +5054,9 @@ async function openLatestKkPmWorkbook(sheetName=''){
     let url=wb.workbookUrl||(wb.workbookSpreadsheetId?`https://docs.google.com/spreadsheets/d/${encodeURIComponent(wb.workbookSpreadsheetId)}/edit`:'');
     if(!url)throw new Error('Server belum memiliki tautan Google Spreadsheet PM untuk OPD/tahun ini.');
     if(sheetName){
-      const exactSheet=(data.sheets||[]).find(x=>String(x.title||'')===String(sheetName));
-      if(!exactSheet)throw new Error(`Tab ${sheetName} tidak ditemukan pada workbook PM terbaru; tautan sheet lama tidak dibuka.`);
+      const targetSheetKey=kkPmCanonicalSheetKey(sheetName);
+      const exactSheet=(data.sheets||[]).find(x=>kkPmCanonicalSheetKey(x.title||x.properties?.title)===targetSheetKey);
+      if(!exactSheet)throw new Error(`Tab inti ${sheetName} tidak ditemukan pada workbook PM terbaru. Periksa alias nama tab master; tautan workbook lama tidak dibuka.`);
       if(exactSheet.sheetId!==undefined&&exactSheet.sheetId!==null)url+=`#gid=${encodeURIComponent(exactSheet.sheetId)}`;
     }
     kkPmWorkbookData=wb;kkPmWorkbookSheets=Array.isArray(data.sheets)?data.sheets:kkPmWorkbookSheets;kkPmWorkbookNeedsSync=false;kkPmWorkbookSyncReason='';
@@ -5043,7 +5066,7 @@ async function openLatestKkPmWorkbook(sheetName=''){
     if(newTab&&!newTab.closed)newTab.location.replace(url);else window.open(url,'_blank','noopener,noreferrer');
   }catch(err){
     if(newTab&&!newTab.closed)newTab.close();
-    kkPmSetStatus('❌ Spreadsheet tidak dibuka karena tautan terbaru belum tervalidasi: '+(err?.message||err)+' Periksa GOOGLE_SHEETS_PM_TEMPLATE_ID, izin Google Drive, dan master PM 26 tab. File lama tetap aman.','error');
+    kkPmSetStatus('❌ Spreadsheet tidak dibuka karena tautan terbaru belum tervalidasi: '+(err?.message||err)+' Periksa ID/link master, izin Google Drive, 26 tab inti dan formula utama. Tab tambahan diperbolehkan; file lama tetap aman.','error');
   }finally{kkPmWorkbookOpenBusy=false;if(openBtn)openBtn.disabled=false;}
 }
 async function exportKkPmFullWorkbook(){
@@ -5669,7 +5692,7 @@ function renderPemdaPmDashboard(){
   const createBtn=document.getElementById('pemdaPmWorkbookCreate'),syncBtn=document.getElementById('pemdaPmWorkbookSync'),openBtn=document.getElementById('pemdaPmWorkbookOpen');
   const exists=!!(wb.workbookSpreadsheetId||wb.workbookUrl);if(name)name.textContent=exists?(wb.workbookName||`PEMERINTAH KABUPATEN MAHAKAM ULU - KK PM SPIP - ${currentYear}`):'KK PM SPIP Pemda belum dibuat';
   if(meta)meta.textContent=exists?`Tahun ${currentYear} · Terakhir disimpan ${pemdaDate(wb.updatedAt||0)}${wb.updatedBy?` oleh ${wb.updatedBy}`:''} · workbook Pemda tersendiri`:`Tahun ${currentYear} · Master template tersedia melalui konfigurasi Google Sheets PM pada server.`;
-  if(notice){notice.className='pemda-pm-workbook-notice'+(pemdaPmDash.workbook?.needsSync?' warning':'');notice.textContent=exists?(pemdaPmDash.workbook.needsSync?`⚠️ Workbook saat ini perlu diverifikasi/disinkronkan: ${pemdaPmDash.workbook.needsSyncReason||'revisi master berubah'}. File lama tidak akan dihapus.`:`✅ Workbook aktif tersambung dan telah tervalidasi sebagai master PM_2026 (26 sheet). Isian dilakukan pada Google Spreadsheet khusus Pemda; data workbook OPD tidak ditimpa.`):'Belum ada salinan workbook Pemda pada database. Klik “Buat dari Master” untuk membuat workbook mandiri dari template resmi.';}
+  if(notice){notice.className='pemda-pm-workbook-notice'+(pemdaPmDash.workbook?.needsSync?' warning':'');notice.textContent=exists?(pemdaPmDash.workbook.needsSync?`⚠️ Workbook saat ini perlu diverifikasi/disinkronkan: ${pemdaPmDash.workbook.needsSyncReason||'revisi master berubah'}. File lama tidak akan dihapus.`:`✅ Workbook aktif tersambung dan telah tervalidasi sebagai master PM_2026 (26 tab inti; tab tambahan diperbolehkan). Isian dilakukan pada Google Spreadsheet khusus Pemda; data workbook OPD tidak ditimpa.`):'Belum ada salinan workbook Pemda pada database. Klik “Buat dari Master” untuk membuat workbook mandiri dari template resmi.';}
   if(createBtn){createBtn.hidden=exists||!canManage;createBtn.disabled=pemdaPmDash.creating;createBtn.textContent=pemdaPmDash.creating?'Membuat...':'＋ Buat dari Master';}
   if(syncBtn){syncBtn.hidden=!exists||!pemdaPmDash.workbook?.needsSync||!canManage;syncBtn.disabled=pemdaPmDash.creating;}
   if(openBtn){openBtn.hidden=!exists||!!pemdaPmDash.workbook?.needsSync;openBtn.disabled=pemdaPmDash.creating;}
@@ -5797,7 +5820,7 @@ async function refreshPemdaPmWorkbooks({bulk=true,masterId=null,throwOnError=fal
   const raw=String(masterId||document.getElementById('pemdaPmTemplateId')?.value||pemdaPmDash.templateConfig?.spreadsheetId||'').trim();
   if(!raw){const err=new Error('Masukkan ID atau link master terlebih dahulu.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
   try{
-    pemdaPmTemplateStatus('Memvalidasi master PM_2026: 26 tab, formula inti, dan izin Google Drive…');
+    pemdaPmTemplateStatus('Memvalidasi master PM_2026: 26 tab inti (tab tambahan diperbolehkan), formula inti, dan izin Google Drive…');
     const config=await callServerWithRetry('updateKkPmTemplateConfig',{spreadsheetId:raw},3);pemdaPmDash.templateConfig=config;
     const link=document.getElementById('pemdaPmTemplateLink');if(link){link.href=config.spreadsheetUrl||'#';link.textContent=config.spreadsheetId||raw;}
     const updated=document.getElementById('pemdaPmTemplateUpdated');if(updated)updated.textContent=` · Diperbarui ${new Date(config.updatedAt||Date.now()).toLocaleString('id-ID')}${config.updatedBy?' oleh '+config.updatedBy:''}`;
@@ -5852,7 +5875,7 @@ async function loadPemdaPmDashboard(showStatus=true){
 }
 function openPemdaPmDashboard(){if(!currentUser){alert('Silakan login terlebih dahulu.');return;}const modal=document.getElementById('pemdaPmDashboardModal');if(!modal)return;modal.classList.add('active');loadPemdaPmDashboard(true);}
 function closePemdaPmDashboard(){document.getElementById('pemdaPmDashboardModal')?.classList.remove('active');}
-async function createOrSyncPemdaPmWorkbook(){if(!['admin','irban'].includes(pemdaPmRole()))return pemdaPmDashStatus('Hanya akun Pemda dan Irban yang dapat memperbarui workbook Pemda.','error');if(pemdaPmDash.creating)return;const btn=document.getElementById(pemdaPmDash.workbook?.exists?'pemdaPmWorkbookSync':'pemdaPmWorkbookCreate');pemdaPmDash.creating=true;if(btn)btn.disabled=true;pemdaPmDashStatus('Membuat / memverifikasi salinan KK PM SPIP Pemda dari master 26 sheet...');renderPemdaPmDashboard();
+async function createOrSyncPemdaPmWorkbook(){if(!['admin','irban'].includes(pemdaPmRole()))return pemdaPmDashStatus('Hanya akun Pemda dan Irban yang dapat memperbarui workbook Pemda.','error');if(pemdaPmDash.creating)return;const btn=document.getElementById(pemdaPmDash.workbook?.exists?'pemdaPmWorkbookSync':'pemdaPmWorkbookCreate');pemdaPmDash.creating=true;if(btn)btn.disabled=true;pemdaPmDashStatus('Membuat / memverifikasi salinan KK PM SPIP Pemda dari master 26 tab inti...');renderPemdaPmDashboard();
   try{const result=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear},2);pemdaPmDash.workbook={...(result.workbook||{}),exists:true,needsSync:!!result.needsSync,needsSyncReason:result.needsSyncReason||'',updatedAt:Number(result.updatedAt||Date.now()),updatedBy:result.updatedBy||'',permissions:{canManage:['admin','irban'].includes(String(currentUser?.role||'')),canRefreshAll:['admin','irban'].includes(String(currentUser?.role||''))}};pemdaPmDash.sheets=Array.isArray(result.sheets)?result.sheets:[];pemdaPmDash.lastLoadedAt=Date.now();renderPemdaPmDashboard();pemdaPmDashStatus(result.message||'Workbook KK PM SPIP Pemda berhasil diverifikasi.','success');}
   catch(err){pemdaPmDashStatus('Workbook Pemda belum berhasil dibuat/disinkronkan: '+(err.message||err),'error');await loadPemdaPmDashboard(false);}
   finally{pemdaPmDash.creating=false;if(btn)btn.disabled=false;renderPemdaPmDashboard();}}
