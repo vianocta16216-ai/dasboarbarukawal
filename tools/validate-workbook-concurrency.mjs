@@ -52,7 +52,7 @@ assert.ok(script.includes("fetch('/kk-pm-exact-workbook-master.json?v=20261015.2
 assert.ok(script.includes('snapshot lokal karena refresh master live gagal'), 'UI must show a warning instead of silently reporting stale master as live');
 
 const sheetNamesText = (handler.match(/const KK_PM_2026_SHEET_NAMES = \[([\s\S]*?)\];/) || [])[1] || '';
-assert.equal((sheetNamesText.match(/'[^']*'/g) || []).length, 26, 'PM_2026 profile must remain 26 sheets');
+assert.equal((sheetNamesText.match(/'[^']*'/g) || []).length, 28, 'fallback sheet inventory must match the 28-sheet uploaded master');
 
 console.log(JSON.stringify({
   status: 'PASS',
@@ -61,7 +61,7 @@ console.log(JSON.stringify({
     'scoped-account permissions for dashboard reads and formula synchronization',
     'Inspektorat/Irban is explicitly allowed to synchronize PM workbooks within its OPD scope',
     'dedicated PM template configuration (no silent legacy template fallback)',
-    'PM_2026 26-sheet + formula validation',
+    'PM_2026 required-sheet + formula validation',
     'distributed D1 lease for concurrent workbook creation',
     'atomic merge of sparse PM cells without losing workbook links or other cells',
     'cache generation protection against stale in-flight responses',

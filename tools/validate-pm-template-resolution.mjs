@@ -30,7 +30,7 @@ assert.equal(context.sheetTitleOf('KK3.1'),'KK3.1');
 assert.equal(context.sheetTitleOf({title:'KK3.2 BPKAD Akun'}),'KK3.2 BPKAD Akun');
 assert.ok(worker.includes('corpora:\'allDrives\''),'Drive search must consider shared-drive master templates');
 assert.ok(worker.includes("mimeType='application/vnd.google-apps.spreadsheet' and trashed=false"),'Only active native Google Sheets can be template candidates');
-assert.ok(worker.includes("if(!check.ok||check.profile!=='PM_2026')continue;"),'Discovered candidates must pass 26-sheet and formula validation');
+assert.ok(worker.includes("if(!check.ok||check.profile!=='PM_2026')continue;"),'Discovered candidates must pass required-sheet and formula validation');
 assert.ok(worker.includes("if(getPmSheetProfile(recordedSheets)!=='PM_2026')continue;"),'Master propagation must skip legacy/incomplete OPD workbooks');
 assert.ok(worker.includes("if(profile!=='PM_2026'){needsSync=true;"),'The UI must flag legacy 28-sheet workbooks for PM synchronization');
 assert.ok(worker.includes('Array.isArray(raw?.workbook?.sheets)?raw.workbook.sheets:[]'),'Master propagation must not assume missing destination metadata means PM_2026');
