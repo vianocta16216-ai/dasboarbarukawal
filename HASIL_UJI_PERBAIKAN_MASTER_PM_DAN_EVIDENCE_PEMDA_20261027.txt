@@ -1,0 +1,19 @@
+HASIL UJI LOKAL - KAWAL SPIP
+Tanggal: 27 Oktober 2026
+
+Pemeriksaan sintaks JavaScript: PASS
+Skrip validasi regresi: 13/13 PASS
+
+Ringkasan tes:
+- Hak akses/cakupan akun dan alur verifikasi
+- Dashboard KK PM SPIP khusus Pemda
+- Profil master PM_2026 (26 tab) dan formula inti
+- Resolver master ID yang dikonfigurasi tanpa penggantian diam-diam
+- Pembaruan template dan locking workbook per OPD/tahun
+- Isolasi penyimpanan evidence Pemda dari evidence OPD
+- Validasi server untuk target evidence T2/T3/T4
+- Status verifikasi evidence dan role verifier
+- Alur sampling, nilai, dan sinkronisasi realtime
+- Template LHE serta rollover tahun
+
+Catatan: PASS di atas adalah pengujian source code/regresi lokal. Akses live Google Sheets/Drive, validitas OAuth, dan izin folder perlu dikonfirmasi ketika aplikasi dijalankan di Cloudflare dengan secrets milik deployment.
