@@ -26,7 +26,7 @@ const resolverEnd = handler.indexOf('function expectedPmSheetOrderMatches(', res
 const resolver = handler.slice(resolverStart, resolverEnd);
 assert.ok(resolver.includes("check.profile==='PM_2026'") && resolver.includes("check.profile!=='PM_2026'"), 'PM template resolver must accept only the validated PM_2026 profile');
 assert.ok(resolver.includes('checkFormulas:true'), 'PM master formulas must be validated before copying');
-assert.ok(handler.includes('listPmTemplateCandidates(accessToken)'), 'An invalid configured master may trigger safe Drive discovery for a validated PM master');
+assert.ok(handler.includes('listPmTemplateCandidates(accessToken)'), 'A stale 28-sheet config must trigger safe Drive discovery for the exact PM master');
 assert.ok(handler.includes('explicitReleaseSuffix') && handler.includes('normalized!==expected&&!explicitReleaseSuffix'), 'Drive discovery must reject arbitrary prefix-matching backups and accept only canonical or explicitly named release variants');
 assert.ok(handler.includes('workbookHistory'), 'Replacing an incompatible legacy link must preserve the old workbook reference');
 assert.ok(!helper.includes('deleteGoogleDriveFile'), 'Existing workbooks must not be deleted during recovery');
@@ -61,7 +61,7 @@ console.log(JSON.stringify({
     'scoped-account permissions for dashboard reads and formula synchronization',
     'Inspektorat/Irban is explicitly allowed to synchronize PM workbooks within its OPD scope',
     'dedicated PM template configuration (no silent legacy template fallback)',
-    'PM_2026 26-core-sheet + formula validation, with optional tabs allowed',
+    'PM_2026 26-sheet + formula validation',
     'distributed D1 lease for concurrent workbook creation',
     'atomic merge of sparse PM cells without losing workbook links or other cells',
     'cache generation protection against stale in-flight responses',
