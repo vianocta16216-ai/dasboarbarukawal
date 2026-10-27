@@ -111,11 +111,44 @@ async function assertAssessmentInputEditable(env,year,opdId){
   }
   return row.opd;
 }
-function getPmSheetProfile(sheets){
+function canonicalPmSheetKey(value){
+  const key=String(value||'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  // Sheet names can be decorated by local workbook owners (OPD/PEMDA/BPKAD/BP4D).
+  // Normalize only explicit known variants; the exact 26-sheet set is still enforced.
+  const aliases={
+    KKLEADSPIPPEMDA:'KKLEADSPIP',KKLEADSPIPPEMERINTAHDAERAH:'KKLEADSPIP',
+    KKLEADIP:'KKLEADI',KKLEADIPEMDA:'KKLEADI',KKLEADIPPEMDA:'KKLEADI',KKLEADIPOPD:'KKLEADI',
+    KKE11SASTRAPEMDA:'KKE11SASTRA',KKE11SASTRAPEMDABP4D:'KKE11SASTRA',KKE11SASTRABP4D:'KKE11SASTRA',KKE11SASTRAOPD:'KKE11SASTRA',
+    KKE12SASTRAOPD:'KKE12SASTRAOPD',
+    KKE21SASPROGRAMP:'KKE21SASPRO',KKE21SASPROGRAM:'KKE21SASPRO',KKE21SASPROOPD:'KKE21SASPRO',
+    KKE22SASKEGOPD:'KKE22SASKEG',KKE22SASKEGIATAN:'KKE22SASKEG',
+    KKE23SASSUBKES:'KKE23SASSUBKEG',KKE23SASSUBKEGIATAN:'KKE23SASSUBKEG',KKE23SASARANSUBKEGIATAN:'KKE23SASSUBKEG',KKE23SASSUBKEGOPD:'KKE23SASSUBKEG',
+    KK31OPD:'KK31',KK32BPKAD:'KK32',KK32BPKADAKUN:'KK32',KK33BPKAD:'KK33',KK33BPKADASET:'KK33',KK34INSPEKTORAT:'KK34',
+    KK51A:'KK51A',KK51ALAKIPRPJMD:'KK51A',KK51B:'KK51B',KK51BOPD:'KK51B',KK51C:'KK51C',KK51COPD:'KK51C',
+    KK52OPD:'KK52',KK6INSP:'KK6',KK7INSP:'KK7',KK8INSP:'KK8',
+    REFPEMANTAUANCAPAIANTUJUAN:'REFPCT',REFPENCAPAIANTUJUAN:'REFPCT'
+  };
+  return aliases[key]||key;
+}
+function pmSheetStructureDiagnostics(sheets){
   const actual=(sheets||[]).map(sheetTitleOf);
-  const match=expected=>actual.length===expected.length&&actual.every((x,i)=>x===normalizeSheetTitle(expected[i]));
-  if(match(KK_PM_2026_SHEET_NAMES))return 'PM_2026';
-  if(match(KK_FULL_TEMPLATE_SHEET_NAMES))return 'LEGACY_PK_28';
+  const actualKeys=actual.map(canonicalPmSheetKey);
+  const expectedKeys=KK_PM_2026_SHEET_NAMES.map(canonicalPmSheetKey);
+  const expectedSet=new Set(expectedKeys);
+  const counts=new Map();for(const key of actualKeys)counts.set(key,(counts.get(key)||0)+1);
+  const missing=KK_PM_2026_SHEET_NAMES.filter((_,i)=>(counts.get(expectedKeys[i])||0)===0);
+  const duplicateKeys=[...counts.entries()].filter(([,count])=>count>1).map(([key])=>key);
+  const unexpected=actual.filter((title,i)=>!expectedSet.has(actualKeys[i]));
+  const valid=actual.length===KK_PM_2026_SHEET_NAMES.length&&missing.length===0&&duplicateKeys.length===0&&unexpected.length===0;
+  return{valid,actual,missing,unexpected,duplicates:duplicateKeys,expected:KK_PM_2026_SHEET_NAMES};
+}
+function getPmSheetProfile(sheets){
+  const diagnostic=pmSheetStructureDiagnostics(sheets);
+  if(diagnostic.valid)return 'PM_2026';
+  // Historical 28-tab workbook is recognized as legacy regardless of tab order, never as PM_2026.
+  const actual=(sheets||[]).map(sheetTitleOf).map(x=>normalizeSheetTitle(x).toLocaleUpperCase('en-US'));
+  const legacyExpected=KK_FULL_TEMPLATE_SHEET_NAMES.map(x=>normalizeSheetTitle(x).toLocaleUpperCase('en-US'));
+  if(actual.length===legacyExpected.length&&legacyExpected.every(x=>actual.filter(y=>y===x).length===1))return 'LEGACY_PK_28';
   return null;
 }
 async function readLiveKkMasterRows(env,masterKind='PK',options={}){
@@ -346,7 +379,7 @@ const VALID_ACCOUNT_ROLES = new Set(['admin','auditor','ppupd','opd','irban','bp
 const SAFE_PUBLIC_ACTIONS = new Set(['authMe','login','verifyAccess','previewPublicEvidence']);
 const COMMON_READ_ACTIONS = new Set([
   'getYears','getData','getSubunsurData','getKkMasterSheetRows','getKkSheets','getRtpKkSheets',
-  'getRtpEvidence','getReportFiles','getWorkbookEvidenceFiles','getKkPmSheets','getKkPmData',
+  'getRtpEvidence','getReportFiles','getWorkbookEvidenceFiles','getKkPmSheets','getKkPmTemplateConfig','getKkPmData',
   'getKkPmDataDetailed','getKkRpjmdMappings','getQaApipData','getQaApipChecklistData','getEvidenceWorkflow','previewEvidence','createEvidencePreviewLink','downloadEvidence',
   'getBpkpOfficialScore','exportKkPmWorkbook','getLheFollowups','getPemdaWorkflow','getPemdaWorkflowAudit','getPemdaKkPmWorkbook','getPemdaWorkbookEvidenceFiles','downloadPemdaEvidence'
 ]);
@@ -363,7 +396,7 @@ const OPD_INPUT_ACTIONS = new Set([
   'saveSubunsur','saveField','saveRow','uploadFile','deleteFile','replaceEvidenceFile','retryDriveBackup',
   'uploadRtpEvidence','deleteRtpEvidence','replaceRtpEvidence','saveRtpEvidenceFolder',
   'uploadReportFile','deleteReportFile','deleteLheFollowup','getReportFiles','getRtpEvidence','getLheFollowups','saveLheFollowup','uploadLheEvidence','deleteLheEvidence','deleteWorkbookEvidence','getKkSheets','createKkSheets',
-  'saveKkData','getRtpKkSheets','createRtpKkSheets','saveRtpKkData','getKkPmSheets','createKkPmSheets',
+  'saveKkData','getRtpKkSheets','createRtpKkSheets','saveRtpKkData','getKkPmSheets','createKkPmSheets','getKkPmTemplateConfig','updateKkPmTemplateConfig',
   'exportKkPmWorkbook','getKkPmData','getKkPmDataDetailed','saveKkPmData','saveKkPmItem','deleteKkPmItem',
   'saveKkPmMeta','saveKkRpjmdMapping','getKkRpjmdMappings','createEvidencePreviewLink','previewEvidence','getWorkbookEvidenceFiles','replaceWorkbookEvidenceFile','saveQaApipItem',
   'getQaApipData','getBpkpOfficialScore','syncKkComputedValues',
@@ -371,8 +404,8 @@ const OPD_INPUT_ACTIONS = new Set([
   'getYears','getData','getSubunsurData','getKkMasterSheetRows','getEvidenceWorkflow','downloadEvidence','previewEvidence','createEvidencePreviewLink','getLheFollowups','getPemdaWorkflow','getPemdaWorkflowAudit','savePemdaVerification'
 ]);
 const AUDITOR_ALLOWED_ACTIONS = new Set([
-  ...COMMON_READ_ACTIONS,...OPD_INPUT_ACTIONS,'saveEvidenceWorkflowStep','uploadPemdaWorkbookEvidence','deletePemdaWorkbookEvidence','savePemdaWorkbookEvidenceVerification',
-  'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','deleteLheFollowup'
+  ...COMMON_READ_ACTIONS,...OPD_INPUT_ACTIONS,'createPemdaKkPmWorkbook','uploadPemdaWorkbookEvidence','deletePemdaWorkbookEvidence','savePemdaWorkbookEvidenceVerification',
+  'saveEvidenceWorkflowStep','saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','deleteLheFollowup'
 ]);
 // PPUPD memiliki hak operasional yang sama dengan Auditor, tetap dibatasi oleh cakupan OPD sesi.
 const PPUPD_ALLOWED_ACTIONS = new Set(AUDITOR_ALLOWED_ACTIONS);
@@ -381,12 +414,12 @@ const IRBAN_ALLOWED_ACTIONS = new Set([
   // Inspektorat/Irban may provision and refresh the PM workbook for an OPD in scope.
   // These two actions remain protected by the per-OPD scope check below; the role
   // is not granted general account-management or official-score finalization rights.
-  'createKkPmSheets','syncKkComputedValues','createPemdaKkPmWorkbook','getKkPmTemplateConfig','updateKkPmTemplateConfig','uploadPemdaWorkbookEvidence','deletePemdaWorkbookEvidence','savePemdaWorkbookEvidenceVerification',
+  'createKkPmSheets','getKkPmWorkbookRefreshTargets','syncKkComputedValues','createPemdaKkPmWorkbook','getKkPmTemplateConfig','updateKkPmTemplateConfig','uploadPemdaWorkbookEvidence','deletePemdaWorkbookEvidence','savePemdaWorkbookEvidenceVerification',
   'saveAssessmentStatus','saveEvidenceVerification','saveRtpEvidenceVerification',
   'saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','retryDriveBackup','savePemdaSampling','verifyKkRpjmdMapping','downloadEvidence','listBackups','getLheFollowups','saveLheFollowup','deleteLheFollowup','uploadLheEvidence','deleteLheEvidence'
 ]);
 const BPKP_ALLOWED_ACTIONS = new Set([
-  ...COMMON_READ_ACTIONS,'saveEvidenceWorkflowStep','savePemdaVerification','downloadEvidence','getLheFollowups','getBpkpOfficialScoreAdmin','savePemdaWorkbookEvidenceVerification',
+  ...COMMON_READ_ACTIONS,'createKkPmSheets','updateKkPmTemplateConfig','createPemdaKkPmWorkbook','saveEvidenceWorkflowStep','savePemdaVerification','downloadEvidence','getLheFollowups','getBpkpOfficialScoreAdmin','savePemdaWorkbookEvidenceVerification',
   'getBpkpOfficialAudit','saveBpkpOfficialScore','unlockBpkpOfficialScore'
 ]);
 const DESTRUCTIVE_ADMIN_ACTIONS = new Set([
@@ -1270,6 +1303,32 @@ async function getDriveFile(accessToken, fileId) {
   return data;
 }
 
+async function tryArchiveKkPmDriveWorkbook(accessToken, oldSpreadsheetId, activeSpreadsheetId, year, organization, protectedSpreadsheetIds=[]) {
+  const oldId=String(oldSpreadsheetId||'').trim(),activeId=String(activeSpreadsheetId||'').trim();
+  const protectedIds=new Set((Array.isArray(protectedSpreadsheetIds)?protectedSpreadsheetIds:[]).map(x=>String(x||'').trim()).filter(Boolean));
+  if(!oldId||oldId===activeId||protectedIds.has(oldId))return {driveArchiveStatus:'skipped',driveArchiveError:null,previousDriveArchiveName:null};
+  try{
+    const file=await getDriveFile(accessToken,oldId);
+    if(!file||file.trashed)return {driveArchiveStatus:'not-found',driveArchiveError:null,previousDriveArchiveName:null};
+    const name=String(file.name||`${organization||'Workbook PM'} - Kertas Kerja PM SPIP - ${year}`);
+    if(/^ARSIP\s+\d{8,14}\s+-\s/i.test(name))return {driveArchiveStatus:'archived',driveArchiveError:null,previousDriveArchiveName:name};
+    const stamp=new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14);
+    const archiveName=safeDriveName(`ARSIP ${stamp} - ${name}`,`ARSIP ${stamp} - Workbook PM`).slice(0,150);
+    const query=new URLSearchParams({supportsAllDrives:'true',fields:'id,name,webViewLink'});
+    const response=await fetchWithRetry(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(oldId)}?${query.toString()}`,{
+      method:'PATCH',
+      headers:{Authorization:`Bearer ${accessToken}`,'Content-Type':'application/json'},
+      body:JSON.stringify({name:archiveName})
+    },{retries:2,baseDelay:500});
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(`Google Drive gagal mengarsipkan file lama (HTTP ${response.status}): ${JSON.stringify(result).slice(0,400)}`);
+    return {driveArchiveStatus:'archived',driveArchiveError:null,previousDriveArchiveName:String(result.name||archiveName)};
+  }catch(err){
+    // The new workbook link is already committed before this best-effort archive step.
+    return {driveArchiveStatus:'failed',driveArchiveError:String(err?.message||err).slice(0,600),previousDriveArchiveName:null};
+  }
+}
+
 function extractSpreadsheetId(value) {
   const raw = String(value || '').trim();
   const m = raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
@@ -1325,8 +1384,44 @@ function normalizeKkPmData(raw){
   const wb=data.workbook&&typeof data.workbook==='object'?data.workbook:{};
   // Preserve template lineage/revision fields through every normalization pass. Dropping
   // these fields made a valid workbook look stale forever and generated a new copy at each sync.
-  return {version:3,workbook:{version:3,workbookSpreadsheetId:wb.workbookSpreadsheetId||null,workbookUrl:wb.workbookUrl||null,workbookName:wb.workbookName||null,templateSpreadsheetId:wb.templateSpreadsheetId||null,templateModifiedTime:wb.templateModifiedTime||null,templateRevision:wb.templateRevision||null,syncDisposition:wb.syncDisposition||null,previousWorkbookSpreadsheetId:wb.previousWorkbookSpreadsheetId||null,sheets:Array.isArray(wb.sheets)?wb.sheets:KK_PM_2026_SHEET_NAMES},cells:data.cells&&typeof data.cells==='object'?data.cells:{}};
+  return {version:3,workbook:{version:3,workbookSpreadsheetId:wb.workbookSpreadsheetId||null,workbookUrl:wb.workbookUrl||null,workbookName:wb.workbookName||null,templateSpreadsheetId:wb.templateSpreadsheetId||null,templateModifiedTime:wb.templateModifiedTime||null,templateRevision:wb.templateRevision||null,syncDisposition:wb.syncDisposition||null,previousWorkbookSpreadsheetId:wb.previousWorkbookSpreadsheetId||null,r2MirrorKey:wb.r2MirrorKey||null,r2ManifestKey:wb.r2ManifestKey||null,r2MirrorUpdatedAt:wb.r2MirrorUpdatedAt||null,r2MirrorSize:wb.r2MirrorSize||null,r2MirrorError:wb.r2MirrorError||null,r2MirrorPending:Boolean(wb.r2MirrorPending),driveArchiveStatus:wb.driveArchiveStatus||null,driveArchiveError:wb.driveArchiveError||null,previousDriveArchiveName:wb.previousDriveArchiveName||null,sheets:Array.isArray(wb.sheets)?wb.sheets:KK_PM_2026_SHEET_NAMES},cells:data.cells&&typeof data.cells==='object'?data.cells:{}};
 }
+function safeR2WorkbookSegment(value,fallback='OPD'){
+  return String(value||fallback).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,100)||fallback;
+}
+async function mirrorKkPmWorkbookToR2(env,accessToken,{spreadsheetId,year,opdName,templateId,templateRevision}){
+  if(!env.EVIDENCE_BUCKET||typeof env.EVIDENCE_BUCKET.put!=='function')throw new Error('R2 EVIDENCE_BUCKET belum terhubung; workbook tidak dapat disalin ke mirror R2.');
+  const yearKey=String(year||new Date().getFullYear()).replace(/[^0-9A-Za-z_-]/g,'');
+  const orgKey=safeR2WorkbookSegment(opdName, 'OPD');
+  const prefix=`kawal_spip/workbooks/pm_2026/${yearKey}/${orgKey}`;
+  const r2MirrorKey=`${prefix}/current.xlsx`;
+  const r2ManifestKey=`${prefix}/current.json`;
+  const exportUrl=`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(String(spreadsheetId))}/export?mimeType=${encodeURIComponent('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}`;
+  const response=await fetchWithRetry(exportUrl,{headers:{Authorization:`Bearer ${accessToken}`}}, {retries:3,baseDelay:600});
+  if(!response.ok){const detail=(await response.text().catch(()=>'' )).slice(0,500);throw new Error(`Gagal mengekspor workbook Google Drive untuk mirror R2 (HTTP ${response.status}): ${detail}`);}
+  const contentType=String(response.headers.get('content-type')||'').toLowerCase();
+  if(contentType.includes('application/json')||contentType.includes('text/html'))throw new Error('Google Drive tidak mengembalikan file XLSX yang valid untuk mirror R2.');
+  // PUT to the stable object key replaces the prior R2 mirror atomically after export succeeds.
+  await env.EVIDENCE_BUCKET.put(r2MirrorKey,response.body,{httpMetadata:{contentType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',cacheControl:'private, no-cache'}});
+  const head=await env.EVIDENCE_BUCKET.head(r2MirrorKey);
+  if(!head)throw new Error('File XLSX mirror R2 tidak ditemukan setelah ditulis. Workbook Google Drive tetap tersedia; coba sinkronkan ulang.');
+  const updatedAt=Date.now();
+  const manifest={kind:'KAWAL_SPIP_PM_2026_WORKBOOK_MIRROR',year:yearKey,organization:String(opdName||''),googleSpreadsheetId:String(spreadsheetId),googleSpreadsheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(String(spreadsheetId))}/edit`,templateSpreadsheetId:String(templateId||''),templateRevision:String(templateRevision||''),r2MirrorKey,r2MirrorSize:Number(head.size||0),r2MirrorUpdatedAt:updatedAt};
+  await env.EVIDENCE_BUCKET.put(r2ManifestKey,JSON.stringify(manifest),{httpMetadata:{contentType:'application/json; charset=utf-8',cacheControl:'private, no-cache'}});
+  return {r2MirrorKey,r2ManifestKey,r2MirrorUpdatedAt:updatedAt,r2MirrorSize:Number(head.size||0),r2MirrorError:null};
+}
+async function tryMirrorKkPmWorkbookToR2(env,accessToken,meta){
+  try{return await mirrorKkPmWorkbookToR2(env,accessToken,meta);}
+  catch(err){
+    // Do not leave a valid fresh Drive workbook orphaned merely because the XLSX mirror
+    // temporarily failed. Keep the old R2 mirror intact and expose a clear retryable error.
+    return {r2MirrorKey:null,r2ManifestKey:null,r2MirrorUpdatedAt:null,r2MirrorSize:null,r2MirrorError:String(err?.message||err).slice(0,600)};
+  }
+}
+function mergeKkPmR2Mirror(workbook,mirror){
+  return {...workbook,r2MirrorKey:mirror.r2MirrorKey||workbook.r2MirrorKey||null,r2ManifestKey:mirror.r2ManifestKey||workbook.r2ManifestKey||null,r2MirrorUpdatedAt:mirror.r2MirrorUpdatedAt||workbook.r2MirrorUpdatedAt||null,r2MirrorSize:mirror.r2MirrorSize??workbook.r2MirrorSize??null,r2MirrorError:mirror.r2MirrorError||null,r2MirrorPending:false};
+}
+
 async function ensureKkPmSpreadsheet(env,params){
   if(!env.GOOGLE_DRIVE_CLIENT_ID||!env.GOOGLE_DRIVE_CLIENT_SECRET||!env.GOOGLE_DRIVE_REFRESH_TOKEN)throw new Error('Google OAuth untuk Spreadsheet PM belum dikonfigurasi. Periksa GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET, dan GOOGLE_DRIVE_REFRESH_TOKEN.');
   const accessToken=await getGoogleAccessToken(env);
@@ -1362,13 +1457,15 @@ async function ensureKkPmSpreadsheet(env,params){
   }
   const sameTemplate=String(current.templateSpreadsheetId||'')===templateId;
   const sameRevision=String(current.templateRevision||current.templateModifiedTime||'')===String(templateRevision);
-  if(currentWorkbookUsable&&sameTemplate&&sameRevision){
+  const forceRefresh=Boolean(params.forceRefresh||params.massRefresh||params.forceTemplateRefresh);
+  if(currentWorkbookUsable&&sameTemplate&&sameRevision&&!forceRefresh){
     return {
       version:3,templateSpreadsheetId:templateId,templateModifiedTime,templateRevision,
       workbookSpreadsheetId:String(current.workbookSpreadsheetId),
       workbookUrl:current.workbookUrl||currentFile.webViewLink||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(current.workbookSpreadsheetId)}/edit`,
       workbookName:current.workbookName||currentFile.name||`${opdName} - Kertas Kerja PM SPIP - ${yearValue}`,
       sheets:(current.sheets&&current.sheets.length)?current.sheets:KK_PM_2026_SHEET_NAMES,
+      r2MirrorKey:current.r2MirrorKey||null,r2ManifestKey:current.r2ManifestKey||null,r2MirrorUpdatedAt:current.r2MirrorUpdatedAt||null,r2MirrorSize:current.r2MirrorSize||null,r2MirrorError:null,r2MirrorPending:true,
       syncDisposition:'reused',previousWorkbookSpreadsheetId:null
     };
   }
@@ -1381,14 +1478,15 @@ async function ensureKkPmSpreadsheet(env,params){
   const copied=await copyDriveFile(accessToken,templateId,workbookName,pmFolder);
   const copiedCheck=await validateKkPmSpreadsheet(accessToken,copied.id,{checkFormulas:true});
   if(!copiedCheck.ok||copiedCheck.profile!=='PM_2026'){
-    // The unvalidated copy is NOT linked. Keep the old workbook and D1 data untouched.
-    throw new Error('Salinan Spreadsheet PM baru gagal validasi struktur/formula 26 sheet. Workbook lama tetap tertaut; periksa template sumber dan izin Google Drive sebelum mencoba lagi.');
+    const actual=(copiedCheck.actualTitles||[]).join(' | ');
+    throw new Error(`Salinan Spreadsheet PM baru gagal validasi struktur/formula 26 sheet. Profil=${copiedCheck.profile||'tidak dikenal'}; jumlah tab=${(copiedCheck.actualTitles||[]).length}; tab terdeteksi: ${actual||'(kosong)'}. Workbook lama tetap tertaut; periksa template sumber.`);
   }
   return {
     version:3,templateSpreadsheetId:templateId,templateModifiedTime,templateRevision,
     workbookSpreadsheetId:copied.id,
     workbookUrl:copied.webViewLink||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(copied.id)}/edit`,
-    workbookName:copied.name||workbookName,sheets:KK_PM_2026_SHEET_NAMES,
+    workbookName:copied.name||workbookName,sheets:(copiedCheck.metadata?.sheets||[]).map(x=>({sheetId:x.properties?.sheetId,title:x.properties?.title,index:x.properties?.index,rowCount:x.properties?.gridProperties?.rowCount||0,columnCount:x.properties?.gridProperties?.columnCount||0})),
+    r2MirrorKey:current.r2MirrorKey||null,r2ManifestKey:current.r2ManifestKey||null,r2MirrorUpdatedAt:current.r2MirrorUpdatedAt||null,r2MirrorSize:current.r2MirrorSize||null,r2MirrorError:null,r2MirrorPending:true,
     syncDisposition:'created',previousWorkbookSpreadsheetId:current.workbookSpreadsheetId||null,
     previousWorkbookProfile:currentProfile||null,previousTemplateSpreadsheetId:current.templateSpreadsheetId||null
   };
@@ -1499,25 +1597,40 @@ async function resolveKkPmTemplateSpreadsheet(env,accessToken,configuredId='',op
   try{return await job;}finally{if(PM_TEMPLATE_RESOLUTION_PENDING.get(cacheKey)===job)PM_TEMPLATE_RESOLUTION_PENDING.delete(cacheKey);}
 }
 function expectedPmSheetOrderMatches(sheets){ return Boolean(getPmSheetProfile(sheets)); }
-async function getSpreadsheetFormulaValues(accessToken,spreadsheetId){
-  const qs=Object.keys(KK_PM_EXPECTED_FORMULAS).map(r=>`ranges=${encodeURIComponent(r)}`).join('&');
+async function getSpreadsheetFormulaValues(accessToken,spreadsheetId,metadata=null){
+  const meta=metadata||await getSpreadsheetMetadata(accessToken,spreadsheetId);
+  const leadSheet=(meta.sheets||[]).map(sheetTitleOf).find(title=>canonicalPmSheetKey(title)==='KKLEADSPIP')||'KKLEAD_SPIP';
+  const formulaKeys=Object.keys(KK_PM_EXPECTED_FORMULAS);
+  const ranges=formulaKeys.map(cell=>{const cellRef=cell.slice(cell.indexOf('!')+1);return `'${String(leadSheet).replace(/'/g,"''")}'!${cellRef}`;});
+  const qs=ranges.map(r=>`ranges=${encodeURIComponent(r)}`).join('&');
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchGet?${qs}&valueRenderOption=FORMULA`;
   const res=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${accessToken}`}}, {retries:3,baseDelay:350});
   const body=await res.json().catch(()=>({}));
-  if(!res.ok)throw new Error(`Gagal memeriksa formula workbook: ${JSON.stringify(body)}`);
-  const ranges=body.valueRanges||[];
-  const out={}; Object.keys(KK_PM_EXPECTED_FORMULAS).forEach((r,i)=>{out[r]=ranges[i]?.values?.[0]?.[0]??null;}); return out;
+  if(!res.ok)throw new Error(`Gagal memeriksa formula inti pada tab ${leadSheet}: ${JSON.stringify(body)}`);
+  const valueRanges=body.valueRanges||[];
+  const out={}; formulaKeys.forEach((r,i)=>{out[r]=valueRanges[i]?.values?.[0]?.[0]??null;}); return out;
+}
+function normalizeKkPmFormula(value){return String(value||'').replace(/\s+/g,'').replace(/'/g,'').toUpperCase();}
+function kkPmFormulaMatches(actual,expected,cell){
+  const a=normalizeKkPmFormula(actual),e=normalizeKkPmFormula(expected);
+  if(a===e)return true;
+  // SUM is equivalent to addition for the three numeric maturity components.
+  if(cell==='KKLEAD_SPIP!I11')return new Set(['=SUM(H16,H50,H64)','=SUM(H16;H50;H64)','=H16+H50+H64','=H16+H50+H64+0']).has(a);
+  if(cell==='KKLEAD_SPIP!I106')return new Set(["=KKLEADII!L35","=+'KKLEAD II'!L35".replace(/'/g,'').replace(/\s+/g,'').toUpperCase()]).has(a);
+  return false;
 }
 async function validateKkPmSpreadsheet(accessToken,spreadsheetId,{checkFormulas=true}={}){
   const meta=await getSpreadsheetMetadata(accessToken,spreadsheetId);
-  const shapeOk=expectedPmSheetOrderMatches(meta.sheets||[]);
+  const actualTitles=(meta.sheets||[]).map(sheetTitleOf);
+  const structure=pmSheetStructureDiagnostics(meta.sheets||[]);
+  const shapeOk=structure.valid;
   let formulaOk=true,formulas=null,formulaMismatches=[];
   if(checkFormulas){
-    formulas=await getSpreadsheetFormulaValues(accessToken,spreadsheetId);
-    for(const [cell,expected] of Object.entries(KK_PM_EXPECTED_FORMULAS)){const actual=String(formulas[cell]||'').trim(); if(actual!==expected)formulaMismatches.push({cell,expected,actual});}
+    formulas=await getSpreadsheetFormulaValues(accessToken,spreadsheetId,meta);
+    for(const [cell,expected] of Object.entries(KK_PM_EXPECTED_FORMULAS)){const actual=String(formulas[cell]||'').trim(); if(!kkPmFormulaMatches(actual,expected,cell))formulaMismatches.push({cell,expected,actual});}
     formulaOk=formulaMismatches.length===0;
   }
-  return {ok:shapeOk&&formulaOk,shapeOk,formulaOk,formulaMismatches,profile:getPmSheetProfile(meta.sheets||[]),metadata:meta,formulas};
+  return {ok:shapeOk&&formulaOk,shapeOk,formulaOk,formulaMismatches,profile:getPmSheetProfile(meta.sheets||[]),metadata:meta,actualTitles,expectedTitles:KK_PM_2026_SHEET_NAMES,missingTitles:structure.missing,unexpectedTitles:structure.unexpected,duplicateCanonicalTitles:structure.duplicates,formulas};
 }
 
 
@@ -2386,7 +2499,7 @@ export async function onRequest({ request, env, ctx }) {
   const SENSITIVE_ACTIONS = [
     'verifyAccess', 'verifyDelete', 'login', 'logout', 'createPemdaKkPmWorkbook', 'updateKkPmTemplateConfig', 'uploadPemdaWorkbookEvidence', 'deletePemdaWorkbookEvidence', 'savePemdaWorkbookEvidenceVerification', 'createEvidencePreviewLink', 'saveEvidenceWorkflowStep', 'saveLheFollowup', 'deleteLheFollowup', 'uploadLheEvidence', 'deleteLheEvidence', 'addOpd', 'saveData', 'saveField', 'saveAssessmentStatus', 'saveBpkpOfficialScore', 'unlockBpkpOfficialScore', 'getBpkpOfficialScoreAdmin', 'getBpkpOfficialAudit', 'savePemdaSampling', 'savePemdaVerification',
     'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'saveQaApipItem', 'deleteQaApipItem', 'getQaApipChecklistData', 'saveQaApipChecklistItem', 'deleteQaApipChecklistItem', 'deleteOpd', 'addYear', 'deleteYear',
-    'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'syncKkPmMasterNow', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup',
+    'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'getKkPmWorkbookRefreshTargets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'syncKkPmMasterNow', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup',
     'listAuthUsers','createAuthUser','setAuthUserEnabled','resetAuthUserPassword'
   ];
 
@@ -2462,7 +2575,8 @@ export async function onRequest({ request, env, ctx }) {
     return jsonResponse({ status: 'error', code: 'ROLE_FORBIDDEN', message: 'Role akun tidak memiliki izin untuk aksi ini.' }, 403);
   }
   // Any action addressed to a specific OPD is checked against the logged-in scope.
-  if (authSession && params.opdId && !['addOpd'].includes(action)) {
+  const isAuthorizedPmBulkRefresh=action==='createKkPmSheets'&&['admin','irban'].includes(String(authSession?.role||''))&&(params.massRefresh===true||String(params.massRefresh||'').toLowerCase()==='true');
+  if (authSession && params.opdId && !['addOpd'].includes(action) && !isAuthorizedPmBulkRefresh) {
     try { await assertSessionCanAccessOpd(env, authSession, params.year || year, params.opdId); }
     catch (e) { return jsonResponse({ status: 'error', code: 'OPD_SCOPE_FORBIDDEN', message: e?.message || 'Akses OPD ditolak.' }, 403); }
   }
@@ -2846,13 +2960,13 @@ export async function onRequest({ request, env, ctx }) {
       }
 
       case 'getKkPmTemplateConfig': {
-        if(!['admin','irban'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Hanya Super Admin atau Irban yang dapat melihat pengaturan master KK PM.'},403);
         const row=await env.DB.prepare("SELECT spreadsheet_id,spreadsheet_name,updated_at,updated_by,validation_profile FROM kk_pm_template_config WHERE config_key='active' LIMIT 1").first();
         const spreadsheetId=extractSpreadsheetId(row?.spreadsheet_id||await getConfiguredKkPmTemplateId(env));
-        return jsonResponse({status:'success',spreadsheetId,spreadsheetUrl:spreadsheetId?`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`:'',spreadsheetName:String(row?.spreadsheet_name||''),updatedAt:Number(row?.updated_at||0),updatedBy:String(row?.updated_by||''),validationProfile:String(row?.validation_profile||'pending_validation'),canManage:true});
+        const canManage=['admin','irban'].includes(String(authSession?.role||''));
+        return jsonResponse({status:'success',spreadsheetId,spreadsheetUrl:spreadsheetId?`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`:'',spreadsheetName:String(row?.spreadsheet_name||''),updatedAt:Number(row?.updated_at||0),updatedBy:String(row?.updated_by||''),validationProfile:String(row?.validation_profile||'pending_validation'),canManage,canRefreshAll:canManage,scope:canManage?'global-master-and-all-workbooks':'read-only-master'});
       }
       case 'updateKkPmTemplateConfig': {
-        if(!['admin','irban'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Hanya Super Admin atau Irban yang dapat memperbarui master KK PM.'},403);
+        if(!['admin','irban'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Hanya akun Pemda (Super Admin Daerah) dan Irban yang dapat mengganti master global KK PM.'},403);
         const submitted=String(params.spreadsheetId||params.spreadsheetUrl||params.value||'').trim();
         const spreadsheetId=extractSpreadsheetId(submitted);
         if(!/^[A-Za-z0-9_-]{20,}$/.test(spreadsheetId))throw new Error('Masukkan ID atau link Google Spreadsheet yang valid.');
@@ -2862,15 +2976,22 @@ export async function onRequest({ request, env, ctx }) {
         const checked=await validateKkPmSpreadsheet(token,spreadsheetId,{checkFormulas:true});
         if(!checked.ok||checked.profile!=='PM_2026'){
           const mismatch=(checked.formulaMismatches||[]).map(x=>`${x.cell} seharusnya ${x.expected}, ditemukan ${x.actual||'(kosong)'}`).join('; ');
-          throw new Error(`Master ditolak: harus memiliki 26 tab KK PM 2026 dengan urutan/nama yang benar serta formula inti valid${mismatch?'. Formula: '+mismatch:''}. ID belum disimpan agar workbook lama tidak berubah.`);
+          const shapeDetail=checked.shapeOk?'struktur 26 tab valid':`struktur tab tidak cocok (terbaca ${(checked.actualTitles||[]).length}/26). Tab kurang: ${(checked.missingTitles||[]).join(', ')||'tidak ada'}; tab tambahan/tidak dikenal: ${(checked.unexpectedTitles||[]).join(', ')||'tidak ada'}; tab duplikat: ${(checked.duplicateCanonicalTitles||[]).join(', ')||'tidak ada'}`;
+          throw new Error(`Master ditolak: ${shapeDetail}${mismatch?'; formula inti tidak cocok: '+mismatch:''}. Urutan tab tidak diwajibkan; nama standar/alias resmi dan formula inti wajib valid. ID belum disimpan; workbook lama tetap aktif.`);
         }
         const now=Date.now();
         await runD1WithRetry(()=>env.DB.prepare("INSERT INTO kk_pm_template_config(config_key,spreadsheet_id,spreadsheet_name,updated_at,updated_by,validation_profile) VALUES('active',?,?,?,?,?) ON CONFLICT(config_key) DO UPDATE SET spreadsheet_id=excluded.spreadsheet_id,spreadsheet_name=excluded.spreadsheet_name,updated_at=excluded.updated_at,updated_by=excluded.updated_by,validation_profile=excluded.validation_profile").bind(spreadsheetId,String(file.name||checked.metadata?.properties?.title||''),now,String(authSession.username||''),'PM_2026').run());
         PM_TEMPLATE_RESOLUTION_CACHE.clear();LIVE_KK_MASTER_ROWS_CACHE.clear();LIVE_KK_MASTER_ROWS_PENDING.clear();
         notifyRealtime(env,ctx,year,{action:'updateKkPmTemplateConfig',spreadsheetId,updatedBy:String(authSession.username||'')});
-        return jsonResponse({status:'success',message:'ID master PM berhasil divalidasi dan diperbarui. Workbook Pemda dan OPD dapat disinkronkan dari sumber baru.',spreadsheetId,spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`,spreadsheetName:String(file.name||checked.metadata?.properties?.title||''),updatedAt:now,updatedBy:String(authSession.username||''),validationProfile:'PM_2026'});
+        return jsonResponse({status:'success',message:'ID master PM berhasil divalidasi dan diperbarui. Akun Pemda/Irban dapat menyinkronkan workbook Pemda dan seluruh OPD dari sumber baru.',spreadsheetId,spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`,spreadsheetName:String(file.name||checked.metadata?.properties?.title||''),updatedAt:now,updatedBy:String(authSession.username||''),validationProfile:'PM_2026',canManage:true,canRefreshAll:true,shapeAliasesAccepted:true});
       }
 
+      case 'getKkPmWorkbookRefreshTargets': {
+        if(!['admin','irban'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Daftar seluruh OPD untuk pembaruan workbook hanya dapat diakses akun Pemda dan Irban.'},403);
+        const q=await env.DB.prepare('SELECT id,opd FROM opd_data WHERE year=? ORDER BY opd COLLATE NOCASE').bind(String(year)).all();
+        const targets=(q.results||[]).map(row=>({id:String(row.id),opd:String(row.opd||'Tanpa Nama OPD')}));
+        return jsonResponse({status:'success',year:String(year),targets,total:targets.length,scope:'all-opds-authorized-pemda-irban'});
+      }
       case 'getPemdaWorkbookEvidenceFiles': {
         if(!['admin','irban','auditor','ppupd','bpkp'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Akun ini tidak diizinkan melihat evidence Struktur dan Proses Pemda.'},403);
         const q=await env.DB.prepare("SELECT upload_id,evidence_key,target_code,subunsur,param_id,grade,level,file_name,file_type,r2_key,gdrive_id,sync_status,sync_error,verification_status,verification_examiner,verification_note,verification_at,created_at,updated_at FROM pemda_workbook_evidence_items WHERE year=? AND target_code IN ('T2','T3','T4') AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>'' ORDER BY CASE target_code WHEN 'T2' THEN 1 WHEN 'T3' THEN 2 WHEN 'T4' THEN 3 ELSE 9 END,subunsur,param_id,CASE grade WHEN 'E' THEN 1 WHEN 'D' THEN 2 WHEN 'C' THEN 3 WHEN 'B' THEN 4 WHEN 'A' THEN 5 ELSE 9 END,created_at").bind(String(year)).all();
@@ -2962,11 +3083,11 @@ export async function onRequest({ request, env, ctx }) {
             if(String(workbook.templateSpreadsheetId||'')!==String(active.id)||!String(workbook.templateRevision||workbook.templateModifiedTime||'')||(rev&&rev!==String(workbook.templateRevision||workbook.templateModifiedTime||''))){needsSync=true;needsSyncReason='Master spreadsheet PM berubah atau workbook Pemda tidak lagi tertaut ke revisi master terbaru. Sinkronkan untuk membuat salinan yang tervalidasi; file lama disimpan.';}
           }catch(err){if(!needsSync){needsSync=true;needsSyncReason=`Revisi master PM belum dapat diverifikasi: ${String(err?.message||err).slice(0,220)}`;}}
         }
-        return jsonResponse({status:'success',year:String(year),exists:!!workbook.workbookSpreadsheetId,workbook:workbook.workbookSpreadsheetId?workbook:null,sheets,needsSync,needsSyncReason,profile,history:Array.isArray(history)?history.slice(-10).reverse():[],version:Number(saved?.version||0),updatedAt:Number(saved?.updated_at||0),updatedBy:String(saved?.updated_by||''),permissions:{canManage:['admin','irban'].includes(role)}});
+        return jsonResponse({status:'success',year:String(year),exists:!!workbook.workbookSpreadsheetId,workbook:workbook.workbookSpreadsheetId?workbook:null,sheets,needsSync,needsSyncReason,profile,history:Array.isArray(history)?history.slice(-10).reverse():[],version:Number(saved?.version||0),updatedAt:Number(saved?.updated_at||0),updatedBy:String(saved?.updated_by||''),permissions:{canManage:['admin','irban'].includes(role),canRefreshAll:['admin','irban'].includes(role)}});
       }
       case 'createPemdaKkPmWorkbook': {
         const role=String(authSession?.role||'');
-        if(!['admin','irban'].includes(role))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Hanya Super Admin atau Irban yang dapat membuat atau menyinkronkan workbook KK PM SPIP Pemda.'},403);
+        if(!['admin','irban'].includes(role))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Hanya akun Pemda (Super Admin Daerah) dan Irban yang dapat membuat atau memperbarui workbook Pemda.'},403);
         const y=String(year);const now=Date.now();const token=crypto.randomUUID();const leaseMs=10*60*1000;
         await env.DB.prepare(`INSERT OR IGNORE INTO pemda_kk_pm_workbooks(year,workbook_json,history_json,version,updated_at,updated_by) VALUES(?,'{}','[]',0,0,'')`).bind(y).run();
         const acquired=await env.DB.prepare('UPDATE pemda_kk_pm_workbooks SET lease_until=?,owner_token=? WHERE year=? AND lease_until<?').bind(now+leaseMs,token,y,now).run();
@@ -2976,11 +3097,11 @@ export async function onRequest({ request, env, ctx }) {
           if(!saved)throw new Error('Lease sinkronisasi Pemda tidak ditemukan.');
           let current={};let history=[];try{current=JSON.parse(saved.workbook_json||'{}')}catch{}try{history=JSON.parse(saved.history_json||'[]')}catch{}
           const currentKkPmData={version:3,workbook:{...current},cells:{}};
-          const workbook=await ensureKkPmSpreadsheet(env,{year:y,opd:'PEMERINTAH KABUPATEN MAHAKAM ULU',currentKkPmData});
+          const workbook=await ensureKkPmSpreadsheet(env,{year:y,opd:'PEMERINTAH KABUPATEN MAHAKAM ULU',currentKkPmData,forceRefresh:Boolean(params.forceRefresh||params.massRefresh||params.forceTemplateRefresh)});
           const accessToken=await getGoogleAccessToken(env);const meta=await getSpreadsheetMetadata(accessToken,workbook.workbookSpreadsheetId);
           if(!expectedPmSheetOrderMatches(meta.sheets||[])||getPmSheetProfile(meta.sheets||[])!=='PM_2026')throw new Error('Workbook Pemda gagal validasi master PM resmi 26 sheet. Referensi lama tetap tersimpan.');
           const liveSheets=(meta.sheets||[]).map(x=>({sheetId:x.properties?.sheetId,title:x.properties?.title,index:x.properties?.index,rowCount:x.properties?.gridProperties?.rowCount||0,columnCount:x.properties?.gridProperties?.columnCount||0}));
-          const finalWorkbook={...workbook,workbookName:workbook.workbookName||`PEMERINTAH KABUPATEN MAHAKAM ULU - KK PM SPIP - ${y}`,sheets:liveSheets};
+          let finalWorkbook={...workbook,workbookName:workbook.workbookName||`PEMERINTAH KABUPATEN MAHAKAM ULU - KK PM SPIP - ${y}`,sheets:liveSheets};
           const priorId=String(current.workbookSpreadsheetId||'');
           if(priorId&&priorId!==String(finalWorkbook.workbookSpreadsheetId||'')&&!history.some(x=>String(x.workbookSpreadsheetId||'')===priorId))history.push({...current,archivedAt:now,archiveReason:'Tautan workbook Pemda lama dipertahankan untuk pemulihan; file Google Drive tidak dihapus.'});
           history=history.slice(-10);
@@ -2988,8 +3109,21 @@ export async function onRequest({ request, env, ctx }) {
           if(!fresh||String(fresh.owner_token||'')!==token||Number(fresh.lease_until||0)<=Date.now())throw new Error('Lease sinkronisasi berakhir. Workbook tidak ditautkan oleh sesi ini; muat ulang lalu coba lagi.');
           const write=await runD1WithRetry(()=>env.DB.prepare(`UPDATE pemda_kk_pm_workbooks SET workbook_json=?,history_json=?,version=version+1,updated_at=?,updated_by=? WHERE year=? AND owner_token=? AND version=?`).bind(JSON.stringify(finalWorkbook),JSON.stringify(history),Date.now(),String(authSession.username||''),y,token,Number(saved.version||0)));
           if(!Number(write.meta?.changes||0))throw new Error('Data workbook Pemda berubah oleh sesi lain. Muat ulang dan coba lagi.');
+          // First persist the new Drive link. Only then overwrite the stable R2 XLSX mirror,
+          // so a failed database write cannot leave R2 pointing at an unlinked workbook.
+          const mirror=await tryMirrorKkPmWorkbookToR2(env,accessToken,{spreadsheetId:finalWorkbook.workbookSpreadsheetId,year:y,opdName:'PEMERINTAH KABUPATEN MAHAKAM ULU',templateId:finalWorkbook.templateSpreadsheetId,templateRevision:finalWorkbook.templateRevision});
+          finalWorkbook=mergeKkPmR2Mirror(finalWorkbook,mirror);
+          const driveArchive=await tryArchiveKkPmDriveWorkbook(accessToken,priorId,finalWorkbook.workbookSpreadsheetId,y,'PEMERINTAH KABUPATEN MAHAKAM ULU',[finalWorkbook.templateSpreadsheetId,current.templateSpreadsheetId]);
+          finalWorkbook={...finalWorkbook,...driveArchive};
+          await runD1WithRetry(()=>env.DB.prepare('UPDATE pemda_kk_pm_workbooks SET workbook_json=?,updated_at=? WHERE year=? AND owner_token=? AND version=?').bind(JSON.stringify(finalWorkbook),Date.now(),y,token,Number(saved.version||0)+1).run()).catch(err=>console.warn('Metadata mirror/arsip Drive Pemda belum tersimpan; tautan Drive tetap aktif:',String(err?.message||err).slice(0,180)));
           notifyRealtime(env,ctx,y,{action:'createPemdaKkPmWorkbook',version:Number(saved.version||0)+1});
-          return jsonResponse({status:'success',message:workbook.syncDisposition==='created'?'Workbook KK PM SPIP Pemda berhasil dibuat dari master.':'Workbook KK PM SPIP Pemda berhasil diverifikasi.',year:y,exists:true,workbook:finalWorkbook,sheets:liveSheets,needsSync:false,needsSyncReason:'',profile:'PM_2026',version:Number(saved.version||0)+1,updatedAt:Date.now(),updatedBy:String(authSession.username||''),syncDisposition:workbook.syncDisposition||'reused'});
+          const warnings=[];
+          if(finalWorkbook.r2MirrorError)warnings.push(`mirror XLSX R2 belum berhasil: ${finalWorkbook.r2MirrorError}`);
+          if(finalWorkbook.driveArchiveError)warnings.push(`file Drive lama belum berhasil diubah nama menjadi arsip: ${finalWorkbook.driveArchiveError}`);
+          const message=warnings.length
+            ?`Workbook KK PM SPIP Pemda baru sudah valid dan tertaut. Peringatan penyimpanan: ${warnings.join(' | ')}`
+            :(workbook.syncDisposition==='created'?'Workbook KK PM SPIP Pemda berhasil diperbarui dari master; mirror XLSX R2 diperbarui dan workbook lama diarsipkan.':'Workbook KK PM SPIP Pemda berhasil diverifikasi; mirror XLSX R2 sinkron dan file Drive lama dipertahankan sebagai arsip.');
+          return jsonResponse({status:'success',message,year:y,exists:true,workbook:finalWorkbook,sheets:liveSheets,needsSync:false,needsSyncReason:'',profile:'PM_2026',version:Number(saved.version||0)+1,updatedAt:Date.now(),updatedBy:String(authSession.username||''),syncDisposition:workbook.syncDisposition||'reused'});
         }finally{
           await env.DB.prepare("UPDATE pemda_kk_pm_workbooks SET lease_until=0,owner_token='',updated_at=CASE WHEN updated_at=0 THEN ? ELSE updated_at END WHERE year=? AND owner_token=?").bind(Date.now(),y,token).run().catch(()=>{});
         }
@@ -3689,7 +3823,7 @@ export async function onRequest({ request, env, ctx }) {
           const meta=await getSpreadsheetMetadata(accessToken,wb.workbookSpreadsheetId);
           if(!expectedPmSheetOrderMatches(meta.sheets||[])||getPmSheetProfile(meta.sheets||[])!=='PM_2026')throw new Error('Spreadsheet PM hasil sinkronisasi tidak mengikuti template resmi PM terbaru 26 sheet. Tidak ada referensi workbook yang diubah.');
           const sheets=(meta.sheets||[]).map(x=>({sheetId:x.properties?.sheetId,title:x.properties?.title,index:x.properties?.index,rowCount:x.properties?.gridProperties?.rowCount||0,columnCount:x.properties?.gridProperties?.columnCount||0}));
-          const workbook={...wb,sheets:sheets.length?sheets:wb.sheets};
+          let workbook={...wb,sheets:sheets.length?sheets:wb.sheets};
           // Keep a minimal recovery record if a legacy workbook must be replaced. The old
           // Google Sheet itself remains untouched and reachable; sparse PM cells are preserved.
           let rawRoot={};try{rawRoot=rec.results[0].kk_pm_data?JSON.parse(rec.results[0].kk_pm_data):{};}catch{rawRoot={};}
@@ -3707,8 +3841,20 @@ export async function onRequest({ request, env, ctx }) {
           // D1 updates the workbook link/history atomically and preserves $.cells during concurrent edits.
           const saved=await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET kk_pm_data=json_set(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,'$.version',3,'$.workbook',json(?),'$.workbookHistory',json(?)) WHERE id=? AND year=?").bind(JSON.stringify(workbook),JSON.stringify(workbookHistory),opdId,String(year)).run());
           if(!saved.meta?.changes)throw new Error('Referensi OPD/tahun tidak berubah karena rekaman tidak ditemukan saat menyimpan hasil sinkronisasi.');
+          // Link the validated Drive workbook first, then refresh the stable R2 mirror.
+          const mirror=await tryMirrorKkPmWorkbookToR2(env,accessToken,{spreadsheetId:workbook.workbookSpreadsheetId,year,opdName:rec.results[0].opd,templateId:workbook.templateSpreadsheetId,templateRevision:workbook.templateRevision});
+          workbook=mergeKkPmR2Mirror(workbook,mirror);
+          const driveArchive=await tryArchiveKkPmDriveWorkbook(accessToken,oldWorkbook.workbookSpreadsheetId,workbook.workbookSpreadsheetId,year,rec.results[0].opd,[workbook.templateSpreadsheetId,oldWorkbook.templateSpreadsheetId]);
+          workbook={...workbook,...driveArchive};
+          await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET kk_pm_data=json_set(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,'$.workbook',json(?)) WHERE id=? AND year=?").bind(JSON.stringify(workbook),opdId,String(year)).run()).catch(err=>console.warn('Metadata mirror/arsip Drive OPD belum tersimpan; tautan Drive tetap aktif:',String(err?.message||err).slice(0,180)));
           notifyRealtime(env,ctx,year,{action:'createKkPmSheets',opdId});
-          return jsonResponse({status:'success',message:wb.syncDisposition==='created'?'Workbook baru dari master PM terbaru berhasil dibuat dan ditautkan. Workbook lama tetap disimpan dalam riwayat.':'Workbook PM terbaru sudah terverifikasi dan tertaut.',kkPmData:workbook,sheets:workbook.sheets,syncDisposition:wb.syncDisposition||'reused',previousWorkbookSpreadsheetId:wb.previousWorkbookSpreadsheetId||null,workbookHistory});
+          const warnings=[];
+          if(workbook.r2MirrorError)warnings.push(`mirror R2 belum berhasil: ${workbook.r2MirrorError}`);
+          if(workbook.driveArchiveError)warnings.push(`arsip Drive lama gagal: ${workbook.driveArchiveError}`);
+          const syncMessage=warnings.length
+            ?`Workbook Google Drive baru sudah valid dan ditautkan. Peringatan: ${warnings.join(' | ')}`
+            :(wb.syncDisposition==='created'?'Workbook baru dari master PM terbaru berhasil dibuat dan ditautkan; mirror XLSX R2 diperbarui, workbook Drive lama diarsipkan.':'Workbook PM terbaru sudah terverifikasi dan tertaut; mirror XLSX R2 sinkron.');
+          return jsonResponse({status:'success',message:syncMessage,kkPmData:workbook,sheets:workbook.sheets,syncDisposition:wb.syncDisposition||'reused',previousWorkbookSpreadsheetId:wb.previousWorkbookSpreadsheetId||null,workbookHistory});
         }finally{
           await env.DB.prepare("UPDATE kk_pm_workbook_sync_locks SET lease_until=0,owner_token='',updated_at=? WHERE lock_key=? AND owner_token=?").bind(Date.now(),lockKey,lockToken).run().catch(()=>{});
         }
