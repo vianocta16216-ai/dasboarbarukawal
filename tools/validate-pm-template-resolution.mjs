@@ -68,7 +68,9 @@ function makeResolverContext(candidateFiles){
 }
 const validCandidate={id:'pm-good',name:'KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313.xlsx',mimeType:'application/vnd.google-apps.spreadsheet',modifiedTime:'2026-10-15T00:00:00Z',trashed:false};
 const discovered=makeResolverContext([validCandidate]);
-const chosen=await discovered.ctx.resolveKkPmTemplateSpreadsheet({GOOGLE_SHEETS_PM_TEMPLATE_ID:'legacy'},'token','legacy');
+// D1/default-based deployments may recover a stale pointer through precise Drive discovery.
+// An explicitly configured Cloudflare environment ID is tested separately below and must not silently fall back.
+const chosen=await discovered.ctx.resolveKkPmTemplateSpreadsheet({},'token','legacy');
 assert.equal(chosen.id,'pm-good');
 assert.equal(chosen.source,'drive-discovery');
 assert.ok(discovered.getSearchCalls()>=1);
@@ -86,10 +88,27 @@ assert.equal(latestChosen.id,'pm-config-old','A valid configured master remains 
 assert.equal(latestChosen.source,'configured');
 assert.equal(latest.getSearchCalls(),0,'Drive discovery must not silently replace the configured master');
 const notFound=makeResolverContext([]);
-await assert.rejects(()=>notFound.ctx.resolveKkPmTemplateSpreadsheet({GOOGLE_SHEETS_PM_TEMPLATE_ID:'legacy'},'token','legacy'),/Master PM terbaru belum dapat ditemukan dan divalidasi/);
+await assert.rejects(()=>notFound.ctx.resolveKkPmTemplateSpreadsheet({GOOGLE_SHEETS_PM_TEMPLATE_ID:'legacy'},'token','legacy'),/GOOGLE_SHEETS_PM_TEMPLATE_ID/);
 const backupLookalike={id:'pm-backup',name:'KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313 BACKUP LAMA',mimeType:'application/vnd.google-apps.spreadsheet',modifiedTime:'2026-10-16T00:00:00Z',trashed:false};
 const backupOnly=makeResolverContext([backupLookalike]);
-await assert.rejects(()=>backupOnly.ctx.resolveKkPmTemplateSpreadsheet({GOOGLE_SHEETS_PM_TEMPLATE_ID:'legacy'},'token','legacy'),/Master PM terbaru belum dapat ditemukan dan divalidasi/);
+await assert.rejects(()=>backupOnly.ctx.resolveKkPmTemplateSpreadsheet({GOOGLE_SHEETS_PM_TEMPLATE_ID:'legacy'},'token','legacy'),/GOOGLE_SHEETS_PM_TEMPLATE_ID/);
 
-console.log(JSON.stringify({status:'PASS',checks:23,verified:['PM tab aliases resolve before ranges are built','legacy T1-T4 sheet names are supported for safe resolution','missing target tabs fail with useful diagnostics','exact named master discovery handles .xlsx import names and duplicate suffix','stale 28-sheet IDs are rejected and valid PM masters are discovered','valid configured IDs remain authoritative and do not trigger silent auto-selection',
+// Verify the configured source order directly: Cloudflare environment > D1 runtime pointer > default.
+const configStart=worker.indexOf('async function getConfiguredKkPmTemplateId(');
+const configEnd=worker.indexOf('function privatePemdaEvidenceUrl(',configStart);
+assert.ok(configStart>=0&&configEnd>configStart,'configured master ID helper not found');
+function makeConfigContext(dbId){
+  const ctx={extractSpreadsheetId:value=>String(value||'').trim().match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1]||String(value||'').trim(),DEFAULT_PM_TEMPLATE_SPREADSHEET_ID:'pm-default',};
+  ctx.envDb={prepare:()=>({first:async()=>dbId?{spreadsheet_id:dbId}:null})};
+  vm.createContext(ctx);
+  vm.runInContext(worker.slice(configStart,configEnd)+';this.getConfiguredKkPmTemplateId=getConfiguredKkPmTemplateId;',ctx);
+  return ctx;
+}
+const sourcePriority=makeConfigContext('pm-old');
+assert.equal(await sourcePriority.getConfiguredKkPmTemplateId({GOOGLE_SHEETS_PM_TEMPLATE_ID:'pm-new',DB:sourcePriority.envDb}),'pm-new','Cloudflare secret must override stale D1 bootstrap ID');
+assert.equal(await sourcePriority.getConfiguredKkPmTemplateId({DB:sourcePriority.envDb}),'pm-old','D1 pointer remains active when the environment variable is not set');
+assert.ok(worker.includes("code:'ENV_TEMPLATE_ID_AUTHORITATIVE'"),'admin UI must explain when an entered ID conflicts with the authoritative environment ID');
+assert.ok(worker.includes("source:environmentIsActive?'cloudflare-environment'"),'config API must report the effective source for the frontend');
+
+console.log(JSON.stringify({status:'PASS',checks:27,verified:['PM tab aliases resolve before ranges are built','legacy T1-T4 sheet names are supported for safe resolution','missing target tabs fail with useful diagnostics','exact named master discovery handles .xlsx import names and duplicate suffix','stale 28-sheet IDs are rejected and valid PM masters are discovered','valid configured IDs remain authoritative and do not trigger silent auto-selection',
     'valid configured master is not silently replaced by a newer Drive candidate','no-candidate failure explains the required master setup','shared-drive search uses native Google Sheets only','discovered templates and propagation targets require PM_2026 validation']},null,2));
