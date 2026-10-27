@@ -12,11 +12,11 @@ const checks=[];function check(name,ok){assert.ok(ok,`FAIL: ${name}`);checks.pus
 const pemdaWorkbookTable=backend.split('CREATE TABLE IF NOT EXISTS pemda_kk_pm_workbooks (')[1]?.split('`).run();')[0]||'';
 check('dedicated per-year Pemda workbook table is independent from opd_id',pemdaWorkbookTable.includes('year TEXT PRIMARY KEY')&&pemdaWorkbookTable.includes('workbook_json TEXT')&&pemdaWorkbookTable.includes('owner_token TEXT')&&!pemdaWorkbookTable.includes('opd_id'));
 check('get endpoint allows only non-OPD review roles',/case 'getPemdaKkPmWorkbook'[\s\S]*?\['admin','irban','auditor','ppupd','bpkp'\]/.test(backend));
-check('creation endpoint allows only admin/Irban and serializes by year',/case 'createPemdaKkPmWorkbook'[\s\S]*?\['admin','irban'\][\s\S]*?lease_until[\s\S]*?owner_token/.test(backend));
-check('new workbook comes from the same master helper and Pemda folder identity',/ensureKkPmSpreadsheet\(env,\{year:y,opd:'PEMERINTAH KABUPATEN MAHAKAM ULU',currentKkPmData\}\)/.test(backend));
+check('creation/update endpoint only permits Pemda/admin and Irban and serializes by year',/case 'createPemdaKkPmWorkbook'[\s\S]*?\['admin','irban'\][\s\S]*?lease_until[\s\S]*?owner_token/.test(backend));
+check('new workbook comes from the same master helper and Pemda folder identity, with optional forced refresh',/ensureKkPmSpreadsheet\(env,\{year:y,opd:'PEMERINTAH KABUPATEN MAHAKAM ULU',currentKkPmData,forceRefresh:Boolean\(params\.forceRefresh\|\|params\.massRefresh\|\|params\.forceTemplateRefresh\)\}\)/.test(backend));
 check('new workbook is validated as PM_2026 26-sheet template before persistence',/expectedPmSheetOrderMatches\(meta\.sheets\|\|\[\]\)\|\|getPmSheetProfile\(meta\.sheets\|\|\[\]\)!=='PM_2026'/.test(backend));
 check('workbook update uses lock ownership and optimistic version',/owner_token=\? AND version=\?/.test(backend)&&/lease_until\|\|0\)<=Date\.now\(\)/.test(backend));
-check('new action is available to read roles and creation is restricted to Irban',/getPemdaKkPmWorkbook/.test(backend)&&/createPemdaKkPmWorkbook/.test(backend)&&/createPemdaKkPmWorkbook/.test(backend));
+check('new action is available to authorized supervisory roles for read and refresh',/getPemdaKkPmWorkbook/.test(backend)&&/createPemdaKkPmWorkbook/.test(backend)&&/createPemdaKkPmWorkbook/.test(backend));
 check('sampling response includes stored OPD score values',/scores:\{nilaiStrukturProses:[\s\S]*?nilaiMaturitas:[\s\S]*?nilaiKapabilitasApip:[\s\S]*?formulaStatus/.test(backend));
 check('navigation has a distinct KK PM SPIP Pemda button',html.includes('id="btnPemdaPmKk"')&&html.includes('📘 KK PM SPIP Pemda'));
 check('dashboard has separate workbook section, sheet list, and selected sampling table',html.includes('id="pemdaPmDashboardModal"')&&html.includes('id="pemdaPmSheetList"')&&html.includes('id="pemdaPmSamplingBody"'));
