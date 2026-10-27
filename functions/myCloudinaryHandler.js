@@ -1336,15 +1336,20 @@ function extractSpreadsheetId(value) {
 }
 
 async function getConfiguredKkPmTemplateId(env){
-  // Runtime pointer is editable by authorized administrators and takes precedence
-  // over Cloudflare's legacy secret, so a refreshed spreadsheet ID is used by both
-  // Pemda and OPD workbook creation after it has been validated by Google APIs.
+  // The Cloudflare Pages/Workers environment variable is the authoritative source
+  // when it is configured. Older D1 rows may contain the bootstrap ID, so consulting
+  // D1 first would silently keep syncing from a stale spreadsheet after a secret change.
+  const environmentId=extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||'');
+  if(environmentId)return environmentId;
+
+  // Retain the application-managed pointer only when the environment variable is not
+  // set. This preserves the existing admin UI workflow for deployments using D1 config.
   try{
     const row=await env.DB.prepare("SELECT spreadsheet_id FROM kk_pm_template_config WHERE config_key='active' LIMIT 1").first();
     const id=extractSpreadsheetId(row?.spreadsheet_id||'');
     if(id)return id;
   }catch{}
-  return extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||DEFAULT_PM_TEMPLATE_SPREADSHEET_ID||'');
+  return extractSpreadsheetId(DEFAULT_PM_TEMPLATE_SPREADSHEET_ID||'');
 }
 function privatePemdaEvidenceUrl(year,uploadId){
   const q=new URLSearchParams({action:'downloadPemdaEvidence',year:String(year),uploadId:String(uploadId)});
@@ -1569,11 +1574,20 @@ async function resolveKkPmTemplateSpreadsheet(env,accessToken,configuredId='',op
 
     // A valid, explicitly configured master is authoritative. Never silently replace it
     // with a different Drive file merely because that file has a newer modifiedTime.
-    // Discovery is only a recovery path when the configured ID is absent or invalid.
     if(configuredValue){
       PM_TEMPLATE_RESOLUTION_CACHE.set(cacheKey,{expiresAt:Date.now()+60_000,value:configuredValue});
       return configuredValue;
     }
+
+    // If GOOGLE_SHEETS_PM_TEMPLATE_ID is explicitly set, do not quietly sync against a
+    // different Drive-discovered file when that exact ID is missing/inaccessible/invalid.
+    // That would mask a bad Cloudflare secret and could direct OPD/Pemda workbooks at the
+    // wrong master. Discovery remains a recovery path only for deployments using D1/default.
+    const environmentId=extractSpreadsheetId(env?.GOOGLE_SHEETS_PM_TEMPLATE_ID||'');
+    if(environmentId&&environmentId===configured){
+      throw new Error(`Master yang ditetapkan melalui GOOGLE_SHEETS_PM_TEMPLATE_ID (${environmentId}) belum dapat diakses atau tidak lulus validasi PM_2026. ${configuredProblem} Periksa ID yang tersimpan di Cloudflare Pages > Settings > Variables and Secrets untuk lingkungan Production, pastikan file sudah berupa Google Sheets dengan 26 tab dan formula inti, lalu pastikan akun OAuth Google memiliki akses ke file tersebut. Sistem tidak akan memilih master lain secara otomatis; workbook lama tidak dihapus.`);
+    }
+
     const discovery=await listPmTemplateCandidates(accessToken);
     let discoveredValue=null;
     for(const candidate of discovery.candidates){
@@ -2961,15 +2975,23 @@ export async function onRequest({ request, env, ctx }) {
 
       case 'getKkPmTemplateConfig': {
         const row=await env.DB.prepare("SELECT spreadsheet_id,spreadsheet_name,updated_at,updated_by,validation_profile FROM kk_pm_template_config WHERE config_key='active' LIMIT 1").first();
-        const spreadsheetId=extractSpreadsheetId(row?.spreadsheet_id||await getConfiguredKkPmTemplateId(env));
+        const environmentId=extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||'');
+        const rowId=extractSpreadsheetId(row?.spreadsheet_id||'');
+        const spreadsheetId=environmentId||rowId||extractSpreadsheetId(DEFAULT_PM_TEMPLATE_SPREADSHEET_ID||'');
+        const environmentIsActive=Boolean(environmentId);
+        const rowMatchesActive=!environmentIsActive||rowId===spreadsheetId;
         const canManage=['admin','irban'].includes(String(authSession?.role||''));
-        return jsonResponse({status:'success',spreadsheetId,spreadsheetUrl:spreadsheetId?`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`:'',spreadsheetName:String(row?.spreadsheet_name||''),updatedAt:Number(row?.updated_at||0),updatedBy:String(row?.updated_by||''),validationProfile:String(row?.validation_profile||'pending_validation'),canManage,canRefreshAll:canManage,scope:canManage?'global-master-and-all-workbooks':'read-only-master'});
+        return jsonResponse({status:'success',spreadsheetId,spreadsheetUrl:spreadsheetId?`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`:'',spreadsheetName:rowMatchesActive?String(row?.spreadsheet_name||''):'',updatedAt:rowMatchesActive?Number(row?.updated_at||0):0,updatedBy:rowMatchesActive?String(row?.updated_by||''):'',validationProfile:rowMatchesActive?String(row?.validation_profile||'pending_validation'):'pending_validation',source:environmentIsActive?'cloudflare-environment':(rowId?'database-config':'default'),environmentAuthoritative:environmentIsActive,canManage,canRefreshAll:canManage,scope:canManage?'global-master-and-all-workbooks':'read-only-master'});
       }
       case 'updateKkPmTemplateConfig': {
         if(!['admin','irban'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Hanya akun Pemda (Super Admin Daerah) dan Irban yang dapat mengganti master global KK PM.'},403);
         const submitted=String(params.spreadsheetId||params.spreadsheetUrl||params.value||'').trim();
         const spreadsheetId=extractSpreadsheetId(submitted);
         if(!/^[A-Za-z0-9_-]{20,}$/.test(spreadsheetId))throw new Error('Masukkan ID atau link Google Spreadsheet yang valid.');
+        const environmentId=extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||'');
+        if(environmentId&&spreadsheetId!==environmentId){
+          return jsonResponse({status:'error',code:'ENV_TEMPLATE_ID_AUTHORITATIVE',message:`ID master aktif dikunci oleh GOOGLE_SHEETS_PM_TEMPLATE_ID di Cloudflare (${environmentId}). Ubah nilai secret/variable tersebut di Cloudflare Pages > Settings > Variables and Secrets, deploy ulang, lalu muat ulang dashboard. ID yang berbeda tidak disimpan agar tombol sinkronisasi tidak mengarah ke sumber yang membingungkan.`},409);
+        }
         const token=await getGoogleAccessToken(env);
         const file=await getDriveFile(token,spreadsheetId);
         if(!file||file.trashed||file.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error('ID tidak dapat diakses sebagai Google Sheets. Pastikan spreadsheet sudah dikonversi ke Google Sheets dan akun OAuth memiliki akses.');
