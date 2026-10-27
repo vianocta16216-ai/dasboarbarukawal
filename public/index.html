@@ -142,12 +142,17 @@
           <div class="pemda-pm-evidence-upload-action"><button type="button" class="primary" id="pemdaEvidenceUpload">⬆ Upload Evidence Pemda</button><small>File tersimpan di R2 dan disalin ke Google Drive bila sinkronisasi Drive tersedia.</small></div>
         </div>
         <div class="pemda-pm-evidence-summary" id="pemdaEvidenceSummary"></div>
-        <div class="pemda-pm-evidence-history-heading"><div><b>Riwayat Evidence per Target</b><small>Pilih satu target untuk melihat riwayatnya. Riwayat T2, T3, dan T4 tidak ditampilkan bertumpuk.</small></div></div>
-        <nav id="pemdaEvidenceHistoryTabs" class="pemda-pm-evidence-history-tabs" aria-label="Pilih riwayat evidence Pemda">
+        <div class="pemda-pm-evidence-history-heading"><div><b>Riwayat Evidence per Parameter dan Level</b><small>Pilih target, satu parameter, lalu satu level evidence. Hanya file pada kombinasi target + parameter + level terpilih yang ditampilkan, agar riwayat tidak menumpuk.</small></div></div>
+        <nav id="pemdaEvidenceHistoryTabs" class="pemda-pm-evidence-history-tabs" aria-label="Pilih target riwayat evidence Pemda">
           <button type="button" data-pemda-evidence-history-target="T2" aria-pressed="true">T2 · KK3.2 <span>0</span></button>
           <button type="button" data-pemda-evidence-history-target="T3" aria-pressed="false">T3 · KK3.3 <span>0</span></button>
           <button type="button" data-pemda-evidence-history-target="T4" aria-pressed="false">T4 · KK3.4 <span>0</span></button>
         </nav>
+        <div class="pemda-pm-evidence-history-filter">
+          <label for="pemdaEvidenceHistoryParameter">Parameter riwayat <select id="pemdaEvidenceHistoryParameter"><option value="">Memuat daftar parameter…</option></select></label>
+          <label for="pemdaEvidenceHistoryLevel">Level evidence <select id="pemdaEvidenceHistoryLevel"><option value="">Memuat level…</option></select></label>
+          <small id="pemdaEvidenceHistoryParameterHelp">Pilih satu parameter dan satu level untuk melihat hanya file, status pemeriksaan, serta catatannya pada level tersebut.</small>
+        </div>
         <div id="pemdaEvidenceFileList" class="pemda-pm-evidence-list"><div class="pemda-pm-empty">Memuat daftar evidence Pemda…</div></div>
       </section>
       <section class="pemda-pm-samples-panel">

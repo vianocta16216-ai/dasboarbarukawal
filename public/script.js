@@ -5651,7 +5651,7 @@ document.getElementById('pemdaWorkflowStageForms')?.addEventListener('click',e=>
 document.addEventListener('click',event=>{if(event.target===document.getElementById('pemdaWorkflowModal'))closePemdaWorkflow();});
 
 // ====== DASHBOARD KK PM SPIP KHUSUS PEMDA (terpisah dari setiap workbook OPD) ======
-const pemdaPmDash={loading:false,creating:false,workflow:[],workbook:null,sheets:[],manifest:[],permissions:{canManage:false},templateConfig:null,evidenceFiles:[],evidenceSummary:{total:0,verified:0,returned:0,byTarget:{}},evidenceError:'',evidenceHistoryTarget:'T2',lastLoadedAt:0};
+const pemdaPmDash={loading:false,creating:false,workflow:[],workbook:null,sheets:[],manifest:[],permissions:{canManage:false},templateConfig:null,evidenceFiles:[],evidenceSummary:{total:0,verified:0,returned:0,byTarget:{}},evidenceError:'',evidenceHistoryTarget:'T2',evidenceHistoryParamKey:'',evidenceHistoryLevelKey:'',lastLoadedAt:0};
 let pemdaPmManifestPromise=null;
 function pemdaPmDashStatus(message,state=''){const el=document.getElementById('pemdaPmDashboardStatus');if(!el)return;el.textContent=message;el.className='sheet-links-status'+(state?' '+state:'');}
 function pemdaPmScore(value){return value===null||value===undefined||value===''||!Number.isFinite(Number(value))?'—':Number(value).toLocaleString('id-ID',{minimumFractionDigits:2,maximumFractionDigits:2});}
@@ -5720,12 +5720,57 @@ function renderPemdaPmEvidenceFiles(){
   const files=Array.isArray(pemdaPmDash.evidenceFiles)?pemdaPmDash.evidenceFiles:[];const s=pemdaPmDash.evidenceSummary||{};
   if(summary)summary.innerHTML=[['Total Evidence',Number(s.total??files.length)],['Diterima',files.filter(f=>['diterima','diterima_catatan'].includes(f.verificationStatus)).length],['Dikembalikan',files.filter(f=>f.verificationStatus==='dikembalikan').length],['Menunggu Verifikasi',files.filter(f=>!f.verificationStatus).length]].map(([label,value])=>`<div><span>${escapeHtml(label)}</span><b>${Number(value).toLocaleString('id-ID')}</b></div>`).join('');
   const active=PEMDA_PM_ALLOWED_TARGETS.includes(pemdaPmDash.evidenceHistoryTarget)?pemdaPmDash.evidenceHistoryTarget:'T2';
-  const tabs=document.getElementById('pemdaEvidenceHistoryTabs');if(tabs){tabs.querySelectorAll('[data-pemda-evidence-history-target]').forEach(btn=>{const target=btn.dataset.pemdaEvidenceHistoryTarget;const count=files.filter(f=>f.targetCode===target).length;btn.setAttribute('aria-pressed',String(target===active));const span=btn.querySelector('span');if(span)span.textContent=String(count);});}
+  const tabs=document.getElementById('pemdaEvidenceHistoryTabs');if(tabs){tabs.querySelectorAll('[data-pemda-evidence-history-target]').forEach(btn=>{const target=btn.dataset.pemdaEvidenceHistoryTarget;const count=files.filter(f=>String(f.targetCode)===target).length;btn.setAttribute('aria-pressed',String(target===active));const span=btn.querySelector('span');if(span)span.textContent=String(count);});}
   if(pemdaPmDash.evidenceError){list.innerHTML=`<div class="pemda-pm-empty">${escapeHtml(pemdaPmDash.evidenceError)}</div>`;return;}
-  const visibleFiles=files.filter(file=>file.targetCode===active);
-  if(!visibleFiles.length){list.innerHTML=`<div class="pemda-pm-empty pemda-pm-evidence-empty-target"><b>Belum ada riwayat untuk ${escapeHtml(PEMDA_PM_TARGET_LABELS[active]||active)}.</b><span>Unggah evidence dengan memilih target yang sama pada formulir di atas. Riwayat target lain tetap tersimpan dan dapat dilihat melalui tabnya.</span></div>`;return;}
+
+  // The history list is scoped to one target AND one parameter, never a whole target feed.
+  const targetFiles=files.filter(file=>String(file.targetCode)===active);
+  const params=pemdaPmTargetParams(active);
+  const paramSelect=document.getElementById('pemdaEvidenceHistoryParameter');
+  const levelSelect=document.getElementById('pemdaEvidenceHistoryLevel');
+  const paramKey=p=>`${active}|${String(p.subCode||'')}|${String(p.paramId||'')}`;
+  const fileSubCode=file=>String(file.subCode??file.subunsur??'');
+  const countFor=p=>targetFiles.filter(file=>fileSubCode(file)===String(p.subCode||'')&&String(file.paramId||'')===String(p.paramId||'')).length;
+  const validKeys=new Set(params.map(paramKey));
+  let selectedKey=String(pemdaPmDash.evidenceHistoryParamKey||'');
+  if(!validKeys.has(selectedKey)){
+    const withFiles=params.find(p=>countFor(p)>0);
+    const uploadTarget=document.getElementById('pemdaEvidenceTarget')?.value||'';
+    const uploadSub=document.getElementById('pemdaEvidenceSubunsur')?.value||'';
+    const uploadParam=String(document.getElementById('pemdaEvidenceParam')?.value||'').split('|')[1]||'';
+    const uploadMatch=uploadTarget===active?params.find(p=>String(p.subCode)===uploadSub&&String(p.paramId)===uploadParam):null;
+    const selected=withFiles||uploadMatch||params[0];
+    selectedKey=selected?paramKey(selected):'';
+    pemdaPmDash.evidenceHistoryParamKey=selectedKey;
+  }
+  if(paramSelect){
+    const groups=new Map();params.forEach(p=>{const code=String(p.subCode||'');if(!groups.has(code))groups.set(code,[]);groups.get(code).push(p);});
+    paramSelect.innerHTML=groups.size?[...groups].map(([code,group])=>{
+      const name=String(group[0]?.subunsur||`Subunsur ${code}`);
+      return `<optgroup label="${escapeHtml(code+' — '+name)}">${group.map(p=>{const count=countFor(p);const label=`${p.paramId} — ${p.uraianParameter||p.paramName||'Parameter'} (${count} file)`;return `<option value="${escapeHtml(paramKey(p))}" ${paramKey(p)===selectedKey?'selected':''}>${escapeHtml(label)}</option>`;}).join('')}</optgroup>`;
+    }).join(''):'<option value="">Parameter belum tersedia dari master</option>';
+    paramSelect.disabled=!params.length;
+  }
+  const selectedParam=params.find(p=>paramKey(p)===selectedKey);
+  if(!selectedParam){list.innerHTML='<div class="pemda-pm-empty pemda-pm-evidence-empty-target"><b>Daftar parameter belum tersedia.</b><span>Muat ulang master KK PM, lalu coba lagi.</span></div>';return;}
+  const parameterFiles=targetFiles.filter(file=>fileSubCode(file)===String(selectedParam.subCode||'')&&String(file.paramId||'')===String(selectedParam.paramId||''));
+  const levelOptions=[{level:5,grade:'A',label:'Level 5 · Grade A'},{level:4,grade:'B',label:'Level 4 · Grade B'},{level:3,grade:'C',label:'Level 3 · Grade C'},{level:2,grade:'D',label:'Level 2 · Grade D'},{level:1,grade:'E',label:'Level 1 · Grade E'}];
+  const levelCount=opt=>parameterFiles.filter(file=>Number(file.level||({A:5,B:4,C:3,D:2,E:1})[String(file.grade||'').toUpperCase()]||0)===opt.level).length;
+  const uploadGrade=String(document.getElementById('pemdaEvidenceGrade')?.value||'C').toUpperCase();
+  const uploadLevel=({A:5,B:4,C:3,D:2,E:1})[uploadGrade]||3;
+  let selectedLevel=Number(pemdaPmDash.evidenceHistoryLevelKey||0);
+  if(!levelOptions.some(opt=>opt.level===selectedLevel)){
+    const firstWithFiles=levelOptions.find(opt=>levelCount(opt)>0);
+    selectedLevel=firstWithFiles?firstWithFiles.level:uploadLevel;
+    pemdaPmDash.evidenceHistoryLevelKey=String(selectedLevel);
+  }
+  if(levelSelect){levelSelect.innerHTML=levelOptions.map(opt=>`<option value="${opt.level}" ${opt.level===selectedLevel?'selected':''}>${opt.label} (${levelCount(opt)} file)</option>`).join('');levelSelect.disabled=!selectedParam;}
+  const visibleFiles=parameterFiles.filter(file=>Number(file.level||({A:5,B:4,C:3,D:2,E:1})[String(file.grade||'').toUpperCase()]||0)===selectedLevel);
+  const selectedLevelInfo=levelOptions.find(opt=>opt.level===selectedLevel)||levelOptions[2];
+  const parameterTitle=`${selectedParam.paramId} — ${selectedParam.uraianParameter||selectedParam.paramName||'Parameter'}`;
+  if(!visibleFiles.length){list.innerHTML=`<div class="pemda-pm-evidence-parameter-title"><span>${escapeHtml(PEMDA_PM_TARGET_LABELS[active]||active)}</span><b>${escapeHtml(parameterTitle)}</b><small>Subunsur ${escapeHtml(selectedParam.subCode||'—')} · ${escapeHtml(selectedLevelInfo.label)} · 0 file</small></div><div class="pemda-pm-empty pemda-pm-evidence-empty-target"><b>Belum ada evidence untuk parameter dan level ini.</b><span>Riwayat hanya menampilkan satu kombinasi parameter dan level. Pilih level lain atau unggah evidence dengan grade yang sesuai.</span></div>`;return;}
   const canVerify=pemdaPmCanVerifyEvidence(),canDelete=pemdaPmCanDeleteEvidence();
-  list.innerHTML=visibleFiles.map(file=>{
+  list.innerHTML=`<div class="pemda-pm-evidence-parameter-title"><span>${escapeHtml(PEMDA_PM_TARGET_LABELS[active]||active)}</span><b>${escapeHtml(parameterTitle)}</b><small>Subunsur ${escapeHtml(selectedParam.subCode||'—')} · ${escapeHtml(selectedLevelInfo.label)} · ${visibleFiles.length} file</small></div>`+visibleFiles.map(file=>{
     const id=String(file.uploadId||'');const target=PEMDA_PM_TARGET_LABELS[file.targetCode]||file.targetCode;const status=file.verificationStatus||'';const statusClass=status==='diterima'?'done':status==='diterima_catatan'?'progress':status==='dikembalikan'?'warning':'pending';
     const verify=canVerify?`<div class="pemda-pm-evidence-verification"><label>Status Pemeriksaan<select data-pemda-evidence-status="${escapeHtml(id)}"><option value="" ${!status?'selected':''}>Pilih status…</option><option value="diterima" ${status==='diterima'?'selected':''}>Diterima</option><option value="diterima_catatan" ${status==='diterima_catatan'?'selected':''}>Diterima dengan Catatan</option><option value="dikembalikan" ${status==='dikembalikan'?'selected':''}>Dikembalikan</option></select></label><label>Nama Pemeriksa<input type="text" maxlength="100" data-pemda-evidence-examiner="${escapeHtml(id)}" value="${escapeHtml(file.verificationExaminer||'')}" placeholder="Nama pemeriksa"></label><label class="pemda-pm-evidence-note">Catatan Pemeriksa<textarea rows="2" maxlength="2000" data-pemda-evidence-note="${escapeHtml(id)}" placeholder="Wajib untuk status catatan/dikembalikan">${escapeHtml(file.verificationNote||'')}</textarea></label><button type="button" data-pemda-evidence-verify="${escapeHtml(id)}">Simpan Verifikasi</button></div>`:'';
     const del=canDelete?`<button type="button" class="danger" data-pemda-evidence-delete="${escapeHtml(id)}">Hapus</button>`:'';
@@ -5766,6 +5811,7 @@ async function uploadPemdaPmEvidence(){
     for(let i=0;i<files.length;i++){
       const file=files[i];if(file.size>10*1024*1024){failed.push(`${file.name}: melebihi 10 MB`);continue;}
       pemdaPmEvidenceStatus(`Mengunggah ${i+1}/${files.length}: ${file.name}`);
+      pemdaPmDash.evidenceHistoryTarget=target;pemdaPmDash.evidenceHistoryParamKey=`${target}|${p.subCode}|${p.paramId}`;pemdaPmDash.evidenceHistoryLevelKey=String(({A:5,B:4,C:3,D:2,E:1})[grade]);
       const uploadId=crypto.randomUUID();const evidenceKey=`${target}|${p.subCode}|${p.paramId}`;
       try{const result=await callServerWithRetry('uploadPemdaWorkbookEvidence',{__binaryFile:file,year:currentYear,targetCode:target,subunsur:p.subCode,paramId:p.paramId,evidenceKey,grade,level:String(({A:5,B:4,C:3,D:2,E:1})[grade]),subunsurName:p.subunsur||`Subunsur ${p.subCode}`,paramName:p.uraianParameter||`Parameter ${p.paramId}`,fileName:file.name,fileType:file.type||'application/octet-stream',uploadId},3);if(result?.status==='pending'||result?.syncStatus==='retrying')pending++;else ok++;}
       catch(err){failed.push(`${file.name}: ${err.message||err}`);}
@@ -5875,7 +5921,9 @@ document.getElementById('pemdaEvidenceTarget')?.addEventListener('change',()=>re
 document.getElementById('pemdaEvidenceSubunsur')?.addEventListener('change',()=>renderPemdaPmEvidenceSelectors());
 document.getElementById('pemdaEvidenceParam')?.addEventListener('change',()=>renderPemdaPmEvidenceSelectors());
 document.getElementById('pemdaPmEvidenceRefresh')?.addEventListener('click',loadPemdaPmEvidenceFiles);
-document.getElementById('pemdaEvidenceHistoryTabs')?.addEventListener('click',e=>{const btn=e.target.closest('[data-pemda-evidence-history-target]');if(!btn)return;const target=btn.dataset.pemdaEvidenceHistoryTarget;if(!PEMDA_PM_ALLOWED_TARGETS.includes(target))return;pemdaPmDash.evidenceHistoryTarget=target;renderPemdaPmEvidenceFiles();});
+document.getElementById('pemdaEvidenceHistoryTabs')?.addEventListener('click',e=>{const btn=e.target.closest('[data-pemda-evidence-history-target]');if(!btn)return;const target=btn.dataset.pemdaEvidenceHistoryTarget;if(!PEMDA_PM_ALLOWED_TARGETS.includes(target))return;pemdaPmDash.evidenceHistoryTarget=target;pemdaPmDash.evidenceHistoryParamKey='';pemdaPmDash.evidenceHistoryLevelKey='';renderPemdaPmEvidenceFiles();});
+document.getElementById('pemdaEvidenceHistoryParameter')?.addEventListener('change',e=>{const key=String(e.target.value||'');if(!key)return;const parts=key.split('|');if(parts.length!==3||!PEMDA_PM_ALLOWED_TARGETS.includes(parts[0]))return;pemdaPmDash.evidenceHistoryTarget=parts[0];pemdaPmDash.evidenceHistoryParamKey=key;pemdaPmDash.evidenceHistoryLevelKey='';renderPemdaPmEvidenceFiles();});
+document.getElementById('pemdaEvidenceHistoryLevel')?.addEventListener('change',e=>{const level=Number(e.target.value||0);if(![1,2,3,4,5].includes(level))return;pemdaPmDash.evidenceHistoryLevelKey=String(level);renderPemdaPmEvidenceFiles();});
 document.getElementById('pemdaEvidenceUpload')?.addEventListener('click',uploadPemdaPmEvidence);
 document.getElementById('pemdaEvidenceFileList')?.addEventListener('click',e=>{const verify=e.target.closest('[data-pemda-evidence-verify]');if(verify){savePemdaPmEvidenceVerification(verify.dataset.pemdaEvidenceVerify);return;}const del=e.target.closest('[data-pemda-evidence-delete]');if(del){deletePemdaPmEvidence(del.dataset.pemdaEvidenceDelete);return;}const retry=e.target.closest('[data-pemda-evidence-retry]');if(retry)retryPemdaPmEvidenceDrive(retry.dataset.pemdaEvidenceRetry);});
 document.getElementById('pemdaPmWorkbookRefresh')?.addEventListener('click',()=>loadPemdaPmDashboard(true));
