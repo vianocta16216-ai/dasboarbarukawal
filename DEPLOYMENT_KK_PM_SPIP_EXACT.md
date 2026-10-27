@@ -6,9 +6,9 @@ Provisioning Kertas Kerja **PM_2026** memakai Google Sheets yang berasal dari su
 
 `KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313`
 
-Nama di Drive boleh memiliki ekstensi impor `.xlsx` atau suffix duplikat Google Drive seperti `(1)`. Beberapa suffix rilis eksplisit seperti `- BARU` juga dapat dideteksi. Master yang dipakai tetap harus lolos validasi struktur PM_2026: tepat 26 tab, urutan nama tab yang sesuai, dan formula inti `KKLEAD_SPIP!I11`, `KKLEAD_SPIP!I68`, `KKLEAD_SPIP!I85`, `KKLEAD_SPIP!I106`.
+Nama di Drive boleh memiliki ekstensi impor `.xlsx` atau suffix duplikat Google Drive seperti `(1)`. Beberapa suffix rilis eksplisit seperti `- BARU` juga dapat dideteksi. Master yang dipakai harus lolos validasi struktur PM_2026: seluruh 26 tab inti wajib tersedia tepat satu kali; urutan bebas dan tab tambahan diperbolehkan. Variasi nama resmi seperti `KKE 2.3 SASSUBKES`, `KK 5.1 A RPJMD (BP4D)`, `KK 6 INSPEKTORAT`, `KK 7 INSPEKTORAT`, dan `KK 8 INSPEKTORAT` dikenali sebagai alias. Formula inti `KKLEAD_SPIP!I11`, `KKLEAD_SPIP!I68`, `KKLEAD_SPIP!I85`, `KKLEAD_SPIP!I106`.
 
-**Penting:** workbook PK/legacy 28 tab bukan master PM_2026. Jangan menetapkan ID workbook lama 28 tab sebagai master PM. Resolver tidak akan mengubah struktur workbook itu otomatis.
+**Penting:** jumlah 28 tab tidak otomatis berarti salah. Rilis PM dengan 26 tab inti + tab ekstra dan alias BP4D/Inspektorat dapat dipakai setelah formula inti tervalidasi. Workbook PK/legacy 28 tab dengan nama lama persis tetap dikenali sebagai legacy dan tidak diterima sebagai master PM aktif.
 
 ## Variabel Cloudflare yang wajib
 
