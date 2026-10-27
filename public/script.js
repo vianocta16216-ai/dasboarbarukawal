@@ -134,7 +134,7 @@ function connectRealtime() {
           setRealtimeBadge('🟢 KK PM SPIP tersinkron', 'online');
           return;
         }
-        if (['savePemdaSampling','savePemdaVerification','createPemdaKkPmWorkbook'].includes(msg.action)) {
+        if (['savePemdaSampling','savePemdaVerification','createPemdaKkPmWorkbook','updateKkPmTemplateConfig','uploadPemdaWorkbookEvidence','deletePemdaWorkbookEvidence','savePemdaWorkbookEvidenceVerification','retryDriveBackup'].includes(msg.action)) {
           if (document.getElementById('pemdaWorkflowModal')?.classList.contains('active') && !isEditingFormField()) loadPemdaWorkflow(false).catch(()=>{});
           if (document.getElementById('pemdaPmDashboardModal')?.classList.contains('active') && !isEditingFormField()) loadPemdaPmDashboard(false).catch(()=>{});
           setRealtimeBadge('🟢 Alur verifikasi Pemda tersinkron', 'online');
@@ -5607,7 +5607,7 @@ document.getElementById('pemdaWorkflowStageForms')?.addEventListener('click',e=>
 document.addEventListener('click',event=>{if(event.target===document.getElementById('pemdaWorkflowModal'))closePemdaWorkflow();});
 
 // ====== DASHBOARD KK PM SPIP KHUSUS PEMDA (terpisah dari setiap workbook OPD) ======
-const pemdaPmDash={loading:false,creating:false,workflow:[],workbook:null,sheets:[],manifest:[],permissions:{canManage:false},lastLoadedAt:0};
+const pemdaPmDash={loading:false,creating:false,workflow:[],workbook:null,sheets:[],manifest:[],permissions:{canManage:false},templateConfig:null,evidenceFiles:[],evidenceSummary:{total:0,verified:0,returned:0,byTarget:{}},evidenceError:'',lastLoadedAt:0};
 let pemdaPmManifestPromise=null;
 function pemdaPmDashStatus(message,state=''){const el=document.getElementById('pemdaPmDashboardStatus');if(!el)return;el.textContent=message;el.className='sheet-links-status'+(state?' '+state:'');}
 function pemdaPmScore(value){return value===null||value===undefined||value===''||!Number.isFinite(Number(value))?'—':Number(value).toLocaleString('id-ID',{minimumFractionDigits:2,maximumFractionDigits:2});}
@@ -5616,6 +5616,8 @@ function pemdaPmStatusLabel(stage,status){const map={belum:'Belum',dalam_proses:
 function pemdaPmStageClass(status){return ['selesai','diterima','diterima_catatan'].includes(String(status||''))?'done':['dalam_proses'].includes(String(status||''))?'progress':['perlu_perbaikan','dikembalikan'].includes(String(status||''))?'warning':'pending';}
 function renderPemdaPmDashboard(){
   const rows=Array.isArray(pemdaPmDash.workflow)?pemdaPmDash.workflow:[];const samples=rows.filter(r=>r.isSample);const wb=pemdaPmDash.workbook||{};const canManage=!!pemdaPmDash.permissions.canManage;
+  const templatePanel=document.getElementById('pemdaPmTemplateAdminPanel');if(templatePanel)templatePanel.hidden=!['admin','irban'].includes(pemdaPmRole());
+  const evidencePanel=document.getElementById('pemdaPmEvidencePanel');if(evidencePanel)evidencePanel.hidden=!['admin','irban','auditor','ppupd','bpkp'].includes(pemdaPmRole());
   const pmDone=samples.filter(r=>r.pm?.status==='selesai').length;const qaDone=samples.filter(r=>['diterima','diterima_catatan'].includes(r.qa?.status)).length;const bpkpDone=samples.filter(r=>['diterima','diterima_catatan'].includes(r.bpkp?.status)).length;
   const stats=[['OPD dalam cakupan',rows.length,'Data OPD yang dapat diakses akun'],['OPD Sampling Terpilih',samples.length,'Sumber: pilihan sampling tersimpan'],['PM Internal Selesai',pmDone,'Tahap 1 untuk OPD sampling'],['QA Diterima',qaDone,'Tahap 2 untuk OPD sampling'],['BPKP Selesai',bpkpDone,'Tahap 3 untuk OPD sampling']];
   const summary=document.getElementById('pemdaPmDashboardSummary');if(summary)summary.innerHTML=stats.map(x=>`<div class="pemda-pm-stat-card"><span>${escapeHtml(x[0])}</span><strong>${x[1].toLocaleString('id-ID')}</strong><small>${escapeHtml(x[2])}</small></div>`).join('');
@@ -5639,6 +5641,150 @@ async function loadPemdaPmManifest(){
   pemdaPmManifestPromise=fetch(`/kk-pm-full-workbook-manifest.json?v=pemda-kkpm-20261026&_=${Date.now()}`,{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('Manifest master belum dapat dimuat');return r.json();}).then(d=>Array.isArray(d.sheets)?d.sheets:[]).catch(()=>[]);
   pemdaPmDash.manifest=await pemdaPmManifestPromise;return pemdaPmDash.manifest;
 }
+const PEMDA_PM_ALLOWED_TARGETS=['T2','T3','T4'];
+const PEMDA_PM_TARGET_LABELS={T2:'T2 · KK3.2 — Keandalan Pelaporan Keuangan',T3:'T3 · KK3.3 — Pengamanan Aset Daerah',T4:'T4 · KK3.4 — Ketaatan Peraturan'};
+function pemdaPmRole(){return String(currentUser?.role||'').toLowerCase();}
+function pemdaPmCanUploadEvidence(){return ['admin','irban','auditor','ppupd'].includes(pemdaPmRole());}
+function pemdaPmCanVerifyEvidence(){return ['admin','irban','auditor','ppupd','bpkp'].includes(pemdaPmRole());}
+function pemdaPmCanDeleteEvidence(){return ['admin','irban','auditor','ppupd'].includes(pemdaPmRole());}
+function pemdaPmMasterTarget(code){return (kkPmMaster?.targets||[]).find(t=>String(t.code)===String(code));}
+function pemdaPmTargetParams(code){return pemdaPmMasterTarget(code)?.parameters||[];}
+function pemdaPmCurrentParameter(){
+  const target=document.getElementById('pemdaEvidenceTarget')?.value||'T2';
+  const subCode=document.getElementById('pemdaEvidenceSubunsur')?.value||'';
+  const pair=String(document.getElementById('pemdaEvidenceParam')?.value||'').split('|');
+  return pemdaPmTargetParams(target).find(p=>String(p.subCode)===subCode&&String(p.paramId)===String(pair[1]||''))||null;
+}
+function renderPemdaPmEvidenceSelectors(){
+  const targetSelect=document.getElementById('pemdaEvidenceTarget'),subSelect=document.getElementById('pemdaEvidenceSubunsur'),paramSelect=document.getElementById('pemdaEvidenceParam');
+  if(!targetSelect||!subSelect||!paramSelect)return;
+  const target=PEMDA_PM_ALLOWED_TARGETS.includes(targetSelect.value)?targetSelect.value:'T2';targetSelect.value=target;
+  const params=pemdaPmTargetParams(target);const oldSub=subSelect.value;const subs=new Map();
+  params.forEach(p=>{const key=String(p.subCode||'');if(key&&!subs.has(key))subs.set(key,String(p.subunsur||`Subunsur ${key}`));});
+  subSelect.innerHTML=subs.size?[...subs].map(([code,name])=>`<option value="${escapeHtml(code)}">${escapeHtml(code+' — '+name)}</option>`).join(''):'<option value="">Master parameter tidak tersedia</option>';
+  if(subs.has(oldSub))subSelect.value=oldSub;
+  const subCode=subSelect.value;const oldPair=paramSelect.value;
+  const filtered=params.filter(p=>String(p.subCode)===String(subCode));
+  paramSelect.innerHTML=filtered.length?filtered.map(p=>{const value=`${p.subCode}|${p.paramId}`;const label=`${p.paramId} — ${p.uraianParameter||p.subunsur||'Parameter'}`;return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;}).join(''):'<option value="">Parameter tidak tersedia</option>';
+  if(filtered.some(p=>`${p.subCode}|${p.paramId}`===oldPair))paramSelect.value=oldPair;
+  const ready=!!filtered.length;
+  ['pemdaEvidenceSubunsur','pemdaEvidenceParam','pemdaEvidenceGrade','pemdaEvidenceInput','pemdaEvidenceUpload'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=!ready||!pemdaPmCanUploadEvidence();});
+}
+function pemdaPmVerificationLabel(status){return ({diterima:'Diterima',diterima_catatan:'Diterima dengan Catatan',dikembalikan:'Dikembalikan'})[String(status||'')]||'Belum diverifikasi';}
+function renderPemdaPmEvidenceFiles(){
+  const list=document.getElementById('pemdaEvidenceFileList'),summary=document.getElementById('pemdaEvidenceSummary');if(!list)return;
+  const files=Array.isArray(pemdaPmDash.evidenceFiles)?pemdaPmDash.evidenceFiles:[];const s=pemdaPmDash.evidenceSummary||{};
+  if(summary)summary.innerHTML=[['Total Evidence',Number(s.total||files.length)],['Diterima',files.filter(f=>['diterima','diterima_catatan'].includes(f.verificationStatus)).length],['Dikembalikan',files.filter(f=>f.verificationStatus==='dikembalikan').length],['Menunggu Verifikasi',files.filter(f=>!f.verificationStatus).length]].map(([label,value])=>`<div><span>${escapeHtml(label)}</span><b>${Number(value).toLocaleString('id-ID')}</b></div>`).join('');
+  if(pemdaPmDash.evidenceError){list.innerHTML=`<div class="pemda-pm-empty">${escapeHtml(pemdaPmDash.evidenceError)}</div>`;return;}
+  if(!files.length){list.innerHTML=`<div class="pemda-pm-empty">Belum ada evidence khusus Pemda untuk tahun ${escapeHtml(String(currentYear))}. Pilih target T2, T3, atau T4 di atas untuk mulai mengunggah.</div>`;return;}
+  const canVerify=pemdaPmCanVerifyEvidence(),canDelete=pemdaPmCanDeleteEvidence();
+  list.innerHTML=files.map(file=>{
+    const id=String(file.uploadId||'');const target=PEMDA_PM_TARGET_LABELS[file.targetCode]||file.targetCode;const status=file.verificationStatus||'';const statusClass=status==='diterima'?'done':status==='diterima_catatan'?'progress':status==='dikembalikan'?'warning':'pending';
+    const verify=canVerify?`<div class="pemda-pm-evidence-verification"><label>Status Pemeriksaan<select data-pemda-evidence-status="${escapeHtml(id)}"><option value="" ${!status?'selected':''}>Pilih status…</option><option value="diterima" ${status==='diterima'?'selected':''}>Diterima</option><option value="diterima_catatan" ${status==='diterima_catatan'?'selected':''}>Diterima dengan Catatan</option><option value="dikembalikan" ${status==='dikembalikan'?'selected':''}>Dikembalikan</option></select></label><label>Nama Pemeriksa<input type="text" maxlength="100" data-pemda-evidence-examiner="${escapeHtml(id)}" value="${escapeHtml(file.verificationExaminer||'')}" placeholder="Nama pemeriksa"></label><label class="pemda-pm-evidence-note">Catatan Pemeriksa<textarea rows="2" maxlength="2000" data-pemda-evidence-note="${escapeHtml(id)}" placeholder="Wajib untuk status catatan/dikembalikan">${escapeHtml(file.verificationNote||'')}</textarea></label><button type="button" data-pemda-evidence-verify="${escapeHtml(id)}">Simpan Verifikasi</button></div>`:'';
+    const del=canDelete?`<button type="button" class="danger" data-pemda-evidence-delete="${escapeHtml(id)}">Hapus</button>`:'';
+    const retry=(file.syncStatus==='retrying'||file.syncStatus==='pending')&&pemdaPmCanUploadEvidence()?`<button type="button" data-pemda-evidence-retry="${escapeHtml(id)}">↻ Ulangi Sinkronisasi Drive</button>`:'';
+    const sync=file.syncStatus==='done'?'Tersimpan di R2 + Google Drive':(file.syncStatus==='deleted'?'Dihapus':`Tersimpan di R2 · Sinkronisasi Drive ${file.syncStatus==='retrying'?'tertunda':'menunggu'}`);
+    return `<article class="pemda-pm-evidence-card"><div class="pemda-pm-evidence-card-head"><div><span class="pemda-pm-evidence-target">${escapeHtml(target)}</span><h5>${escapeHtml(file.fileName||'Evidence')}</h5><p>Subunsur ${escapeHtml(file.subunsur||'—')} · Parameter ${escapeHtml(file.paramId||'—')} · Grade ${escapeHtml(file.grade||'—')} · Level ${Number(file.level||0)}</p></div><span class="pemda-pm-stage ${statusClass}">${escapeHtml(pemdaPmVerificationLabel(status))}</span></div><div class="pemda-pm-evidence-card-actions"><a href="${escapeHtml(file.url||'#')}" target="_blank" rel="noopener">↗ Buka file</a><small>${escapeHtml(sync)}${file.syncError?' · '+escapeHtml(file.syncError):''}</small>${retry}${del}</div>${file.verificationExaminer?`<p class="pemda-pm-evidence-saved-verification">Pemeriksa: <b>${escapeHtml(file.verificationExaminer)}</b>${file.verificationNote?' · '+escapeHtml(file.verificationNote):''}</p>`:''}${verify}</article>`;
+  }).join('');
+}
+async function loadPemdaPmTemplateConfig(){
+  const panel=document.getElementById('pemdaPmTemplateAdminPanel');if(!panel)return;
+  const role=pemdaPmRole(),canManage=['admin','irban'].includes(role);panel.hidden=!canManage;if(!canManage)return;
+  try{
+    const result=await callServer('getKkPmTemplateConfig',{});pemdaPmDash.templateConfig=result;
+    const input=document.getElementById('pemdaPmTemplateId'),link=document.getElementById('pemdaPmTemplateLink'),state=document.getElementById('pemdaPmTemplateValidationState'),updated=document.getElementById('pemdaPmTemplateUpdated');
+    if(input&&(!input.value||!input.dataset.dirty))input.value=result.spreadsheetId||'';
+    if(link){link.href=result.spreadsheetUrl||'#';link.textContent=result.spreadsheetId||'ID master belum dikonfigurasi';}
+    if(state){state.textContent=result.validationProfile==='PM_2026'?'Profil PM_2026 tervalidasi':(result.validationProfile==='pending_validation'?'Menunggu validasi pertama':'Perlu validasi');state.className='pemda-pm-template-state'+(result.validationProfile==='PM_2026'?' success':' warning');}
+    if(updated)updated.textContent=result.updatedAt?` · Diperbarui ${new Date(result.updatedAt).toLocaleString('id-ID')}${result.updatedBy?' oleh '+result.updatedBy:''}`:'';
+    const bulk=document.getElementById('pemdaPmTemplateRefreshAll');if(bulk)bulk.hidden=role!=='admin';
+    const save=document.getElementById('pemdaPmTemplateUpdate');if(save)save.textContent=role==='admin'?'✓ Validasi ID & Perbarui Semua Workbook':'✓ Validasi ID & Perbarui Workbook Pemda';
+  }catch(err){const state=document.getElementById('pemdaPmTemplateValidationState');if(state){state.textContent='Gagal memuat konfigurasi';state.className='pemda-pm-template-state warning';}pemdaPmTemplateStatus('Gagal memuat konfigurasi master: '+(err.message||err),'error');}
+}
+function pemdaPmTemplateStatus(message,state=''){const el=document.getElementById('pemdaPmTemplateStatus');if(el){el.textContent=message||'';el.className='pemda-pm-inline-status'+(state?' '+state:'');}}
+async function loadPemdaPmEvidenceFiles(){
+  try{const result=await callServer('getPemdaWorkbookEvidenceFiles',{year:currentYear});pemdaPmDash.evidenceFiles=Array.isArray(result.files)?result.files:[];pemdaPmDash.evidenceSummary=result.summary||{};pemdaPmDash.evidenceError='';}
+  catch(err){pemdaPmDash.evidenceFiles=[];pemdaPmDash.evidenceSummary={};pemdaPmDash.evidenceError='Gagal memuat evidence Pemda: '+(err.message||err);}
+  renderPemdaPmEvidenceFiles();
+}
+async function uploadPemdaPmEvidence(){
+  if(!pemdaPmCanUploadEvidence())return pemdaPmEvidenceStatus('Akun ini hanya dapat melihat/verifikasi evidence Pemda.','error');
+  const target=document.getElementById('pemdaEvidenceTarget')?.value||'';if(!PEMDA_PM_ALLOWED_TARGETS.includes(target))return pemdaPmEvidenceStatus('Hanya target T2–T4 (KK3.2–KK3.4) yang diizinkan.','error');
+  const p=pemdaPmCurrentParameter();if(!p)return pemdaPmEvidenceStatus('Pilih subunsur dan parameter yang valid dari master KK PM.','error');
+  const input=document.getElementById('pemdaEvidenceInput'),files=Array.from(input?.files||[]);if(!files.length)return pemdaPmEvidenceStatus('Pilih minimal satu file evidence terlebih dahulu.','error');
+  const grade=String(document.getElementById('pemdaEvidenceGrade')?.value||'C');if(!['A','B','C','D','E'].includes(grade))return pemdaPmEvidenceStatus('Pilih grade evidence A sampai E.','error');
+  const button=document.getElementById('pemdaEvidenceUpload');if(button)button.disabled=true;
+  let ok=0,pending=0,failed=[];
+  try{
+    for(let i=0;i<files.length;i++){
+      const file=files[i];if(file.size>10*1024*1024){failed.push(`${file.name}: melebihi 10 MB`);continue;}
+      pemdaPmEvidenceStatus(`Mengunggah ${i+1}/${files.length}: ${file.name}`);
+      const uploadId=crypto.randomUUID();const evidenceKey=`${target}|${p.subCode}|${p.paramId}`;
+      try{const result=await callServerWithRetry('uploadPemdaWorkbookEvidence',{__binaryFile:file,year:currentYear,targetCode:target,subunsur:p.subCode,paramId:p.paramId,evidenceKey,grade,level:String(({A:5,B:4,C:3,D:2,E:1})[grade]),subunsurName:p.subunsur||`Subunsur ${p.subCode}`,paramName:p.uraianParameter||`Parameter ${p.paramId}`,fileName:file.name,fileType:file.type||'application/octet-stream',uploadId},3);if(result?.status==='pending'||result?.syncStatus==='retrying')pending++;else ok++;}
+      catch(err){failed.push(`${file.name}: ${err.message||err}`);}
+    }
+    if(input)input.value='';await loadPemdaPmEvidenceFiles();
+    const message=`Upload selesai: ${ok} tersinkron${pending?`, ${pending} tersimpan di R2 menunggu sinkronisasi Drive`:''}${failed.length?`, ${failed.length} gagal`:''}.`;
+    pemdaPmEvidenceStatus(message+(failed.length?' '+failed.slice(0,3).join(' · '):''),failed.length?'error':'success');
+  }catch(err){pemdaPmEvidenceStatus('Upload gagal: '+(err.message||err),'error');}
+  finally{if(button)button.disabled=false;renderPemdaPmEvidenceSelectors();}
+}
+function pemdaPmEvidenceStatus(message,state=''){const el=document.getElementById('pemdaPmEvidenceStatus');if(el){el.textContent=message||'';el.className='pemda-pm-inline-status'+(state?' '+state:'');}}
+async function savePemdaPmEvidenceVerification(uploadId){
+  const status=document.querySelector(`[data-pemda-evidence-status="${CSS.escape(uploadId)}"]`),examiner=document.querySelector(`[data-pemda-evidence-examiner="${CSS.escape(uploadId)}"]`),note=document.querySelector(`[data-pemda-evidence-note="${CSS.escape(uploadId)}"]`);
+  if(!status||!examiner||!note)return;
+  try{await callServerWithRetry('savePemdaWorkbookEvidenceVerification',{year:currentYear,uploadId,verificationStatus:status.value,verificationExaminer:examiner.value.trim(),verificationNote:note.value.trim()},3);await loadPemdaPmEvidenceFiles();pemdaPmEvidenceStatus('Verifikasi evidence Pemda berhasil disimpan.','success');}
+  catch(err){pemdaPmEvidenceStatus('Gagal menyimpan verifikasi: '+(err.message||err),'error');}
+}
+async function deletePemdaPmEvidence(uploadId){
+  if(!confirm('Hapus evidence Pemda ini dari penyimpanan R2 dan Google Drive?'))return;
+  try{await callServerWithRetry('deletePemdaWorkbookEvidence',{year:currentYear,uploadId},3);await loadPemdaPmEvidenceFiles();pemdaPmEvidenceStatus('Evidence Pemda telah dihapus.','success');}
+  catch(err){pemdaPmEvidenceStatus('Gagal menghapus evidence: '+(err.message||err),'error');}
+}
+async function retryPemdaPmEvidenceDrive(uploadId){
+  try{await callServerWithRetry('retryDriveBackup',{type:'pemda_workbook_evidence',year:currentYear,uploadId},3);await loadPemdaPmEvidenceFiles();pemdaPmEvidenceStatus('Sinkronisasi Google Drive berhasil.','success');}
+  catch(err){pemdaPmEvidenceStatus('Sinkronisasi Google Drive belum berhasil: '+(err.message||err),'error');}
+}
+async function refreshPemdaPmWorkbooks({bulk=false}={}){
+  if(!['admin','irban'].includes(pemdaPmRole()))return pemdaPmTemplateStatus('Akses perubahan master hanya untuk Super Admin atau Irban.','error');
+  const btn=document.getElementById(bulk?'pemdaPmTemplateRefreshAll':'pemdaPmTemplateUpdate');if(btn)btn.disabled=true;
+  const raw=String(document.getElementById('pemdaPmTemplateId')?.value||pemdaPmDash.templateConfig?.spreadsheetId||'').trim();if(!raw){if(btn)btn.disabled=false;return pemdaPmTemplateStatus('Masukkan ID atau link master terlebih dahulu.','error');}
+  try{
+    let config=pemdaPmDash.templateConfig;
+    if(!bulk||raw!==String(config?.spreadsheetId||'')){
+      pemdaPmTemplateStatus('Memvalidasi ID master melalui Google Drive/Sheets, nama 26 tab, dan formula inti…');
+      config=await callServerWithRetry('updateKkPmTemplateConfig',{spreadsheetId:raw},3);pemdaPmDash.templateConfig=config;
+    }else{
+      pemdaPmTemplateStatus('Memvalidasi ulang master aktif sebelum pembaruan workbook…');
+      config=await callServerWithRetry('updateKkPmTemplateConfig',{spreadsheetId:raw},3);pemdaPmDash.templateConfig=config;
+    }
+    const link=document.getElementById('pemdaPmTemplateLink');if(link){link.href=config.spreadsheetUrl||'#';link.textContent=config.spreadsheetId||raw;}
+    const updated=document.getElementById('pemdaPmTemplateUpdated');if(updated)updated.textContent=` · Diperbarui ${new Date(config.updatedAt||Date.now()).toLocaleString('id-ID')}${config.updatedBy?' oleh '+config.updatedBy:''}`;
+    const state=document.getElementById('pemdaPmTemplateValidationState');if(state){state.textContent='Profil PM_2026 tervalidasi';state.className='pemda-pm-template-state success';}
+    document.getElementById('pemdaPmTemplateId')?.removeAttribute('data-dirty');
+    // First refresh the separate Pemda workbook. Any prior copy remains in history.
+    pemdaPmTemplateStatus('Master tervalidasi. Memperbarui workbook khusus Pemda…');
+    await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear},3);
+    let updatedOpd=0,failedOpd=[];
+    if(pemdaPmRole()==='admin'){
+      const ids=[...new Map((Array.isArray(rows)?rows:[]).filter(r=>r?.id).map(r=>[String(r.id),r])).values()];
+      if(ids.length){
+        let finished=0;const pool=3;
+        for(let offset=0;offset<ids.length;offset+=pool){
+          const batch=ids.slice(offset,offset+pool);
+          const outcome=await Promise.all(batch.map(async row=>{try{const result=await callServerWithRetry('createKkPmSheets',{opdId:row.id,year:currentYear},2);if(result?.status==='error')throw new Error(result.message||'Gagal sinkron');return{ok:true,row,result};}catch(error){return{ok:false,row,error};}}));
+          for(const item of outcome){finished++;if(item.ok){updatedOpd++;const row=item.row;let root={};try{root=typeof row.kkPmData==='string'?JSON.parse(row.kkPmData):(row.kkPmData||{});}catch{}row.kkPmData={...root,version:3,workbook:item.result.kkPmData,workbookHistory:item.result.workbookHistory||root.workbookHistory||[]};}else failedOpd.push(`${item.row.opd||item.row.id}: ${item.error?.message||item.error}`);}
+          pemdaPmTemplateStatus(`Master valid. Workbook Pemda diperbarui; progres OPD ${Math.min(finished,ids.length)}/${ids.length}. Berhasil ${updatedOpd}, gagal ${failedOpd.length}…`);
+        }
+        try{await loadData();}catch{}
+      }else failedOpd.push('Daftar OPD belum termuat pada halaman.');
+    }
+    await loadPemdaPmDashboard(false);
+    const msg=pemdaPmRole()==='admin'?`Master ${config.spreadsheetId} tervalidasi. Workbook Pemda diperbarui; OPD berhasil ${updatedOpd}, gagal ${failedOpd.length}${failedOpd.length?': '+failedOpd.slice(0,5).join(' · '):'.'} Workbook lama tetap tersimpan di riwayat.`:`Master ${config.spreadsheetId} tervalidasi dan workbook Pemda diperbarui. Workbook OPD akan memakai master baru saat disinkronkan oleh akun dalam cakupan.`;
+    pemdaPmTemplateStatus(msg,failedOpd.length?'error':'success');pemdaPmDashStatus('Master PM_2026 aktif telah diperbarui. Pemda/OPD menggunakan ID master yang tervalidasi.','success');
+  }catch(err){pemdaPmTemplateStatus('Pembaruan gagal: '+(err.message||err),'error');}
+  finally{if(btn)btn.disabled=false;await loadPemdaPmTemplateConfig().catch(()=>{});renderPemdaPmDashboard();}
+}
 async function loadPemdaPmDashboard(showStatus=true){
   if(pemdaPmDash.loading)return;pemdaPmDash.loading=true;
   const refresh=document.getElementById('pemdaPmWorkbookRefresh');if(refresh)refresh.disabled=true;
@@ -5646,7 +5792,11 @@ async function loadPemdaPmDashboard(showStatus=true){
   try{
     const [workflow,workbook]=await Promise.all([callServer('getPemdaWorkflow',{year:currentYear}),callServer('getPemdaKkPmWorkbook',{year:currentYear})]);
     pemdaPmDash.workflow=Array.isArray(workflow.rows)?workflow.rows:[];pemdaPmDash.workbook={...(workbook?.workbook||{}),exists:!!workbook?.exists,needsSync:!!workbook?.needsSync,needsSyncReason:workbook?.needsSyncReason||'',permissions:workbook?.permissions||{},version:Number(workbook?.version||0),updatedAt:Number(workbook?.updatedAt||0),updatedBy:workbook?.updatedBy||''};pemdaPmDash.sheets=Array.isArray(workbook.sheets)?workbook.sheets:[];pemdaPmDash.permissions=workbook.permissions||{canManage:['admin','irban'].includes(String(currentUser?.role||''))};pemdaPmDash.lastLoadedAt=Date.now();
-    await loadPemdaPmManifest();renderPemdaPmDashboard();if(showStatus)pemdaPmDashStatus(`Data tahun ${currentYear} berhasil dimuat dari server. Workbook Pemda dan workbook OPD disimpan terpisah.`, 'success');
+    await loadPemdaPmManifest();
+    try{await ensureKkPmMasterLoaded(false);}catch(err){pemdaPmDash.evidenceError='Master parameter KK PM belum dapat dimuat: '+(err.message||err);}
+    await Promise.all([loadPemdaPmTemplateConfig(),loadPemdaPmEvidenceFiles()]);
+    renderPemdaPmEvidenceSelectors();renderPemdaPmDashboard();
+    if(showStatus)pemdaPmDashStatus(`Data tahun ${currentYear} berhasil dimuat. Workbook Pemda, workbook OPD, dan evidence Pemda disimpan terpisah.`, 'success');
   }catch(err){if(showStatus)pemdaPmDashStatus('Dashboard Pemda gagal memuat data: '+(err.message||err),'error');}
   finally{pemdaPmDash.loading=false;if(refresh)refresh.disabled=false;}
 }
@@ -5664,6 +5814,16 @@ async function openPemdaPmWorkbook(sheetName=''){const win=window.open('about:bl
 document.getElementById('btnPemdaPmKk')?.addEventListener('click',openPemdaPmDashboard);
 document.getElementById('pemdaPmDashboardClose')?.addEventListener('click',closePemdaPmDashboard);
 document.getElementById('pemdaPmDashboardCloseFooter')?.addEventListener('click',closePemdaPmDashboard);
+document.getElementById('pemdaPmTemplateId')?.addEventListener('input',e=>e.target.dataset.dirty='1');
+document.getElementById('pemdaPmTemplateUpdate')?.addEventListener('click',()=>refreshPemdaPmWorkbooks({bulk:false}));
+document.getElementById('pemdaPmTemplateRefreshAll')?.addEventListener('click',()=>refreshPemdaPmWorkbooks({bulk:true}));
+document.getElementById('pemdaPmTemplateOpenLink')?.addEventListener('click',()=>{const id=String(document.getElementById('pemdaPmTemplateId')?.value||pemdaPmDash.templateConfig?.spreadsheetId||'').trim();const found=id.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);const clean=found?found[1]:id;if(/^[A-Za-z0-9_-]{20,}$/.test(clean))window.open(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(clean)}/edit`,'_blank','noopener,noreferrer');else pemdaPmTemplateStatus('ID/URL master belum valid.','error');});
+document.getElementById('pemdaEvidenceTarget')?.addEventListener('change',()=>renderPemdaPmEvidenceSelectors());
+document.getElementById('pemdaEvidenceSubunsur')?.addEventListener('change',()=>renderPemdaPmEvidenceSelectors());
+document.getElementById('pemdaEvidenceParam')?.addEventListener('change',()=>renderPemdaPmEvidenceSelectors());
+document.getElementById('pemdaPmEvidenceRefresh')?.addEventListener('click',loadPemdaPmEvidenceFiles);
+document.getElementById('pemdaEvidenceUpload')?.addEventListener('click',uploadPemdaPmEvidence);
+document.getElementById('pemdaEvidenceFileList')?.addEventListener('click',e=>{const verify=e.target.closest('[data-pemda-evidence-verify]');if(verify){savePemdaPmEvidenceVerification(verify.dataset.pemdaEvidenceVerify);return;}const del=e.target.closest('[data-pemda-evidence-delete]');if(del){deletePemdaPmEvidence(del.dataset.pemdaEvidenceDelete);return;}const retry=e.target.closest('[data-pemda-evidence-retry]');if(retry)retryPemdaPmEvidenceDrive(retry.dataset.pemdaEvidenceRetry);});
 document.getElementById('pemdaPmWorkbookRefresh')?.addEventListener('click',()=>loadPemdaPmDashboard(true));
 document.getElementById('pemdaPmWorkbookCreate')?.addEventListener('click',createOrSyncPemdaPmWorkbook);
 document.getElementById('pemdaPmWorkbookSync')?.addEventListener('click',createOrSyncPemdaPmWorkbook);

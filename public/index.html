@@ -123,6 +123,27 @@
         <div class="pemda-pm-sheet-list-heading"><h5>Sheet dari template master</h5><span id="pemdaPmSheetCount">26 sheet sesuai master</span></div>
         <div id="pemdaPmSheetList" class="pemda-pm-sheet-list"><div class="pemda-pm-empty">Memuat daftar sheet dari master...</div></div>
       </section>
+      <section class="pemda-pm-template-panel" id="pemdaPmTemplateAdminPanel" hidden>
+        <div class="pemda-pm-panel-title"><div><span class="pemda-pm-kicker">SUMBER MASTER GOOGLE SHEETS</span><h4>Perbarui ID / Link Template KK PM SPIP</h4><p>Masukkan ID atau link spreadsheet master. Sistem akan memvalidasi 26 nama/urutan sheet dan formula inti sebelum menyimpan perubahan.</p></div><span class="pemda-pm-template-state" id="pemdaPmTemplateValidationState">Memuat konfigurasi…</span></div>
+        <div class="pemda-pm-template-controls"><label for="pemdaPmTemplateId">ID atau Link Google Spreadsheet Master<input id="pemdaPmTemplateId" type="text" placeholder="Tempel ID atau URL Google Sheets" autocomplete="off" spellcheck="false"></label><div class="pemda-pm-template-actions"><button type="button" id="pemdaPmTemplateOpenLink">↗ Buka Master</button><button type="button" class="primary" id="pemdaPmTemplateUpdate">✓ Validasi ID &amp; Perbarui Workbook</button></div></div>
+        <div class="pemda-pm-template-meta">Master aktif: <a id="pemdaPmTemplateLink" href="https://docs.google.com/spreadsheets/d/1hLqUceQprwRxh1q5y0ZmW6PdI2-28H9mkYdA227vg1s/edit" target="_blank" rel="noopener">1hLqUceQprwRxh1q5y0ZmW6PdI2-28H9mkYdA227vg1s</a><span id="pemdaPmTemplateUpdated"></span></div>
+        <div class="pemda-pm-template-admin-actions"><button type="button" id="pemdaPmTemplateRefreshAll">↻ Perbarui Workbook Pemda + Semua OPD</button><small>Penggantian template membuat salinan workbook baru per tahun/OPD. Workbook sebelumnya tetap dipertahankan sebagai riwayat; file lama tidak dihapus atau ditimpa.</small></div>
+        <div id="pemdaPmTemplateStatus" class="pemda-pm-inline-status" role="status" aria-live="polite"></div>
+      </section>
+      <section class="pemda-pm-evidence-panel" id="pemdaPmEvidencePanel">
+        <div class="pemda-pm-panel-title"><div><span class="pemda-pm-kicker">UPLOAD EVIDENCE PEMDA</span><h4>Evidence Struktur dan Proses — KK PM SPIP</h4><p>Fitur ini khusus akun Pemda dan disimpan terpisah dari evidence setiap OPD. Hanya target <b>T2 (KK3.2)</b>, <b>T3 (KK3.3)</b>, dan <b>T4 (KK3.4)</b> yang diizinkan.</p></div><button type="button" id="pemdaPmEvidenceRefresh">↻ Muat Ulang Evidence</button></div>
+        <div id="pemdaPmEvidenceStatus" class="pemda-pm-inline-status" role="status" aria-live="polite"></div>
+        <div class="pemda-pm-evidence-upload-grid">
+          <label for="pemdaEvidenceTarget">Target / Sheet<select id="pemdaEvidenceTarget"><option value="T2">T2 · KK3.2 — Keandalan Pelaporan Keuangan</option><option value="T3">T3 · KK3.3 — Pengamanan Aset Daerah</option><option value="T4">T4 · KK3.4 — Ketaatan Peraturan</option></select></label>
+          <label for="pemdaEvidenceSubunsur">Subunsur<select id="pemdaEvidenceSubunsur"><option value="">Memuat master parameter…</option></select></label>
+          <label for="pemdaEvidenceParam">Parameter<select id="pemdaEvidenceParam"><option value="">Pilih subunsur terlebih dahulu</option></select></label>
+          <label for="pemdaEvidenceGrade">Grade evidence<select id="pemdaEvidenceGrade"><option value="A">A · Level 5</option><option value="B">B · Level 4</option><option value="C" selected>C · Level 3</option><option value="D">D · Level 2</option><option value="E">E · Level 1</option></select></label>
+          <label class="pemda-pm-evidence-file-input" for="pemdaEvidenceInput">Pilih file evidence (maks. 10 MB/file)<input id="pemdaEvidenceInput" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.zip,.7z,.txt,.csv"></label>
+          <div class="pemda-pm-evidence-upload-action"><button type="button" class="primary" id="pemdaEvidenceUpload">⬆ Upload Evidence Pemda</button><small>File tersimpan di R2 dan disalin ke Google Drive bila sinkronisasi Drive tersedia.</small></div>
+        </div>
+        <div class="pemda-pm-evidence-summary" id="pemdaEvidenceSummary"></div>
+        <div id="pemdaEvidenceFileList" class="pemda-pm-evidence-list"><div class="pemda-pm-empty">Memuat daftar evidence Pemda…</div></div>
+      </section>
       <section class="pemda-pm-samples-panel">
         <div class="pemda-pm-sheet-list-heading"><div><h4>OPD Sampling Terpilih</h4><p>Nilai dan progres ditarik dari data OPD yang sudah tersimpan pada aplikasi untuk tahun aktif.</p></div><button id="pemdaPmSamplingManage" type="button">⚙ Kelola Sampling / Verifikasi</button></div>
         <div class="pemda-pm-table-wrap"><table class="pemda-pm-table"><thead><tr><th>No.</th><th>OPD sampling / dasar pemilihan</th><th>Nilai Struktur &amp; Proses</th><th>Nilai Maturitas SPIP</th><th>MRI</th><th>IEPK</th><th>Kapabilitas APIP</th><th>PM Internal</th><th>QA Auditor/PPUPD</th><th>Verifikasi BPKP</th><th>Aksi</th></tr></thead><tbody id="pemdaPmSamplingBody"><tr><td colspan="11" class="pemda-pm-empty">Memuat data OPD sampling...</td></tr></tbody></table></div>
