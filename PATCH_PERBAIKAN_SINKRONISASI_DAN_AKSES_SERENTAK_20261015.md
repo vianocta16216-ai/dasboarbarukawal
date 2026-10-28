@@ -1,3 +1,5 @@
+> **CATATAN VERSI:** Ketentuan 26 tab pada catatan sinkronisasi lama ini sudah diganti oleh source guard v4 yang memvalidasi inventory aktual 28 sheet dan membaca ID master langsung dari `GOOGLE_SHEETS_PM_TEMPLATE_ID`. Lihat `README_PERBAIKAN_MASTER_28_SHEET_SOURCE_GUARD_V4_20261027.md`.
+
 # Catatan Patch — Sinkronisasi Workbook PM, akses serentak, dan LHE
 
 Tanggal revisi: 15 Oktober 2026.
@@ -15,7 +17,7 @@ Catatan ini diperbarui untuk menjelaskan paket terbaru. Petunjuk lama yang menye
 
 ## Perubahan terkini
 
-- **Master PM kanonis:** pemeriksaan ID master khusus, deteksi master Google Sheets terbaru dengan nama sumber yang disetujui, pengecekan `modifiedTime`, struktur 26 tab PM_2026, dan formula kunci. Resolver menolak file cadangan yang sekadar diawali nama master tetapi memiliki suffix tidak dikenal.
+- **Master PM kanonis:** pemeriksaan ID master khusus, deteksi master Google Sheets terbaru dengan nama sumber yang disetujui, pengecekan `modifiedTime`, struktur tab inti PM_2026 dengan inventory aktual yang dapat berisi 28 sheet atau tambahan masa depan, dan formula kunci. Resolver menolak file cadangan yang sekadar diawali nama master tetapi memiliki suffix tidak dikenal.
 - **Rollover pointer D1:** saat open/sync, backend memastikan workbook masih bisa diakses dan membandingkan ID/revisi sumber dengan master aktif. Jika sumber beda atau file sudah dihapus, ia membuat salinan baru dan memindahkan pointer OPD/tahun setelah validasi. File lama tidak dihapus; riwayat disimpan pada `kk_pm_data.workbookHistory`.
 - **URL buka authoritative:** tombol Buka Spreadsheet dan buka tab tertentu meminta ulang data dari server tanpa cache. Jika workbook perlu diperbarui, sinkronisasi dijalankan sebelum URL dibuka. Jika verifikasi gagal, tab baru ditutup—tidak jatuh balik ke URL lama.
 - **Akun dan konkurensi:** role Inspektorat/Irban diberi izin hanya untuk aksi yang dibutuhkan dalam cakupan OPD yang diizinkan. Lock D1 per OPD/tahun menyerialisasi pembuatan workbook, memeriksa token pemilik lock sebelum menulis, dan sesi yang terkena konflik dapat retry berdasarkan `retryAfterSeconds`. Penyimpanan cell memakai merge D1 agar data dan pointer workbook tidak saling menimpa.
@@ -39,7 +41,7 @@ Jumlah tersebut adalah hasil validasi statis, mock Google API, dan simulasi/help
 
 ## Hal yang tetap wajib diverifikasi saat deploy
 
-- `GOOGLE_SHEETS_PM_TEMPLATE_ID` harus menunjuk ke ID Google Sheets master PM 26 tab terbaru. Resolver otomatis mengenali nama canonical dan beberapa suffix rilis; nama yang benar-benar berbeda memerlukan ID env yang eksplisit.
+- ``GOOGLE_SHEETS_PM_TEMPLATE_ID` harus menunjuk ke ID Google Sheets master PM aktif dengan inventory aktual terbaru; saat ini master pengguna memiliki 28 sheet. Resolver otomatis mengenali nama canonical dan beberapa suffix rilis; nama yang benar-benar berbeda memerlukan ID env yang eksplisit.
 - `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN`, dan `GOOGLE_DRIVE_FOLDER_ID` harus valid. OAuth harus dapat membaca master dan menyalin file.
 - Deploy seluruh proyek Pages agar backend, HTML, JS, dan cache-buster diperbarui bersamaan.
 - Uji secara langsung satu OPD Inspektorat, satu OPD umum, dua sesi bersamaan, upload, dan verifikasi. Credential dan Cloudflare/Google Drive produksi tidak tersedia di lingkungan pembuat ZIP, sehingga saya tidak menyatakan migrasi di server live telah terjadi.

@@ -1,4 +1,4 @@
-> **STATUS DOKUMEN:** Catatan ini merekam rancangan/workbook legacy 28 tab. Untuk provisioning dan sinkronisasi workbook PM aktif, ikuti `DEPLOYMENT_KK_PM_SPIP_EXACT.md`: sumber aktif `PM_2026` harus tepat 26 tab dan formula inti tervalidasi. Jangan gunakan instruksi 28 tab di bawah untuk menetapkan `GOOGLE_SHEETS_PM_TEMPLATE_ID`.
+> **STATUS DOKUMEN:** Catatan ini merekam rancangan/workbook legacy. Untuk provisioning dan sinkronisasi PM aktif, ikuti `DEPLOYMENT_KK_PM_SPIP_EXACT.md` dan `README_PERBAIKAN_MASTER_28_SHEET_SOURCE_GUARD_V4_20261027.md`: master terbaru mengenali 28 sheet dari pengguna, alias tab inti, formula inti, serta sheet tambahan masa depan. Jangan menerapkan batas 26 tab dari dokumen historis ini.
 
 # KK PM SPIP — Integrasi Exact Workbook
 

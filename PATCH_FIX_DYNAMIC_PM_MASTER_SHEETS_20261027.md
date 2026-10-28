@@ -1,3 +1,5 @@
+> **CATATAN VERSI:** Patch ini adalah tahap sebelumnya. Gunakan `PATCH_FIX_PM_MASTER_SOURCE_BINDING_V4_20261027.md` untuk penguncian ID sumber, versi backend, serta prasyarat ID pada tombol sinkronisasi.
+
 # Perbaikan Sinkronisasi Semua Sheet Master KK PM SPIP — 27 Oktober 2026
 
 ## Masalah yang diperbaiki

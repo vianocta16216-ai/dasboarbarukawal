@@ -1,8 +1,10 @@
+> **CATATAN VERSI:** Bagian pemisahan T1/T4 masih menjadi catatan implementasi historis, tetapi referensi master PM 26-sheet di bawah sudah superseded oleh `README_PERBAIKAN_MASTER_28_SHEET_SOURCE_GUARD_V4_20261027.md`. Master aktif saat ini mengikuti inventaris aktual 28 sheet serta tambahan masa depan.
+
 # Pembaruan Kawal SPIP — Pemisahan T1–T4 dan Integrasi Master KK-PM/KK-PK
 
 ## Inti perubahan
 
-- **KK-PM terbaru:** sumber master memakai `KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313.xlsx` (26 sheet). Master JSON PM, manifest 26-sheet, dan fallback aplikasi disesuaikan ke workbook ini.
+- **Catatan master historis:** rilis terdahulu memakai `KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313.xlsx` (26 sheet). Referensi tersebut tidak lagi menjadi acuan validasi aktif. Master saat ini mengikuti `GOOGLE_SHEETS_PM_TEMPLATE_ID` dan inventory dinamis 28-sheet dari `KK_PM_Evaluasi_SPIP_Pemda_RPJMD_2026_REVISI_SASARAN.xlsx`; lihat panduan source guard v4.
 - **KK-PK terbaru:** sumber evidence/rekomendasi memakai `KK_PK_Evaluasi_SPIP_Pemda_RPJMD_2026_REVISI_SASARAN.xlsx` (28 sheet). Evidence Struktur dan Proses/QA APIP memuat target sesuai sheet KK-PK terbaru.
 - **Cakupan input:** OPD umum = T1; BPKAD = T1/T2/T3; Inspektorat = T1/T4; BP4D/Bappelitbangda = T1 serta KKE 1.1 Sastra Pemda.
 - **Workbook terpisah:** record/formulir dan tautan workbook setiap OPD tetap tersimpan per OPD/tahun. Endpoint penyimpanan PM/evidence memvalidasi target di server, bukan hanya menyembunyikan tab di UI.
@@ -25,7 +27,7 @@
    - memprioritaskan rekomendasi evidence per target yang sesuai scope OPD;
    - memisahkan tampilan T1–T4 berdasarkan jenis OPD;
    - QA APIP menampilkan rekomendasi dan file dari target yang sesuai;
-   - memakai manifest PM 26-sheet jika cocok dengan workbook, tetapi tetap mengenali workbook lama 28-sheet.
+   - memakai inventory metadata aktual master; manifest 28-sheet terbaru digunakan hanya sebagai fallback/pratinjau.
 3. `public/index.html`
    - label tombol target dibuat jelas: T1 semua OPD; T2 BPKAD akun; T3 BPKAD aset; T4 Inspektorat.
 4. `public/workbook-structure-process-master.json`
@@ -33,7 +35,7 @@
 5. `public/kk-pm-exact-workbook-master.json`
    - snapshot KK-PM dari workbook audit evidence terbaru.
 6. `public/kk-pm-full-workbook-manifest.json`
-   - manifest PM terbaru 26-sheet; manifest lama tetap disimpan untuk kompatibilitas.
+   - manifest PM terbaru berisi 28 sheet; manifest lama tetap disimpan untuk kompatibilitas.
 7. `public/qa-apip-workbook-master.json`
    - versi master QA dikaitkan ke snapshot rekomendasi KK-PK terbaru.
 8. `tools/google-apps-script/KawalSPIP_MasterSync.gs`

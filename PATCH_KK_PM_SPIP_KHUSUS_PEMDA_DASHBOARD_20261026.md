@@ -1,3 +1,5 @@
+> **CATATAN VERSI:** Instruksi validasi 26-sheet di patch 26 Oktober ini superseded untuk master terbaru. Gunakan `README_PERBAIKAN_MASTER_28_SHEET_SOURCE_GUARD_V4_20261027.md` untuk source binding, reload, dan sinkronisasi.
+
 # KK PM SPIP Khusus Pemerintah Kabupaten Mahakam Ulu — 26 Oktober 2026
 
 ## Tujuan
@@ -34,4 +36,4 @@ Menambahkan menu **KK PM SPIP Pemda** dan dashboard tingkat Kabupaten yang mempu
 
 Workbook spreadsheet adalah salinan terpisah dari master Google Sheets yang diset melalui konfigurasi backend, kemudian dapat diedit di Google Sheets sesuai hak akses Google Drive. Daftar OPD, nilai, dan status yang diringkas pada dashboard berasal dari database aplikasi; endpoint ini tidak mengubah formula master dan tidak menyalin data tiap sampel ke dalam sel formula master karena lokasi/rentang input sampling pada template belum ditetapkan secara eksplisit.
 
-Setelah deployment, admin/Irban perlu klik **Buat dari Master**, pastikan server berhasil memvalidasi 26 sheet, kemudian uji buka sheet dan periksa izin edit Google Drive. Lakukan uji beban 40 pengguna dan unggah bersamaan pada environment Cloudflare/D1/R2/Google Drive yang sesungguhnya. Pemeriksaan kode lokal tidak dapat membuktikan performa produksi atau izin file Google Drive.
+Setelah deployment, admin/Irban perlu klik **Buat dari Master**, pastikan server v4 berhasil memvalidasi inventory aktual 28 sheet (atau jumlah yang benar-benar ada pada master), kemudian uji buka sheet dan periksa izin edit Google Drive. Lakukan uji beban 40 pengguna dan unggah bersamaan pada environment Cloudflare/D1/R2/Google Drive yang sesungguhnya. Pemeriksaan kode lokal tidak dapat membuktikan performa produksi atau izin file Google Drive.

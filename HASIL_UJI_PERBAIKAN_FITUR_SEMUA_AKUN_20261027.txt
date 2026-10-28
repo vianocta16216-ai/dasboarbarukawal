@@ -1,3 +1,5 @@
+CATATAN: Berkas ini adalah hasil uji historis versi sebelumnya yang menetapkan 26 sheet. Untuk kondisi master 28 sheet dan source binding aktif, ikuti README_PERBAIKAN_MASTER_28_SHEET_SOURCE_GUARD_V4_20261027.md; jangan gunakan angka 26 di bawah sebagai aturan deployment saat ini.
+
 HASIL UJI PERBAIKAN GAGAL UPDATE WORKBOOK PM SPIP
 Tanggal: 27 Oktober 2026
 

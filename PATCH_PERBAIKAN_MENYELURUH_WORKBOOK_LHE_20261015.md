@@ -1,3 +1,5 @@
+> **CATATAN VERSI:** Dokumen ini adalah panduan lama untuk migrasi workbook; ketentuan 26 tab pada bagian master telah digantikan oleh validasi dinamis 28 sheet di `README_PERBAIKAN_MASTER_28_SHEET_SOURCE_GUARD_V4_20261027.md`.
+
 # Laporan Perbaikan Menyeluruh Kawal SPIP
 
 **Tanggal:** 15 Oktober 2026  
@@ -10,7 +12,7 @@ Rekaman menampilkan URL Google Sheets yang berisi ID workbook yang sudah dihapus
 ## Perubahan
 
 1. **Tombol buka selalu memvalidasi link server.** Baca ulang `getKkPmSheets` dengan cache dinonaktifkan. Jika workbook tertaut hilang, profil salah, atau sumber/revisi tidak lagi sama dengan master aktif, jalankan sinkronisasi sebelum membuka. Jika pengecekan gagal, URL lama tidak dibuka.
-2. **Pemilihan master lebih ketat.** Cari master bernama `KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313` atau suffix rilis eksplisit yang didukung. Hanya Google Sheets dengan 26 tab PM_2026 dan formula inti benar yang diterima. Backup yang hanya memiliki awalan nama sama tidak akan digunakan. Apabila file master bernama lain atau tidak terlihat bagi OAuth, ID `GOOGLE_SHEETS_PM_TEMPLATE_ID` harus ditetapkan secara eksplisit.
+2. **Pemilihan master lebih ketat.** Cari master bernama `KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313` atau suffix rilis eksplisit yang didukung. Catatan pada versi lama ini mensyaratkan 26 tab. Aturan tersebut telah diganti: master PM aktif memakai inventory dinamis yang saat ini berisi 28 sheet; lihat `DEPLOYMENT_KK_PM_SPIP_EXACT.md`. Backup yang hanya memiliki awalan nama sama tidak akan digunakan. Apabila file master bernama lain atau tidak terlihat bagi OAuth, ID `GOOGLE_SHEETS_PM_TEMPLATE_ID` harus ditetapkan secara eksplisit.
 3. **Pointer dan histori ditulis atomik.** Link terbaru dicatat pada `kk_pm_data.workbook`; pointer lama ditaruh pada `workbookHistory`. Cell sparse PM yang ada tetap dipertahankan pada D1 dan file Google Drive lama tidak dihapus.
 4. **Satu workbook kerja per OPD/tahun.** Workbook untuk setiap OPD disalin dari master; seluruh OPD tidak menggunakan file kerja bersama. Lock D1 mencegah dua sesi membuat dua copy untuk OPD/tahun yang sama. Sesi kedua melakukan retry ketika menerima lock conflict.
 5. **Simpan sel dan hasil formula terlindungi.** Patch mempertahankan penggabungan perubahan cell secara atomik dan menolak pembaruan hasil hitung yang berasal dari ID workbook yang tidak lagi menjadi tautan aktif.

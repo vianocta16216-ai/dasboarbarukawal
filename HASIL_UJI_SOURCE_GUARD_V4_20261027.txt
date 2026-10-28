@@ -1,0 +1,24 @@
+HASIL UJI SOURCE GUARD V4 — KAWAL SPIP
+Tanggal: 27 Oktober 2026
+Build: 20261027-pm-master-source-guard-v4
+
+HASIL UTAMA
+- Sintaks backend functions/myCloudinaryHandler.js: LULUS.
+- Sintaks frontend public/script.js: LULUS.
+- Skrip tools/validate-*.mjs: 18 dari 18 LULUS.
+- Nama sheet file Excel yang diunggah: 28.
+- Nama sheet pada array backend: cocok 28/28 dengan file Excel.
+- Nama sheet pada public/kk-full-workbook-manifest.json: cocok 28/28.
+- Nama sheet pada public/kk-pm-full-workbook-manifest.json: cocok 28/28.
+- Formula inti sumber Excel: cocok 4/4.
+
+PENGUNCIAN SUMBER
+- GOOGLE_SHEETS_PM_TEMPLATE_ID didahulukan dibanding nilai D1 jika variable terisi.
+- Endpoint konfigurasi membaca inventory sheet dari ID aktif dan mengembalikan codeVersion, sumber, jumlah sheet, serta diagnosis validasi.
+- Tombol Muat Ulang memaksa pembacaan ulang konfigurasi master aktif.
+- Tombol Sinkronkan Master menolak sinkronisasi jika backend versi baru tidak terdeteksi, sumber bukan Cloudflare environment, master belum tervalidasi, atau ID master tidak cocok.
+- Proses sinkronisasi workbook Pemda/OPD membawa expectedTemplateSpreadsheetId dan backend membandingkannya dengan ID master efektif sebelum membuat salinan.
+- Workbook lama tetap disimpan dalam riwayat pemulihan; tidak dihapus permanen.
+
+BATAS PENGUJIAN
+Uji ini dilakukan secara lokal dari source dan file XLSX yang diunggah. Tidak ada akses langsung ke secret OAuth, Google Drive privat, D1/R2 produksi, atau deployment Cloudflare Pages. Karena itu, hasil ini membuktikan validasi kode/inventory lokal, bukan bahwa deployment live sudah berubah. Setelah ZIP di-commit dan deploy, panel dashboard harus memperlihatkan build 20261027-pm-master-source-guard-v4 sebelum sinkronisasi dijalankan.

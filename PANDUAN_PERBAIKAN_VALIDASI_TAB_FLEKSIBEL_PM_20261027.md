@@ -1,22 +1,23 @@
-# Validasi master KK PM SPIP — 27 Oktober 2026
+# Validasi Master KK PM SPIP — Dinamis, Semua Sheet, 27 Oktober 2026
 
-## Aturan source aktif
+> **Pembaruan pengganti:** Dokumen ini memperbarui panduan validasi lama yang mengunci jumlah tab pada 26. Master yang diberikan memiliki 28 sheet. Jangan gunakan batas 26 tab lama untuk deployment terbaru.
 
-Gunakan ID master baru yang ditetapkan dalam `GOOGLE_SHEETS_PM_TEMPLATE_ID` di Cloudflare Pages. Nilai environment ini menjadi sumber utama di runtime; ID bootstrap lama pada D1 tidak akan menimpanya. Jangan menanam ID workbook lama secara manual ke frontend.
+## Aturan terbaru
 
-## Aturan validasi yang berlaku pada source ini
+1. `GOOGLE_SHEETS_PM_TEMPLATE_ID` di Cloudflare Production adalah sumber utama jika terisi; ID D1 hanya fallback.
+2. Backend membaca metadata sheet langsung dari ID aktif dan meneruskan daftar sheet aktual ke dashboard.
+3. Seluruh 28 tab pada `KK_PM_Evaluasi_SPIP_Pemda_RPJMD_2026_REVISI_SASARAN.xlsx` dikenali, termasuk `CHECKLIST PK`, `KK 4 INSPEKTORAT`, `KK 5.1 A RPJMD (BP4D)`, serta `KK 6/7/8 INSPEKTORAT`.
+4. Nama/urutan fisik sheet tidak diubah oleh validasi. Alias digunakan untuk mencocokkan tab inti saja. Sheet tambahan ke depan diizinkan dan dipertahankan.
+5. Tab inti yang wajib tetap harus ada dan tidak boleh duplikat secara kanonis. Formula inti `KKLEAD_SPIP!I11`, `I68`, `I85`, dan `I106` tetap divalidasi.
+6. Jika `GOOGLE_SHEETS_PM_TEMPLATE_ID` eksplisit salah atau tidak dapat diakses, aplikasi tidak mencari dan memilih sumber Drive lain secara diam-diam.
 
-1. Master harus berupa Google Sheets asli yang dapat diakses akun OAuth Google.
-2. Master harus memiliki 26 tab PM_2026 kanonis unik, setelah alias nama sheet yang memang didukung dinormalisasi. Urutan tab tidak harus identik, tetapi tab hilang, duplikat, tidak dikenal, atau jumlah tab fisik selain 26 ditolak.
-3. Formula inti yang digunakan aplikasi pada `KKLEAD_SPIP!I11`, `I68`, `I85`, dan `I106` harus valid.
-4. ID environment yang eksplisit tidak boleh diam-diam diganti dengan hasil pencarian Drive lain. Jika ID itu tidak dapat diakses atau gagal validasi, perbaiki ID/izin OAuth di Cloudflare sebelum mengulang sinkronisasi.
-5. Workbook Pemda/OPD lama tidak dihapus permanen. Tautan baru hanya disimpan setelah salinan baru berhasil dibuat dan diverifikasi.
+## Validasi alur UI/backend
 
-## Langkah pemulihan error 404
+- **Muat Ulang** mengirim `forceRefresh` ke `/myCloudinaryHandler` dan meminta konfigurasi/inventory master lagi.
+- **Sinkronkan Master** terlebih dahulu memastikan versi backend `20261027-pm-master-source-guard-v4`, `source=cloudflare-environment`, dan `masterValidationOk=true`.
+- Proses pembuatan workbook menerima `expectedTemplateSpreadsheetId`. Backend membandingkan ID prasyarat dengan ID efektif yang dibaca dari `GOOGLE_SHEETS_PM_TEMPLATE_ID`; apabila berbeda, penyalinan dihentikan.
+- Pembaruan massal mengirim prasyarat ID yang sama ke workbook Pemda dan setiap OPD agar sumbernya konsisten.
 
-1. Periksa `GOOGLE_SHEETS_PM_TEMPLATE_ID` di **Cloudflare Pages → Settings → Variables and Secrets → Production**.
-2. Pastikan ID tersebut adalah master baru, bukan ID workbook Pemda/OPD lama, dan beri akun Google pada `GOOGLE_DRIVE_REFRESH_TOKEN` akses baca/menyalin.
-3. Deploy ulang setelah mengubah variable, kemudian buka dashboard dan periksa label **Sumber aktif**.
-4. Tekan **Sinkronkan Master** untuk membuat ulang workbook Pemda dari master yang aktif. Untuk seluruh OPD, gunakan aksi pembaruan massal setelah workbook Pemda berhasil.
+## Jika website masih menunjukkan batas 26
 
-Lihat `PATCH_FIX_GOOGLE_SHEETS_PM_TEMPLATE_ID_20261027.md` dan `DEPLOYMENT_KK_PM_SPIP_EXACT.md` sebagai panduan operasional.
+Periksa teks **Build backend** dalam panel master. Jika versi tidak ada atau berbeda, Pages Function yang melayani endpoint belum dideploy dari source terbaru atau front-end dan backend berasal dari deployment berbeda. Commit seluruh proyek ke branch yang dipakai Cloudflare Pages, cek deployment berhasil, lalu tekan `Ctrl+F5` dan **Muat Ulang**. Jangan jalankan pembaruan massal sampai versi terbaru muncul dan master tervalidasi.

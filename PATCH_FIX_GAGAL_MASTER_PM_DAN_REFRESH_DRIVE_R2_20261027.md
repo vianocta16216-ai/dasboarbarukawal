@@ -1,8 +1,10 @@
 # Catatan Teknis Patch — Gagal Update Workbook KK PM SPIP — 27 Oktober 2026
 
+> **Catatan versi:** validasi 26-sheet di catatan lama ini superseded. Untuk master 28 sheet dan source guard aktif, ikuti `PATCH_FIX_PM_MASTER_SOURCE_BINDING_V4_20261027.md`.
+
 ## Perubahan backend
 - `canonicalPmSheetKey()` mengenali alias tab terverifikasi termasuk `KKE 2.3 SASSUBKES`.
-- `pmSheetStructureDiagnostics()` menerima urutan tab apa pun, tetap menolak jumlah selain 26, nama tak dikenal, tab hilang, dan duplikat kanonis.
+- `pmSheetStructureDiagnostics()` pada source guard v4 menerima inventory 28 sheet pengguna dan tab tambahan masa depan; tetap menolak tab inti yang hilang atau duplikat kanonis.
 - `validateKkPmSpreadsheet()` mengembalikan daftar missing/unexpected/duplicate dan formula yang tidak cocok; endpoint master menampilkan diagnosis ini alih-alih pesan generik.
 - `ensureKkPmSpreadsheet()` mendukung `forceRefresh`/`massRefresh` sehingga aksi global membuat salinan terbaru walau ID dan revision tidak berubah.
 - Pembaruan hanya global untuk role `admin` dan `irban`; aksi daftar target OPD dan endpoint mutation memiliki pemeriksaan role server-side.
