@@ -5098,6 +5098,48 @@ function exportKkPmExcel(){
     const safe=(kkPmCurrentRow.opd||'OPD').replace(/[\\/:*?"<>|]/g,' ').trim().substring(0,65)||'OPD'; XLSX.writeFile(wb,`${safe}-${currentYear}-KK-PM-SPIP.xlsx`);kkPmSetStatus('✓ Export Excel berhasil: Rekap + KK3.1–KK3.4.','success');
   }catch(err){kkPmSetStatus('❌ Export gagal: '+(err.message||err),'error');}
 }
+const KK_PM_BULK_RETRY_STORAGE_KEY='kawal-spip-kkpm-bulk-retry-v1';
+let kkPmBulkRetryMemoryState=null;
+let kkPmBulkRefreshRunning=false;
+function kkPmNormalizeSpreadsheetId(value){
+  const text=String(value||'').trim();
+  if(!text)return '';
+  const urlMatch=text.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/i);
+  if(urlMatch)return urlMatch[1];
+  const bare=text.match(/^([A-Za-z0-9_-]{20,})$/);
+  return bare?bare[1]:text;
+}
+function kkPmReadBulkRetryState(){
+  try{const raw=localStorage.getItem(KK_PM_BULK_RETRY_STORAGE_KEY);if(raw){const parsed=JSON.parse(raw);if(parsed&&typeof parsed==='object'){kkPmBulkRetryMemoryState=parsed;return parsed;}}}catch{}
+  return kkPmBulkRetryMemoryState;
+}
+function kkPmWriteBulkRetryState(state){
+  kkPmBulkRetryMemoryState=state&&typeof state==='object'?{...state,updatedAt:Date.now()}:null;
+  try{if(kkPmBulkRetryMemoryState)localStorage.setItem(KK_PM_BULK_RETRY_STORAGE_KEY,JSON.stringify(kkPmBulkRetryMemoryState));else localStorage.removeItem(KK_PM_BULK_RETRY_STORAGE_KEY);}catch{}
+  kkPmUpdateBulkRetryButtons();
+  return kkPmBulkRetryMemoryState;
+}
+function kkPmBulkRetryStatePending(state=kkPmReadBulkRetryState()){
+  return Boolean(state&&String(state.year)===String(currentYear)&&(state.retryAll||state.pendingPemda||(Array.isArray(state.pendingIds)&&state.pendingIds.length>0)));
+}
+function kkPmBulkRetryPendingCount(state=kkPmReadBulkRetryState()){
+  if(!kkPmBulkRetryStatePending(state))return 0;
+  if(state.retryAll)return 'semua';
+  return (state.pendingPemda?1:0)+(Array.isArray(state.pendingIds)?state.pendingIds.length:0);
+}
+function kkPmUpdateBulkRetryButtons(){
+  const state=kkPmReadBulkRetryState();
+  const role=String(currentUser?.role||'').toLowerCase();
+  const allowed=['admin','irban'].includes(role);
+  const pending=allowed&&kkPmBulkRetryStatePending(state)&&!kkPmBulkRefreshRunning;
+  const count=kkPmBulkRetryPendingCount(state);
+  for(const id of ['pemdaPmTemplateRetry','kkPmMasterRetryAndSync']){
+    const button=document.getElementById(id);if(!button)continue;
+    button.disabled=!pending;
+    button.textContent=state&&pending?`↻ Retry / Lanjutkan Pembaruan (${count}${count==='semua'?' OPD':' tertunda'})`:'↻ Retry / Lanjutkan Pembaruan';
+  }
+}
+
 function kkPmMasterUpdateStatus(message,state=''){
   const el=document.getElementById('kkPmMasterUpdateStatus');if(el){el.textContent=message||'';el.className='kk-pm-account-master-status'+(state?' '+state:'');}
 }
@@ -5106,6 +5148,7 @@ async function loadKkPmAccountTemplateConfig({force=false}={}){
   const panel=input.closest('.kk-pm-account-master-panel');
   const role=String(currentUser?.role||'').toLowerCase();
   const allowed=['admin','irban'].includes(role);
+  kkPmUpdateBulkRetryButtons();
   if(panel)panel.hidden=!allowed;
   if(!allowed)return;
   try{
@@ -5116,24 +5159,35 @@ async function loadKkPmAccountTemplateConfig({force=false}={}){
     input.dataset.currentMaster=String(config.spreadsheetId||'');
   }catch(err){kkPmMasterUpdateStatus('Gagal membaca ID master aktif: '+(err.message||err),'error');throw err;}
 }
-async function updateKkPmAccountMasterAndWorkbook(){
+async function updateKkPmAccountMasterAndWorkbook({retryOnly=false}={}){
   const role=String(currentUser?.role||'').toLowerCase();
   if(!['admin','irban'].includes(role))return kkPmMasterUpdateStatus('Aksi ini khusus akun Pemda (Super Admin Daerah) dan Irban.','error');
-  const input=document.getElementById('kkPmMasterIdInput'),button=document.getElementById('kkPmMasterUpdateAndSync');
-  const submitted=String(input?.value||'').trim();
-  if(!submitted)return kkPmMasterUpdateStatus('Masukkan ID atau URL Google Sheets master terlebih dahulu.','error');
-  const confirmed=confirm('Tindakan ini mengganti master global, memperbarui workbook Pemda dan SELURUH OPD untuk tahun yang dipilih, lalu mengganti mirror XLSX di R2. Workbook sebelumnya disimpan sebagai riwayat pemulihan dan evidence R2 tidak dihapus. Lanjutkan?');
-  if(!confirmed)return;
+  const input=document.getElementById('kkPmMasterIdInput');
+  const state=kkPmReadBulkRetryState();
+  let submitted='';
+  if(retryOnly){
+    if(!kkPmBulkRetryStatePending(state))return kkPmMasterUpdateStatus('Tidak ada pembaruan tertunda untuk tahun aktif. Jalankan Validasi ID & Perbarui Semua Workbook jika ingin memulai pembaruan baru.','error');
+    submitted=String(state.masterId||'').trim();
+    if(!submitted)return kkPmMasterUpdateStatus('ID master dari proses tertunda tidak tersimpan. Jalankan kembali validasi master untuk memulai proses baru.','error');
+    const fieldId=kkPmNormalizeSpreadsheetId(input?.value||'');
+    if(fieldId&&fieldId!==kkPmNormalizeSpreadsheetId(submitted))return kkPmMasterUpdateStatus('ID master pada formulir berbeda dari proses yang tertunda. Gunakan ID master yang tersimpan atau mulai pembaruan baru setelah memvalidasi ID baru.','error');
+    if(!confirm(`Lanjutkan pembaruan tahun ${currentYear} dari master ${submitted}? Sistem hanya mencoba ulang workbook Pemda/OPD yang belum selesai dan melewati workbook yang sudah berhasil.`))return;
+  }else{
+    submitted=String(input?.value||'').trim();
+    if(!submitted)return kkPmMasterUpdateStatus('Masukkan ID atau URL Google Sheets master terlebih dahulu.','error');
+    if(!confirm('Tindakan ini mengganti master global, memperbarui workbook Pemda dan SELURUH OPD untuk tahun yang dipilih, lalu mengganti mirror XLSX di R2. Workbook sebelumnya disimpan sebagai riwayat pemulihan dan evidence R2 tidak dihapus. Lanjutkan?'))return;
+  }
+  const button=document.getElementById(retryOnly?'kkPmMasterRetryAndSync':'kkPmMasterUpdateAndSync');
   if(button)button.disabled=true;
   try{
     const dashboardInput=document.getElementById('pemdaPmTemplateId');
     if(dashboardInput){dashboardInput.value=submitted;dashboardInput.dataset.dirty='1';}
-    kkPmMasterUpdateStatus('Memvalidasi master, lalu memperbarui workbook Pemda dan seluruh OPD…');
-    const result=await refreshPemdaPmWorkbooks({bulk:true,masterId:submitted,throwOnError:true,accountModal:true});
+    kkPmMasterUpdateStatus(retryOnly?'Melanjutkan pembaruan yang tertunda; workbook yang sudah berhasil akan dilewati…':'Memvalidasi master, lalu memperbarui workbook Pemda dan seluruh OPD…');
+    const result=await refreshPemdaPmWorkbooks({bulk:true,masterId:submitted,throwOnError:true,accountModal:true,retryOnly});
     if(input){input.value=result?.config?.spreadsheetId||submitted;input.dataset.currentMaster=String(result?.config?.spreadsheetId||submitted);delete input.dataset.dirty;}
-    kkPmMasterUpdateStatus(`Selesai. OPD: ${result?.updatedOpd||0}/${result?.totalOpd||0}; kegagalan workbook ${result?.failedOpd?.length||0}; kegagalan mirror R2 ${result?.failedR2?.length||0}; kegagalan arsip Drive ${result?.failedDriveArchive?.length||0}.`,(result?.ok?'success':'error'));
-  }catch(err){kkPmMasterUpdateStatus('Pembaruan gagal: '+(err.message||err)+'. Periksa rincian error; referensi lama tetap dipertahankan bila proses belum selesai.','error');}
-  finally{if(button)button.disabled=false;}
+    kkPmMasterUpdateStatus(`Selesai. OPD berhasil diproses: ${result?.updatedOpd||0}/${result?.totalOpd||0}; kegagalan workbook ${result?.failedOpd?.length||0}; kegagalan mirror R2 ${result?.failedR2?.length||0}; kegagalan arsip Drive ${result?.failedDriveArchive?.length||0}; tertunda ${kkPmBulkRetryPendingCount()||0}.`,(result?.ok?'success':'error'));
+  }catch(err){kkPmMasterUpdateStatus((retryOnly?'Retry belum tuntas: ':'Pembaruan gagal: ')+(err.message||err)+'. Status tertunda disimpan; gunakan Retry setelah penyebab error/kuota teratasi.','error');}
+  finally{if(button)button.disabled=false;kkPmUpdateBulkRetryButtons();}
 }
 
 async function openKkPmModal(id){
@@ -5160,7 +5214,8 @@ function closeKkPmModal(){document.getElementById('kkPmModal')?.classList.remove
 
 document.getElementById('kkPmMasterReload')?.addEventListener('click',()=>loadKkPmAccountTemplateConfig({force:true}).catch(()=>{}));
 document.getElementById('kkPmMasterIdInput')?.addEventListener('input',e=>{e.target.dataset.dirty='1';});
-document.getElementById('kkPmMasterUpdateAndSync')?.addEventListener('click',()=>updateKkPmAccountMasterAndWorkbook());
+document.getElementById('kkPmMasterUpdateAndSync')?.addEventListener('click',()=>updateKkPmAccountMasterAndWorkbook({retryOnly:false}));
+document.getElementById('kkPmMasterRetryAndSync')?.addEventListener('click',()=>updateKkPmAccountMasterAndWorkbook({retryOnly:true}));
 
 document.addEventListener('click',e=>{
   const sheet=e.target.closest('#kkPmContent [data-pm-sheet]'); if(sheet){kkPmSelectedSheet=sheet.dataset.pmSheet||''; kkPmTab='allSheets'; kkPmRenderModal(); return;}
@@ -5864,58 +5919,157 @@ async function retryPemdaPmEvidenceDrive(uploadId){
   try{await callServerWithRetry('retryDriveBackup',{type:'pemda_workbook_evidence',year:currentYear,uploadId},3);await loadPemdaPmEvidenceFiles();pemdaPmEvidenceStatus('Sinkronisasi Google Drive berhasil.','success');}
   catch(err){pemdaPmEvidenceStatus('Sinkronisasi Google Drive belum berhasil: '+(err.message||err),'error');}
 }
-async function refreshPemdaPmWorkbooks({bulk=true,masterId=null,throwOnError=false,accountModal=false}={}){
+async function refreshPemdaPmWorkbooks({bulk=true,masterId=null,throwOnError=false,accountModal=false,retryOnly=false}={}){
   const role=pemdaPmRole(),canUpdate=['admin','irban'].includes(role);
   if(!canUpdate){const err=new Error('Pembaruan seluruh workbook hanya tersedia untuk akun Pemda (Super Admin Daerah) dan Irban.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
   if(!bulk){const err=new Error('Pembaruan master global harus memproses workbook Pemda dan seluruh OPD sekaligus.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
-  const btn=document.getElementById('pemdaPmTemplateRefreshAll')||document.getElementById('pemdaPmTemplateUpdate');if(btn)btn.disabled=true;
-  let encounteredQuotaLimit=false;
+  if(kkPmBulkRefreshRunning){const err=new Error('Pembaruan sudah berjalan pada tab ini. Tunggu sampai selesai sebelum memulai proses lain.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
   const raw=String(masterId||document.getElementById('pemdaPmTemplateId')?.value||pemdaPmDash.templateConfig?.spreadsheetId||'').trim();
-  if(!raw){const err=new Error('Masukkan ID atau link master terlebih dahulu.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
+  const normalizedRequested=kkPmNormalizeSpreadsheetId(raw);
+  if(!raw||!normalizedRequested){const err=new Error('Masukkan ID atau link master terlebih dahulu.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
+  let retryState=kkPmReadBulkRetryState();
+  if(retryOnly){
+    if(!kkPmBulkRetryStatePending(retryState)||String(retryState.year)!==String(currentYear)){const err=new Error('Tidak ditemukan status pembaruan tertunda untuk tahun aktif. Jalankan pembaruan penuh terlebih dahulu.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
+    if(kkPmNormalizeSpreadsheetId(retryState.masterId)!==normalizedRequested){const err=new Error('ID master berbeda dari proses tertunda. Demi keamanan, Retry tidak akan mengganti sumber master.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
+  }else{
+    retryState={year:String(currentYear),masterId:normalizedRequested,retryAll:true,pendingPemda:true,pendingIds:[],lastError:'',startedAt:Date.now(),attempts:0};
+    kkPmWriteBulkRetryState(retryState);
+  }
+  kkPmBulkRefreshRunning=true;
+  const buttons=['pemdaPmTemplateRefreshAll','pemdaPmTemplateRetry','kkPmMasterUpdateAndSync','kkPmMasterRetryAndSync'];
+  buttons.forEach(id=>{const button=document.getElementById(id);if(button)button.disabled=true;});
+  let encounteredQuotaLimit=false;
+  let progressStateSaved=false;
+  let config=null,pemdaResult=null;
+  const failedOpd=[],failedR2=[],failedDriveArchive=[];
+  let updatedOpd=0,r2Updated=0,driveArchived=0,totalOpd=0;
   try{
-    pemdaPmTemplateStatus('Membaca GOOGLE_SHEETS_PM_TEMPLATE_ID lalu memvalidasi semua sheet aktual, formula inti, dan izin Google Drive…');
-    const config=await callServerWithRetry('updateKkPmTemplateConfig',{spreadsheetId:raw},3);
-    if(!config.codeVersion)throw new Error('Backend Cloudflare Pages belum memuat source binding terbaru. Deploy revisi 20261028-sheets-quota-resumable-v7 sebelum pembaruan massal.');
+    retryState.attempts=Number(retryState.attempts||0)+1;
+    retryState.lastError='';
+    retryState.lastAttemptAt=Date.now();
+    kkPmWriteBulkRetryState(retryState);
+    pemdaPmTemplateStatus(retryOnly?'Melanjutkan status tersimpan. Memeriksa master aktif sebelum melanjutkan workbook tertunda…':'Membaca GOOGLE_SHEETS_PM_TEMPLATE_ID lalu memvalidasi semua sheet aktual, formula inti, dan izin Google Drive…');
+    config=await callServerWithRetry('updateKkPmTemplateConfig',{spreadsheetId:raw},3);
+    if(config.codeVersion!=='20261028-sheets-quota-resumable-retry-v8')throw new Error('Backend Cloudflare belum memakai build Retry V8. Deploy source terbaru sebelum menjalankan pembaruan.');
     if(config.source!=='cloudflare-environment')throw new Error('Sumber aktif tidak berasal dari GOOGLE_SHEETS_PM_TEMPLATE_ID. Atur variable Production di Cloudflare lalu deploy ulang.');
     if(!config.masterValidationOk||!config.spreadsheetId)throw new Error(config.masterValidationError||'Master aktif belum tervalidasi.');
+    const activeMasterId=kkPmNormalizeSpreadsheetId(config.spreadsheetId);
+    if(activeMasterId!==normalizedRequested)throw new Error('ID master yang divalidasi backend berbeda dari ID yang dipilih. Pembaruan dihentikan untuk menghindari salah sumber.');
+    if(retryState.masterId&&kkPmNormalizeSpreadsheetId(retryState.masterId)!==activeMasterId)throw new Error('Master aktif berubah setelah proses gagal. Retry dihentikan; jalankan validasi master baru untuk memulai batch yang baru.');
+    retryState.masterId=activeMasterId;
+    retryState.year=String(currentYear);
+    kkPmWriteBulkRetryState(retryState);
     pemdaPmDash.templateConfig=config;pemdaPmDash.masterSheets=Array.isArray(config.masterSheets)?config.masterSheets:[];
     const link=document.getElementById('pemdaPmTemplateLink');if(link){link.href=config.spreadsheetUrl||'#';link.textContent=config.spreadsheetId||raw;}
     const updated=document.getElementById('pemdaPmTemplateUpdated');if(updated)updated.textContent=` · Diperbarui ${new Date(config.updatedAt||Date.now()).toLocaleString('id-ID')}${config.updatedBy?' oleh '+config.updatedBy:''}`;
     const state=document.getElementById('pemdaPmTemplateValidationState');if(state){state.textContent='Profil PM_2026 tervalidasi';state.className='pemda-pm-template-state success';}
     const input=document.getElementById('pemdaPmTemplateId');if(input){input.value=config.spreadsheetId||raw;delete input.dataset.dirty;}
-    pemdaPmTemplateStatus(`Master valid (${Array.isArray(config.sheets)?config.sheets.length:'semua'} sheet). Memperbarui workbook khusus Pemda dan mirror XLSX R2…`);
-    const pemdaResult=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear,expectedTemplateSpreadsheetId:config.spreadsheetId,forceRefresh:true,forceTemplateRefresh:true,resumeIfCurrentMaster:true},3);
-    if(pemdaResult?.status==='error')throw new Error(pemdaResult.message||'Sinkronisasi workbook Pemda gagal.');
+    pemdaPmTemplateStatus(`Master valid (${Array.isArray(config.masterSheets)?config.masterSheets.length:'semua'} sheet). ${retryOnly?'Melanjutkan item tertunda':'Memperbarui workbook Pemda dan seluruh OPD'}…`);
+    const needPemda=!retryOnly||Boolean(retryState.pendingPemda);
+    if(needPemda){
+      pemdaResult=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear,expectedTemplateSpreadsheetId:config.spreadsheetId,forceRefresh:true,forceTemplateRefresh:true,resumeIfCurrentMaster:true},3);
+      if(pemdaResult?.status==='error')throw new Error(pemdaResult.message||'Sinkronisasi workbook Pemda gagal.');
+      const pemdaNeedsRetry=Boolean(pemdaResult?.workbook?.r2MirrorError||pemdaResult?.workbook?.driveArchiveError);
+      retryState.pendingPemda=pemdaNeedsRetry;
+      r2Updated+=Number(pemdaResult?.workbook?.r2MirrorKey&&!pemdaResult?.workbook?.r2MirrorError?1:0);
+      driveArchived+=Number(pemdaResult?.workbook?.driveArchiveStatus==='archived'?1:0);
+      if(pemdaResult?.workbook?.r2MirrorError)failedR2.push(`Pemda: ${pemdaResult.workbook.r2MirrorError}`);
+      if(pemdaResult?.workbook?.driveArchiveError)failedDriveArchive.push(`Pemda: ${pemdaResult.workbook.driveArchiveError}`);
+      kkPmWriteBulkRetryState(retryState);progressStateSaved=true;
+    }
     const targetsResult=await callServerWithRetry('getKkPmWorkbookRefreshTargets',{year:currentYear},2);
-    const targets=Array.isArray(targetsResult?.targets)?targetsResult.targets:[];
-    if(!targets.length)throw new Error('Server tidak menemukan daftar OPD. Tidak ada workbook OPD yang diproses.');
-    let updatedOpd=0,r2Updated=Number(pemdaResult?.workbook?.r2MirrorKey&&!pemdaResult?.workbook?.r2MirrorError?1:0),driveArchived=Number(pemdaResult?.workbook?.driveArchiveStatus==='archived'?1:0),failedOpd=[],failedR2=[],failedDriveArchive=[];
-    if(pemdaResult?.workbook?.r2MirrorError)failedR2.push(`Pemda: ${pemdaResult.workbook.r2MirrorError}`);
-    if(pemdaResult?.workbook?.driveArchiveError)failedDriveArchive.push(`Pemda: ${pemdaResult.workbook.driveArchiveError}`);
+    const allTargets=Array.isArray(targetsResult?.targets)?targetsResult.targets:[];
+    if(!allTargets.length)throw new Error('Server tidak menemukan daftar OPD. Tidak ada workbook OPD yang diproses; status tertunda tetap disimpan.');
+    let targets=allTargets;
+    if(retryOnly&&!retryState.retryAll){
+      const pendingSet=new Set((Array.isArray(retryState.pendingIds)?retryState.pendingIds:[]).map(String));
+      targets=allTargets.filter(target=>pendingSet.has(String(target.id)));
+      const availableIds=new Set(allTargets.map(target=>String(target.id)));
+      const stalePending=(Array.isArray(retryState.pendingIds)?retryState.pendingIds:[]).filter(id=>!availableIds.has(String(id)));
+      if(stalePending.length){retryState.lastError=`Sebagian ID OPD tertunda tidak ditemukan pada daftar tahun ${currentYear}: ${stalePending.join(', ')}`;}
+    }
+    if(!retryOnly||retryState.retryAll){retryState.pendingIds=allTargets.map(target=>String(target.id));retryState.retryAll=false;}
+    else if(!Array.isArray(retryState.pendingIds))retryState.pendingIds=[];
+    totalOpd=targets.length;
+    kkPmWriteBulkRetryState(retryState);progressStateSaved=true;
+    if(!targets.length&&!retryState.pendingPemda){
+      kkPmWriteBulkRetryState(null);
+      const completedMsg='Tidak ada workbook OPD tertunda; semua workbook sebelumnya sudah berhasil diperbarui.';
+      pemdaPmTemplateStatus(completedMsg,'success');if(accountModal)kkPmMasterUpdateStatus(completedMsg,'success');
+      return {ok:true,config,pemdaResult,updatedOpd:0,totalOpd:0,failedOpd:[],failedR2,failedDriveArchive,driveArchived,r2Updated,totalR2:0};
+    }
     let finished=0;const pool=2;
     for(let offset=0;offset<targets.length;offset+=pool){
       const batch=targets.slice(offset,offset+pool);
-      const outcome=await Promise.all(batch.map(async target=>{try{const result=await callServerWithRetry('createKkPmSheets',{opdId:target.id,year:currentYear,expectedTemplateSpreadsheetId:config.spreadsheetId,massRefresh:true,forceRefresh:true,forceTemplateRefresh:true,resumeIfCurrentMaster:true},3);if(result?.status==='error')throw new Error(result.message||'Gagal sinkron');return{ok:true,target,result};}catch(error){if(/429|RESOURCE_EXHAUSTED|RATE_LIMIT_EXCEEDED|quota exceeded|Read requests per minute/i.test(String(error?.message||error)))encounteredQuotaLimit=true;return{ok:false,target,error};}}));
-      for(const item of outcome){finished++;if(item.ok){updatedOpd++;if(item.result?.kkPmData?.r2MirrorKey&&!item.result?.kkPmData?.r2MirrorError)r2Updated++;if(item.result?.kkPmData?.driveArchiveStatus==='archived')driveArchived++;if(item.result?.kkPmData?.r2MirrorError)failedR2.push(`${item.target.opd||item.target.id}: ${item.result.kkPmData.r2MirrorError}`);if(item.result?.kkPmData?.driveArchiveError)failedDriveArchive.push(`${item.target.opd||item.target.id}: ${item.result.kkPmData.driveArchiveError}`);const row=(Array.isArray(rows)?rows:[]).find(r=>String(r.id)===String(item.target.id));if(row){let root={};try{root=typeof row.kkPmData==='string'?JSON.parse(row.kkPmData):(row.kkPmData||{});}catch{}row.kkPmData={...root,version:3,workbook:item.result.kkPmData,workbookHistory:item.result.workbookHistory||root.workbookHistory||[]};}}else failedOpd.push(`${item.target.opd||item.target.id}: ${item.error?.message||item.error}`);}
-      const progress=`Master valid. Pemda selesai; OPD ${Math.min(finished,targets.length)}/${targets.length}. Workbook berhasil ${updatedOpd}, gagal ${failedOpd.length}; mirror R2 ${r2Updated}/${targets.length+1}; file Drive lama diarsipkan ${driveArchived}/${targets.length+1}…`;
+      const outcome=await Promise.all(batch.map(async target=>{
+        try{
+          const result=await callServerWithRetry('createKkPmSheets',{opdId:target.id,year:currentYear,expectedTemplateSpreadsheetId:config.spreadsheetId,massRefresh:true,forceRefresh:true,forceTemplateRefresh:true,resumeIfCurrentMaster:true},3);
+          if(result?.status==='error')throw new Error(result.message||'Gagal sinkron');
+          return {ok:true,target,result};
+        }catch(error){
+          if(/429|RESOURCE_EXHAUSTED|RATE_LIMIT_EXCEEDED|quota exceeded|Read requests per minute/i.test(String(error?.message||error)))encounteredQuotaLimit=true;
+          return {ok:false,target,error};
+        }
+      }));
+      const pendingSet=new Set((Array.isArray(retryState.pendingIds)?retryState.pendingIds:[]).map(String));
+      for(const item of outcome){
+        finished++;
+        const id=String(item.target.id);
+        if(item.ok){
+          updatedOpd++;
+          const wb=item.result?.kkPmData||{};
+          if(wb.r2MirrorKey&&!wb.r2MirrorError)r2Updated++;
+          if(wb.driveArchiveStatus==='archived')driveArchived++;
+          const targetNeedsRetry=Boolean(wb.r2MirrorError||wb.driveArchiveError);
+          if(!targetNeedsRetry)pendingSet.delete(id);else pendingSet.add(id);
+          if(wb.r2MirrorError)failedR2.push(`${item.target.opd||id}: ${wb.r2MirrorError}`);
+          if(wb.driveArchiveError)failedDriveArchive.push(`${item.target.opd||id}: ${wb.driveArchiveError}`);
+          const row=(Array.isArray(rows)?rows:[]).find(r=>String(r.id)===id);
+          if(row){let root={};try{root=typeof row.kkPmData==='string'?JSON.parse(row.kkPmData):(row.kkPmData||{});}catch{}row.kkPmData={...root,version:3,workbook:wb,workbookHistory:item.result.workbookHistory||root.workbookHistory||[]};}
+        }else{
+          pendingSet.add(id);
+          failedOpd.push(`${item.target.opd||id}: ${item.error?.message||item.error}`);
+        }
+      }
+      const futureIds=targets.slice(offset+pool).map(target=>String(target.id));
+      futureIds.forEach(id=>pendingSet.add(id));
+      retryState.pendingIds=[...pendingSet];
+      retryState.retryAll=false;
+      retryState.pendingPemda=Boolean(retryState.pendingPemda);
+      retryState.lastError=failedOpd.length||failedR2.length||failedDriveArchive.length?'Sebagian item masih gagal atau perlu dicoba ulang.':'';
+      kkPmWriteBulkRetryState(retryState);progressStateSaved=true;
+      const pendingCount=kkPmBulkRetryPendingCount(retryState);
+      const progress=`Master valid. Pemda ${retryState.pendingPemda?'perlu retry':'selesai'}; OPD ${Math.min(finished,targets.length)}/${targets.length} pada percobaan ini. Berhasil ${updatedOpd}, gagal ${failedOpd.length}; tertunda ${pendingCount=== 'semua'?'semua':pendingCount}.`;
       pemdaPmTemplateStatus(progress);if(accountModal)kkPmMasterUpdateStatus(progress);
+      if(encounteredQuotaLimit)break;
     }
     try{await loadData();}catch{}
     if(!encounteredQuotaLimit)await loadPemdaPmDashboard(false);
-    const hasFailures=failedOpd.length>0||failedR2.length>0||failedDriveArchive.length>0;
-    const quotaHelp=encounteredQuotaLimit?' Google Sheets sedang membatasi pembacaan. Jangan klik berulang kali; tunggu sekitar 60 detik, lalu jalankan pembaruan lagi. Workbook yang sudah memakai revisi master ini akan dipakai kembali; sistem melanjutkan OPD yang belum berhasil.':'';
-    const msg=`Master ${config.spreadsheetId} tervalidasi. Workbook Pemda tertaut; workbook OPD berhasil ${updatedOpd}/${targets.length}, gagal ${failedOpd.length}${failedOpd.length?': '+failedOpd.slice(0,8).join(' · '):'.'} Mirror XLSX R2 berhasil ${r2Updated}/${targets.length+1}, gagal ${failedR2.length}${failedR2.length?': '+failedR2.slice(0,5).join(' · '):'.'} File Drive lama berhasil diarsipkan ${driveArchived}/${targets.length+1}, gagal ${failedDriveArchive.length}${failedDriveArchive.length?': '+failedDriveArchive.slice(0,5).join(' · '):'.'} Workbook lama tidak dihapus permanen dan evidence R2 tidak disentuh.${quotaHelp}`;
+    const pendingNow=kkPmBulkRetryStatePending(retryState);
+    const hasFailures=failedOpd.length>0||failedR2.length>0||failedDriveArchive.length>0||pendingNow||encounteredQuotaLimit;
+    const quotaHelp=encounteredQuotaLimit?' Google Sheets sedang membatasi pembacaan. Tunggu sebelum Retry; status workbook yang belum diproses tetap tersimpan.':'';
+    const pendingDisplay=kkPmBulkRetryPendingCount(retryState);
+    const msg=`Master ${config.spreadsheetId} tervalidasi. Pada percobaan ini: OPD berhasil ${updatedOpd}/${targets.length}, gagal ${failedOpd.length}${failedOpd.length?': '+failedOpd.slice(0,8).join(' · '):'.'} Mirror XLSX R2 berhasil ${r2Updated}, gagal ${failedR2.length}${failedR2.length?': '+failedR2.slice(0,5).join(' · '):'.'} File Drive lama berhasil diarsipkan ${driveArchived}, gagal ${failedDriveArchive.length}${failedDriveArchive.length?': '+failedDriveArchive.slice(0,5).join(' · '):'.'} Workbook tertunda: ${pendingDisplay==='semua'?'semua (daftar belum berhasil dibaca)':pendingDisplay}. Gunakan tombol Retry / Lanjutkan Pembaruan untuk memproses item tersisa; workbook sukses yang sudah sesuai master akan dilewati. Workbook lama tidak dihapus permanen dan evidence R2 tidak disentuh.${quotaHelp}`;
+    if(!hasFailures)kkPmWriteBulkRetryState(null);else{retryState.lastError=msg;kkPmWriteBulkRetryState(retryState);}
     pemdaPmTemplateStatus(msg,hasFailures?'error':'success');pemdaPmDashStatus(msg,hasFailures?'error':'success');if(accountModal)kkPmMasterUpdateStatus(msg,hasFailures?'error':'success');
-    const result={ok:!hasFailures,config,pemdaResult,updatedOpd,totalOpd:targets.length,failedOpd,failedR2,failedDriveArchive,driveArchived,r2Updated,totalR2:targets.length+1};
+    const result={ok:!hasFailures,config,pemdaResult,updatedOpd,totalOpd:targets.length,failedOpd,failedR2,failedDriveArchive,driveArchived,r2Updated,totalR2:targets.length+Number(Boolean(pemdaResult))};
     if(throwOnError&&hasFailures)throw new Error(msg);
     return result;
   }catch(err){
     if(/429|RESOURCE_EXHAUSTED|RATE_LIMIT_EXCEEDED|quota exceeded|Read requests per minute/i.test(String(err?.message||err)))encounteredQuotaLimit=true;
-    const quotaHelp=encounteredQuotaLimit?' Google Sheets sedang menerapkan batas baca; tunggu sekitar 60 detik sebelum mencoba lagi. Jangan mengulang klik. Pembaruan berikutnya akan menggunakan kembali workbook yang sudah sesuai master.':'';
+    const quotaHelp=encounteredQuotaLimit?' Google Sheets sedang menerapkan batas baca. Tunggu hingga kuota pulih lalu tekan Retry / Lanjutkan Pembaruan; daftar tertunda disimpan.':' Status pembaruan yang tertunda tetap disimpan; perbaiki penyebab error lalu tekan Retry / Lanjutkan Pembaruan.';
+    retryState=kkPmReadBulkRetryState()||retryState;
+    if(retryState){retryState.lastError=String(err?.message||err);retryState.lastAttemptAt=Date.now();kkPmWriteBulkRetryState(retryState);progressStateSaved=true;}
     pemdaPmTemplateStatus('Pembaruan gagal: '+(err.message||err)+quotaHelp,'error');if(accountModal)kkPmMasterUpdateStatus('Pembaruan gagal: '+(err.message||err)+quotaHelp,'error');
     if(throwOnError)throw new Error((err.message||err)+quotaHelp);
     return null;
-  }finally{if(btn)btn.disabled=false;if(!encounteredQuotaLimit)await loadPemdaPmTemplateConfig().catch(()=>{});renderPemdaPmDashboard();}
+  }finally{
+    kkPmBulkRefreshRunning=false;
+    buttons.forEach(id=>{const button=document.getElementById(id);if(button)button.disabled=false;});
+    kkPmUpdateBulkRetryButtons();
+    if(!encounteredQuotaLimit)await loadPemdaPmTemplateConfig().catch(()=>{});
+    renderPemdaPmDashboard();
+  }
 }
 
 async function loadPemdaPmDashboard(showStatus=true,{forceMasterRefresh=false}={}){
@@ -5938,7 +6092,7 @@ function closePemdaPmDashboard(){document.getElementById('pemdaPmDashboardModal'
 async function createOrSyncPemdaPmWorkbook(){if(!['admin','irban'].includes(pemdaPmRole()))return pemdaPmDashStatus('Hanya akun Pemda dan Irban yang dapat memperbarui workbook Pemda.','error');if(pemdaPmDash.creating)return;const btn=document.getElementById(pemdaPmDash.workbook?.exists?'pemdaPmWorkbookSync':'pemdaPmWorkbookCreate');pemdaPmDash.creating=true;if(btn)btn.disabled=true;pemdaPmDashStatus('Membaca GOOGLE_SHEETS_PM_TEMPLATE_ID langsung dari backend dan memvalidasi semua sheet master...');renderPemdaPmDashboard();
   try{
     const master=(await loadPemdaPmTemplateConfig(true))||{};
-    if(!master.codeVersion)throw new Error('Backend Cloudflare Pages belum memuat perbaikan source binding. Deploy revisi terbaru yang menampilkan Build backend 20261028-sheets-quota-resumable-v7, lalu tekan Muat Ulang. Sinkronisasi dihentikan agar tidak memakai backend lama.');
+    if(!master.codeVersion)throw new Error('Backend Cloudflare Pages belum memuat perbaikan source binding. Deploy revisi terbaru yang menampilkan Build backend 20261028-sheets-quota-resumable-retry-v8, lalu tekan Muat Ulang. Sinkronisasi dihentikan agar tidak memakai backend lama.');
     if(master.source!=='cloudflare-environment')throw new Error('GOOGLE_SHEETS_PM_TEMPLATE_ID tidak terbaca sebagai sumber aktif Cloudflare. Atur variable/secret pada Production dan deploy ulang.');
     if(!master.masterValidationOk)throw new Error(master.masterValidationError||`Master ${master.spreadsheetId||'(kosong)'} belum lulus validasi tab/formula. Workbook tidak diganti.`);
     const activeMasterId=String(master.spreadsheetId||'');
@@ -5962,6 +6116,8 @@ document.getElementById('pemdaPmDashboardCloseFooter')?.addEventListener('click'
 document.getElementById('pemdaPmTemplateId')?.addEventListener('input',e=>e.target.dataset.dirty='1');
 document.getElementById('pemdaPmTemplateUpdate')?.addEventListener('click',()=>refreshPemdaPmWorkbooks({bulk:true}));
 document.getElementById('pemdaPmTemplateRefreshAll')?.addEventListener('click',()=>refreshPemdaPmWorkbooks({bulk:true}));
+document.getElementById('pemdaPmTemplateRetry')?.addEventListener('click',()=>refreshPemdaPmWorkbooks({bulk:true,retryOnly:true}));
+kkPmUpdateBulkRetryButtons();
 document.getElementById('pemdaPmTemplateOpenLink')?.addEventListener('click',()=>{const id=String(document.getElementById('pemdaPmTemplateId')?.value||pemdaPmDash.templateConfig?.spreadsheetId||'').trim();const found=id.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);const clean=found?found[1]:id;if(/^[A-Za-z0-9_-]{20,}$/.test(clean))window.open(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(clean)}/edit`,'_blank','noopener,noreferrer');else pemdaPmTemplateStatus('ID/URL master belum valid.','error');});
 document.getElementById('pemdaEvidenceTarget')?.addEventListener('change',()=>renderPemdaPmEvidenceSelectors());
 document.getElementById('pemdaEvidenceSubunsur')?.addEventListener('change',()=>renderPemdaPmEvidenceSelectors());
