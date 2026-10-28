@@ -68,8 +68,8 @@ const ui = readFileSync(new URL('../public/script.js', import.meta.url), 'utf8')
 assert.match(ui, /const pool=2/);
 assert.match(ui, /getKkPmWorkbookRefreshTargets/);
 assert.match(ui, /createKkPmSheets.*expectedTemplateSpreadsheetId/s);
-assert.match(source, /20261028-sheets-quota-resumable-v7/);
-assert.match(ui, /20261028-sheets-quota-resumable-v7/);
+assert.match(source, /20261028-sheets-quota-resumable-retry-v8/);
+assert.match(ui, /20261028-sheets-quota-resumable-retry-v8/);
 
 // No call site should pre-execute .run() inside runD1WithRetry's statement factory.
 function matchingCloseParen(text, openIndex) {

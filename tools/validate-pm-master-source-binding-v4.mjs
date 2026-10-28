@@ -40,7 +40,7 @@ const missing=ctx.diagnostics(expected.slice(0,-1).map(title=>({properties:{titl
 assert.notEqual(ctx.profile(expected.slice(0,-1).map(title=>({properties:{title}}))),'PM_2026','missing required current inventory does not silently pass');
 const duplicate=ctx.diagnostics([...expected,'KK 6 INSPEKTORAT'].map(title=>({properties:{title}})));
 assert.equal(duplicate.valid,false,'duplicate canonical PM tabs fail validation');
-assert.ok(backend.includes("const KAWAL_PM_MASTER_BUILD_VERSION='20261028-sheets-quota-resumable-v7'"),'backend build ID is exposed');
+assert.ok(backend.includes("const KAWAL_PM_MASTER_BUILD_VERSION='20261028-sheets-quota-resumable-retry-v8'"),'backend build ID is exposed');
 assert.ok(backend.includes('masterSheets,sheetCount:masterSheets.length')&&backend.includes('masterValidationError'),'template config returns actual source sheet inventory and validation outcome');
 assert.ok(backend.includes("resolveKkPmTemplateSpreadsheet(env,token,await getConfiguredKkPmTemplateId(env),{forceRefresh:params.forceRefresh===true"),'Muat Ulang can force a fresh active-template resolution');
 assert.ok(frontend.includes("getKkPmTemplateConfig',{forceRefresh:Boolean(forceRefresh)")&&frontend.includes('masterSheets=Array.isArray(result.masterSheets)?result.masterSheets:[]'),'frontend reads source inventory from the configured master ID');
@@ -49,7 +49,7 @@ assert.ok(backend.includes('expectedTemplateId&&expectedTemplateId!==templateId'
 assert.ok(frontend.includes("master.source!=='cloudflare-environment'")&&frontend.includes('!master.masterValidationOk'),'sync refuses old backend/non-validated master');
 assert.ok(frontend.includes('expectedTemplateSpreadsheetId:config.spreadsheetId'),'bulk refresh pins the validated master ID for Pemda and OPD');
 assert.ok(frontend.includes("loadPemdaPmDashboard(true,{forceMasterRefresh:true})"),'Muat Ulang forces re-reading the configured master');
-assert.ok(html.includes('script.js?v=20261028-sheets-quota-resumable-v7'),'fresh frontend build URL prevents prior JS cache');
+assert.ok(html.includes('script.js?v=20261028-sheets-quota-resumable-retry-v8'),'fresh frontend build URL prevents prior JS cache');
 console.log(JSON.stringify({status:'PASS',checks:17,masterSheetCount:expected.length,verified:[
  'all 28 user workbook sheet names accepted in original order',
  'new sheet inventory is active and future additional tabs are accepted',
