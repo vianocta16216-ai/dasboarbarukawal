@@ -1,0 +1,17 @@
+KAWAL SPIP — HASIL UJI REGRESI
+Build: 20261028-template-update-d1-run-fix-v5
+Tanggal: 28 Oktober 2026
+
+PASS: D1 prepared statement path
+PASS: Promise hasil .run() yang sudah dijalankan (regresi makeStatement(...).run is not a function)
+PASS: retry setelah transient D1 lock
+PASS: error non-transient tidak diulang
+PASS: guard source konfigurasi master dan pembaruan semua OPD
+PASS: tidak ada pemanggilan .run() bertumpuk di dalam runD1WithRetry
+PASS: 73 call-site runD1WithRetry memiliki kurung seimbang dan tidak menggunakan .run() di callback
+PASS: node --check functions/myCloudinaryHandler.js
+PASS: node --check public/script.js
+PASS: query daftar target memilih semua baris OPD untuk tahun aktif
+PASS: cache-buster frontend dan penanda backend menggunakan V5
+
+Batas pengujian: Ini uji source code lokal + helper mock, bukan koneksi ke D1/Google Sheets/Google Drive produksi. Belum dilakukan load test produksi.
