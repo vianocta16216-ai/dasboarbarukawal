@@ -77,6 +77,8 @@ const KK_PM_EXPECTED_FORMULAS = {
   'KKLEAD_SPIP!I85':'=F104',
   'KKLEAD_SPIP!I106':"='KKLEAD II'!L35"
 };
+// Visible API build marker lets the dashboard diagnose stale Pages Functions deployments.
+const KAWAL_PM_MASTER_BUILD_VERSION='20261027-pm-master-source-guard-v4';
 
 
 function normalizeAssessmentOrgName(value){
@@ -141,11 +143,18 @@ function pmSheetStructureDiagnostics(sheets){
   const missing=KK_PM_REQUIRED_SHEET_NAMES.filter((_,i)=>(counts.get(expectedKeys[i])||0)===0);
   const duplicateKeys=[...counts.entries()].filter(([,count])=>count>1).map(([key])=>key);
   const duplicateRequired=duplicateKeys.filter(key=>expectedSet.has(key));
+  // Accept the exact 28-tab source inventory supplied on 2026-10-27 without forcing the
+  // older canonical names (KK 5.1 A, KK 6, KK 7, KK 8) over the official RPJMD/Inspektorat names.
+  // This remains forward-compatible: future extra tabs are allowed and preserved.
+  const exactCurrentKeys=KK_PM_2026_SHEET_NAMES.map(canonicalPmSheetKey);
+  const hasCurrentInventory=exactCurrentKeys.every(key=>actualKeys.includes(key));
+  const duplicatesCurrent=exactCurrentKeys.filter(key=>(counts.get(key)||0)>1);
+  const currentInventoryValid=hasCurrentInventory&&duplicatesCurrent.length===0;
   // Extra tabs are valid: the master owner may add QA, local RPJMD, inspection or future sheets.
   // Preserve every tab returned by Google Sheets; only missing/duplicated required anchors reject the master.
   const unexpected=actual.filter((title,i)=>!expectedSet.has(actualKeys[i]));
-  const valid=actual.length>=expectedKeys.length&&missing.length===0&&duplicateRequired.length===0;
-  return{valid,actual,missing,unexpected,duplicates:duplicateKeys,duplicateRequired,expected:KK_PM_REQUIRED_SHEET_NAMES,actualCount:actual.length,requiredCount:expectedKeys.length};
+  const valid=actual.length>=expectedKeys.length&&(missing.length===0&&duplicateRequired.length===0||currentInventoryValid);
+  return{valid,actual,missing,unexpected,duplicates:duplicateKeys,duplicateRequired,expected:KK_PM_REQUIRED_SHEET_NAMES,actualCount:actual.length,requiredCount:expectedKeys.length,currentInventoryValid,duplicatesCurrent};
 }
 function getPmSheetProfile(sheets){
   const diagnostic=pmSheetStructureDiagnostics(sheets);
@@ -1443,6 +1452,10 @@ async function ensureKkPmSpreadsheet(env,params){
   // all required workpaper tabs and still be stale because it was copied from an earlier master.
   const resolvedTemplate=await resolveKkPmTemplateSpreadsheet(env,accessToken,await getConfiguredKkPmTemplateId(env),{forceRefresh:true});
   const templateId=String(resolvedTemplate.id||'');
+  const expectedTemplateId=extractSpreadsheetId(params.expectedTemplateSpreadsheetId||'');
+  if(expectedTemplateId&&expectedTemplateId!==templateId){
+    throw new Error(`Sumber master berubah/berbeda: UI meminta ${expectedTemplateId}, tetapi backend efektif memakai ${templateId||'(kosong)'} dari GOOGLE_SHEETS_PM_TEMPLATE_ID. Tidak ada workbook yang disalin atau ditautkan; muat ulang konfigurasi master.`);
+  }
   const templateFile=resolvedTemplate.file||{};
   const templateModifiedTime=String(templateFile.modifiedTime||'');
   const templateRevision=templateModifiedTime || await (async()=>{
@@ -2986,7 +2999,46 @@ export async function onRequest({ request, env, ctx }) {
         const environmentIsActive=Boolean(environmentId);
         const rowMatchesActive=!environmentIsActive||rowId===spreadsheetId;
         const canManage=['admin','irban'].includes(String(authSession?.role||''));
-        return jsonResponse({status:'success',spreadsheetId,spreadsheetUrl:spreadsheetId?`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`:'',spreadsheetName:rowMatchesActive?String(row?.spreadsheet_name||''):'',updatedAt:rowMatchesActive?Number(row?.updated_at||0):0,updatedBy:rowMatchesActive?String(row?.updated_by||''):'',validationProfile:rowMatchesActive?String(row?.validation_profile||'pending_validation'):'pending_validation',source:environmentIsActive?'cloudflare-environment':(rowId?'database-config':'default'),environmentAuthoritative:environmentIsActive,canManage,canRefreshAll:canManage,scope:canManage?'global-master-and-all-workbooks':'read-only-master'});
+        const forceRefresh=params.forceRefresh===true||String(params.forceRefresh||'').toLowerCase()==='true';
+        let spreadsheetName=rowMatchesActive?String(row?.spreadsheet_name||''):'';
+        let masterSheets=[],masterValidationOk=false,masterValidationError='',masterProfile=null,masterModifiedTime='';
+        // Inspect the exact effective ID (environment first, then D1/default); never silently
+        // populate the screen from an unrelated discovered spreadsheet.
+        try{
+          const token=await getGoogleAccessToken(env);
+          const file=await getDriveFile(token,spreadsheetId);
+          if(!file||file.trashed)throw new Error(`ID master aktif ${spreadsheetId} tidak ditemukan atau sudah dihapus di Google Drive.`);
+          if(file.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error(`ID master aktif ${spreadsheetId} bukan file Google Sheets native (mimeType: ${file.mimeType||'unknown'}). Impor/konversi XLSX menjadi Google Sheets terlebih dahulu.`);
+          spreadsheetName=String(file.name||spreadsheetName||'');masterModifiedTime=String(file.modifiedTime||'');
+          const checked=await validateKkPmSpreadsheet(token,spreadsheetId,{checkFormulas:true});
+          const metadataSheets=checked.metadata?.sheets||[];
+          masterSheets=metadataSheets.map((x,i)=>({sheetId:x.properties?.sheetId??null,title:sheetTitleOf(x),index:Number(x.properties?.index??i),rowCount:Number(x.properties?.gridProperties?.rowCount||0),columnCount:Number(x.properties?.gridProperties?.columnCount||0)}));
+          masterProfile=checked.profile||null;
+          masterValidationOk=Boolean(checked.ok&&checked.profile==='PM_2026');
+          if(!masterValidationOk){
+            const missing=(checked.missingTitles||[]).join(', ');
+            const duplicates=(checked.duplicateCanonicalTitles||[]).join(', ');
+            const formulaProblems=(checked.formulaMismatches||[]).map(x=>`${x.cell}: ${x.actual||'(kosong)'}`).join('; ');
+            masterValidationError=`Master aktif terbaca ${masterSheets.length} sheet tetapi validasi PM_2026 belum lulus. Tab inti kurang: ${missing||'tidak ada'}; duplikat tab inti: ${duplicates||'tidak ada'}${formulaProblems?'; formula: '+formulaProblems:''}. Build=${KAWAL_PM_MASTER_BUILD_VERSION}.`;
+          }
+        }catch(err){
+          masterValidationError=String(err?.message||err).slice(0,900);
+          // If formula validation fails, still list the live sheet names so the UI shows what
+          // the configured spreadsheet actually contains, rather than only stale workbook tabs.
+          try{
+            if(spreadsheetId&&!masterSheets.length){
+              const token=await getGoogleAccessToken(env);const file=await getDriveFile(token,spreadsheetId);
+              if(file&&file.mimeType==='application/vnd.google-apps.spreadsheet'){
+                spreadsheetName=String(file.name||spreadsheetName||'');masterModifiedTime=String(file.modifiedTime||'');
+                const meta=await getSpreadsheetMetadata(token,spreadsheetId);
+                masterSheets=(meta.sheets||[]).map((x,i)=>({sheetId:x.properties?.sheetId??null,title:sheetTitleOf(x),index:Number(x.properties?.index??i),rowCount:Number(x.properties?.gridProperties?.rowCount||0),columnCount:Number(x.properties?.gridProperties?.columnCount||0)}));
+                masterProfile=getPmSheetProfile(meta.sheets||[]);
+              }
+            }
+          }catch(readErr){masterValidationError+=` Metadata Google Sheets juga gagal dibaca: ${String(readErr?.message||readErr).slice(0,260)}`;}
+        }
+        const source=environmentIsActive?'cloudflare-environment':(rowId?'database-config':'default');
+        return jsonResponse({status:'success',spreadsheetId,spreadsheetUrl:spreadsheetId?`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`:'',spreadsheetName,updatedAt:rowMatchesActive?Number(row?.updated_at||0):0,updatedBy:rowMatchesActive?String(row?.updated_by||''):'',validationProfile:masterValidationOk?'PM_2026':(masterProfile||'invalid'),masterValidationOk,masterValidationError,masterProfile,masterSheets,sheetCount:masterSheets.length,masterModifiedTime,source,environmentAuthoritative:environmentIsActive,canManage,canRefreshAll:canManage,scope:canManage?'global-master-and-all-workbooks':'read-only-master',codeVersion:KAWAL_PM_MASTER_BUILD_VERSION,inspectedAt:Date.now()});
       }
       case 'updateKkPmTemplateConfig': {
         if(!['admin','irban'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Hanya akun Pemda (Super Admin Daerah) dan Irban yang dapat mengganti master global KK PM.'},403);
@@ -3010,7 +3062,7 @@ export async function onRequest({ request, env, ctx }) {
         await runD1WithRetry(()=>env.DB.prepare("INSERT INTO kk_pm_template_config(config_key,spreadsheet_id,spreadsheet_name,updated_at,updated_by,validation_profile) VALUES('active',?,?,?,?,?) ON CONFLICT(config_key) DO UPDATE SET spreadsheet_id=excluded.spreadsheet_id,spreadsheet_name=excluded.spreadsheet_name,updated_at=excluded.updated_at,updated_by=excluded.updated_by,validation_profile=excluded.validation_profile").bind(spreadsheetId,String(file.name||checked.metadata?.properties?.title||''),now,String(authSession.username||''),'PM_2026').run());
         PM_TEMPLATE_RESOLUTION_CACHE.clear();LIVE_KK_MASTER_ROWS_CACHE.clear();LIVE_KK_MASTER_ROWS_PENDING.clear();
         notifyRealtime(env,ctx,year,{action:'updateKkPmTemplateConfig',spreadsheetId,updatedBy:String(authSession.username||'')});
-        return jsonResponse({status:'success',message:'ID master PM berhasil divalidasi dan diperbarui. Akun Pemda/Irban dapat menyinkronkan workbook Pemda dan seluruh OPD dari sumber baru.',spreadsheetId,spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`,spreadsheetName:String(file.name||checked.metadata?.properties?.title||''),updatedAt:now,updatedBy:String(authSession.username||''),validationProfile:'PM_2026',canManage:true,canRefreshAll:true,shapeAliasesAccepted:true});
+        return jsonResponse({status:'success',message:'ID master PM berhasil divalidasi dan diperbarui. Akun Pemda/Irban dapat menyinkronkan workbook Pemda dan seluruh OPD dari sumber baru.',spreadsheetId,spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`,spreadsheetName:String(file.name||checked.metadata?.properties?.title||''),updatedAt:now,updatedBy:String(authSession.username||''),validationProfile:'PM_2026',masterValidationOk:true,masterValidationError:'',masterProfile:checked.profile,masterSheets:(checked.metadata?.sheets||[]).map((x,i)=>({sheetId:x.properties?.sheetId??null,title:sheetTitleOf(x),index:Number(x.properties?.index??i),rowCount:Number(x.properties?.gridProperties?.rowCount||0),columnCount:Number(x.properties?.gridProperties?.columnCount||0)})),sheetCount:(checked.metadata?.sheets||[]).length,source:environmentId?'cloudflare-environment':'database-config',codeVersion:KAWAL_PM_MASTER_BUILD_VERSION,canManage:true,canRefreshAll:true,shapeAliasesAccepted:true});
       }
 
       case 'getKkPmWorkbookRefreshTargets': {
@@ -3105,7 +3157,7 @@ export async function onRequest({ request, env, ctx }) {
             if(profile!=='PM_2026'){needsSync=true;needsSyncReason=`Workbook Pemda memiliki profil ${profile||'tidak dikenal'}, bukan master PM 2026 yang memiliki semua tab inti wajib.`;}
           }catch(err){needsSync=true;needsSyncReason=`Workbook Pemda belum dapat diverifikasi: ${String(err?.message||err).slice(0,220)}`;sheets=Array.isArray(workbook.sheets)?workbook.sheets.map((x,i)=>({sheetId:x?.sheetId||x?.properties?.sheetId||null,title:typeof x==='string'?x:(x?.title||x?.properties?.title||''),index:Number(x?.index??i),rowCount:Number(x?.rowCount||0),columnCount:Number(x?.columnCount||0)})):[];}
           try{
-            const token=await getGoogleAccessToken(env);const active=await resolveKkPmTemplateSpreadsheet(env,token,await getConfiguredKkPmTemplateId(env));
+            const token=await getGoogleAccessToken(env);const active=await resolveKkPmTemplateSpreadsheet(env,token,await getConfiguredKkPmTemplateId(env),{forceRefresh:params.forceRefresh===true||String(params.forceRefresh||'').toLowerCase()==='true'});
             const rev=String(active.file?.modifiedTime||'');
             if(String(workbook.templateSpreadsheetId||'')!==String(active.id)||!String(workbook.templateRevision||workbook.templateModifiedTime||'')||(rev&&rev!==String(workbook.templateRevision||workbook.templateModifiedTime||''))){needsSync=true;needsSyncReason='Master spreadsheet PM berubah atau workbook Pemda tidak lagi tertaut ke revisi master terbaru. Sinkronkan untuk membuat salinan yang tervalidasi; file lama disimpan.';}
           }catch(err){if(!needsSync){needsSync=true;needsSyncReason=`Revisi master PM belum dapat diverifikasi: ${String(err?.message||err).slice(0,220)}`;}}
@@ -3124,7 +3176,7 @@ export async function onRequest({ request, env, ctx }) {
           if(!saved)throw new Error('Lease sinkronisasi Pemda tidak ditemukan.');
           let current={};let history=[];try{current=JSON.parse(saved.workbook_json||'{}')}catch{}try{history=JSON.parse(saved.history_json||'[]')}catch{}
           const currentKkPmData={version:3,workbook:{...current},cells:{}};
-          const workbook=await ensureKkPmSpreadsheet(env,{year:y,opd:'PEMERINTAH KABUPATEN MAHAKAM ULU',currentKkPmData,forceRefresh:Boolean(params.forceRefresh||params.massRefresh||params.forceTemplateRefresh)});
+          const workbook=await ensureKkPmSpreadsheet(env,{year:y,opd:'PEMERINTAH KABUPATEN MAHAKAM ULU',currentKkPmData,expectedTemplateSpreadsheetId:params.expectedTemplateSpreadsheetId,forceRefresh:Boolean(params.forceRefresh||params.massRefresh||params.forceTemplateRefresh)});
           const accessToken=await getGoogleAccessToken(env);const meta=await getSpreadsheetMetadata(accessToken,workbook.workbookSpreadsheetId);
           if(!expectedPmSheetOrderMatches(meta.sheets||[])||getPmSheetProfile(meta.sheets||[])!=='PM_2026')throw new Error('Workbook Pemda gagal validasi tab inti master PM. Referensi lama tetap tersimpan.');
           const liveSheets=(meta.sheets||[]).map(x=>({sheetId:x.properties?.sheetId,title:x.properties?.title,index:x.properties?.index,rowCount:x.properties?.gridProperties?.rowCount||0,columnCount:x.properties?.gridProperties?.columnCount||0}));
@@ -3150,7 +3202,7 @@ export async function onRequest({ request, env, ctx }) {
           const message=warnings.length
             ?`Workbook KK PM SPIP Pemda baru sudah valid dan tertaut. Peringatan penyimpanan: ${warnings.join(' | ')}`
             :(workbook.syncDisposition==='created'?'Workbook KK PM SPIP Pemda berhasil diperbarui dari master; mirror XLSX R2 diperbarui dan workbook lama diarsipkan.':'Workbook KK PM SPIP Pemda berhasil diverifikasi; mirror XLSX R2 sinkron dan file Drive lama dipertahankan sebagai arsip.');
-          return jsonResponse({status:'success',message,year:y,exists:true,workbook:finalWorkbook,sheets:liveSheets,needsSync:false,needsSyncReason:'',profile:'PM_2026',version:Number(saved.version||0)+1,updatedAt:Date.now(),updatedBy:String(authSession.username||''),syncDisposition:workbook.syncDisposition||'reused'});
+          return jsonResponse({status:'success',message,year:y,exists:true,workbook:finalWorkbook,sheets:liveSheets,needsSync:false,needsSyncReason:'',profile:'PM_2026',activeMasterSpreadsheetId:String(finalWorkbook.templateSpreadsheetId||''),activeMasterSource:extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||'')?'cloudflare-environment':'database-config/default',codeVersion:KAWAL_PM_MASTER_BUILD_VERSION,version:Number(saved.version||0)+1,updatedAt:Date.now(),updatedBy:String(authSession.username||''),syncDisposition:workbook.syncDisposition||'reused'});
         }finally{
           await env.DB.prepare("UPDATE pemda_kk_pm_workbooks SET lease_until=0,owner_token='',updated_at=CASE WHEN updated_at=0 THEN ? ELSE updated_at END WHERE year=? AND owner_token=?").bind(Date.now(),y,token).run().catch(()=>{});
         }
@@ -3881,7 +3933,7 @@ export async function onRequest({ request, env, ctx }) {
           const syncMessage=warnings.length
             ?`Workbook Google Drive baru sudah valid dan ditautkan. Peringatan: ${warnings.join(' | ')}`
             :(wb.syncDisposition==='created'?'Workbook baru dari master PM terbaru berhasil dibuat dan ditautkan; mirror XLSX R2 diperbarui, workbook Drive lama diarsipkan.':'Workbook PM terbaru sudah terverifikasi dan tertaut; mirror XLSX R2 sinkron.');
-          return jsonResponse({status:'success',message:syncMessage,kkPmData:workbook,sheets:workbook.sheets,syncDisposition:wb.syncDisposition||'reused',previousWorkbookSpreadsheetId:wb.previousWorkbookSpreadsheetId||null,workbookHistory});
+          return jsonResponse({status:'success',message:syncMessage,kkPmData:workbook,sheets:workbook.sheets,syncDisposition:wb.syncDisposition||'reused',previousWorkbookSpreadsheetId:wb.previousWorkbookSpreadsheetId||null,activeMasterSpreadsheetId:String(workbook.templateSpreadsheetId||''),activeMasterSource:extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID||'')?'cloudflare-environment':'database-config/default',codeVersion:KAWAL_PM_MASTER_BUILD_VERSION,workbookHistory});
         }finally{
           await env.DB.prepare("UPDATE kk_pm_workbook_sync_locks SET lease_until=0,owner_token='',updated_at=? WHERE lock_key=? AND owner_token=?").bind(Date.now(),lockKey,lockToken).run().catch(()=>{});
         }
