@@ -5869,12 +5869,13 @@ async function refreshPemdaPmWorkbooks({bulk=true,masterId=null,throwOnError=fal
   if(!canUpdate){const err=new Error('Pembaruan seluruh workbook hanya tersedia untuk akun Pemda (Super Admin Daerah) dan Irban.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
   if(!bulk){const err=new Error('Pembaruan master global harus memproses workbook Pemda dan seluruh OPD sekaligus.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
   const btn=document.getElementById('pemdaPmTemplateRefreshAll')||document.getElementById('pemdaPmTemplateUpdate');if(btn)btn.disabled=true;
+  let encounteredQuotaLimit=false;
   const raw=String(masterId||document.getElementById('pemdaPmTemplateId')?.value||pemdaPmDash.templateConfig?.spreadsheetId||'').trim();
   if(!raw){const err=new Error('Masukkan ID atau link master terlebih dahulu.');pemdaPmTemplateStatus(err.message,'error');if(throwOnError)throw err;return null;}
   try{
     pemdaPmTemplateStatus('Membaca GOOGLE_SHEETS_PM_TEMPLATE_ID lalu memvalidasi semua sheet aktual, formula inti, dan izin Google Drive…');
     const config=await callServerWithRetry('updateKkPmTemplateConfig',{spreadsheetId:raw},3);
-    if(!config.codeVersion)throw new Error('Backend Cloudflare Pages belum memuat source binding terbaru. Deploy revisi 20261028-template-update-d1-run-fix-v5 sebelum pembaruan massal.');
+    if(!config.codeVersion)throw new Error('Backend Cloudflare Pages belum memuat source binding terbaru. Deploy revisi 20261028-sheets-quota-resumable-v7 sebelum pembaruan massal.');
     if(config.source!=='cloudflare-environment')throw new Error('Sumber aktif tidak berasal dari GOOGLE_SHEETS_PM_TEMPLATE_ID. Atur variable Production di Cloudflare lalu deploy ulang.');
     if(!config.masterValidationOk||!config.spreadsheetId)throw new Error(config.masterValidationError||'Master aktif belum tervalidasi.');
     pemdaPmDash.templateConfig=config;pemdaPmDash.masterSheets=Array.isArray(config.masterSheets)?config.masterSheets:[];
@@ -5883,7 +5884,7 @@ async function refreshPemdaPmWorkbooks({bulk=true,masterId=null,throwOnError=fal
     const state=document.getElementById('pemdaPmTemplateValidationState');if(state){state.textContent='Profil PM_2026 tervalidasi';state.className='pemda-pm-template-state success';}
     const input=document.getElementById('pemdaPmTemplateId');if(input){input.value=config.spreadsheetId||raw;delete input.dataset.dirty;}
     pemdaPmTemplateStatus(`Master valid (${Array.isArray(config.sheets)?config.sheets.length:'semua'} sheet). Memperbarui workbook khusus Pemda dan mirror XLSX R2…`);
-    const pemdaResult=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear,expectedTemplateSpreadsheetId:config.spreadsheetId,forceRefresh:true,forceTemplateRefresh:true},3);
+    const pemdaResult=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear,expectedTemplateSpreadsheetId:config.spreadsheetId,forceRefresh:true,forceTemplateRefresh:true,resumeIfCurrentMaster:true},3);
     if(pemdaResult?.status==='error')throw new Error(pemdaResult.message||'Sinkronisasi workbook Pemda gagal.');
     const targetsResult=await callServerWithRetry('getKkPmWorkbookRefreshTargets',{year:currentYear},2);
     const targets=Array.isArray(targetsResult?.targets)?targetsResult.targets:[];
@@ -5894,24 +5895,27 @@ async function refreshPemdaPmWorkbooks({bulk=true,masterId=null,throwOnError=fal
     let finished=0;const pool=2;
     for(let offset=0;offset<targets.length;offset+=pool){
       const batch=targets.slice(offset,offset+pool);
-      const outcome=await Promise.all(batch.map(async target=>{try{const result=await callServerWithRetry('createKkPmSheets',{opdId:target.id,year:currentYear,expectedTemplateSpreadsheetId:config.spreadsheetId,massRefresh:true,forceRefresh:true,forceTemplateRefresh:true},3);if(result?.status==='error')throw new Error(result.message||'Gagal sinkron');return{ok:true,target,result};}catch(error){return{ok:false,target,error};}}));
+      const outcome=await Promise.all(batch.map(async target=>{try{const result=await callServerWithRetry('createKkPmSheets',{opdId:target.id,year:currentYear,expectedTemplateSpreadsheetId:config.spreadsheetId,massRefresh:true,forceRefresh:true,forceTemplateRefresh:true,resumeIfCurrentMaster:true},3);if(result?.status==='error')throw new Error(result.message||'Gagal sinkron');return{ok:true,target,result};}catch(error){if(/429|RESOURCE_EXHAUSTED|RATE_LIMIT_EXCEEDED|quota exceeded|Read requests per minute/i.test(String(error?.message||error)))encounteredQuotaLimit=true;return{ok:false,target,error};}}));
       for(const item of outcome){finished++;if(item.ok){updatedOpd++;if(item.result?.kkPmData?.r2MirrorKey&&!item.result?.kkPmData?.r2MirrorError)r2Updated++;if(item.result?.kkPmData?.driveArchiveStatus==='archived')driveArchived++;if(item.result?.kkPmData?.r2MirrorError)failedR2.push(`${item.target.opd||item.target.id}: ${item.result.kkPmData.r2MirrorError}`);if(item.result?.kkPmData?.driveArchiveError)failedDriveArchive.push(`${item.target.opd||item.target.id}: ${item.result.kkPmData.driveArchiveError}`);const row=(Array.isArray(rows)?rows:[]).find(r=>String(r.id)===String(item.target.id));if(row){let root={};try{root=typeof row.kkPmData==='string'?JSON.parse(row.kkPmData):(row.kkPmData||{});}catch{}row.kkPmData={...root,version:3,workbook:item.result.kkPmData,workbookHistory:item.result.workbookHistory||root.workbookHistory||[]};}}else failedOpd.push(`${item.target.opd||item.target.id}: ${item.error?.message||item.error}`);}
       const progress=`Master valid. Pemda selesai; OPD ${Math.min(finished,targets.length)}/${targets.length}. Workbook berhasil ${updatedOpd}, gagal ${failedOpd.length}; mirror R2 ${r2Updated}/${targets.length+1}; file Drive lama diarsipkan ${driveArchived}/${targets.length+1}…`;
       pemdaPmTemplateStatus(progress);if(accountModal)kkPmMasterUpdateStatus(progress);
     }
     try{await loadData();}catch{}
-    await loadPemdaPmDashboard(false);
+    if(!encounteredQuotaLimit)await loadPemdaPmDashboard(false);
     const hasFailures=failedOpd.length>0||failedR2.length>0||failedDriveArchive.length>0;
-    const msg=`Master ${config.spreadsheetId} tervalidasi. Workbook Pemda tertaut; workbook OPD berhasil ${updatedOpd}/${targets.length}, gagal ${failedOpd.length}${failedOpd.length?': '+failedOpd.slice(0,8).join(' · '):'.'} Mirror XLSX R2 berhasil ${r2Updated}/${targets.length+1}, gagal ${failedR2.length}${failedR2.length?': '+failedR2.slice(0,5).join(' · '):'.'} File Drive lama berhasil diarsipkan ${driveArchived}/${targets.length+1}, gagal ${failedDriveArchive.length}${failedDriveArchive.length?': '+failedDriveArchive.slice(0,5).join(' · '):'.'} Workbook lama tidak dihapus permanen dan evidence R2 tidak disentuh.`;
+    const quotaHelp=encounteredQuotaLimit?' Google Sheets sedang membatasi pembacaan. Jangan klik berulang kali; tunggu sekitar 60 detik, lalu jalankan pembaruan lagi. Workbook yang sudah memakai revisi master ini akan dipakai kembali; sistem melanjutkan OPD yang belum berhasil.':'';
+    const msg=`Master ${config.spreadsheetId} tervalidasi. Workbook Pemda tertaut; workbook OPD berhasil ${updatedOpd}/${targets.length}, gagal ${failedOpd.length}${failedOpd.length?': '+failedOpd.slice(0,8).join(' · '):'.'} Mirror XLSX R2 berhasil ${r2Updated}/${targets.length+1}, gagal ${failedR2.length}${failedR2.length?': '+failedR2.slice(0,5).join(' · '):'.'} File Drive lama berhasil diarsipkan ${driveArchived}/${targets.length+1}, gagal ${failedDriveArchive.length}${failedDriveArchive.length?': '+failedDriveArchive.slice(0,5).join(' · '):'.'} Workbook lama tidak dihapus permanen dan evidence R2 tidak disentuh.${quotaHelp}`;
     pemdaPmTemplateStatus(msg,hasFailures?'error':'success');pemdaPmDashStatus(msg,hasFailures?'error':'success');if(accountModal)kkPmMasterUpdateStatus(msg,hasFailures?'error':'success');
     const result={ok:!hasFailures,config,pemdaResult,updatedOpd,totalOpd:targets.length,failedOpd,failedR2,failedDriveArchive,driveArchived,r2Updated,totalR2:targets.length+1};
     if(throwOnError&&hasFailures)throw new Error(msg);
     return result;
   }catch(err){
-    pemdaPmTemplateStatus('Pembaruan gagal: '+(err.message||err),'error');if(accountModal)kkPmMasterUpdateStatus('Pembaruan gagal: '+(err.message||err),'error');
-    if(throwOnError)throw err;
+    if(/429|RESOURCE_EXHAUSTED|RATE_LIMIT_EXCEEDED|quota exceeded|Read requests per minute/i.test(String(err?.message||err)))encounteredQuotaLimit=true;
+    const quotaHelp=encounteredQuotaLimit?' Google Sheets sedang menerapkan batas baca; tunggu sekitar 60 detik sebelum mencoba lagi. Jangan mengulang klik. Pembaruan berikutnya akan menggunakan kembali workbook yang sudah sesuai master.':'';
+    pemdaPmTemplateStatus('Pembaruan gagal: '+(err.message||err)+quotaHelp,'error');if(accountModal)kkPmMasterUpdateStatus('Pembaruan gagal: '+(err.message||err)+quotaHelp,'error');
+    if(throwOnError)throw new Error((err.message||err)+quotaHelp);
     return null;
-  }finally{if(btn)btn.disabled=false;await loadPemdaPmTemplateConfig().catch(()=>{});renderPemdaPmDashboard();}
+  }finally{if(btn)btn.disabled=false;if(!encounteredQuotaLimit)await loadPemdaPmTemplateConfig().catch(()=>{});renderPemdaPmDashboard();}
 }
 
 async function loadPemdaPmDashboard(showStatus=true,{forceMasterRefresh=false}={}){
@@ -5934,18 +5938,18 @@ function closePemdaPmDashboard(){document.getElementById('pemdaPmDashboardModal'
 async function createOrSyncPemdaPmWorkbook(){if(!['admin','irban'].includes(pemdaPmRole()))return pemdaPmDashStatus('Hanya akun Pemda dan Irban yang dapat memperbarui workbook Pemda.','error');if(pemdaPmDash.creating)return;const btn=document.getElementById(pemdaPmDash.workbook?.exists?'pemdaPmWorkbookSync':'pemdaPmWorkbookCreate');pemdaPmDash.creating=true;if(btn)btn.disabled=true;pemdaPmDashStatus('Membaca GOOGLE_SHEETS_PM_TEMPLATE_ID langsung dari backend dan memvalidasi semua sheet master...');renderPemdaPmDashboard();
   try{
     const master=(await loadPemdaPmTemplateConfig(true))||{};
-    if(!master.codeVersion)throw new Error('Backend Cloudflare Pages belum memuat perbaikan source binding. Deploy revisi terbaru yang menampilkan Build backend 20261028-template-update-d1-run-fix-v5, lalu tekan Muat Ulang. Sinkronisasi dihentikan agar tidak memakai backend lama.');
+    if(!master.codeVersion)throw new Error('Backend Cloudflare Pages belum memuat perbaikan source binding. Deploy revisi terbaru yang menampilkan Build backend 20261028-sheets-quota-resumable-v7, lalu tekan Muat Ulang. Sinkronisasi dihentikan agar tidak memakai backend lama.');
     if(master.source!=='cloudflare-environment')throw new Error('GOOGLE_SHEETS_PM_TEMPLATE_ID tidak terbaca sebagai sumber aktif Cloudflare. Atur variable/secret pada Production dan deploy ulang.');
     if(!master.masterValidationOk)throw new Error(master.masterValidationError||`Master ${master.spreadsheetId||'(kosong)'} belum lulus validasi tab/formula. Workbook tidak diganti.`);
     const activeMasterId=String(master.spreadsheetId||'');
     if(!activeMasterId)throw new Error('ID master aktif kosong. Sinkronisasi dihentikan.');
-    const result=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear,expectedTemplateSpreadsheetId:activeMasterId,forceRefresh:true,forceTemplateRefresh:true},3);
+    const result=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear,expectedTemplateSpreadsheetId:activeMasterId,forceRefresh:true,forceTemplateRefresh:true,resumeIfCurrentMaster:true},3);
     if(result?.status==='error')throw new Error(result.message||'Sinkronisasi workbook Pemda gagal.');
     const actualMasterId=String(result.activeMasterSpreadsheetId||result.workbook?.templateSpreadsheetId||'');
     if(actualMasterId&&actualMasterId!==activeMasterId)throw new Error(`Pemeriksaan akhir gagal: master diminta ${activeMasterId}, tetapi workbook menyatakan sumber ${actualMasterId}. Periksa backend sebelum melanjutkan.`);
     pemdaPmDash.workbook={...(result.workbook||{}),exists:true,needsSync:!!result.needsSync,needsSyncReason:result.needsSyncReason||'',updatedAt:Number(result.updatedAt||Date.now()),updatedBy:result.updatedBy||'',permissions:{canManage:['admin','irban'].includes(String(currentUser?.role||'')),canRefreshAll:['admin','irban'].includes(String(currentUser?.role||''))}};pemdaPmDash.sheets=Array.isArray(result.sheets)?result.sheets:[];pemdaPmDash.lastLoadedAt=Date.now();await loadPemdaPmTemplateConfig(true);renderPemdaPmDashboard();pemdaPmDashStatus(`${result.message||'Workbook KK PM SPIP Pemda berhasil diverifikasi.'} Sumber master: ${activeMasterId}. Build: ${result.codeVersion||master.codeVersion}.`,'success');
   }
-  catch(err){pemdaPmDashStatus('Workbook Pemda belum berhasil dibuat/disinkronkan: '+(err.message||err),'error');await loadPemdaPmDashboard(false,{forceMasterRefresh:true});}
+  catch(err){const quotaLimit=/429|RESOURCE_EXHAUSTED|RATE_LIMIT_EXCEEDED|quota exceeded|Read requests per minute/i.test(String(err?.message||err));pemdaPmDashStatus('Workbook Pemda belum berhasil dibuat/disinkronkan: '+(err.message||err)+(quotaLimit?' Google Sheets sedang membatasi permintaan baca; jangan ulangi klik dan coba lagi setelah sekitar 60 detik.':''),'error');if(!quotaLimit)await loadPemdaPmDashboard(false,{forceMasterRefresh:false});}
   finally{pemdaPmDash.creating=false;if(btn)btn.disabled=false;renderPemdaPmDashboard();}}
 async function openPemdaPmWorkbook(sheetName=''){const win=window.open('about:blank','_blank');try{let d=await callServerWithRetry('getPemdaKkPmWorkbook',{year:currentYear},1);if(!d.exists||d.needsSync){if(!d.permissions?.canManage){throw new Error(d.needsSyncReason||'Workbook Pemda belum dibuat atau perlu disinkronkan oleh Irban/Super Admin.');}d=await callServerWithRetry('createPemdaKkPmWorkbook',{year:currentYear},2);}
   const wb=d.workbook||d;let url=wb.workbookUrl||(wb.workbookSpreadsheetId?`https://docs.google.com/spreadsheets/d/${encodeURIComponent(wb.workbookSpreadsheetId)}/edit`:'');if(!url)throw new Error('Server tidak mengembalikan tautan workbook Pemda.');if(sheetName){const sh=(d.sheets||[]).find(x=>String(x.title||'')===String(sheetName));if(!sh)throw new Error(`Sheet ${sheetName} tidak ditemukan pada workbook aktif.`);if(sh.sheetId!==undefined&&sh.sheetId!==null)url+=`#gid=${encodeURIComponent(sh.sheetId)}`;}
