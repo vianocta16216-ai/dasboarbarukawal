@@ -78,7 +78,7 @@ const KK_PM_EXPECTED_FORMULAS = {
   'KKLEAD_SPIP!I106':"='KKLEAD II'!L35"
 };
 // Visible API build marker lets the dashboard diagnose stale Pages Functions deployments.
-const KAWAL_PM_MASTER_BUILD_VERSION='20261028-template-update-d1-run-fix-v5';
+const KAWAL_PM_MASTER_BUILD_VERSION='20261028-sheets-quota-resumable-v7';
 
 
 function normalizeAssessmentOrgName(value){
@@ -191,13 +191,13 @@ async function readLiveKkMasterRows(env,masterKind='PK',options={}){
   if(!options.forceRefresh&&cached&&cached.expiresAt>now)return cached.payload;
   const inflight=LIVE_KK_MASTER_ROWS_PENDING.get(cacheKey);if(inflight&&!options.forceRefresh)return inflight;
   const job=(async()=>{
-    if(!metadata)metadata=await getSpreadsheetMetadata(token,spreadsheetId);
+    if(!metadata)metadata=await getSpreadsheetMetadata(token,spreadsheetId,{env});
     const aliases=kind==='PM'?PM_MASTER_TARGET_SHEET_ALIASES:PK_MASTER_TARGET_SHEET_ALIASES;
     const mappings=resolveMasterTargetSheetNames(metadata,aliases,kind);
     const params=new URLSearchParams();params.set('majorDimension','ROWS');params.set('valueRenderOption','FORMATTED_VALUE');
     for(const sheetName of Object.values(mappings))params.append('ranges',`'${String(sheetName).replace(/'/g,"''")}'!A1:L1000`);
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchGet?${params.toString()}`;
-    const response=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${token}`}}, {retries:2,baseDelay:250});
+    const response=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${token}`}}, {retries:2,baseDelay:250,googleSheetsReadEnv:env});
     const body=await response.json().catch(()=>({}));if(!response.ok)throw new Error(`Gagal membaca sumber master KK (${spreadsheetId}; tab ${Object.values(mappings).join(', ')}): `+JSON.stringify(body).slice(0,500));
     const ranges=body.valueRanges||[];const sheets={};Object.entries(mappings).forEach(([code,sheetName],i)=>{sheets[code]=Array.isArray(ranges[i]?.values)?ranges[i].values:[];});
     const payload={live:true,masterKind:kind,masterSpreadsheetId:spreadsheetId,masterProfile:kind==='PM'?'PM_2026':getPmSheetProfile(metadata.sheets||[])||'PK_MASTER',sheets,sheetNames:mappings,updatedAt:Date.now(),cacheSeconds:60};
@@ -221,7 +221,7 @@ async function syncPmMasterColumnsToOpdWorkbooks(env,year,options={}){
   const params=new URLSearchParams();params.set('majorDimension','ROWS');params.set('valueRenderOption','FORMULA');
   for(const sheetName of names)params.append('ranges',`'${sheetName.replace(/'/g,"''")}'!A1:L1000`);
   const sourceUrl=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(masterId)}/values:batchGet?${params.toString()}`;
-  const sourceRes=await fetchWithRetry(sourceUrl,{headers:{Authorization:`Bearer ${token}`}}, {retries:2,baseDelay:300});
+  const sourceRes=await fetchWithRetry(sourceUrl,{headers:{Authorization:`Bearer ${token}`}}, {retries:2,baseDelay:300,googleSheetsReadEnv:env});
   const sourceBody=await sourceRes.json().catch(()=>({}));
   if(!sourceRes.ok)throw new Error('Gagal membaca formula master PM untuk propagasi: '+JSON.stringify(sourceBody).slice(0,400));
   const sourceRows={};
@@ -334,6 +334,17 @@ const LIVE_KK_MASTER_ROWS_PENDING=new Map();
 const LIVE_KK_MASTER_ROWS_GENERATION=new Map();
 const PM_TEMPLATE_RESOLUTION_CACHE=new Map();
 const PM_TEMPLATE_RESOLUTION_PENDING=new Map();
+// Cache spreadsheet metadata and coalesce concurrent reads so every dashboard tab does not
+// re-read identical Sheets metadata. Explicit master validation can bypass this cache.
+const SPREADSHEET_METADATA_CACHE=new Map();
+const SPREADSHEET_METADATA_PENDING=new Map();
+const SPREADSHEET_METADATA_GENERATION=new Map();
+const WORKBOOK_COMPUTED_VALUES_CACHE=new Map();
+const WORKBOOK_COMPUTED_VALUES_PENDING=new Map();
+// The Google Sheets API quota is per OAuth user/project, shared by concurrent accounts.
+// Reserve read slots in D1 so separate Cloudflare isolates share one conservative global pace.
+const GOOGLE_SHEETS_READ_PACE_MS=1250; // about 48 reads/minute, below Google's 60/minute limit
+let LOCAL_GOOGLE_SHEETS_NEXT_AT=0;
 const PM_TEMPLATE_FILE_BASENAME='KK_PM_SPIP_Pemda_27042026_AUDIT_EVIDENCE_LENGKAP2313';
 const PM_MASTER_TARGET_SHEET_ALIASES={
   T1:['KK3.1','KK3.1 (OPD)','KK3.1 OPD'],
@@ -361,21 +372,69 @@ async function withGoogleConcurrency(task, limit=3){
   }
 }
 
+const waitMs=ms=>new Promise(resolve=>setTimeout(resolve,Math.max(0,ms)));
+async function reserveGoogleSheetsReadSlot(env){
+  const now=Date.now(),pace=GOOGLE_SHEETS_READ_PACE_MS;
+  if(env?.DB?.prepare){
+    // One atomic reservation per Sheets GET. D1 serializes reservations across isolates and accounts.
+    const row=await env.DB.prepare(`INSERT INTO google_sheets_read_pacer(pacer_key,next_at,updated_at)
+      VALUES('global-sheets-read',?,?)
+      ON CONFLICT(pacer_key) DO UPDATE SET
+        next_at=MAX(google_sheets_read_pacer.next_at,excluded.updated_at)+?,
+        updated_at=excluded.updated_at
+      RETURNING next_at`).bind(now+pace,now,pace).first();
+    if(!row||!Number.isFinite(Number(row.next_at)))throw new Error('Pembatas kuota Google Sheets belum dapat membuat reservasi di D1. Coba lagi sebentar.');
+    const reservedAt=Number(row.next_at)-pace;
+    const delay=reservedAt-Date.now();
+    if(delay>0)await waitMs(delay);
+    return;
+  }
+  // Local fallback exists for isolated unit tests only; production uses the D1 shared row above.
+  const reservedAt=Math.max(LOCAL_GOOGLE_SHEETS_NEXT_AT,now);
+  LOCAL_GOOGLE_SHEETS_NEXT_AT=reservedAt+pace;
+  if(reservedAt>Date.now())await waitMs(reservedAt-Date.now());
+}
+async function googleSheetsQuotaRetryDelay(response){
+  const header=String(response.headers?.get('Retry-After')||'').trim();
+  if(header){const seconds=Number(header);if(Number.isFinite(seconds)&&seconds>=0)return Math.min(65_000,Math.max(1000,seconds*1000));const date=Date.parse(header);if(Number.isFinite(date))return Math.min(65_000,Math.max(1000,date-Date.now()));}
+  try{
+    const body=await response.clone().json();
+    const details=Array.isArray(body?.error?.details)?body.error.details:[];
+    for(const detail of details){
+      const metadata=detail?.metadata||{};
+      const start=Number(metadata.window_start_time||metadata.windowStartTime||0);
+      if(Number.isFinite(start)&&start>0){
+        const startMs=start<1e12?start*1000:start;
+        return Math.min(65_000,Math.max(1000,startMs+60_000-Date.now()+1200));
+      }
+      const retry=String(detail?.retryDelay||'').match(/^(\d+(?:\.\d+)?)s$/);
+      if(retry)return Math.min(65_000,Math.max(1000,Number(retry[1])*1000));
+    }
+  }catch{}
+  // A Sheets 429 without Retry-After generally means the minute quota is exhausted.
+  return 60_000+Math.floor(Math.random()*1500);
+}
 async function fetchWithRetry(url, init={}, options={}){
   const retries=Number.isFinite(options.retries)?options.retries:3;
   const baseDelay=Number.isFinite(options.baseDelay)?options.baseDelay:400;
+  const method=String(init?.method||'GET').toUpperCase();
+  let isGoogleSheetsRead=false;
+  if(method==='GET'&&options.googleSheetsReadEnv){try{isGoogleSheetsRead=new URL(String(url)).hostname==='sheets.googleapis.com';}catch{}}
   let lastError=null;
   for(let attempt=0;attempt<=retries;attempt++){
     try{
+      if(isGoogleSheetsRead)await reserveGoogleSheetsReadSlot(options.googleSheetsReadEnv);
       const response=await fetch(url,init);
       if(response.ok || ![429,500,502,503,504].includes(response.status) || attempt===retries)return response;
-      const wait=Math.min(5000,baseDelay*Math.pow(2,attempt)+Math.floor(Math.random()*250));
-      await new Promise(r=>setTimeout(r,wait));
+      const wait=response.status===429&&isGoogleSheetsRead
+        ? await googleSheetsQuotaRetryDelay(response)
+        : Math.min(5000,baseDelay*Math.pow(2,attempt)+Math.floor(Math.random()*250));
+      await waitMs(wait);
     }catch(err){
       lastError=err;
       if(attempt===retries)throw err;
       const wait=Math.min(5000,baseDelay*Math.pow(2,attempt)+Math.floor(Math.random()*250));
-      await new Promise(r=>setTimeout(r,wait));
+      await waitMs(wait);
     }
   }
   throw lastError||new Error('Request gagal');
@@ -913,6 +972,11 @@ async function ensureOpdSchema(env){
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS kk_pm_workbook_sync_locks (
       lock_key TEXT PRIMARY KEY, lease_until INTEGER NOT NULL DEFAULT 0,
       owner_token TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL DEFAULT 0
+    )`).run();
+    // Shared read-request pacer for Sheets API. The single row is updated atomically by D1,
+    // so simultaneous accounts/isolate instances do not all burst through the same quota.
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS google_sheets_read_pacer (
+      pacer_key TEXT PRIMARY KEY, next_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0
     )`).run();
 
     // Evidence registry migration (IMPORTANT):
@@ -1457,9 +1521,17 @@ async function ensureKkPmSpreadsheet(env,params){
 
   // Resolve the canonical master BEFORE accepting a linked workbook. A workbook can have
   // all required workpaper tabs and still be stale because it was copied from an earlier master.
-  const resolvedTemplate=await resolveKkPmTemplateSpreadsheet(env,accessToken,await getConfiguredKkPmTemplateId(env),{forceRefresh:true});
-  const templateId=String(resolvedTemplate.id||'');
   const expectedTemplateId=extractSpreadsheetId(params.expectedTemplateSpreadsheetId||'');
+  const configuredTemplateId=extractSpreadsheetId(await getConfiguredKkPmTemplateId(env));
+  // Bulk refresh first validates the master once through updateKkPmTemplateConfig. For each
+  // OPD/Pemda afterwards, reuse that recent D1 validation only if the environment ID matches
+  // and Drive confirms the master has not changed since validation. This prevents two extra
+  // Sheets read requests per OPD while still detecting a newly edited source master.
+  const resolvedTemplate=await resolveKkPmTemplateSpreadsheet(env,accessToken,configuredTemplateId,{
+    forceRefresh:Boolean(params.forceTemplateRefresh)&&!expectedTemplateId,
+    trustValidatedConfig:Boolean(expectedTemplateId&&expectedTemplateId===extractSpreadsheetId(env.GOOGLE_SHEETS_PM_TEMPLATE_ID)&&expectedTemplateId===configuredTemplateId)
+  });
+  const templateId=String(resolvedTemplate.id||'');
   if(expectedTemplateId&&expectedTemplateId!==templateId){
     throw new Error(`Sumber master berubah/berbeda: UI meminta ${expectedTemplateId}, tetapi backend efektif memakai ${templateId||'(kosong)'} dari GOOGLE_SHEETS_PM_TEMPLATE_ID. Tidak ada workbook yang disalin atau ditautkan; muat ulang konfigurasi master.`);
   }
@@ -1477,18 +1549,24 @@ async function ensureKkPmSpreadsheet(env,params){
   let currentProfile=null,currentFile=null,currentWorkbookUsable=false;
   if(current.workbookSpreadsheetId){
     try{
-      const check=await validateKkPmSpreadsheet(accessToken,current.workbookSpreadsheetId,{checkFormulas:false});
+      const check=await validateKkPmSpreadsheet(accessToken,current.workbookSpreadsheetId,{checkFormulas:false,env});
       currentProfile=check.profile;
       currentFile=await getDriveFile(accessToken,current.workbookSpreadsheetId);
       currentWorkbookUsable=Boolean(check.ok&&check.profile==='PM_2026'&&currentFile&&!currentFile.trashed&&currentFile.mimeType==='application/vnd.google-apps.spreadsheet');
     }catch(err){
-      console.warn('Workbook PM tertaut tidak lolos pemeriksaan; akan dibuat ulang dari master kanonis tanpa menghapus file lama:',String(err?.message||err).slice(0,240));
+      const checkError=String(err?.message||err);
+      // A quota response is not evidence that the linked workbook is invalid. Never create
+      // another Drive copy merely because Sheets temporarily refused to return its metadata.
+      if(/429|RESOURCE_EXHAUSTED|RATE_LIMIT_EXCEEDED|quota exceeded|Read requests per minute/i.test(checkError)){
+        throw new Error(`Kuota baca Google Sheets sedang penuh saat memeriksa workbook lama. Tautan lama tetap dipertahankan dan tidak ada salinan baru dibuat. Tunggu sekitar 60 detik lalu lanjutkan pembaruan; workbook yang sudah benar akan digunakan kembali. Detail: ${checkError.slice(0,420)}`);
+      }
+      console.warn('Workbook PM tertaut tidak lolos pemeriksaan; akan dibuat ulang dari master kanonis tanpa menghapus file lama:',checkError.slice(0,240));
     }
   }
   const sameTemplate=String(current.templateSpreadsheetId||'')===templateId;
   const sameRevision=String(current.templateRevision||current.templateModifiedTime||'')===String(templateRevision);
   const forceRefresh=Boolean(params.forceRefresh||params.massRefresh||params.forceTemplateRefresh);
-  if(currentWorkbookUsable&&sameTemplate&&sameRevision&&!forceRefresh){
+  if(currentWorkbookUsable&&sameTemplate&&sameRevision&&(!forceRefresh||Boolean(params.resumeIfCurrentMaster))){
     return {
       version:3,templateSpreadsheetId:templateId,templateModifiedTime,templateRevision,
       workbookSpreadsheetId:String(current.workbookSpreadsheetId),
@@ -1506,7 +1584,7 @@ async function ensureKkPmSpreadsheet(env,params){
   const pmFolder=await getOrCreateFolder(accessToken,opdFolder,'Kertas Kerja PM SPIP');
   const workbookName=`${opdName} - Kertas Kerja PM SPIP - ${yearValue}`;
   const copied=await copyDriveFile(accessToken,templateId,workbookName,pmFolder);
-  const copiedCheck=await validateKkPmSpreadsheet(accessToken,copied.id,{checkFormulas:true});
+  const copiedCheck=await validateKkPmSpreadsheet(accessToken,copied.id,{checkFormulas:false,env,forceMetadataRefresh:true});
   if(!copiedCheck.ok||copiedCheck.profile!=='PM_2026'){
     const actual=(copiedCheck.actualTitles||[]).join(' | ');
     throw new Error(`Salinan Spreadsheet PM baru gagal validasi tab inti/formula wajib. Profil=${copiedCheck.profile||'tidak dikenal'}; jumlah tab=${(copiedCheck.actualTitles||[]).length}; tab terdeteksi: ${actual||'(kosong)'}. Workbook lama tetap tertaut; periksa template sumber.`);
@@ -1521,10 +1599,24 @@ async function ensureKkPmSpreadsheet(env,params){
     previousWorkbookProfile:currentProfile||null,previousTemplateSpreadsheetId:current.templateSpreadsheetId||null
   };
 }
-async function getSpreadsheetMetadata(accessToken,spreadsheetId){
-  const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=spreadsheetId,properties(title),sheets(properties(sheetId,title,index,gridProperties(rowCount,columnCount)))`;
-  const res=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${accessToken}`}}, {retries:3,baseDelay:400}); const body=await res.json().catch(()=>({})); if(!res.ok)throw new Error('Gagal membaca metadata workbook: '+JSON.stringify(body));
-  return body;
+async function getSpreadsheetMetadata(accessToken,spreadsheetId,options={}){
+  const id=String(spreadsheetId||'').trim();if(!id)throw new Error('ID spreadsheet kosong saat membaca metadata.');
+  const cacheKey=id,now=Date.now(),forceRefresh=Boolean(options.forceRefresh);
+  if(forceRefresh){SPREADSHEET_METADATA_GENERATION.set(cacheKey,(SPREADSHEET_METADATA_GENERATION.get(cacheKey)||0)+1);SPREADSHEET_METADATA_CACHE.delete(cacheKey);}
+  const generation=SPREADSHEET_METADATA_GENERATION.get(cacheKey)||0;
+  const cached=SPREADSHEET_METADATA_CACHE.get(cacheKey);
+  if(!forceRefresh&&cached&&cached.expiresAt>now)return cached.value;
+  const pending=SPREADSHEET_METADATA_PENDING.get(cacheKey);if(pending&&!forceRefresh)return pending;
+  const job=(async()=>{
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}?fields=spreadsheetId,properties(title),sheets(properties(sheetId,title,index,gridProperties(rowCount,columnCount)))`;
+    const res=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${accessToken}`}}, {retries:3,baseDelay:400,googleSheetsReadEnv:options.env});
+    const body=await res.json().catch(()=>({}));
+    if(!res.ok){const quota=res.status===429?'Google Sheets sedang membatasi permintaan baca (429). Sistem menjadwalkan pembacaan ulang; jangan klik sinkronisasi berulang kali. ':'';throw new Error(quota+'Gagal membaca metadata workbook: '+JSON.stringify(body));}
+    if((SPREADSHEET_METADATA_GENERATION.get(cacheKey)||0)===generation){SPREADSHEET_METADATA_CACHE.set(cacheKey,{expiresAt:Date.now()+180_000,value:body});}
+    return body;
+  })();
+  SPREADSHEET_METADATA_PENDING.set(cacheKey,job);
+  try{return await job;}finally{if(SPREADSHEET_METADATA_PENDING.get(cacheKey)===job)SPREADSHEET_METADATA_PENDING.delete(cacheKey);}
 }
 
 function normalizeSheetTitle(title){return String(title||'').trim().replace(/\s+/g,' ');}
@@ -1578,14 +1670,29 @@ async function resolveKkPmTemplateSpreadsheet(env,accessToken,configuredId='',op
   if(options.forceRefresh)PM_TEMPLATE_RESOLUTION_CACHE.delete(cacheKey);
   const cached=PM_TEMPLATE_RESOLUTION_CACHE.get(cacheKey);
   if(!options.forceRefresh&&cached&&cached.expiresAt>now)return cached.value;
-  const pending=PM_TEMPLATE_RESOLUTION_PENDING.get(cacheKey);if(pending)return pending;
+  const pending=PM_TEMPLATE_RESOLUTION_PENDING.get(cacheKey);if(pending&&!options.forceRefresh)return pending;
+  // The explicit master-update action stores PM_2026 only after a fresh metadata+formula check.
+  // Reuse this proof for a bulk run if it is recent and Google Drive reports no later master edit.
+  if(options.trustValidatedConfig&&!options.forceRefresh&&configured&&configured===extractSpreadsheetId(env?.GOOGLE_SHEETS_PM_TEMPLATE_ID||'')){
+    try{
+      const row=await env.DB.prepare("SELECT spreadsheet_id,updated_at,validation_profile FROM kk_pm_template_config WHERE config_key='active' LIMIT 1").first();
+      const validatedAt=Number(row?.updated_at||0);
+      if(String(row?.spreadsheet_id||'')===configured&&String(row?.validation_profile||'')==='PM_2026'&&validatedAt>0&&Date.now()-validatedAt<15*60_000){
+        const file=await getDriveFile(accessToken,configured);const modifiedAt=Date.parse(file?.modifiedTime||'');
+        if(file&&!file.trashed&&file.mimeType==='application/vnd.google-apps.spreadsheet'&&Number.isFinite(modifiedAt)&&modifiedAt<=validatedAt+3000){
+          const value={id:configured,file,check:{metadata:null,formulas:KK_PM_EXPECTED_FORMULAS,ok:true,profile:'PM_2026'},source:'recently-validated-config'};
+          PM_TEMPLATE_RESOLUTION_CACHE.set(cacheKey,{expiresAt:Date.now()+300_000,value});return value;
+        }
+      }
+    }catch(err){console.warn('Validasi master tersimpan tidak dapat dipakai; sistem akan memvalidasi master secara penuh:',String(err?.message||err).slice(0,180));}
+  }
   const job=(async()=>{
     let configuredProblem='';let configuredValue=null;
     if(configured){
       try{
         const file=await getDriveFile(accessToken,configured);
         if(file&&!file.trashed&&file.mimeType==='application/vnd.google-apps.spreadsheet'){
-          const check=await validateKkPmSpreadsheet(accessToken,configured,{checkFormulas:true});
+          const check=await validateKkPmSpreadsheet(accessToken,configured,{checkFormulas:true,env,forceMetadataRefresh:Boolean(options.forceRefresh)});
           if(check.ok&&check.profile==='PM_2026')configuredValue={id:configured,file,check,source:'configured'};
           else{
             const actual=(check.metadata?.sheets||[]).map(x=>normalizeSheetTitle(x.properties?.title||x.title));
@@ -1600,7 +1707,7 @@ async function resolveKkPmTemplateSpreadsheet(env,accessToken,configuredId='',op
     // A valid, explicitly configured master is authoritative. Never silently replace it
     // with a different Drive file merely because that file has a newer modifiedTime.
     if(configuredValue){
-      PM_TEMPLATE_RESOLUTION_CACHE.set(cacheKey,{expiresAt:Date.now()+60_000,value:configuredValue});
+      PM_TEMPLATE_RESOLUTION_CACHE.set(cacheKey,{expiresAt:Date.now()+300_000,value:configuredValue});
       return configuredValue;
     }
 
@@ -1618,14 +1725,14 @@ async function resolveKkPmTemplateSpreadsheet(env,accessToken,configuredId='',op
     for(const candidate of discovery.candidates){
       if(configuredValue&&String(candidate.id)===String(configuredValue.id))continue;
       try{
-        const check=await validateKkPmSpreadsheet(accessToken,candidate.id,{checkFormulas:true});
+        const check=await validateKkPmSpreadsheet(accessToken,candidate.id,{checkFormulas:true,env,forceMetadataRefresh:true});
         if(!check.ok||check.profile!=='PM_2026')continue;
         discoveredValue={id:candidate.id,file:candidate,check,source:'drive-discovery',configuredProblem};
         break; // candidates are sorted newest-first
       }catch(err){console.warn('Kandidat master PM dilewati karena validasi gagal:',candidate.name,String(err?.message||err).slice(0,180));}
     }
     if(discoveredValue){
-      PM_TEMPLATE_RESOLUTION_CACHE.set(cacheKey,{expiresAt:Date.now()+60_000,value:discoveredValue});
+      PM_TEMPLATE_RESOLUTION_CACHE.set(cacheKey,{expiresAt:Date.now()+300_000,value:discoveredValue});
       console.warn('Master PM valid ditemukan otomatis di Google Drive:',discoveredValue.file.name,'(',discoveredValue.id,')');
       return discoveredValue;
     }
@@ -1636,14 +1743,14 @@ async function resolveKkPmTemplateSpreadsheet(env,accessToken,configuredId='',op
   try{return await job;}finally{if(PM_TEMPLATE_RESOLUTION_PENDING.get(cacheKey)===job)PM_TEMPLATE_RESOLUTION_PENDING.delete(cacheKey);}
 }
 function expectedPmSheetOrderMatches(sheets){ return Boolean(getPmSheetProfile(sheets)); }
-async function getSpreadsheetFormulaValues(accessToken,spreadsheetId,metadata=null){
-  const meta=metadata||await getSpreadsheetMetadata(accessToken,spreadsheetId);
+async function getSpreadsheetFormulaValues(accessToken,spreadsheetId,metadata=null,options={}){
+  const meta=metadata||await getSpreadsheetMetadata(accessToken,spreadsheetId,{env:options.env});
   const leadSheet=(meta.sheets||[]).map(sheetTitleOf).find(title=>canonicalPmSheetKey(title)==='KKLEADSPIP')||'KKLEAD_SPIP';
   const formulaKeys=Object.keys(KK_PM_EXPECTED_FORMULAS);
   const ranges=formulaKeys.map(cell=>{const cellRef=cell.slice(cell.indexOf('!')+1);return `'${String(leadSheet).replace(/'/g,"''")}'!${cellRef}`;});
   const qs=ranges.map(r=>`ranges=${encodeURIComponent(r)}`).join('&');
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchGet?${qs}&valueRenderOption=FORMULA`;
-  const res=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${accessToken}`}}, {retries:3,baseDelay:350});
+  const res=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${accessToken}`}}, {retries:3,baseDelay:350,googleSheetsReadEnv:options.env});
   const body=await res.json().catch(()=>({}));
   if(!res.ok)throw new Error(`Gagal memeriksa formula inti pada tab ${leadSheet}: ${JSON.stringify(body)}`);
   const valueRanges=body.valueRanges||[];
@@ -1658,14 +1765,14 @@ function kkPmFormulaMatches(actual,expected,cell){
   if(cell==='KKLEAD_SPIP!I106')return new Set(["=KKLEADII!L35","=+'KKLEAD II'!L35".replace(/'/g,'').replace(/\s+/g,'').toUpperCase()]).has(a);
   return false;
 }
-async function validateKkPmSpreadsheet(accessToken,spreadsheetId,{checkFormulas=true}={}){
-  const meta=await getSpreadsheetMetadata(accessToken,spreadsheetId);
+async function validateKkPmSpreadsheet(accessToken,spreadsheetId,{checkFormulas=true,env,forceMetadataRefresh=false}={}){
+  const meta=await getSpreadsheetMetadata(accessToken,spreadsheetId,{env,forceRefresh:forceMetadataRefresh});
   const actualTitles=(meta.sheets||[]).map(sheetTitleOf);
   const structure=pmSheetStructureDiagnostics(meta.sheets||[]);
   const shapeOk=structure.valid;
   let formulaOk=true,formulas=null,formulaMismatches=[];
   if(checkFormulas){
-    formulas=await getSpreadsheetFormulaValues(accessToken,spreadsheetId,meta);
+    formulas=await getSpreadsheetFormulaValues(accessToken,spreadsheetId,meta,{env});
     for(const [cell,expected] of Object.entries(KK_PM_EXPECTED_FORMULAS)){const actual=String(formulas[cell]||'').trim(); if(!kkPmFormulaMatches(actual,expected,cell))formulaMismatches.push({cell,expected,actual});}
     formulaOk=formulaMismatches.length===0;
   }
@@ -2517,14 +2624,22 @@ function parseWorkbookScalar(value){
   const n=Number(s.replace(',','.'));if(Number.isFinite(n))return{value:Math.max(0,Math.min(5,n)),status:'ok',raw:s};return{value:null,status:'incomplete',raw:s};
 }
 async function readWorkbookComputedValues(env,spreadsheetId,sourceInfo={}){
-  const token=await getGoogleAccessToken(env);const ranges=['KKLEAD_SPIP!I11','KKLEAD_SPIP!I68','KKLEAD_SPIP!I85','KKLEAD_SPIP!I106'];
-  const qs=ranges.map(r=>`ranges=${encodeURIComponent(r)}`).join('&');const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchGet?${qs}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
-  const res=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${token}`}}, {retries:3,baseDelay:500});const body=await res.json().catch(()=>({}));
-  if(!res.ok){const msg=JSON.stringify(body||{});if(res.status===403&&/scope|permission|insufficient/i.test(msg))throw new Error('Akses Google Sheets belum memiliki scope spreadsheet readonly. Tambahkan scope Google Sheets readonly pada OAuth refresh token.');throw new Error(`Gagal membaca nilai formula workbook ${sourceInfo.workbookName||spreadsheetId}: ${msg}`);}
-  const vals=(body.valueRanges||[]).map(x=>x.values?.[0]?.[0]);
-  const parsed={nilaiMaturitas:parseWorkbookScalar(vals[0]),mri:parseWorkbookScalar(vals[1]),iepk:parseWorkbookScalar(vals[2]),nilaiKapabilitasApip:parseWorkbookScalar(vals[3])};
-  const statuses=Object.values(parsed).map(x=>x.status);
-  return{source:sourceInfo.source||'KK PM SPIP workbook formula cells',spreadsheetId,spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`,workbookName:sourceInfo.workbookName||null,sheet:'KKLEAD_SPIP',cells:{nilaiMaturitas:'I11',mri:'I68',iepk:'I85',nilaiKapabilitasApip:'I106'},values:Object.fromEntries(Object.entries(parsed).map(([k,v])=>[k,v.value])),raw:Object.fromEntries(Object.entries(parsed).map(([k,v])=>[k,v.raw??null])),status:statuses.every(x=>x==='ok')?'ok':(statuses.some(x=>x==='ok')?'partial':'incomplete'),syncedAt:Date.now()};
+  const cacheKey=String(spreadsheetId||'');const cached=WORKBOOK_COMPUTED_VALUES_CACHE.get(cacheKey);
+  if(cached&&cached.expiresAt>Date.now())return {...cached.value,workbookName:sourceInfo.workbookName||cached.value.workbookName,source:sourceInfo.source||cached.value.source};
+  const pending=WORKBOOK_COMPUTED_VALUES_PENDING.get(cacheKey);if(pending)return pending;
+  const job=(async()=>{
+    const token=await getGoogleAccessToken(env);const ranges=['KKLEAD_SPIP!I11','KKLEAD_SPIP!I68','KKLEAD_SPIP!I85','KKLEAD_SPIP!I106'];
+    const qs=ranges.map(r=>`ranges=${encodeURIComponent(r)}`).join('&');const url=`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchGet?${qs}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`;
+    const res=await fetchWithRetry(url,{headers:{Authorization:`Bearer ${token}`}}, {retries:3,baseDelay:500,googleSheetsReadEnv:env});const body=await res.json().catch(()=>({}));
+    if(!res.ok){const msg=JSON.stringify(body||{});if(res.status===403&&/scope|permission|insufficient/i.test(msg))throw new Error('Akses Google Sheets belum memiliki scope spreadsheet readonly. Tambahkan scope Google Sheets readonly pada OAuth refresh token.');throw new Error(`Gagal membaca nilai formula workbook ${sourceInfo.workbookName||spreadsheetId}: ${msg}`);}
+    const vals=(body.valueRanges||[]).map(x=>x.values?.[0]?.[0]);
+    const parsed={nilaiMaturitas:parseWorkbookScalar(vals[0]),mri:parseWorkbookScalar(vals[1]),iepk:parseWorkbookScalar(vals[2]),nilaiKapabilitasApip:parseWorkbookScalar(vals[3])};
+    const statuses=Object.values(parsed).map(x=>x.status);
+    const value={source:sourceInfo.source||'KK PM SPIP workbook formula cells',spreadsheetId,spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`,workbookName:sourceInfo.workbookName||null,sheet:'KKLEAD_SPIP',cells:{nilaiMaturitas:'I11',mri:'I68',iepk:'I85',nilaiKapabilitasApip:'I106'},values:Object.fromEntries(Object.entries(parsed).map(([k,v])=>[k,v.value])),raw:Object.fromEntries(Object.entries(parsed).map(([k,v])=>[k,v.raw??null])),status:statuses.every(x=>x==='ok')?'ok':(statuses.some(x=>x==='ok')?'partial':'incomplete'),syncedAt:Date.now()};
+    WORKBOOK_COMPUTED_VALUES_CACHE.set(cacheKey,{expiresAt:Date.now()+10_000,value});return value;
+  })();
+  WORKBOOK_COMPUTED_VALUES_PENDING.set(cacheKey,job);
+  try{return await job;}finally{if(WORKBOOK_COMPUTED_VALUES_PENDING.get(cacheKey)===job)WORKBOOK_COMPUTED_VALUES_PENDING.delete(cacheKey);}
 }
 
 export async function onRequest({ request, env, ctx }) {
@@ -3017,11 +3132,33 @@ export async function onRequest({ request, env, ctx }) {
           if(!file||file.trashed)throw new Error(`ID master aktif ${spreadsheetId} tidak ditemukan atau sudah dihapus di Google Drive.`);
           if(file.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error(`ID master aktif ${spreadsheetId} bukan file Google Sheets native (mimeType: ${file.mimeType||'unknown'}). Impor/konversi XLSX menjadi Google Sheets terlebih dahulu.`);
           spreadsheetName=String(file.name||spreadsheetName||'');masterModifiedTime=String(file.modifiedTime||'');
-          const checked=await validateKkPmSpreadsheet(token,spreadsheetId,{checkFormulas:true});
-          const metadataSheets=checked.metadata?.sheets||[];
+          let checked=null;
+          if(forceRefresh){
+            // An explicit refresh validates fresh metadata AND the four critical formulas.
+            checked=await validateKkPmSpreadsheet(token,spreadsheetId,{checkFormulas:true,env,forceMetadataRefresh:true});
+            if(checked.ok&&checked.profile==='PM_2026')PM_TEMPLATE_RESOLUTION_CACHE.set(spreadsheetId,{expiresAt:Date.now()+300_000,value:{id:spreadsheetId,file,check:checked,source:'configured'}});
+          }else{
+            // Normal dashboard opens reuse the last successful validation. If the cached proof
+            // has no metadata (new isolate), fetch only metadata; do not re-read all formulas
+            // for every panel reload. A recently validated config is invalidated if Drive's
+            // modifiedTime moved after the validation timestamp.
+            const resolved=await resolveKkPmTemplateSpreadsheet(env,token,spreadsheetId,{
+              trustValidatedConfig:Boolean(environmentId&&environmentId===spreadsheetId)
+            });
+            checked=resolved.check||null;
+            if(!checked?.metadata){
+              const metadata=await getSpreadsheetMetadata(token,spreadsheetId,{env});
+              const structure=pmSheetStructureDiagnostics(metadata.sheets||[]);
+              checked={...(checked||{}),metadata,profile:getPmSheetProfile(metadata.sheets||[]),shapeOk:structure.valid,
+                ok:Boolean(structure.valid&&(resolved.check?.ok===true)),missingTitles:structure.missing,
+                duplicateCanonicalTitles:structure.duplicates,formulaOk:resolved.check?.formulaOk!==false,
+                formulaMismatches:resolved.check?.formulaMismatches||[]};
+            }
+          }
+          const metadataSheets=checked?.metadata?.sheets||[];
           masterSheets=metadataSheets.map((x,i)=>({sheetId:x.properties?.sheetId??null,title:sheetTitleOf(x),index:Number(x.properties?.index??i),rowCount:Number(x.properties?.gridProperties?.rowCount||0),columnCount:Number(x.properties?.gridProperties?.columnCount||0)}));
-          masterProfile=checked.profile||null;
-          masterValidationOk=Boolean(checked.ok&&checked.profile==='PM_2026');
+          masterProfile=checked?.profile||getPmSheetProfile(metadataSheets)||null;
+          masterValidationOk=Boolean(checked?.ok&&checked?.profile==='PM_2026');
           if(!masterValidationOk){
             const missing=(checked.missingTitles||[]).join(', ');
             const duplicates=(checked.duplicateCanonicalTitles||[]).join(', ');
@@ -3030,14 +3167,15 @@ export async function onRequest({ request, env, ctx }) {
           }
         }catch(err){
           masterValidationError=String(err?.message||err).slice(0,900);
+          if(/429|RESOURCE_EXHAUSTED|RATE_LIMIT_EXCEEDED|quota exceeded|Read requests per minute/i.test(masterValidationError))masterValidationError+= ' Google Sheets sedang membatasi pembacaan. Aplikasi akan menunggu/backoff; jangan klik Muat Ulang atau Sinkronkan berulang kali.';
           // If formula validation fails, still list the live sheet names so the UI shows what
           // the configured spreadsheet actually contains, rather than only stale workbook tabs.
           try{
-            if(spreadsheetId&&!masterSheets.length){
+            if(spreadsheetId&&!masterSheets.length&&!/429|RESOURCE_EXHAUSTED|RATE_LIMIT_EXCEEDED|quota exceeded|Read requests per minute/i.test(masterValidationError)){
               const token=await getGoogleAccessToken(env);const file=await getDriveFile(token,spreadsheetId);
               if(file&&file.mimeType==='application/vnd.google-apps.spreadsheet'){
                 spreadsheetName=String(file.name||spreadsheetName||'');masterModifiedTime=String(file.modifiedTime||'');
-                const meta=await getSpreadsheetMetadata(token,spreadsheetId);
+                const meta=await getSpreadsheetMetadata(token,spreadsheetId,{env});
                 masterSheets=(meta.sheets||[]).map((x,i)=>({sheetId:x.properties?.sheetId??null,title:sheetTitleOf(x),index:Number(x.properties?.index??i),rowCount:Number(x.properties?.gridProperties?.rowCount||0),columnCount:Number(x.properties?.gridProperties?.columnCount||0)}));
                 masterProfile=getPmSheetProfile(meta.sheets||[]);
               }
@@ -3059,7 +3197,7 @@ export async function onRequest({ request, env, ctx }) {
         const token=await getGoogleAccessToken(env);
         const file=await getDriveFile(token,spreadsheetId);
         if(!file||file.trashed||file.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error('ID tidak dapat diakses sebagai Google Sheets. Pastikan spreadsheet sudah dikonversi ke Google Sheets dan akun OAuth memiliki akses.');
-        const checked=await validateKkPmSpreadsheet(token,spreadsheetId,{checkFormulas:true});
+        const checked=await validateKkPmSpreadsheet(token,spreadsheetId,{checkFormulas:true,env,forceMetadataRefresh:true});
         if(!checked.ok||checked.profile!=='PM_2026'){
           const mismatch=(checked.formulaMismatches||[]).map(x=>`${x.cell} seharusnya ${x.expected}, ditemukan ${x.actual||'(kosong)'}`).join('; ');
           const shapeDetail=checked.shapeOk?`struktur tab inti valid (${(checked.actualTitles||[]).length} sheet terbaca; tab tambahan dipertahankan)`:`struktur tab tidak valid (${(checked.actualTitles||[]).length} sheet terbaca). Tab inti kurang: ${(checked.missingTitles||[]).join(', ')||'tidak ada'}; duplikat tab inti: ${(checked.duplicateCanonicalTitles||[]).join(', ')||'tidak ada'}`;
@@ -3067,7 +3205,11 @@ export async function onRequest({ request, env, ctx }) {
         }
         const now=Date.now();
         await runD1WithRetry(()=>env.DB.prepare("INSERT INTO kk_pm_template_config(config_key,spreadsheet_id,spreadsheet_name,updated_at,updated_by,validation_profile) VALUES('active',?,?,?,?,?) ON CONFLICT(config_key) DO UPDATE SET spreadsheet_id=excluded.spreadsheet_id,spreadsheet_name=excluded.spreadsheet_name,updated_at=excluded.updated_at,updated_by=excluded.updated_by,validation_profile=excluded.validation_profile").bind(spreadsheetId,String(file.name||checked.metadata?.properties?.title||''),now,String(authSession.username||''),'PM_2026'));
-        PM_TEMPLATE_RESOLUTION_CACHE.clear();LIVE_KK_MASTER_ROWS_CACHE.clear();LIVE_KK_MASTER_ROWS_PENDING.clear();
+        PM_TEMPLATE_RESOLUTION_CACHE.clear();
+        // Keep the just-fetched metadata (force-read) and formula validation as the canonical
+        // proof for the upcoming bulk run; otherwise every OPD would immediately re-read master.
+        PM_TEMPLATE_RESOLUTION_CACHE.set(spreadsheetId,{expiresAt:Date.now()+300_000,value:{id:spreadsheetId,file,check:checked,source:'configured'}});
+        LIVE_KK_MASTER_ROWS_CACHE.clear();LIVE_KK_MASTER_ROWS_PENDING.clear();
         notifyRealtime(env,ctx,year,{action:'updateKkPmTemplateConfig',spreadsheetId,updatedBy:String(authSession.username||'')});
         return jsonResponse({status:'success',message:'ID master PM berhasil divalidasi dan diperbarui. Akun Pemda/Irban dapat menyinkronkan workbook Pemda dan seluruh OPD dari sumber baru.',spreadsheetId,spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`,spreadsheetName:String(file.name||checked.metadata?.properties?.title||''),updatedAt:now,updatedBy:String(authSession.username||''),validationProfile:'PM_2026',masterValidationOk:true,masterValidationError:'',masterProfile:checked.profile,masterSheets:(checked.metadata?.sheets||[]).map((x,i)=>({sheetId:x.properties?.sheetId??null,title:sheetTitleOf(x),index:Number(x.properties?.index??i),rowCount:Number(x.properties?.gridProperties?.rowCount||0),columnCount:Number(x.properties?.gridProperties?.columnCount||0)})),sheetCount:(checked.metadata?.sheets||[]).length,source:environmentId?'cloudflare-environment':'database-config',codeVersion:KAWAL_PM_MASTER_BUILD_VERSION,canManage:true,canRefreshAll:true,shapeAliasesAccepted:true});
       }
@@ -3158,7 +3300,7 @@ export async function onRequest({ request, env, ctx }) {
         let sheets=[];let needsSync=!workbook.workbookSpreadsheetId;let needsSyncReason=needsSync?'KK PM SPIP khusus Pemda belum dibuat dari master spreadsheet.':'';let profile=null;
         if(workbook.workbookSpreadsheetId){
           try{
-            const token=await getGoogleAccessToken(env);const meta=await getSpreadsheetMetadata(token,workbook.workbookSpreadsheetId);
+            const token=await getGoogleAccessToken(env);const meta=await getSpreadsheetMetadata(token,workbook.workbookSpreadsheetId,{env});
             sheets=(meta.sheets||[]).map(x=>({sheetId:x.properties?.sheetId,title:x.properties?.title,index:x.properties?.index,rowCount:x.properties?.gridProperties?.rowCount||0,columnCount:x.properties?.gridProperties?.columnCount||0}));
             profile=getPmSheetProfile(meta.sheets||[]);
             if(profile!=='PM_2026'){needsSync=true;needsSyncReason=`Workbook Pemda memiliki profil ${profile||'tidak dikenal'}, bukan master PM 2026 yang memiliki semua tab inti wajib.`;}
@@ -3184,7 +3326,7 @@ export async function onRequest({ request, env, ctx }) {
           let current={};let history=[];try{current=JSON.parse(saved.workbook_json||'{}')}catch{}try{history=JSON.parse(saved.history_json||'[]')}catch{}
           const currentKkPmData={version:3,workbook:{...current},cells:{}};
           const workbook=await ensureKkPmSpreadsheet(env,{year:y,opd:'PEMERINTAH KABUPATEN MAHAKAM ULU',currentKkPmData,expectedTemplateSpreadsheetId:params.expectedTemplateSpreadsheetId,forceRefresh:Boolean(params.forceRefresh||params.massRefresh||params.forceTemplateRefresh)});
-          const accessToken=await getGoogleAccessToken(env);const meta=await getSpreadsheetMetadata(accessToken,workbook.workbookSpreadsheetId);
+          const accessToken=await getGoogleAccessToken(env);const meta=await getSpreadsheetMetadata(accessToken,workbook.workbookSpreadsheetId,{env});
           if(!expectedPmSheetOrderMatches(meta.sheets||[])||getPmSheetProfile(meta.sheets||[])!=='PM_2026')throw new Error('Workbook Pemda gagal validasi tab inti master PM. Referensi lama tetap tersimpan.');
           const liveSheets=(meta.sheets||[]).map(x=>({sheetId:x.properties?.sheetId,title:x.properties?.title,index:x.properties?.index,rowCount:x.properties?.gridProperties?.rowCount||0,columnCount:x.properties?.gridProperties?.columnCount||0}));
           let finalWorkbook={...workbook,workbookName:workbook.workbookName||`PEMERINTAH KABUPATEN MAHAKAM ULU - KK PM SPIP - ${y}`,sheets:liveSheets};
@@ -3861,7 +4003,7 @@ export async function onRequest({ request, env, ctx }) {
         if(data.workbook.workbookSpreadsheetId){
           try{
             token=await getGoogleAccessToken(env);
-            const meta=await getSpreadsheetMetadata(token,data.workbook.workbookSpreadsheetId);
+            const meta=await getSpreadsheetMetadata(token,data.workbook.workbookSpreadsheetId,{env,forceRefresh:Boolean(params.forceRefresh)});
             sheets=(meta.sheets||[]).map(s=>({sheetId:s.properties?.sheetId,title:s.properties?.title,index:s.properties?.index,rowCount:s.properties?.gridProperties?.rowCount||0,columnCount:s.properties?.gridProperties?.columnCount||0}));
             profile=getPmSheetProfile(meta.sheets||[]);
             if(profile!=='PM_2026'){needsSync=true;needsSyncReason=`Workbook tertaut memiliki profil ${profile||'tidak dikenal'}; tab inti master PM belum lengkap.`;}
@@ -3906,7 +4048,7 @@ export async function onRequest({ request, env, ctx }) {
           const latestRaw=normalizeKkPmData(rec.results[0].kk_pm_data);
           const wb=await ensureKkPmSpreadsheet(env,{...params,opd:rec.results[0].opd,currentKkPmData:latestRaw});
           const accessToken=await getGoogleAccessToken(env);
-          const meta=await getSpreadsheetMetadata(accessToken,wb.workbookSpreadsheetId);
+          const meta=await getSpreadsheetMetadata(accessToken,wb.workbookSpreadsheetId,{env});
           if(!expectedPmSheetOrderMatches(meta.sheets||[])||getPmSheetProfile(meta.sheets||[])!=='PM_2026')throw new Error('Spreadsheet PM hasil sinkronisasi tidak memiliki semua tab inti/formula yang diwajibkan. Tidak ada referensi workbook yang diubah.');
           const sheets=(meta.sheets||[]).map(x=>({sheetId:x.properties?.sheetId,title:x.properties?.title,index:x.properties?.index,rowCount:x.properties?.gridProperties?.rowCount||0,columnCount:x.properties?.gridProperties?.columnCount||0}));
           let workbook={...wb,sheets:sheets.length?sheets:wb.sheets};
