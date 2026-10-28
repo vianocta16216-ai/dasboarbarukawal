@@ -78,7 +78,7 @@ const KK_PM_EXPECTED_FORMULAS = {
   'KKLEAD_SPIP!I106':"='KKLEAD II'!L35"
 };
 // Visible API build marker lets the dashboard diagnose stale Pages Functions deployments.
-const KAWAL_PM_MASTER_BUILD_VERSION='20261028-sheets-quota-resumable-v7';
+const KAWAL_PM_MASTER_BUILD_VERSION='20261028-sheets-quota-resumable-retry-v8';
 
 
 function normalizeAssessmentOrgName(value){
