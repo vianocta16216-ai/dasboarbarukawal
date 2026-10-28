@@ -24,5 +24,5 @@ const backendNames=inventoryMatch?[...inventoryMatch[1].matchAll(/'((?:\\.|[^'])
 check('backend fallback inventory matches all 28 master tab names',backendNames.length===28&&backendNames.join('\n')===expected.join('\n'));
 check('backend accepts the exact current 28-tab inventory, semantic core anchors, and future extra tabs',backend.includes('const KK_PM_REQUIRED_SHEET_NAMES =')&&backend.includes('currentInventoryValid=hasCurrentInventory&&duplicatesCurrent.length===0')&&backend.includes('Extra tabs are valid'));
 check('frontend reads the configured master inventory and does not use a fixed 26-sheet cap',frontend.includes('masterSheets=Array.isArray(result.masterSheets)?result.masterSheets:[]')&&frontend.includes('masterInventory=masterSheets.length?masterSheets')&&!/26 sheet|26 tab|26\/26/i.test(frontend));
-check('HTML uses cache-busted master-source-binding build',html.includes('script.js?v=20261027-pm-master-source-guard-v4'));
+check('HTML uses cache-busted master-source-binding build',html.includes('script.js?v=20261028-sheets-quota-resumable-v7'));
 console.log(JSON.stringify({status:'PASS',checks:results.length,verified:results},null,2));

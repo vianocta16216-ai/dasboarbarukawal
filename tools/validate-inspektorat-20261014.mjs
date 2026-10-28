@@ -39,7 +39,7 @@ check(app.includes("callServerWithRetry('getKkPmSheets',{opdId:kkPmCurrentRow.id
 check(app.includes('data-pm-open-workbook'), 'Sheet preview links must go through the authoritative open handler');
 check(app.includes('if(workbookState.needsSync||kkPmWorkbookNeedsSync)'), 'PM modal must not overwrite stale-link warning with generic success');
 check(worker.includes('templateRevision'), 'D1 workbook metadata must preserve master revision lineage');
-check(worker.includes('if(configuredValue){\n      PM_TEMPLATE_RESOLUTION_CACHE.set(cacheKey,{expiresAt:Date.now()+60_000,value:configuredValue});\n      return configuredValue;'), 'Resolver must use the explicitly configured valid master and not silently switch IDs');
+check(worker.includes('if(configuredValue){\n      PM_TEMPLATE_RESOLUTION_CACHE.set(cacheKey,{expiresAt:Date.now()+300_000,value:configuredValue});\n      return configuredValue;'), 'Resolver must use the explicitly configured valid master and not silently switch IDs');
 check(worker.includes('explicitReleaseSuffix') && worker.includes('normalized!==expected&&!explicitReleaseSuffix'), 'Master discovery must reject arbitrary backups whose names merely start with the canonical name');
 check(worker.includes('SELECT owner_token,lease_until FROM kk_pm_workbook_sync_locks WHERE lock_key=? LIMIT 1'), 'Sync must verify distributed-lock ownership before D1 write');
 check(app.includes("action==='createKkPmSheets' && data?.code==='WORKBOOK_SYNC_IN_PROGRESS'"), 'Concurrent PM sync lock responses must be retryable by the UI');
