@@ -5874,7 +5874,7 @@ async function refreshPemdaPmWorkbooks({bulk=true,masterId=null,throwOnError=fal
   try{
     pemdaPmTemplateStatus('Membaca GOOGLE_SHEETS_PM_TEMPLATE_ID lalu memvalidasi semua sheet aktual, formula inti, dan izin Google Drive…');
     const config=await callServerWithRetry('updateKkPmTemplateConfig',{spreadsheetId:raw},3);
-    if(!config.codeVersion)throw new Error('Backend Cloudflare Pages belum memuat source binding terbaru. Deploy revisi 20261027-pm-master-source-guard-v4 sebelum pembaruan massal.');
+    if(!config.codeVersion)throw new Error('Backend Cloudflare Pages belum memuat source binding terbaru. Deploy revisi 20261028-template-update-d1-run-fix-v5 sebelum pembaruan massal.');
     if(config.source!=='cloudflare-environment')throw new Error('Sumber aktif tidak berasal dari GOOGLE_SHEETS_PM_TEMPLATE_ID. Atur variable Production di Cloudflare lalu deploy ulang.');
     if(!config.masterValidationOk||!config.spreadsheetId)throw new Error(config.masterValidationError||'Master aktif belum tervalidasi.');
     pemdaPmDash.templateConfig=config;pemdaPmDash.masterSheets=Array.isArray(config.masterSheets)?config.masterSheets:[];
@@ -5934,7 +5934,7 @@ function closePemdaPmDashboard(){document.getElementById('pemdaPmDashboardModal'
 async function createOrSyncPemdaPmWorkbook(){if(!['admin','irban'].includes(pemdaPmRole()))return pemdaPmDashStatus('Hanya akun Pemda dan Irban yang dapat memperbarui workbook Pemda.','error');if(pemdaPmDash.creating)return;const btn=document.getElementById(pemdaPmDash.workbook?.exists?'pemdaPmWorkbookSync':'pemdaPmWorkbookCreate');pemdaPmDash.creating=true;if(btn)btn.disabled=true;pemdaPmDashStatus('Membaca GOOGLE_SHEETS_PM_TEMPLATE_ID langsung dari backend dan memvalidasi semua sheet master...');renderPemdaPmDashboard();
   try{
     const master=(await loadPemdaPmTemplateConfig(true))||{};
-    if(!master.codeVersion)throw new Error('Backend Cloudflare Pages belum memuat perbaikan source binding. Deploy revisi terbaru yang menampilkan Build backend 20261027-pm-master-source-guard-v4, lalu tekan Muat Ulang. Sinkronisasi dihentikan agar tidak memakai backend lama.');
+    if(!master.codeVersion)throw new Error('Backend Cloudflare Pages belum memuat perbaikan source binding. Deploy revisi terbaru yang menampilkan Build backend 20261028-template-update-d1-run-fix-v5, lalu tekan Muat Ulang. Sinkronisasi dihentikan agar tidak memakai backend lama.');
     if(master.source!=='cloudflare-environment')throw new Error('GOOGLE_SHEETS_PM_TEMPLATE_ID tidak terbaca sebagai sumber aktif Cloudflare. Atur variable/secret pada Production dan deploy ulang.');
     if(!master.masterValidationOk)throw new Error(master.masterValidationError||`Master ${master.spreadsheetId||'(kosong)'} belum lulus validasi tab/formula. Workbook tidak diganti.`);
     const activeMasterId=String(master.spreadsheetId||'');
