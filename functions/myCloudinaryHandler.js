@@ -78,7 +78,7 @@ const KK_PM_EXPECTED_FORMULAS = {
   'KKLEAD_SPIP!I106':"='KKLEAD II'!L35"
 };
 // Visible API build marker lets the dashboard diagnose stale Pages Functions deployments.
-const KAWAL_PM_MASTER_BUILD_VERSION='20261027-pm-master-source-guard-v4';
+const KAWAL_PM_MASTER_BUILD_VERSION='20261028-template-update-d1-run-fix-v5';
 
 
 function normalizeAssessmentOrgName(value){
@@ -705,13 +705,20 @@ async function assertUploadBelongsToOpd(env,year,opdId,uploadId){
 
 // D1 is SQLite underneath: keep individual writes small and retry transient
 // contention/overload errors with jitter instead of immediately failing a user save.
+// The factory should return a D1PreparedStatement. During compatibility with older
+// call sites it may also return the Promise from statement.run(); handle both safely
+// so a pre-executed Promise is never mistaken for a prepared statement.
 async function runD1WithRetry(makeStatement, options={}) {
   const retries = Number.isFinite(options.retries) ? options.retries : 3;
   const baseDelay = Number.isFinite(options.baseDelay) ? options.baseDelay : 120;
   let lastError;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await makeStatement().run();
+      const statementOrResult = makeStatement();
+      if (statementOrResult && typeof statementOrResult.run === 'function') {
+        return await statementOrResult.run();
+      }
+      return await statementOrResult;
     } catch (err) {
       lastError = err;
       const msg = String(err?.message || err || '').toLowerCase();
@@ -2891,7 +2898,7 @@ export async function onRequest({ request, env, ctx }) {
         try{evidence=JSON.parse(evidenceRaw)}catch{evidenceParseFailed=true;}if(!Array.isArray(evidence)){evidence=[];evidenceParseFailed=true;}
         // Compare-and-swap the exact version before cleaning storage. If another
         // operator uploads/edits at the same time, nothing is deleted on conflict.
-        const deleted=await runD1WithRetry(()=>env.DB.prepare("DELETE FROM lhe_followup_items WHERE id=? AND year=? AND opd_id=? AND COALESCE(evidence_json,'[]')=?").bind(id,String(year),opdId,evidenceRaw).run());
+        const deleted=await runD1WithRetry(()=>env.DB.prepare("DELETE FROM lhe_followup_items WHERE id=? AND year=? AND opd_id=? AND COALESCE(evidence_json,'[]')=?").bind(id,String(year),opdId,evidenceRaw));
         if(!Number(deleted.meta?.changes||0))return jsonResponse({status:'error',code:'LHE_DELETE_CONFLICT',message:'Butir berubah karena operator lain sedang menyimpan. Muat ulang daftar lalu ulangi hapus.'},409);
         const cleanupWarnings=evidenceParseFailed?['Data bukti lama tidak dapat dibaca; mohon admin memeriksa kemungkinan file yatim di Google Drive/R2.']:[];
         for(const file of evidence)cleanupWarnings.push(...await cleanupLheEvidenceArtifacts(env,year,opdId,file));
@@ -2927,7 +2934,7 @@ export async function onRequest({ request, env, ctx }) {
           const evidenceRaw=String(rec.evidence_json||'[]');let list=[];try{list=JSON.parse(evidenceRaw)}catch{};if(!Array.isArray(list))list=[];
           fileToDelete=list.find(x=>String(x?.uploadId||x?.upload_id||'')===uploadId)||null;if(!fileToDelete)throw new Error('File bukti tidak ditemukan.');
           const nextList=list.filter(x=>String(x?.uploadId||x?.upload_id||'')!==uploadId);
-          const write=await runD1WithRetry(()=>env.DB.prepare("UPDATE lhe_followup_items SET evidence_json=?,verification_status='Belum diverifikasi',verifier_name='',verifier_note='',updated_by=?,updated_at=? WHERE id=? AND year=? AND opd_id=? AND COALESCE(evidence_json,'[]')=?").bind(JSON.stringify(nextList),String(authSession.username||''),Date.now(),followupId,String(year),opdId,evidenceRaw).run());
+          const write=await runD1WithRetry(()=>env.DB.prepare("UPDATE lhe_followup_items SET evidence_json=?,verification_status='Belum diverifikasi',verifier_name='',verifier_note='',updated_by=?,updated_at=? WHERE id=? AND year=? AND opd_id=? AND COALESCE(evidence_json,'[]')=?").bind(JSON.stringify(nextList),String(authSession.username||''),Date.now(),followupId,String(year),opdId,evidenceRaw));
           if(Number(write.meta?.changes||0)>0){committed=true;break;}
           fileToDelete=null;await new Promise(resolve=>setTimeout(resolve,20*(attempt+1)));
         }
@@ -3059,7 +3066,7 @@ export async function onRequest({ request, env, ctx }) {
           throw new Error(`Master ditolak: ${shapeDetail}${mismatch?'; formula inti tidak cocok: '+mismatch:''}. Urutan tab tidak diwajibkan; nama standar/alias resmi dan formula inti wajib valid. ID belum disimpan; workbook lama tetap aktif.`);
         }
         const now=Date.now();
-        await runD1WithRetry(()=>env.DB.prepare("INSERT INTO kk_pm_template_config(config_key,spreadsheet_id,spreadsheet_name,updated_at,updated_by,validation_profile) VALUES('active',?,?,?,?,?) ON CONFLICT(config_key) DO UPDATE SET spreadsheet_id=excluded.spreadsheet_id,spreadsheet_name=excluded.spreadsheet_name,updated_at=excluded.updated_at,updated_by=excluded.updated_by,validation_profile=excluded.validation_profile").bind(spreadsheetId,String(file.name||checked.metadata?.properties?.title||''),now,String(authSession.username||''),'PM_2026').run());
+        await runD1WithRetry(()=>env.DB.prepare("INSERT INTO kk_pm_template_config(config_key,spreadsheet_id,spreadsheet_name,updated_at,updated_by,validation_profile) VALUES('active',?,?,?,?,?) ON CONFLICT(config_key) DO UPDATE SET spreadsheet_id=excluded.spreadsheet_id,spreadsheet_name=excluded.spreadsheet_name,updated_at=excluded.updated_at,updated_by=excluded.updated_by,validation_profile=excluded.validation_profile").bind(spreadsheetId,String(file.name||checked.metadata?.properties?.title||''),now,String(authSession.username||''),'PM_2026'));
         PM_TEMPLATE_RESOLUTION_CACHE.clear();LIVE_KK_MASTER_ROWS_CACHE.clear();LIVE_KK_MASTER_ROWS_PENDING.clear();
         notifyRealtime(env,ctx,year,{action:'updateKkPmTemplateConfig',spreadsheetId,updatedBy:String(authSession.username||'')});
         return jsonResponse({status:'success',message:'ID master PM berhasil divalidasi dan diperbarui. Akun Pemda/Irban dapat menyinkronkan workbook Pemda dan seluruh OPD dari sumber baru.',spreadsheetId,spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`,spreadsheetName:String(file.name||checked.metadata?.properties?.title||''),updatedAt:now,updatedBy:String(authSession.username||''),validationProfile:'PM_2026',masterValidationOk:true,masterValidationError:'',masterProfile:checked.profile,masterSheets:(checked.metadata?.sheets||[]).map((x,i)=>({sheetId:x.properties?.sheetId??null,title:sheetTitleOf(x),index:Number(x.properties?.index??i),rowCount:Number(x.properties?.gridProperties?.rowCount||0),columnCount:Number(x.properties?.gridProperties?.columnCount||0)})),sheetCount:(checked.metadata?.sheets||[]).length,source:environmentId?'cloudflare-environment':'database-config',codeVersion:KAWAL_PM_MASTER_BUILD_VERSION,canManage:true,canRefreshAll:true,shapeAliasesAccepted:true});
@@ -3194,7 +3201,7 @@ export async function onRequest({ request, env, ctx }) {
           finalWorkbook=mergeKkPmR2Mirror(finalWorkbook,mirror);
           const driveArchive=await tryArchiveKkPmDriveWorkbook(accessToken,priorId,finalWorkbook.workbookSpreadsheetId,y,'PEMERINTAH KABUPATEN MAHAKAM ULU',[finalWorkbook.templateSpreadsheetId,current.templateSpreadsheetId]);
           finalWorkbook={...finalWorkbook,...driveArchive};
-          await runD1WithRetry(()=>env.DB.prepare('UPDATE pemda_kk_pm_workbooks SET workbook_json=?,updated_at=? WHERE year=? AND owner_token=? AND version=?').bind(JSON.stringify(finalWorkbook),Date.now(),y,token,Number(saved.version||0)+1).run()).catch(err=>console.warn('Metadata mirror/arsip Drive Pemda belum tersimpan; tautan Drive tetap aktif:',String(err?.message||err).slice(0,180)));
+          await runD1WithRetry(()=>env.DB.prepare('UPDATE pemda_kk_pm_workbooks SET workbook_json=?,updated_at=? WHERE year=? AND owner_token=? AND version=?').bind(JSON.stringify(finalWorkbook),Date.now(),y,token,Number(saved.version||0)+1)).catch(err=>console.warn('Metadata mirror/arsip Drive Pemda belum tersimpan; tautan Drive tetap aktif:',String(err?.message||err).slice(0,180)));
           notifyRealtime(env,ctx,y,{action:'createPemdaKkPmWorkbook',version:Number(saved.version||0)+1});
           const warnings=[];
           if(finalWorkbook.r2MirrorError)warnings.push(`mirror XLSX R2 belum berhasil: ${finalWorkbook.r2MirrorError}`);
@@ -3918,14 +3925,14 @@ export async function onRequest({ request, env, ctx }) {
             throw new Error('Lease sinkronisasi berakhir sebelum penyimpanan. Referensi workbook tidak diubah oleh sesi ini; tunggu sebentar lalu muat ulang dan sinkronkan kembali.');
           }
           // D1 updates the workbook link/history atomically and preserves $.cells during concurrent edits.
-          const saved=await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET kk_pm_data=json_set(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,'$.version',3,'$.workbook',json(?),'$.workbookHistory',json(?)) WHERE id=? AND year=?").bind(JSON.stringify(workbook),JSON.stringify(workbookHistory),opdId,String(year)).run());
+          const saved=await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET kk_pm_data=json_set(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,'$.version',3,'$.workbook',json(?),'$.workbookHistory',json(?)) WHERE id=? AND year=?").bind(JSON.stringify(workbook),JSON.stringify(workbookHistory),opdId,String(year)));
           if(!saved.meta?.changes)throw new Error('Referensi OPD/tahun tidak berubah karena rekaman tidak ditemukan saat menyimpan hasil sinkronisasi.');
           // Link the validated Drive workbook first, then refresh the stable R2 mirror.
           const mirror=await tryMirrorKkPmWorkbookToR2(env,accessToken,{spreadsheetId:workbook.workbookSpreadsheetId,year,opdName:rec.results[0].opd,templateId:workbook.templateSpreadsheetId,templateRevision:workbook.templateRevision});
           workbook=mergeKkPmR2Mirror(workbook,mirror);
           const driveArchive=await tryArchiveKkPmDriveWorkbook(accessToken,oldWorkbook.workbookSpreadsheetId,workbook.workbookSpreadsheetId,year,rec.results[0].opd,[workbook.templateSpreadsheetId,oldWorkbook.templateSpreadsheetId]);
           workbook={...workbook,...driveArchive};
-          await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET kk_pm_data=json_set(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,'$.workbook',json(?)) WHERE id=? AND year=?").bind(JSON.stringify(workbook),opdId,String(year)).run()).catch(err=>console.warn('Metadata mirror/arsip Drive OPD belum tersimpan; tautan Drive tetap aktif:',String(err?.message||err).slice(0,180)));
+          await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET kk_pm_data=json_set(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,'$.workbook',json(?)) WHERE id=? AND year=?").bind(JSON.stringify(workbook),opdId,String(year))).catch(err=>console.warn('Metadata mirror/arsip Drive OPD belum tersimpan; tautan Drive tetap aktif:',String(err?.message||err).slice(0,180)));
           notifyRealtime(env,ctx,year,{action:'createKkPmSheets',opdId});
           const warnings=[];
           if(workbook.r2MirrorError)warnings.push(`mirror R2 belum berhasil: ${workbook.r2MirrorError}`);
@@ -3968,7 +3975,7 @@ export async function onRequest({ request, env, ctx }) {
         if (serialized.length > 900000) throw new Error('Perubahan Kertas Kerja PM terlalu besar. Simpan secara bertahap.');
         // Merge sparse cell overrides atomically instead of replacing the entire JSON blob:
         // keep the linked workbook metadata and preserve cells saved by other open sessions.
-        const result=await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET kk_pm_data=json_patch(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,json(?)) WHERE id=? AND year=?").bind(serialized,params.opdId,String(year)).run());
+        const result=await runD1WithRetry(()=>env.DB.prepare("UPDATE opd_data SET kk_pm_data=json_patch(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,json(?)) WHERE id=? AND year=?").bind(serialized,params.opdId,String(year)));
         if(!Number(result.meta?.changes||0))throw new Error('OPD tidak ditemukan saat menyimpan Kertas Kerja PM.');
         notifyRealtime(env, ctx, year, { action: 'saveKkPmData', opdId: params.opdId });
         return jsonResponse({ status: 'success', message: 'Kertas Kerja PM tersimpan', kkPmData: compact });
@@ -5219,12 +5226,12 @@ export async function onRequest({ request, env, ctx }) {
               try{
                 await runD1WithRetry(()=>env.DB.prepare(
                   "DELETE FROM evidence_upload_registry WHERE upload_id=?"
-                ).bind(deletedUploadId).run());
+                ).bind(deletedUploadId));
               }catch(_){}
               try{
                 await runD1WithRetry(()=>env.DB.prepare(
                   "DELETE FROM evidence_uploads WHERE upload_id=?"
-                ).bind(deletedUploadId).run());
+                ).bind(deletedUploadId));
               }catch(_){}
             }
 
