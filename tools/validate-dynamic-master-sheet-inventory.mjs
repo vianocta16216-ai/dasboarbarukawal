@@ -22,7 +22,7 @@ for(const file of ['public/kk-full-workbook-manifest.json','public/kk-pm-full-wo
 const inventoryMatch=backend.match(/const KK_PM_2026_SHEET_NAMES = \[([^\n]+)\];/);
 const backendNames=inventoryMatch?[...inventoryMatch[1].matchAll(/'((?:\\.|[^'])*)'/g)].map(m=>m[1]):[];
 check('backend fallback inventory matches all 28 master tab names',backendNames.length===28&&backendNames.join('\n')===expected.join('\n'));
-check('backend requires semantic core anchors while allowing extra sheets',backend.includes('const KK_PM_REQUIRED_SHEET_NAMES =')&&backend.includes('const valid=actual.length>=expectedKeys.length&&missing.length===0&&duplicateRequired.length===0;')&&backend.includes('Extra tabs are valid'));
-check('frontend uses live workbook tab metadata rather than fixed 26-sheet assumptions',frontend.includes('const sheetCount=live.length;')&&frontend.includes('allSheetCount:countForManifest')&&!/26 sheet|26 tab|26\/26/i.test(frontend));
-check('HTML uses cache-busted dynamic-master script build',html.includes('script.js?v=20261027-dynamic-master-sheets'));
+check('backend accepts the exact current 28-tab inventory, semantic core anchors, and future extra tabs',backend.includes('const KK_PM_REQUIRED_SHEET_NAMES =')&&backend.includes('currentInventoryValid=hasCurrentInventory&&duplicatesCurrent.length===0')&&backend.includes('Extra tabs are valid'));
+check('frontend reads the configured master inventory and does not use a fixed 26-sheet cap',frontend.includes('masterSheets=Array.isArray(result.masterSheets)?result.masterSheets:[]')&&frontend.includes('masterInventory=masterSheets.length?masterSheets')&&!/26 sheet|26 tab|26\/26/i.test(frontend));
+check('HTML uses cache-busted master-source-binding build',html.includes('script.js?v=20261027-pm-master-source-guard-v4'));
 console.log(JSON.stringify({status:'PASS',checks:results.length,verified:results},null,2));

@@ -108,7 +108,7 @@ const sourcePriority=makeConfigContext('pm-old');
 assert.equal(await sourcePriority.getConfiguredKkPmTemplateId({GOOGLE_SHEETS_PM_TEMPLATE_ID:'pm-new',DB:sourcePriority.envDb}),'pm-new','Cloudflare secret must override stale D1 bootstrap ID');
 assert.equal(await sourcePriority.getConfiguredKkPmTemplateId({DB:sourcePriority.envDb}),'pm-old','D1 pointer remains active when the environment variable is not set');
 assert.ok(worker.includes("code:'ENV_TEMPLATE_ID_AUTHORITATIVE'"),'admin UI must explain when an entered ID conflicts with the authoritative environment ID');
-assert.ok(worker.includes("source:environmentIsActive?'cloudflare-environment'"),'config API must report the effective source for the frontend');
+assert.ok(worker.includes("const source=environmentIsActive?'cloudflare-environment'")&&worker.includes('source,environmentAuthoritative:environmentIsActive'),'config API must report the effective source for the frontend');
 
 console.log(JSON.stringify({status:'PASS',checks:27,verified:['PM tab aliases resolve before ranges are built','legacy T1-T4 sheet names are supported for safe resolution','missing target tabs fail with useful diagnostics','exact named master discovery handles .xlsx import names and duplicate suffix','stale 28-sheet IDs are rejected and valid PM masters are discovered','valid configured IDs remain authoritative and do not trigger silent auto-selection',
     'valid configured master is not silently replaced by a newer Drive candidate','no-candidate failure explains the required master setup','shared-drive search uses native Google Sheets only','discovered templates and propagation targets require PM_2026 validation']},null,2));
