@@ -1,0 +1,44 @@
+KAWAL SPIP — HASIL UJI PERBAIKAN GOOGLE SHEETS QUOTA 429
+Build: 20261028-sheets-quota-resumable-v7
+Tanggal: 2026-10-28
+
+Pemeriksaan source:
+- node --check functions/myCloudinaryHandler.js: PASS
+- node --check public/script.js: PASS
+- tools/test_d1_retry_recovery.mjs: PASS (prepared statement + pre-executed Promise + transient D1 lock retry + source build guard)
+- tools/validate-google-sheets-quota-optimization.mjs: PASS (15 checks)
+
+Regresi lintas fitur (seluruh skrip tools/validate*.mjs):
+- validate-all-accounts-pm-workbook-update.mjs: PASS
+- validate-dynamic-master-sheet-inventory.mjs: PASS
+- validate-evidence-score-preview-ppupd.mjs: PASS
+- validate-google-sheets-quota-optimization.mjs: PASS
+- validate-inspektorat-20261014.mjs: PASS
+- validate-lhe-followup-export-score-refresh.mjs: PASS
+- validate-lhe-neutral-templates.mjs: PASS
+- validate-pemda-evidence-history-tabs.mjs: PASS
+- validate-pemda-kkpm-dashboard.mjs: PASS
+- validate-pemda-pm-evidence-template.mjs: PASS
+- validate-pemda-sampling-workflow.mjs: PASS
+- validate-pm-master-source-binding-v4.mjs: PASS
+- validate-pm-template-profile-refresh.mjs: PASS
+- validate-pm-template-resolution.mjs: PASS
+- validate-realtime-scope-isolation.mjs: PASS
+- validate-spip-integration.mjs: PASS
+- validate-verification-roles-score.mjs: PASS
+- validate-workbook-concurrency.mjs: PASS
+- validate-workbook-rollover-lhe-years.mjs: PASS
+
+Kontrol khusus:
+- Pembatas baca bersama D1: diverifikasi lewat pemeriksaan statis dan migrasi idempotent.
+- Cache metadata 180 detik / single-flight: PASS.
+- Cache formula dan satu batch baca untuk formula inti: PASS.
+- Master validation tidak dipanggil berulang per OPD jika bukti validasi masih baru dan file Drive belum berubah: PASS.
+- Fallback metadata read setelah error 429 dicegah: PASS.
+- Pengulangan pembaruan massal memakai kembali workbook dengan revisi master yang sudah sesuai: PASS.
+- Refresh dashboard otomatis tambahan dilewati setelah error kuota: PASS.
+- Error 429 saat membaca metadata workbook lama tidak memicu pembuatan salinan baru: PASS.
+- Build marker backend dan cache-buster frontend cocok: PASS.
+
+BATAS VERIFIKASI:
+Tes ini dijalankan pada source code lokal. Google OAuth, kuota aktual proyek 905183959529, D1 produksi, Google Drive master, dan deployment Cloudflare Pages pengguna tidak dapat diakses dari lingkungan pengujian ini. Karena itu laporan ini tidak menyatakan bahwa sinkronisasi produksi telah berhasil dijalankan.
