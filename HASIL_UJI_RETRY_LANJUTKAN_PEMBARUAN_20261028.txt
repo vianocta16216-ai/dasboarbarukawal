@@ -1,0 +1,29 @@
+KAWAL SPIP — HASIL PENGUJIAN RETRY / LANJUTKAN PEMBARUAN V8
+Tanggal: 28 Oktober 2026
+Build: 20261028-sheets-quota-resumable-retry-v8
+
+Pemeriksaan sintaks:
+- public/script.js: PASS
+- functions/myCloudinaryHandler.js: PASS
+
+Skrip pengujian regresi:
+- 21 skrip tools/*.mjs: PASS
+- Tes khusus Retry V8: 12 pemeriksaan PASS
+- Alur D1 .run() dan retry recovery: PASS
+- Inventaris master dinamis: PASS
+- Optimasi kuota Google Sheets: PASS
+- Akses dan isolasi tenant: PASS
+- Verifikasi/evidence/LHE: PASS
+- Konkurensi workbook: PASS
+
+Perilaku Retry yang diperiksa secara statis dan melalui helper mock:
+- Tombol ada pada kedua panel admin.
+- Status tertunda menyimpan tahun dan ID master.
+- OPD berhasil dilepas dari antrean; gagal dan belum diproses tetap tertunda.
+- Batch berhenti saat terdeteksi 429.
+- Master berbeda ditolak.
+- Workbook Pemda yang sudah sukses tidak dicoba ulang bila statusnya tidak tertunda.
+- Flag resumeIfCurrentMaster tetap dikirim untuk mencegah salinan ganda.
+- Tombol hanya tersedia bagi admin/irban ketika ada pekerjaan tertunda.
+
+Catatan: Pengujian dilakukan secara lokal pada source code. Belum ada uji sinkronisasi langsung pada akun Google Sheets/Cloudflare Production pengguna.
