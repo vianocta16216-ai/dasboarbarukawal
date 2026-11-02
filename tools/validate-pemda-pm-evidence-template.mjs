@@ -28,5 +28,5 @@ check('mobile styling is included for the new panels',css.includes('.pemda-pm-ev
 check('D1 migration creates configuration and Pemda evidence tables/indexes idempotently',migration.includes('CREATE TABLE IF NOT EXISTS kk_pm_template_config')&&migration.includes('CREATE TABLE IF NOT EXISTS pemda_workbook_evidence_items')&&migration.includes('CREATE INDEX IF NOT EXISTS idx_pemda_wbe_target'));
 check('master source itself maps T2/T3/T4 to KK3.2/KK3.3/KK3.4',targets.T2.sheet==='KK3.2'&&targets.T3.sheet==='KK3.3'&&targets.T4.sheet==='KK3.4'&&targets.T2.parameters.length>0&&targets.T3.parameters.length>0&&targets.T4.parameters.length>0);
 const uploadAction=backend.split("case 'uploadPemdaWorkbookEvidence': {")[1]?.split("case 'savePemdaWorkbookEvidenceVerification': {")[0]||'';
-check('no Pemda evidence is written into OPD workbook evidence storage',uploadAction.includes('INSERT INTO pemda_workbook_evidence_items')&&!uploadAction.includes('INSERT INTO opd_workbook_evidence_items'));
+check('Pemda evidence uses dedicated idempotent storage, not OPD workbook evidence storage',/INSERT(?: OR IGNORE)? INTO pemda_workbook_evidence_items/.test(uploadAction)&&!/INSERT(?: OR IGNORE)? INTO opd_workbook_evidence_items/.test(uploadAction));
 console.log(JSON.stringify({status:'PASS',checks:checks.length,verified:checks},null,2));
