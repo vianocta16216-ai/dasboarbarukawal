@@ -3820,10 +3820,12 @@ function wbUpdateUploadProgress(key,state){
 function wbEvidenceFileHtml(file){
   const url=file?.url||'';
   const name=escapeHtml(file?.fileName||'Evidence');
-  const syncStatus=file?.syncStatus==='done'?'Tersinkron ke Drive':file?.syncStatus==='retrying'?'Sinkronisasi Drive berjalan / retry otomatis':'Tersimpan di R2';
+  const syncStatus=file?.syncStatus==='done'?'Tersimpan & terverifikasi di Google Drive':file?.syncStatus==='retrying'?'BELUM masuk Google Drive · retry diperlukan':'Belum terverifikasi di Google Drive';
   const status=normalizeVerification(file).status;
   const statusClass=verificationStatusClass(status);
   const score=getVerificationScore(file);
+  const syncError=String(file?.syncError||'').trim();
+  const syncErrorHtml=file?.syncStatus!=='done'&&syncError?`<div class="wb-drive-error" role="status"><b>Alasan Google Drive:</b> ${escapeHtml(syncError)}</div>`:'';
   const uploadId=escapeHtml(file.uploadId||'');
   const opdId=escapeHtml(workbookEvidenceRow?.id||'');
   const previewButton=file?.uploadId?`<button type="button" class="wb-action-preview evidence-preview-btn" data-opd-id="${opdId}" data-upload-id="${uploadId}" data-file-name="${name}" data-file-type="${escapeHtml(file.fileType||'application/octet-stream')}">👁 Pratinjau</button>`:'';
@@ -3847,6 +3849,7 @@ function wbEvidenceFileHtml(file){
       <div class="wb-evidence-file-badges"><span class="wb-sync-pill ${file?.syncStatus==='done'?'is-synced':file?.syncStatus==='retrying'?'is-retry':'is-pending'}">${escapeHtml(syncStatus)}</span><span class="wb-verification-pill" data-wb-status-pill>${escapeHtml(verificationStatusLabel(status))}</span><span class="wb-score-badge" data-wb-score>Skor ${score}%</span></div>
     </div>
     <div class="wb-verification-meter" role="progressbar" aria-label="Skor verifikasi dokumen" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${score}"><span data-wb-score-fill style="width:${score}%"></span></div>
+    ${syncErrorHtml}
     <div class="wb-evidence-file-actions">${previewButton}${canDirectVerify?workflowButton:''}${replaceControl}${retryButton}${canManageEvidence?`<button type="button" class="wb-action-delete" data-wb-action="delete" data-upload-id="${uploadId}" aria-label="Hapus file evidence" title="Hapus file evidence">🗑 Hapus File</button>`:''}</div>
     ${verificationPanel}
   </div>`;
@@ -3923,7 +3926,7 @@ async function wbUploadSelected(input){
   if(!workbookEvidenceRow||!input||input.dataset.uploading==='1')return;
   const files=Array.from(input.files||[]); if(!files.length)return;
   const progressKey=`${input.dataset.evidenceKey}-${input.dataset.grade}`;
-  let success=0,failed=0,pending=0,completed=0;const failedFiles=[];
+  let success=0,failed=0,pending=0,completed=0;const failedFiles=[],pendingIssues=[];
   try{
     validateSelectedUploadFiles(files,'evidence workbook');
     input.dataset.uploading='1';input.disabled=true;
@@ -3940,6 +3943,7 @@ async function wbUploadSelected(input){
         const result=await callServerWithRetry('uploadFile',payload,3);
         if(result?.status==='pending'||result?.syncStatus==='retrying'||result?.syncStatus==='pending'){
           pending++;
+          pendingIssues.push(`${file.name}: ${String(result?.driveError||result?.message||'Google Drive belum mengonfirmasi file.').slice(0,500)}`);
           if(result?.r2Key){
             // R2 has accepted the original bytes. Keep only the server-side D1
             // retry job; do not re-upload the same file from IndexedDB.
@@ -3954,17 +3958,21 @@ async function wbUploadSelected(input){
       completed=i+1;
       const tail=failed?` · ${failed} gagal`:'';
       const latestError=failedFiles.length?` · Terakhir gagal: ${failedFiles[failedFiles.length-1]}`:'';
-      wbUpdateUploadProgress(progressKey,{total:files.length,completed,success,failed,pending,message:`${completed}/${files.length} diproses · ${success} berhasil${pending?`, ${pending} menunggu sinkronisasi Drive`:''}${tail}${latestError}`,finished:completed===files.length,error:failed>0});
+      const latestDriveError=pendingIssues.length?` · Drive: ${pendingIssues[pendingIssues.length-1]}`:'';
+      wbUpdateUploadProgress(progressKey,{total:files.length,completed,success,failed,pending,message:`${completed}/${files.length} diproses · ${success} berhasil${pending?`, ${pending} BELUM masuk Google Drive`:''}${tail}${latestError}${latestDriveError}`,finished:completed===files.length,error:failed>0||pending>0});
     }
     input.value='';
     try{await loadWorkbookEvidenceFiles(workbookEvidenceRow);}catch(err){wbUpdateUploadProgress(progressKey,{total:files.length,completed,success,failed,pending,message:`Upload selesai, tetapi daftar file gagal dimuat ulang: ${err.message||err}`,finished:true,error:true});}
     wbRender();
     const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));if(row)refreshWorkbookEvidenceCountsOnRow(row);
-    const finalMessage=`Selesai: ${success} berhasil${pending?`, ${pending} tersimpan di R2 menunggu sinkronisasi Drive`:''}${failed?`, ${failed} gagal`:''}.`;
+    const finalMessage=`Selesai: ${success} terverifikasi di Google Drive${pending?`, ${pending} BELUM masuk Google Drive (hanya R2)`:''}${failed?`, ${failed} gagal`:''}.`;
     wbUpdateUploadProgress(progressKey,{total:files.length,completed:files.length,success,failed,pending,message:finalMessage,finished:true,error:failed>0});
     if(failed||pending){
-      const errorDetail=failedFiles.length?'\n\nRincian file gagal:\n'+failedFiles.slice(0,5).join('\n')+(failedFiles.length>5?'\n…dan file gagal lainnya.':''):'';
-      showWarning(`Upload evidence selesai diproses. ${finalMessage}${errorDetail} Periksa status masing-masing file sebelum menutup halaman.`);
+      const errorParts=[];
+      if(failedFiles.length)errorParts.push('Rincian file gagal:\n'+failedFiles.slice(0,5).join('\n')+(failedFiles.length>5?'\n…dan file gagal lainnya.':''));
+      if(pendingIssues.length)errorParts.push('Penyebab Google Drive belum menerima file:\n'+pendingIssues.slice(0,5).join('\n')+(pendingIssues.length>5?'\n…dan file tertunda lainnya.':''));
+      const errorDetail=errorParts.length?'\n\n'+errorParts.join('\n\n'):'';
+      showWarning(`Upload evidence selesai diproses. ${finalMessage}${errorDetail} File yang belum terverifikasi TIDAK dihitung berhasil.`);
     }
   }catch(err){
     input.value='';wbUpdateUploadProgress(progressKey,{total:files.length,completed,success,failed:failed+1,pending,message:err.message||String(err),finished:true,error:true});
@@ -3998,7 +4006,7 @@ async function wbVerify(uploadId){
     await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();if(row)refreshWorkbookEvidenceCountsOnRow(row);
   }catch(err){alert('Gagal menyimpan verifikasi: '+(err.message||err));}
 }
-async function wbRetry(uploadId){try{const result=await callServerWithRetry('retryDriveBackup',{type:'workbook_evidence',opdId:workbookEvidenceRow.id,year:currentYear,uploadId},3);await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));if(row)refreshWorkbookEvidenceCountsOnRow(row);if(result?.syncStatus==='done'&&result?.gdriveId)alert('Evidence sudah tersimpan dan terverifikasi di R2 serta Google Drive.');else alert('Evidence tetap aman di R2. Google Drive belum terverifikasi; sistem akan melanjutkan retry otomatis.');}catch(err){alert('Retry Drive gagal: '+(err.message||err));}}
+async function wbRetry(uploadId){try{const result=await callServerWithRetry('retryDriveBackup',{type:'workbook_evidence',opdId:workbookEvidenceRow.id,year:currentYear,uploadId},3);await loadWorkbookEvidenceFiles(workbookEvidenceRow);wbRender();const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));if(row)refreshWorkbookEvidenceCountsOnRow(row);if(result?.syncStatus==='done'&&result?.gdriveId)alert('Evidence sudah tersimpan dan terverifikasi di R2 serta Google Drive.');else alert('BELUM MASUK GOOGLE DRIVE. File masih hanya di R2. Penyebab: '+String(result?.driveError||result?.message||'Google Drive belum mengonfirmasi file.'));}catch(err){alert('Retry Drive gagal: '+(err.message||err));}}
 async function wbDelete(uploadId){
   if(!confirm('Hapus evidence ini? File R2/Google Drive dan tautan di KK PM akan dihapus.'))return;
   try{
