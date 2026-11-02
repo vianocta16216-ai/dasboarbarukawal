@@ -2731,7 +2731,7 @@ function renderFileList(row, subCode, paramId, level) {
     const div = document.createElement('div');
     div.className = 'evidence-file-card';
     const status = isObject ? (fileObj.syncStatus || (fileObj.gdriveId ? 'done' : 'pending')) : 'pending';
-    const statusLabel = status === 'done' ? '✅ R2 + Google Drive' : (status === 'retrying' ? '🔄 Perlu Retry Google Drive' : '⏳ Menyimpan ke R2 + Google Drive');
+    const statusLabel = status === 'done' ? '✅ R2 + Google Drive' : (status === 'retrying' ? '🔄 Sinkronisasi Google Drive berjalan / retry otomatis' : '⏳ Menyimpan ke R2 + Google Drive');
     const retryButton = (status !== 'done') && isObject && fileObj.uploadId ? `<button type="button" onclick="retryUploadedFile('${row.id}','${subCode}','${paramId}',${level},'${fileObj.uploadId}')" class="file-action retry">↻ Retry</button>` : '';
 
     const verification = normalizeVerification(fileObj?.verification);
@@ -3790,7 +3790,7 @@ function wbUpdateUploadProgress(key,state){
 function wbEvidenceFileHtml(file){
   const url=file?.url||'';
   const name=escapeHtml(file?.fileName||'Evidence');
-  const syncStatus=file?.syncStatus==='done'?'Tersinkron ke Drive':file?.syncStatus==='retrying'?'Perlu sinkron ulang':'Tersimpan di R2';
+  const syncStatus=file?.syncStatus==='done'?'Tersinkron ke Drive':file?.syncStatus==='retrying'?'Sinkronisasi Drive berjalan / retry otomatis':'Tersimpan di R2';
   const status=normalizeVerification(file).status;
   const statusClass=verificationStatusClass(status);
   const score=getVerificationScore(file);
@@ -3799,8 +3799,12 @@ function wbEvidenceFileHtml(file){
   const previewButton=file?.uploadId?`<button type="button" class="wb-action-preview evidence-preview-btn" data-opd-id="${opdId}" data-upload-id="${uploadId}" data-file-name="${name}" data-file-type="${escapeHtml(file.fileType||'application/octet-stream')}">👁 Pratinjau</button>`:'';
   const workflowButton=file?.uploadId?`<button type="button" class="evidence-workflow-btn wb-action-preview" data-opd-id="${opdId}" data-upload-id="${uploadId}" data-file-name="${name}">🛡️ Alur Verifikasi</button>`:'';
   const retryButton=file?.syncStatus==='done'?'':`<button type="button" class="wb-action-retry" data-wb-action="retry" data-upload-id="${uploadId}" aria-label="Ulangi sinkronisasi Google Drive" title="Ulangi sinkronisasi Google Drive">↻ Ulangi Sinkronisasi</button>`;
-  const canDirectVerify=['admin','auditor','ppupd','irban'].includes(String(currentUser?.role||''));
-  const replaceControl=status==='dikembalikan'&&canDirectVerify?`<button type="button" class="wb-action-replace" data-wb-action="replace" data-upload-id="${uploadId}">↻ Ganti File</button><input type="file" hidden data-wb-replace-input="1" data-upload-id="${uploadId}" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp">`:'';
+  const role=String(currentUser?.role||'');
+  const canDirectVerify=['admin','auditor','ppupd','irban'].includes(role);
+  // OPD operators may delete their own scoped evidence and replace it only
+  // after Inspektorat returns it. Server-side role and OPD-scope checks remain authoritative.
+  const canManageEvidence=['admin','auditor','ppupd','opd'].includes(role);
+  const replaceControl=status==='dikembalikan'&&canManageEvidence?`<button type="button" class="wb-action-replace" data-wb-action="replace" data-upload-id="${uploadId}">↻ Ganti File</button><input type="file" hidden data-wb-replace-input="1" data-upload-id="${uploadId}" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp">`:'';
   const verificationPanel=canDirectVerify?`<details class="wb-verification"><summary>🛡️ Penjaminan / Verifikasi Inspektorat</summary><div class="wb-verification-grid">
       <label>Hasil Verifikasi<select class="wb-verify-status is-${statusClass}" data-wb-ver-status="${uploadId}">${verificationStatusOptions(status)}</select></label>
       <label>Nama Pemeriksa<input type="text" maxlength="100" data-wb-ver-examiner="${uploadId}" value="${escapeHtml(file.verificationExaminer||'')}" placeholder="Ketik nama pemeriksa"></label>
@@ -3813,7 +3817,7 @@ function wbEvidenceFileHtml(file){
       <div class="wb-evidence-file-badges"><span class="wb-sync-pill ${file?.syncStatus==='done'?'is-synced':file?.syncStatus==='retrying'?'is-retry':'is-pending'}">${escapeHtml(syncStatus)}</span><span class="wb-verification-pill" data-wb-status-pill>${escapeHtml(verificationStatusLabel(status))}</span><span class="wb-score-badge" data-wb-score>Skor ${score}%</span></div>
     </div>
     <div class="wb-verification-meter" role="progressbar" aria-label="Skor verifikasi dokumen" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${score}"><span data-wb-score-fill style="width:${score}%"></span></div>
-    <div class="wb-evidence-file-actions">${previewButton}${canDirectVerify?workflowButton:''}${replaceControl}${retryButton}${canDirectVerify?`<button type="button" class="wb-action-delete" data-wb-action="delete" data-upload-id="${uploadId}" aria-label="Hapus file evidence" title="Hapus file evidence">🗑 Hapus File</button>`:''}</div>
+    <div class="wb-evidence-file-actions">${previewButton}${canDirectVerify?workflowButton:''}${replaceControl}${retryButton}${canManageEvidence?`<button type="button" class="wb-action-delete" data-wb-action="delete" data-upload-id="${uploadId}" aria-label="Hapus file evidence" title="Hapus file evidence">🗑 Hapus File</button>`:''}</div>
     ${verificationPanel}
   </div>`;
 }
@@ -3904,7 +3908,18 @@ async function wbUploadSelected(input){
       try{
         await persistUploadBeforeSend(pendingRecord);
         const result=await callServerWithRetry('uploadFile',payload,3);
-        if(result?.status==='pending'||result?.syncStatus==='retrying'||result?.syncStatus==='pending'){pendingRecord.r2Key=result.r2Key||null;pendingRecord.nextRetryAt=Date.now()+15000;await savePendingUploadToIndexedDB(pendingRecord);pending++;}else{pendingUploadFiles.delete(uploadId);await deletePendingUploadFromIndexedDB(uploadId);success++;}
+        if(result?.status==='pending'||result?.syncStatus==='retrying'||result?.syncStatus==='pending'){
+          pending++;
+          if(result?.r2Key){
+            // R2 has accepted the original bytes. Keep only the server-side D1
+            // retry job; do not re-upload the same file from IndexedDB.
+            pendingUploadFiles.delete(uploadId);
+            await deletePendingUploadFromIndexedDB(uploadId);
+          }else{
+            pendingRecord.nextRetryAt=Date.now()+15000;
+            await savePendingUploadToIndexedDB(pendingRecord);
+          }
+        }else{pendingUploadFiles.delete(uploadId);await deletePendingUploadFromIndexedDB(uploadId);success++;}
       }catch(err){pendingRecord.lastError=err?.message||String(err);pendingRecord.nextRetryAt=Date.now()+5000;await savePendingUploadToIndexedDB(pendingRecord);failed++;failedFiles.push(`${file.name}: ${err.message||err}`);}
       completed=i+1;
       const tail=failed?` · ${failed} gagal`:'';
@@ -5629,14 +5644,51 @@ async function openEvidencePreview(info){
   document.getElementById('evidencePreviewTitle').textContent=`Pratinjau File · ${evidencePreviewUi.fileName}`;modal.classList.add('active');document.querySelectorAll('[data-preview-tab]').forEach(b=>b.classList.toggle('active',b.dataset.previewTab==='preview'));body.dataset.rendered='0';body.innerHTML='<div class="preview-file-placeholder">⏳ Mengambil file privat…</div>';
   try{
     const name=evidencePreviewUi.fileName,ext=(name.split('.').pop()||'').toLowerCase(),type=evidencePreviewUi.fileType.toLowerCase();
+    // XLS/XLSX is rendered locally with the already-loaded SheetJS library.
+    // This avoids the slow third-party Office viewer round-trip for spreadsheets.
+    if(['xlsx','xls'].includes(ext) && window.XLSX){
+      const link=await callServerWithRetry('createEvidencePreviewLink',{opdId:info.opdId,uploadId:info.uploadId,year:currentYear},1);
+      const response=await fetch(link.url,{cache:'no-store',credentials:'same-origin'});
+      if(!response.ok)throw new Error(`Gagal mengambil spreadsheet (HTTP ${response.status}).`);
+      const buffer=await response.arrayBuffer();
+      const workbook=window.XLSX.read(buffer,{type:'array',cellDates:true});
+      const firstSheet=workbook.SheetNames?.[0];
+      if(!firstSheet)throw new Error('Spreadsheet tidak memiliki sheet yang dapat dipratinjau.');
+      const rows=window.XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet],{header:1,raw:false,defval:'',blankrows:false}).slice(0,150);
+      const maxCols=Math.min(20,Math.max(1,...rows.map(r=>Array.isArray(r)?r.length:0)));
+      const tableRows=rows.map((r,ri)=>`<tr><th>${ri+1}</th>${Array.from({length:maxCols},(_,ci)=>`<td>${escapeHtml(String(r?.[ci]??''))}</td>`).join('')}</tr>`).join('');
+      evidencePreviewUi.viewerProvider='Pratinjau spreadsheet lokal (SheetJS)';
+      evidencePreviewUi.size=buffer.byteLength;
+      evidencePreviewUi.previewHtml=`<div class="evidence-preview-sheet-wrap"><div class="evidence-preview-sheet-meta"><b>${escapeHtml(firstSheet)}</b><span>${workbook.SheetNames.length} sheet · menampilkan maksimal 150 baris dan 20 kolom</span></div><div class="evidence-preview-sheet-scroll"><table class="evidence-preview-sheet"><tbody>${tableRows||'<tr><td>Sheet kosong</td></tr>'}</tbody></table></div></div>`;
+      body.innerHTML=evidencePreviewUi.previewHtml;body.dataset.rendered='1';return;
+    }
     const officeExt=['doc','docx','xls','xlsx','ppt','pptx'];
     const openDocumentExt=['odt','ods','odp','rtf'];
-    if(officeExt.includes(ext)||openDocumentExt.includes(ext)){
+    const browserPreviewExt=['pdf','png','jpg','jpeg','gif','webp','bmp','avif','mp4','webm','mov','m4v','ogv','mp3','wav','ogg','m4a','aac'];
+    if(officeExt.includes(ext)||openDocumentExt.includes(ext)||browserPreviewExt.includes(ext)){
+      // A short-lived signed URL lets the browser stream/seek the object directly.
+      // In particular, PDF viewers can issue byte-range requests instead of waiting
+      // for the entire file to be downloaded into a Blob before first paint.
       const link=await callServerWithRetry('createEvidencePreviewLink',{opdId:info.opdId,uploadId:info.uploadId,year:currentYear},1);
-      const isOffice=officeExt.includes(ext);const viewerUrl=isOffice?`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(link.url)}`:`https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(link.url)}`;
-      evidencePreviewUi.viewerProvider=isOffice?'Microsoft Office Online Viewer (tautan privat sementara, 10 menit)':'Google Docs Viewer (tautan privat sementara, 10 menit)';
-      evidencePreviewUi.previewHtml=`<div class="preview-external-notice"><b>Pratinjau ${isOffice?'Microsoft Office Online':'Google Docs Viewer'}</b><p>Dokumen dibaca oleh layanan viewer pihak ketiga melalui tautan bertanda tangan yang kedaluwarsa otomatis dalam 10 menit. Gunakan hanya untuk dokumen yang boleh diproses oleh layanan tersebut; jangan bagikan URL pratinjau.</p></div><iframe title="Pratinjau ${escapeHtml(name)}" class="evidence-preview-frame" src="${viewerUrl}" referrerpolicy="no-referrer" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"></iframe>`;
-      body.innerHTML=evidencePreviewUi.previewHtml;body.dataset.rendered='1';evidencePreviewUi.size=0;return;
+      if(officeExt.includes(ext)||openDocumentExt.includes(ext)){
+        const isOffice=officeExt.includes(ext);
+        const viewerUrl=isOffice?`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(link.url)}`:`https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(link.url)}`;
+        evidencePreviewUi.viewerProvider=isOffice?'Microsoft Office Online Viewer (tautan privat sementara, 10 menit)':'Google Docs Viewer (tautan privat sementara, 10 menit)';
+        evidencePreviewUi.previewHtml=`<div class="preview-external-notice"><b>Pratinjau ${isOffice?'Microsoft Office Online':'Google Docs Viewer'}</b><p>Dokumen dibaca oleh layanan viewer pihak ketiga melalui tautan bertanda tangan yang kedaluwarsa otomatis dalam 10 menit. Gunakan hanya untuk dokumen yang boleh diproses oleh layanan tersebut; jangan bagikan URL pratinjau.</p></div><iframe title="Pratinjau ${escapeHtml(name)}" class="evidence-preview-frame" src="${viewerUrl}" referrerpolicy="no-referrer" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"></iframe>`;
+        body.innerHTML=evidencePreviewUi.previewHtml;body.dataset.rendered='1';evidencePreviewUi.size=0;return;
+      }
+      evidencePreviewUi.viewerProvider='Pratinjau streaming privat dari R2';
+      const safeUrl=String(link.url||'');
+      if(ext==='pdf'){
+        body.innerHTML=`<iframe title="Pratinjau PDF ${escapeHtml(name)}" class="evidence-preview-frame" src="${escapeHtml(safeUrl)}#toolbar=0&navpanes=0" referrerpolicy="no-referrer"></iframe>`;
+      }else if(type.startsWith('image/')||['png','jpg','jpeg','gif','webp','bmp','avif'].includes(ext)){
+        body.innerHTML=`<div class="evidence-preview-image-wrap"><img src="${escapeHtml(safeUrl)}" alt="${escapeHtml(name)}" class="evidence-preview-image" loading="eager"></div>`;
+      }else if(type.startsWith('video/')||['mp4','webm','mov','m4v','ogv'].includes(ext)){
+        body.innerHTML=`<video controls playsinline preload="metadata" class="evidence-preview-media" src="${escapeHtml(safeUrl)}">Browser tidak mendukung video ini.</video>`;
+      }else{
+        body.innerHTML=`<audio controls preload="metadata" class="evidence-preview-audio" src="${escapeHtml(safeUrl)}">Browser tidak mendukung audio ini.</audio>`;
+      }
+      evidencePreviewUi.previewHtml=body.innerHTML;body.dataset.rendered='1';return;
     }
     const q=new URLSearchParams({action:'previewEvidence',year:String(currentYear),opdId:String(info.opdId),uploadId:String(info.uploadId)});
     const response=await fetch(`/myCloudinaryHandler?${q.toString()}`,{method:'GET',cache:'no-store',credentials:'same-origin',headers:{'Cache-Control':'no-cache'}});
