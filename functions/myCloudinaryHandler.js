@@ -2760,7 +2760,11 @@ export async function processDriveBackupQueueMessage(env, uploadId) {
     if(!r2Head){const delay=await scheduleDriveBackupRetry(env,uploadId,'File belum tersedia/terverifikasi di R2.',attempt);return {ack:true,deferred:true,r2Missing:true,delayMs:delay};}
     await ensureDriveJobMetadata(env,job);
     const result=await processDriveBackupJob(env,job);
-    if(result.ok) { await finishDriveBackupJob(env,uploadId,attempt); return {ack:true,done:true,gdriveId:result.gdriveId}; }
+    if(result.ok) {
+      await finishDriveBackupJob(env,uploadId,attempt);
+      notifyRealtime(env,null,job.year,{action:'driveBackupCompleted',opdId:job.opdId||null,uploadId:job.uploadId,syncStatus:'done',storage:'R2 + Google Drive'});
+      return {ack:true,done:true,gdriveId:result.gdriveId};
+    }
     const delay=await scheduleDriveBackupRetry(env,uploadId,result.error,attempt);
     await sendDriveBackupMessage(env,uploadId,delay/1000);
     notifyRealtime(env,null,job.year,{action:'driveBackupQueued',opdId:job.opdId,uploadId:job.uploadId,syncStatus:'retrying'});
@@ -5128,7 +5132,17 @@ export async function onRequest({ request, env, ctx }) {
           const job={type:'workbook_evidence',uploadId,year:String(year),opdId,opdName:rec.results[0].opd||'OPD',r2Key:filePath,fileName:safeName,fileType,evidenceKey,targetCode,subunsur:subCode,paramId,grade,level};
           await enqueueDriveBackupJob(env,job);
           try{await putR2WithRetry(env, filePath,fileBody||bytes,{httpMetadata:{contentType:fileType}});}catch(storageError){if(!old){try{await env.DB.prepare('DELETE FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=?').bind(uploadId,String(year),opdId).run();}catch(_){ }}if(!existingReg){try{await env.DB.prepare('DELETE FROM evidence_upload_registry WHERE upload_id=? AND year=? AND opd_id=?').bind(uploadId,String(year),opdId).run();}catch(_){ }}throw storageError;}notifyRealtime(env,ctx,year,{action:'uploadWorkbookEvidence',opdId,uploadId,evidenceKey,grade,targetCode});
-          try{const gdriveId=await runQueuedDriveBackup(env,ctx,job);await updateWorkbookEvidenceFileStatus(env,job,{gdriveId,syncStatus:'done',syncError:null});await runD1WithRetry(()=>env.DB.prepare('UPDATE evidence_upload_registry SET gdrive_id=?,sync_status=?,updated_at=? WHERE upload_id=?').bind(gdriveId,'done',Date.now(),uploadId));return jsonResponse({status:'success',url:publicUrl,fileName:safeName,gdriveId,syncStatus:'done',uploadId,r2Key:filePath});}catch(err){const msg=String(err.message||err);await updateWorkbookEvidenceFileStatus(env,job,{syncStatus:'retrying',syncError:msg});await runD1WithRetry(()=>env.DB.prepare('UPDATE evidence_upload_registry SET sync_status=?,sync_error=?,updated_at=? WHERE upload_id=?').bind('retrying',msg,Date.now(),uploadId));return jsonResponse({status:'pending',message:'Evidence tersimpan di R2; Google Drive akan di-retry.',url:publicUrl,fileName:safeName,gdriveId:null,syncStatus:'retrying',uploadId,r2Key:filePath,driveError:msg});}
+          // Return as soon as R2 is verified. Google Drive is handled by the
+          // durable D1 outbox + Queue consumer, so a slow Google API never holds
+          // the operator's upload request open. The D1 job was persisted before
+          // R2 PUT; marking r2_ready makes it eligible for the consumer.
+          const r2Head=await env.EVIDENCE_BUCKET.head(filePath);
+          if(!r2Head)throw new Error('R2 belum mengonfirmasi file setelah upload.');
+          await markDriveBackupR2Ready(env,uploadId);
+          await updateWorkbookEvidenceFileStatus(env,job,{syncStatus:'retrying',syncError:'Menunggu sinkronisasi Google Drive.'});
+          await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=?").bind('Menunggu sinkronisasi Google Drive.',Date.now(),uploadId));
+          await sendDriveBackupMessage(env,uploadId,0);
+          return jsonResponse({status:'pending',message:'File sudah aman di R2. Google Drive sedang diproses otomatis; status akan berubah menjadi selesai setelah file Drive diverifikasi.',url:publicUrl,fileName:safeName,gdriveId:null,syncStatus:'retrying',uploadId,r2Key:filePath});
         }
         // Google Drive credentials are checked by the durable backup worker after
         // R2 and the D1 outbox are safely recorded. A Drive outage must not block R2.
