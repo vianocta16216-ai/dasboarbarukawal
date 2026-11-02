@@ -2678,10 +2678,14 @@ async function enqueueDriveBackupJob(env, job, error = '') {
     ON CONFLICT(upload_id) DO UPDATE SET
       job_json=excluded.job_json,
       status=CASE WHEN drive_backup_jobs.status='done' THEN 'done'
-                  WHEN drive_backup_jobs.lease_until>? THEN drive_backup_jobs.status ELSE 'pending' END,
-      next_attempt_at=CASE WHEN drive_backup_jobs.status='done' OR drive_backup_jobs.lease_until>?
+                  WHEN drive_backup_jobs.lease_until>excluded.next_attempt_at THEN drive_backup_jobs.status
+                  WHEN drive_backup_jobs.status='retrying' AND drive_backup_jobs.next_attempt_at>excluded.next_attempt_at THEN 'retrying'
+                  ELSE 'pending' END,
+      next_attempt_at=CASE WHEN drive_backup_jobs.status='done'
+                                OR drive_backup_jobs.lease_until>excluded.next_attempt_at
+                                OR (drive_backup_jobs.status='retrying' AND drive_backup_jobs.next_attempt_at>excluded.next_attempt_at)
                            THEN drive_backup_jobs.next_attempt_at ELSE MIN(drive_backup_jobs.next_attempt_at,excluded.next_attempt_at) END,
-      last_error=CASE WHEN drive_backup_jobs.status='done' THEN drive_backup_jobs.last_error ELSE excluded.last_error END,
+      last_error=CASE WHEN drive_backup_jobs.status='done' OR drive_backup_jobs.lease_until>excluded.next_attempt_at OR (drive_backup_jobs.status='retrying' AND drive_backup_jobs.next_attempt_at>excluded.next_attempt_at) THEN drive_backup_jobs.last_error ELSE excluded.last_error END,
       updated_at=excluded.updated_at
     WHERE COALESCE(json_extract(drive_backup_jobs.job_json,'$.type'),'')=COALESCE(json_extract(excluded.job_json,'$.type'),'')
       AND COALESCE(json_extract(drive_backup_jobs.job_json,'$.year'),'')=COALESCE(json_extract(excluded.job_json,'$.year'),'')
@@ -2691,7 +2695,7 @@ async function enqueueDriveBackupJob(env, job, error = '') {
       AND COALESCE(json_extract(drive_backup_jobs.job_json,'$.followupId'),'')=COALESCE(json_extract(excluded.job_json,'$.followupId'),'')
       AND COALESCE(json_extract(drive_backup_jobs.job_json,'$.targetCode'),'')=COALESCE(json_extract(excluded.job_json,'$.targetCode'),'')
       AND COALESCE(json_extract(drive_backup_jobs.job_json,'$.evidenceKey'),'')=COALESCE(json_extract(excluded.job_json,'$.evidenceKey'),'')
-  `).bind(safeJob.uploadId,JSON.stringify(safeJob),now,String(error||'').slice(0,2000),now,now,now,now));
+  `).bind(safeJob.uploadId,JSON.stringify(safeJob),now,String(error||'').slice(0,2000),now,now));
   // Detect a reused uploadId attached to a different file/OPD/type. Never allow
   // an ON CONFLICT upsert to silently redirect an existing Drive backup job.
   const persisted=await env.DB.prepare('SELECT job_json FROM drive_backup_jobs WHERE upload_id=? LIMIT 1').bind(safeJob.uploadId).first();
@@ -2803,7 +2807,7 @@ async function queueDriveBackupInBackground(env, ctx, job) {
   }
   await markDriveBackupR2Ready(env, job.uploadId);
   await ensureDriveJobMetadata(env, job);
-  const state = await env.DB.prepare('SELECT status FROM drive_backup_jobs WHERE upload_id=? LIMIT 1')
+  const state = await env.DB.prepare('SELECT status,next_attempt_at,lease_until,dispatch_until,r2_ready FROM drive_backup_jobs WHERE upload_id=? LIMIT 1')
     .bind(String(job.uploadId)).first();
 
   // Lost HTTP response after a completed Drive upload: verify the stable
@@ -2821,9 +2825,26 @@ async function queueDriveBackupInBackground(env, ctx, job) {
     throw error;
   }
 
-  // A Queue binding may be temporarily unavailable. The durable D1 outbox and
-  // the minute Cron dispatcher remain the fallback; never discard this job.
-  const queueMessageSent = await sendDriveBackupMessage(env, job.uploadId, 5);
+  // Do not create duplicate Queue messages from the browser's 15-second
+  // recovery loop while a Worker lease, a Queue dispatch lease, or Google
+  // backoff is still active. D1/Cron remains the durable retry authority.
+  const now=Date.now();
+  const alreadyScheduled=Number(state?.lease_until||0)>now ||
+    Number(state?.dispatch_until||0)>now || Number(state?.next_attempt_at||0)>now;
+  if(alreadyScheduled){
+    const error=new Error('File aman di R2. Backup Google Drive sudah berada dalam antrean atau jadwal retry; sistem melanjutkan otomatis tanpa membuat antrean ganda.');
+    error.backupQueued=true;
+    throw error;
+  }
+  const dispatch=await runD1WithRetry(()=>env.DB.prepare(`UPDATE drive_backup_jobs SET dispatch_until=?,updated_at=?
+    WHERE upload_id=? AND status IN ('pending','retrying') AND r2_ready=1 AND next_attempt_at<=? AND lease_until<=? AND dispatch_until<=?`)
+    .bind(now+DRIVE_QUEUE_DISPATCH_LEASE_MS,now,String(job.uploadId),now,now,now));
+  const dispatchClaimed=Number(dispatch?.meta?.changes||0)>0;
+  const queueMessageSent=dispatchClaimed?await sendDriveBackupMessage(env,job.uploadId,5):false;
+  if(dispatchClaimed&&!queueMessageSent){
+    await runD1WithRetry(()=>env.DB.prepare("UPDATE drive_backup_jobs SET dispatch_until=0,updated_at=? WHERE upload_id=? AND status<>'done'")
+      .bind(Date.now(),String(job.uploadId)));
+  }
   notifyRealtime(env, ctx, job.year, {
     action: 'driveBackupQueued',
     driveBackupType: job.type,
@@ -2833,8 +2854,8 @@ async function queueDriveBackupInBackground(env, ctx, job) {
     uploadId: job.uploadId,
     syncStatus: 'retrying'
   });
-  const message = queueMessageSent
-    ? 'File aman di R2. Sinkronisasi Google Drive sudah masuk antrean background dan status akan diperbarui setelah verifikasi.'
+  const message = queueMessageSent || !dispatchClaimed
+    ? 'File aman di R2. Sinkronisasi Google Drive sudah masuk antrean background atau sedang dijadwalkan Worker; status berubah setelah verifikasi.'
     : 'File aman di R2 dan pekerjaan backup sudah tersimpan permanen di D1. Queue belum menerima pesan; Cron Worker akan mengirim ulang otomatis.';
   const error = new Error(message);
   error.backupQueued = true;
@@ -5469,7 +5490,7 @@ export async function onRequest({ request, env, ctx }) {
             message:'File sudah diamankan di R2 tetapi BELUM masuk Google Drive. Sistem akan mencoba lagi otomatis.',
             url:privateEvidenceUrl(year,opdId,uploadId),
             fileName:job.fileName,googleDriveId:null,gdriveId:null,syncStatus:'retrying',
-            uploadId,r2Saved:true,r2Key,driveError:message,backupQueued:false
+            uploadId,r2Saved:true,r2Key,driveError:message,backupQueued:!!driveErr.backupQueued,queueMessageSent:!!driveErr.queueMessageSent
           });
         }
       }
@@ -5479,54 +5500,92 @@ export async function onRequest({ request, env, ctx }) {
         const targetYear=String(retryYear||year);
         if((type!=='pemda_workbook_evidence'&&!opdId) || !uploadId) throw new Error(type==='pemda_workbook_evidence'?'uploadId wajib diisi':'opdId dan uploadId wajib diisi');
         let job=null;
+        // The D1 outbox is written before R2.put(), so it is the durable source
+        // for the exact R2 object key if a legacy JSON mirror or registry row is
+        // incomplete. Never trust a browser-supplied r2Key for this recovery.
+        let outboxJob=null;
+        try {
+          const outbox=await env.DB.prepare('SELECT job_json FROM drive_backup_jobs WHERE upload_id=? LIMIT 1').bind(String(uploadId)).first();
+          if(outbox?.job_json) outboxJob=JSON.parse(String(outbox.job_json));
+        } catch(outboxError) {
+          console.warn('Outbox Drive tidak dapat dibaca saat retry:',String(outboxError?.message||outboxError));
+        }
+        const outboxMatches=(expected={})=>!!outboxJob &&
+          String(outboxJob.uploadId||'')===String(uploadId) &&
+          Object.entries(expected).every(([key,value])=>String(outboxJob[key]??'')===String(value??''));
         if(type==='report'){
           const cfg=reportFieldConfig(params.reportType);
           const rec=await env.DB.prepare(`SELECT opd,${cfg.listField},${cfg.folderField},${cfg.folderIdField} FROM opd_data WHERE id=? AND year=? LIMIT 1`).bind(opdId,targetYear).all();
           if(!rec.results.length) throw new Error('OPD tidak ditemukan');
           const list=parseJsonArray(rec.results[0]?.[cfg.listField]);
           const item=list.find(x=>x&&x.uploadId===uploadId); if(!item) throw new Error('Laporan tidak ditemukan pada OPD/lokasi yang sama');
-          job={type:'report',reportType:cfg.type,uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||'',fileName:item.fileName||'laporan',fileType:item.fileType||'application/octet-stream',gdriveFolderId:item.gdriveFolderId||rec.results[0][cfg.folderIdField]||null};
+          job={type:'report',reportType:cfg.type,uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||(outboxMatches({type:'report',year:targetYear,opdId:String(opdId),reportType:cfg.type})?outboxJob?.r2Key:'')||'',fileName:item.fileName||outboxJob?.fileName||'laporan',fileType:item.fileType||'application/octet-stream',gdriveFolderId:item.gdriveFolderId||rec.results[0][cfg.folderIdField]||null};
         } else if(type==='rtp'){
           const rec=await env.DB.prepare("SELECT opd,rtp_evidence,rtp_evidence_folder,rtp_evidence_folder_id FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,targetYear).all();
           if(!rec.results.length) throw new Error('OPD tidak ditemukan');
           let list=[];try{list=rec.results[0]?.rtp_evidence?JSON.parse(rec.results[0].rtp_evidence):[]}catch{}
           const item=list.find(x=>x&&x.uploadId===uploadId); if(!item) throw new Error('Evidence RTP tidak ditemukan pada OPD/lokasi yang sama');
-          job={type:'rtp',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||'',fileName:item.fileName||'evidence',fileType:item.fileType||'application/octet-stream',folderName:item.folderName||rec.results[0].rtp_evidence_folder||'Evidence RTP',gdriveFolderId:rec.results[0].rtp_evidence_folder_id||null};
+          job={type:'rtp',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||(outboxMatches({type:'rtp',year:targetYear,opdId:String(opdId)})?outboxJob?.r2Key:'')||'',fileName:item.fileName||outboxJob?.fileName||'evidence',fileType:item.fileType||'application/octet-stream',folderName:item.folderName||rec.results[0].rtp_evidence_folder||'Evidence RTP',gdriveFolderId:rec.results[0].rtp_evidence_folder_id||null};
         } else if(type==='workbook_evidence') {
           const q=await env.DB.prepare('SELECT o.opd,e.upload_id,e.evidence_key,e.target_code,e.subunsur,e.param_id,e.grade,e.level,e.file_name,e.file_type,e.r2_key,e.gdrive_id FROM opd_workbook_evidence_items e JOIN opd_data o ON o.id=e.opd_id AND o.year=e.year WHERE e.upload_id=? AND e.year=? AND e.opd_id=? LIMIT 1').bind(uploadId,targetYear,opdId).all();
-          const item=q.results?.[0];if(!item)throw new Error('Evidence workbook tidak ditemukan pada OPD/lokasi yang sama.');job={type:'workbook_evidence',uploadId,year:targetYear,opdId,opdName:item.opd||'OPD',r2Key:item.r2_key||'',fileName:item.file_name||'evidence',fileType:item.file_type||'application/octet-stream',evidenceKey:item.evidence_key||'',targetCode:item.target_code||'',subunsur:item.subunsur||'',paramId:item.param_id||'',grade:item.grade||'',level:Number(item.level||0)};
+          const item=q.results?.[0];if(!item)throw new Error('Evidence workbook tidak ditemukan pada OPD/lokasi yang sama.');
+          const wbOutboxMatches=outboxMatches({type:'workbook_evidence',year:targetYear,opdId:String(opdId),evidenceKey:String(item.evidence_key||''),targetCode:String(item.target_code||''),subunsur:String(item.subunsur||''),paramId:String(item.param_id||''),grade:String(item.grade||''),level:String(item.level||0)});
+          job={type:'workbook_evidence',uploadId,year:targetYear,opdId,opdName:item.opd||'OPD',r2Key:item.r2_key||(wbOutboxMatches?outboxJob?.r2Key:'')||'',fileName:item.file_name||outboxJob?.fileName||'evidence',fileType:item.file_type||'application/octet-stream',evidenceKey:item.evidence_key||'',targetCode:item.target_code||'',subunsur:item.subunsur||'',paramId:item.param_id||'',grade:item.grade||'',level:Number(item.level||0)};
         } else if(type==='pemda_workbook_evidence') {
           const item=await env.DB.prepare("SELECT upload_id,evidence_key,target_code,subunsur,param_id,grade,level,file_name,file_type,r2_key,gdrive_id FROM pemda_workbook_evidence_items WHERE upload_id=? AND year=? AND target_code IN ('T2','T3','T4') LIMIT 1").bind(uploadId,targetYear).first();
           if(!item)throw new Error('Evidence workbook Pemda tidak ditemukan pada tahun yang sama atau target bukan T2–T4.');
-          job={type:'pemda_workbook_evidence',uploadId,year:targetYear,opdName:'PEMERINTAH KABUPATEN MAHAKAM ULU',r2Key:item.r2_key||'',fileName:item.file_name||'evidence',fileType:item.file_type||'application/octet-stream',evidenceKey:item.evidence_key||'',targetCode:item.target_code||'',subunsur:item.subunsur||'',paramId:item.param_id||'',grade:item.grade||'',level:Number(item.level||0)};
+          const pemdaOutboxMatches=outboxMatches({type:'pemda_workbook_evidence',year:targetYear,evidenceKey:String(item.evidence_key||''),targetCode:String(item.target_code||''),subunsur:String(item.subunsur||''),paramId:String(item.param_id||''),grade:String(item.grade||''),level:String(item.level||0)});
+          job={type:'pemda_workbook_evidence',uploadId,year:targetYear,opdName:'PEMERINTAH KABUPATEN MAHAKAM ULU',r2Key:item.r2_key||(pemdaOutboxMatches?outboxJob?.r2Key:'')||'',fileName:item.file_name||outboxJob?.fileName||'evidence',fileType:item.file_type||'application/octet-stream',evidenceKey:item.evidence_key||'',targetCode:item.target_code||'',subunsur:item.subunsur||'',paramId:item.param_id||'',grade:item.grade||'',level:Number(item.level||0)};
         } else if(type==='lhe') {
           const rec=await env.DB.prepare('SELECT o.opd,l.evidence_json FROM lhe_followup_items l JOIN opd_data o ON o.id=l.opd_id AND o.year=l.year WHERE l.id=? AND l.year=? AND l.opd_id=? LIMIT 1').bind(String(params.followupId||''),targetYear,opdId).first();
           if(!rec)throw new Error('Butir tindak lanjut LHE tidak ditemukan pada OPD/tahun yang sama.');
           let list=[];try{list=JSON.parse(rec.evidence_json||'[]')}catch{};const item=(Array.isArray(list)?list:[]).find(x=>x&&String(x.uploadId||'')===String(uploadId));
           if(!item)throw new Error('Bukti LHE tidak ditemukan pada butir yang sama.');
-          job={type:'lhe_evidence',followupId:String(params.followupId),uploadId,year:targetYear,opdId,opdName:rec.opd||'OPD',r2Key:item.r2Key||'',fileName:item.fileName||'bukti',fileType:item.fileType||'application/octet-stream'};
+          job={type:'lhe_evidence',followupId:String(params.followupId),uploadId,year:targetYear,opdId,opdName:rec.opd||'OPD',r2Key:item.r2Key||(outboxMatches({type:'lhe_evidence',year:targetYear,opdId:String(opdId),followupId:String(params.followupId||'')})?outboxJob?.r2Key:'')||'',fileName:item.fileName||outboxJob?.fileName||'bukti',fileType:item.fileType||'application/octet-stream'};
         } else {
           const rec=await env.DB.prepare("SELECT opd,subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,targetYear).all();
           if(!rec.results.length) throw new Error('OPD tidak ditemukan');
+          const expectedIdentity={type:'evidence',year:targetYear,opdId:String(opdId),subunsur:String(subunsur||''),paramId:String(paramId||''),level:String(level||'')};
+          const outboxEvidenceMatches=outboxMatches(expectedIdentity);
           let obj={};try{obj=rec.results[0]?.subunsurs?JSON.parse(rec.results[0].subunsurs):{}}catch{}
           const arr=obj?.[subunsur]?.[paramId]?.['files'+level];
-          const item=Array.isArray(arr)?arr.find(x=>x&&x.uploadId===uploadId):null;
-          // NEVER create a new evidence record during a Drive retry.
-          // If the exact OPD/subunsur/parameter/level record is absent, stop.
-          if(!item) throw new Error('Evidence tidak ditemukan pada OPD/kolom yang sama. Retry dibatalkan untuk mencegah salah penempatan.');
-          const registry=await env.DB.prepare("SELECT * FROM evidence_upload_registry WHERE upload_id=? LIMIT 1").bind(uploadId).all();
-          const reg=registry.results?.[0];
-          if(!reg) throw new Error('Registri upload tidak ditemukan. Retry dibatalkan untuk keamanan.');
-          const sameLocation=String(reg.year)===targetYear &&
+          const item=Array.isArray(arr)?arr.find(x=>x&&String(x.uploadId||'')===String(uploadId)):null;
+          const registry=await env.DB.prepare("SELECT * FROM evidence_upload_registry WHERE upload_id=? LIMIT 1").bind(uploadId).first();
+          const reg=registry||null;
+          const sameLocation=reg && String(reg.year)===targetYear &&
             String(reg.opd_id)===String(opdId) &&
             String(reg.subunsur||'')===String(subunsur||'') &&
             String(reg.param_id||'')===String(paramId||'') &&
             String(reg.level||'')===String(level||'') &&
             String(reg.type||'evidence')==='evidence';
-          if(!sameLocation) throw new Error('Registri upload tidak cocok dengan OPD/kolom. Retry dibatalkan.');
-          job={type:'evidence',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',
-            r2Key:item.r2Key||reg.r2_key||'',fileName:item.fileName||'evidence',fileType:item.fileType||'application/octet-stream',
+          if(reg && !sameLocation) throw new Error('Registri upload tidak cocok dengan OPD/kolom. Retry dibatalkan.');
+          // An exact, server-created D1 outbox record can safely recover an
+          // incomplete JSON/registry mirror. Without either trusted identity,
+          // keep the old fail-closed behavior and do not create a new record.
+          if(!item && !outboxEvidenceMatches) throw new Error('Evidence tidak ditemukan pada OPD/kolom yang sama. Retry dibatalkan untuk mencegah salah penempatan.');
+          if(!sameLocation && !outboxEvidenceMatches) throw new Error('Registri upload tidak ditemukan atau tidak cocok. Retry dibatalkan untuk keamanan.');
+          const itemR2Key=String(item?.r2Key||'').trim();
+          const registryR2Key=String(reg?.r2_key||'').trim();
+          const outboxR2Key=String(outboxEvidenceMatches?outboxJob?.r2Key:'').trim();
+          if(outboxR2Key && itemR2Key && outboxR2Key!==itemR2Key) throw new Error('Kunci R2 pada metadata OPD berbeda dari antrean D1. Retry dihentikan untuk mencegah file salah salin.');
+          if(outboxR2Key && registryR2Key && outboxR2Key!==registryR2Key) throw new Error('Kunci R2 pada registri berbeda dari antrean D1. Retry dihentikan untuk mencegah file salah salin.');
+          const r2Key=outboxR2Key||itemR2Key||registryR2Key;
+          if(!r2Key) throw new Error('Kunci R2 tidak tercatat pada metadata maupun antrean D1. File tidak akan diunggah ulang otomatis; perlu pemeriksaan admin.');
+          // Repair an empty/missing legacy mirror from the exact outbox payload.
+          job={type:'evidence',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||outboxJob?.opdName||'OPD',
+            r2Key,fileName:item?.fileName||outboxJob?.fileName||'evidence',fileType:item?.fileType||outboxJob?.fileType||'application/octet-stream',
             subunsur:String(subunsur),paramId:String(paramId),level:String(level)};
+          await ensureGenericEvidenceMetadata(env,job);
+          if(!reg){
+            const now=Date.now();
+            await runD1WithRetry(()=>env.DB.prepare(`INSERT OR IGNORE INTO evidence_upload_registry
+              (upload_id,year,opd_id,subunsur,param_id,level,type,r2_key,sync_status,created_at,updated_at)
+              VALUES(?,?,?,?,?,?,'evidence',?,'retrying',?,?)`)
+              .bind(String(uploadId),targetYear,String(opdId),String(subunsur||''),String(paramId||''),String(level||''),r2Key,now,now));
+          } else if(!String(reg.r2_key||'').trim()) {
+            await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET r2_key=?,updated_at=? WHERE upload_id=? AND year=? AND opd_id=?")
+              .bind(r2Key,Date.now(),String(uploadId),targetYear,String(opdId)));
+          }
         }
         if(!job.r2Key) throw new Error('Lokasi file R2 tidak ditemukan');
         try{
