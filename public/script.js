@@ -3608,15 +3608,82 @@ let workbookEvidenceMaster=null;
 let workbookEvidenceRow=null;
 let workbookEvidenceFiles=[];
 let workbookEvidenceNav={screen:'unsur',unsur:'',sub:'',groupId:''};
+let workbookEvidenceSnapshotOverrides=null;
+function workbookEvidenceSourceKey(target,subCode,paramId,grade){return [target,subCode,paramId,grade].map(value=>String(value??'')).join('|');}
+function buildWorkbookEvidenceSnapshotOverrides(master){
+  const overrides=new Map();
+  (master?.targets||[]).forEach(target=>{
+    const targetCode=String(target.code||'').toUpperCase();
+    (target.parameters||[]).forEach(param=>{
+      Object.entries(param.grades||{}).forEach(([grade,value])=>{
+        const lines=Array.isArray(value?.evidenceDisarankan)?value.evidenceDisarankan.map(line=>String(line||'').trim()).filter(Boolean):[];
+        if(!targetCode||!param.subCode||!param.paramId||!lines.length)return;
+        overrides.set(workbookEvidenceSourceKey(targetCode,param.subCode,param.paramId,grade),{
+          targetCode,sheet:String(target.sheet||targetCode),workbookRow:Number(value.workbookRow||0),lines
+        });
+      });
+    });
+  });
+  return overrides;
+}
+function applyWorkbookEvidenceSnapshotOverrides(master){
+  const overrides=workbookEvidenceSnapshotOverrides;
+  if(!master||!overrides?.size)return master;
+  const getOverride=(target,subCode,paramId,grade)=>overrides.get(workbookEvidenceSourceKey(target,subCode,paramId,grade));
+  (master.targets||[]).forEach(target=>{
+    const targetCode=String(target.code||'').toUpperCase();
+    (target.parameters||[]).forEach(param=>{
+      Object.entries(param.grades||{}).forEach(([grade,value])=>{
+        const source=getOverride(targetCode,param.subCode,param.paramId,grade);
+        if(!source)return;
+        const lines=source.lines.slice();
+        value.evidenceDisarankan=lines;
+        value.evidenceSource=`Excel terbaru · ${source.sheet} · kolom L · baris ${source.workbookRow}`;
+        value.workbookRow=source.workbookRow||value.workbookRow;
+        if(Array.isArray(value.evidenceByTarget))value.evidenceByTarget=[{targetCode,targetLabel:`${targetCode} · ${source.sheet}`,workbookRow:source.workbookRow,lines:lines.slice()}];
+      });
+    });
+  });
+  // Keep merged target cards in sync, including parameter variants shared by multiple targets.
+  // Existing evidence keys are deliberately preserved so previously uploaded files remain linked.
+  (master.mergedEvidence?.groups||[]).forEach(group=>{
+    const subCode=String(group.subCode||'');
+    const paramId=String(group.parameterKey||'');
+    (group.variants||[]).forEach(variant=>{
+      const targets=(variant.targets||[variant.primaryTarget]).map(code=>String(code||'').toUpperCase()).filter(Boolean);
+      const primary=String(variant.primaryTarget||targets[0]||'').toUpperCase();
+      Object.entries(variant.grades||{}).forEach(([grade,value])=>{
+        const evidenceByTarget=targets.map(targetCode=>{
+          const source=getOverride(targetCode,subCode,paramId,grade);
+          return source?{targetCode,targetLabel:`${targetCode} · ${source.sheet}`,workbookRow:source.workbookRow,lines:source.lines.slice()}:null;
+        }).filter(Boolean);
+        if(!evidenceByTarget.length)return;
+        const selected=evidenceByTarget.find(item=>item.targetCode===primary)||evidenceByTarget[0];
+        value.evidenceDisarankan=selected.lines.slice();
+        value.evidenceByTarget=evidenceByTarget;
+        value.workbookRow=selected.workbookRow||value.workbookRow;
+        value.evidenceSource=evidenceByTarget.length>1
+          ?`Excel terbaru · kolom L · ${evidenceByTarget.length} target sesuai cakupan`
+          :`Excel terbaru · ${selected.targetLabel} · kolom L · baris ${selected.workbookRow}`;
+      });
+    });
+  });
+  master.evidenceSourceWorkbook=master.evidenceSourceWorkbook||'KK_PM_Evaluasi_SPIP_Pemda_RPJMD_2026_REVISI_SASARAN.xlsx';
+  return master;
+}
 async function ensureWorkbookEvidenceMasterLoaded(forceRefresh=true){
   if(!workbookEvidenceMaster){
-    const r=await fetch('/workbook-structure-process-master.json?v=20261014.1',{cache:'no-store'});
+    const r=await fetch('/workbook-structure-process-master.json?v=20261102.1',{cache:'no-store'});
     if(!r.ok)throw new Error(`Master Struktur & Proses workbook tidak dapat dimuat (HTTP ${r.status}). Pastikan file master ikut ter-deploy.`);
     workbookEvidenceMaster=await r.json();
+    // Capture the approved Excel evidence once. Older live Google Sheets snapshots must not
+    // silently replace the newer Evidence suggestions while other live fields keep refreshing.
+    workbookEvidenceSnapshotOverrides=buildWorkbookEvidenceSnapshotOverrides(workbookEvidenceMaster);
   }
   // Ambil snapshot Google Sheets terbaru setiap kali kolom dibuka. Backend memakai cache singkat
   // agar perubahan master segera terlihat tanpa mengunduh ulang workbook statis.
   if(forceRefresh)await refreshMasterFromGoogleSheet(workbookEvidenceMaster,'PK');
+  applyWorkbookEvidenceSnapshotOverrides(workbookEvidenceMaster);
   if(!workbookEvidenceMaster?.mergedEvidence?.groups?.length)throw new Error('Master merged Evidence workbook tidak valid.');
   return workbookEvidenceMaster;
 }
