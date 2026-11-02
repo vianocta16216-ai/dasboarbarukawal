@@ -3352,7 +3352,7 @@ export async function onRequest({ request, env, ctx }) {
           await env.DB.prepare('UPDATE lhe_followup_items SET verification_status=?,verifier_name=?,verifier_note=?,updated_by=?,updated_at=? WHERE id=? AND year=? AND opd_id=?').bind(summaryStatus,examinerName,note,String(authSession.username||''),now,String(fileRecord.followupId),String(year),opdId).run();
         }
         notifyRealtime(env,ctx,String(year),{action:'saveEvidenceWorkflowStep',opdId,uploadId,stage,status});
-        return jsonResponse({status:'success',message:'Tahap verifikasi tersimpan.',stage,status,updatedAt:now});
+        return jsonResponse({status:'success',message:'Tahap verifikasi tersimpan.',stage,verificationStatus:status,updatedAt:now});
       }
       case 'getLheFollowups': {
         const opdId=String(params.opdId||'');if(!opdId)throw new Error('OPD wajib dipilih.');
@@ -4535,7 +4535,7 @@ export async function onRequest({ request, env, ctx }) {
           VALUES(?,?,?,?,?,'Menunggu Verifikasi',?,'','',NULL,?,?) ON CONFLICT(year,opd_id,workpaper_code) DO UPDATE SET goal_codes_json=excluded.goal_codes_json,rationale=excluded.rationale,status='Menunggu Verifikasi',submitted_by=excluded.submitted_by,verifier_name='',verifier_note='',verified_at=NULL,updated_by=excluded.updated_by,updated_at=excluded.updated_at`)
           .bind(String(year),opdId,workpaperCode,JSON.stringify(goalCodes),rationale,actor,actor,now).run();
         await env.DB.prepare(`INSERT INTO opd_kk_rpjmd_mapping_audit(year,opd_id,workpaper_code,status,verifier_name,note,updated_by,created_at) VALUES(?,?,?,'Menunggu Verifikasi','',?,?,?)`).bind(String(year),opdId,workpaperCode,'Pemetaan disimpan/diajukan untuk verifikasi.',actor,now).run();
-        return jsonResponse({status:'success',message:'Pemetaan RPJMD disimpan dan menunggu verifikasi.',workpaperCode,goalCodes,status:'Menunggu Verifikasi',updatedAt:now});
+        return jsonResponse({status:'success',message:'Pemetaan RPJMD disimpan dan menunggu verifikasi.',workpaperCode,goalCodes,mappingStatus:'Menunggu Verifikasi',updatedAt:now});
       }
       case 'verifyKkRpjmdMapping': {
         const opdId=String(params.opdId||''),workpaperCode=String(params.workpaperCode||'').toUpperCase(),decision=String(params.decision||'').trim();
