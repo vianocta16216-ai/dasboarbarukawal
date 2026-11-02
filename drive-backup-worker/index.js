@@ -21,7 +21,7 @@ async function runLimited(items, limit, task) {
 }
 
 export default {
-  async queue(batch, env) {
+  async queue(batch, env, ctx) {
     const messages = Array.isArray(batch?.messages) ? batch.messages : [];
     const results = await runLimited(messages, MESSAGE_CONCURRENCY, async (message) => {
       const uploadId = String(message?.body?.uploadId || '').trim();
@@ -30,7 +30,7 @@ export default {
         return { ack: true, invalid: true };
       }
       try {
-        const result = await processDriveBackupQueueMessage(env, uploadId);
+        const result = await processDriveBackupQueueMessage(env, uploadId, ctx);
         // D1 is the durable retry source. Queue delivery is acknowledged after
         // the next_attempt_at and error state have been safely recorded in D1.
         message.ack();
@@ -49,12 +49,12 @@ export default {
     ctx.waitUntil((async () => {
       const result = env.DRIVE_BACKUP_QUEUE?.sendBatch
         ? await dispatchDueDriveBackupJobs(env, 100)
-        : await drainDriveBackupQueue(env, 4, true);
+        : await drainDriveBackupQueue(env, 4, true, ctx);
       // If Queue is unavailable or its plan quota is exhausted, continue draining
       // the durable D1 outbox directly at a conservative rate. This keeps Drive
       // backup moving instead of treating Queue as a single point of failure.
       const fallback = (result?.error || result?.queueUnavailable)
-        ? await drainDriveBackupQueue(env, 10, true)
+        ? await drainDriveBackupQueue(env, 10, true, ctx)
         : null;
       console.log('KAWAL SPIP D1 outbox dispatcher:', JSON.stringify({ result, fallback }));
     })());
