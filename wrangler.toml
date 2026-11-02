@@ -15,3 +15,7 @@ bucket_name = "kawal-spip-files"
 name = "REALTIME"
 class_name = "RealtimeHub"
 script_name = "kawal-spip-realtime"
+
+[[queues.producers]]
+binding = "DRIVE_BACKUP_QUEUE"
+queue = "kawal-spip-drive-backup"
