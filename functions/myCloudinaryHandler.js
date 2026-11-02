@@ -325,6 +325,8 @@ let schemaReady=false;
 let schemaReadyPromise=null;
 const DRIVE_TOKEN_CACHE={token:null,expiresAt:0};
 const DRIVE_TOKEN_PROMISE={value:null};
+const DRIVE_ROOT_ACCESS_CACHE=new Map();
+const DRIVE_ROOT_ACCESS_PROMISES=new Map();
 const DRIVE_FOLDER_CACHE=new Map();
 const DRIVE_FOLDER_PROMISES=new Map();
 let GOOGLE_ACTIVE=0;
@@ -1397,12 +1399,12 @@ async function getDriveFile(accessToken, fileId) {
     supportsAllDrives: 'true',
     fields: 'id,name,mimeType,parents,webViewLink,modifiedTime,md5Checksum,trashed'
   });
-  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${q.toString()}`, {
+  const response = await fetchWithRetry(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${q.toString()}`, {
     headers: { Authorization: `Bearer ${accessToken}` }
-  });
+  }, { retries: 3, baseDelay: 500 });
   if (response.status === 404) return null;
-  const data = await response.json();
-  if (!response.ok) throw new Error('Gagal membaca Google Spreadsheet: ' + JSON.stringify(data));
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error('Gagal membaca Google Drive: ' + JSON.stringify(data));
   return data;
 }
 
@@ -2143,6 +2145,32 @@ async function getGoogleAccessToken(env) {
   return DRIVE_TOKEN_PROMISE.value;
 }
 
+// Validate the real Google Drive OAuth token and destination folder before any
+// new evidence is committed to R2. A configured-but-invalid refresh token or a
+// folder the OAuth account cannot access must fail early, not silently become
+// an R2-only upload. The short cache keeps concurrent OPD uploads efficient.
+async function assertGoogleDriveUploadReady(env) {
+  assertGoogleDriveConfigured(env);
+  const rootId=String(env.GOOGLE_DRIVE_FOLDER_ID||'').trim();
+  const cacheKey=`${String(env.GOOGLE_DRIVE_CLIENT_ID||'')}\u0000${rootId}`;
+  const now=Date.now();
+  const cached=DRIVE_ROOT_ACCESS_CACHE.get(cacheKey);
+  if(cached && cached.expiresAt>now) return true;
+  const pending=DRIVE_ROOT_ACCESS_PROMISES.get(cacheKey);
+  if(pending) return pending;
+  const check=(async()=>{
+    const token=await getGoogleAccessToken(env);
+    const folder=await getDriveFile(token,rootId);
+    if(!folder || folder.trashed || folder.mimeType!=='application/vnd.google-apps.folder') {
+      throw new Error('Google Drive tidak dapat diverifikasi: GOOGLE_DRIVE_FOLDER_ID tidak ditemukan, bukan folder, atau tidak dapat diakses akun OAuth.');
+    }
+    DRIVE_ROOT_ACCESS_CACHE.set(cacheKey,{expiresAt:Date.now()+60_000});
+    return true;
+  })().finally(()=>DRIVE_ROOT_ACCESS_PROMISES.delete(cacheKey));
+  DRIVE_ROOT_ACCESS_PROMISES.set(cacheKey,check);
+  return check;
+}
+
 async function createFolder(accessToken, parentId, folderName) {
   const response=await fetchWithRetry('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true',{
     method:'POST',headers:{Authorization:`Bearer ${accessToken}`,'Content-Type':'application/json'},
@@ -2157,7 +2185,23 @@ async function getOrCreateFolder(accessToken,parentId,folderName){
   const safeName=String(folderName||'').replace(/'/g,"\\'");
   const cacheKey=`${parentId}\u0000${safeName}`;
   const cached=DRIVE_FOLDER_CACHE.get(cacheKey);
-  if(cached)return cached;
+  if(cached){
+    const cachedId=typeof cached==='string'?cached:String(cached.id||'');
+    const checkedAt=typeof cached==='string'?0:Number(cached.checkedAt||0);
+    // Cache only accelerates recently verified folders. Re-check older entries
+    // against Google so deleted/moved folders cannot trap every upload on a
+    // stale parent ID. Keep this cache local to the isolate and short-lived.
+    if(cachedId && Date.now()-checkedAt<60_000) return cachedId;
+    if(cachedId){
+      const live=await getDriveFile(accessToken,cachedId);
+      if(live && !live.trashed && live.mimeType==='application/vnd.google-apps.folder' &&
+         String(live.name||'')===String(folderName||'') && Array.isArray(live.parents) && live.parents.includes(String(parentId))){
+        DRIVE_FOLDER_CACHE.set(cacheKey,{id:cachedId,checkedAt:Date.now()});
+        return cachedId;
+      }
+      DRIVE_FOLDER_CACHE.delete(cacheKey);
+    }
+  }
   const inFlight=DRIVE_FOLDER_PROMISES.get(cacheKey);
   if(inFlight)return inFlight;
   const promise=(async()=>{
@@ -2167,7 +2211,11 @@ async function getOrCreateFolder(accessToken,parentId,folderName){
     const data=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error('Gagal mencari folder Google Drive: '+JSON.stringify(data));
     const id=data.files?.[0]?.id || await createFolder(accessToken,parentId,folderName);
-    DRIVE_FOLDER_CACHE.set(cacheKey,id);
+    const live=await getDriveFile(accessToken,id);
+    if(!live || live.trashed || live.mimeType!=='application/vnd.google-apps.folder' || String(live.name||'')!==String(folderName||'') || !Array.isArray(live.parents) || !live.parents.includes(String(parentId))){
+      throw new Error(`Folder Google Drive '${String(folderName||'')}' tidak dapat diverifikasi pada induk yang ditentukan.`);
+    }
+    DRIVE_FOLDER_CACHE.set(cacheKey,{id,checkedAt:Date.now()});
     return id;
   })().catch(err=>{DRIVE_FOLDER_PROMISES.delete(cacheKey);throw err;}).finally(()=>DRIVE_FOLDER_PROMISES.delete(cacheKey));
   DRIVE_FOLDER_PROMISES.set(cacheKey,promise);
@@ -2362,6 +2410,18 @@ async function findDriveFileByUploadId(accessToken, parentFolderId, uploadId) {
   const data = await res.json().catch(()=>({}));
   if (!res.ok) throw new Error('Gagal memeriksa file backup Google Drive: '+JSON.stringify(data));
   return data.files?.[0] || null;
+}
+
+// A stored Drive ID is not proof that the file still exists. Reuse it only when
+// Google Drive confirms the live object is still inside the exact destination
+// folder; otherwise the upload is repaired/re-created idempotently by uploadId.
+async function findVerifiedExistingDriveFile(accessToken, fileId, expectedParentId) {
+  const id=String(fileId||'').trim();
+  if(!id||!expectedParentId)return null;
+  const file=await getDriveFile(accessToken,id);
+  if(!file || file.trashed || file.mimeType==='application/vnd.google-apps.folder') return null;
+  if(!Array.isArray(file.parents) || !file.parents.includes(String(expectedParentId))) return null;
+  return file.id;
 }
 
 async function uploadBytesToGoogleDriveFolder(env, accessToken, parentFolderId, fileName, bytes, fileType='application/octet-stream', uploadId='') {
@@ -2583,7 +2643,8 @@ async function directGoogleDriveBackup(env, job) {
         evidenceFolder=(await getRtpDriveFolder(env,token,job.year,job.opdName,job.folderName)).evidenceFolder;
       }
       job.gdriveFolderId=evidenceFolder;
-      const gdriveId=await uploadBytesToGoogleDriveFolder(env,token,evidenceFolder,job.fileName,bytes,job.fileType,job.uploadId);
+      const verifiedPrior=await findVerifiedExistingDriveFile(token,job.gdriveId,evidenceFolder);
+      const gdriveId=verifiedPrior||await uploadBytesToGoogleDriveFolder(env,token,evidenceFolder,job.fileName,bytes,job.fileType,job.uploadId);
       const uploaded=await getDriveFile(token,gdriveId);
       if(!uploaded || uploaded.trashed) throw new Error('Google Drive mengembalikan ID tetapi file tidak dapat diverifikasi.');
       if(!(Array.isArray(uploaded.parents)&&uploaded.parents.includes(evidenceFolder))) throw new Error('File berhasil di-upload tetapi masuk ke folder Google Drive yang tidak sesuai.');
@@ -2600,7 +2661,8 @@ async function directGoogleDriveBackup(env, job) {
         reportFolder=(await getReportDriveFolder(env,token,job.year,job.opdName,job.reportType)).reportFolder;
       }
       job.gdriveFolderId=reportFolder;
-      const gdriveId=await uploadBytesToGoogleDriveFolder(env,token,reportFolder,job.fileName,bytes,job.fileType,job.uploadId);
+      const verifiedPrior=await findVerifiedExistingDriveFile(token,job.gdriveId,reportFolder);
+      const gdriveId=verifiedPrior||await uploadBytesToGoogleDriveFolder(env,token,reportFolder,job.fileName,bytes,job.fileType,job.uploadId);
       const uploaded=await getDriveFile(token,gdriveId);
       if(!uploaded || uploaded.trashed) throw new Error('Google Drive mengembalikan ID tetapi file laporan tidak dapat diverifikasi.');
       if(!(Array.isArray(uploaded.parents)&&uploaded.parents.includes(reportFolder))) throw new Error('File laporan berhasil di-upload tetapi masuk ke folder Google Drive yang tidak sesuai.');
@@ -2613,7 +2675,14 @@ async function directGoogleDriveBackup(env, job) {
     for(const part of parts){
       if(part) parent=await getOrCreateFolder(token,parent,part);
     }
-    return uploadBytesToGoogleDriveFolder(env,token,parent,job.fileName,bytes,job.fileType,job.uploadId);
+    const verifiedPrior=await findVerifiedExistingDriveFile(token,job.gdriveId,parent);
+    if(verifiedPrior)return verifiedPrior;
+    const gdriveId=await uploadBytesToGoogleDriveFolder(env,token,parent,job.fileName,bytes,job.fileType,job.uploadId);
+    const uploaded=await getDriveFile(token,gdriveId);
+    if(!uploaded || uploaded.trashed || uploaded.mimeType==='application/vnd.google-apps.folder' || !Array.isArray(uploaded.parents) || !uploaded.parents.includes(parent)){
+      throw new Error('Google Drive belum memverifikasi file pada folder OPD/parameter yang ditentukan.');
+    }
+    return gdriveId;
   },3);
 }
 
@@ -2754,114 +2823,84 @@ async function markDriveBackupR2Ready(env, uploadId) {
 }
 
 async function runQueuedDriveBackup(env, ctx, job) {
+  await assertGoogleDriveUploadReady(env);
   await enqueueDriveBackupJob(env,job);
   const r2Ready=await env.EVIDENCE_BUCKET.head(String(job.r2Key||''));
-  if(!r2Ready) throw new Error('R2 belum mengonfirmasi file. Antrean backup disimpan dan akan dipulihkan otomatis setelah objek tersedia.');
+  if(!r2Ready) throw new Error('File belum terverifikasi di Cloudflare R2. Google Drive tidak akan ditandai berhasil.');
   await markDriveBackupR2Ready(env,job.uploadId);
   await ensureDriveJobMetadata(env,job);
+
+  let state=await env.DB.prepare('SELECT status,next_attempt_at,lease_until,dispatch_until,r2_ready,attempts FROM drive_backup_jobs WHERE upload_id=? LIMIT 1').bind(String(job.uploadId)).first();
+  if(!state) throw new Error('Catatan antrean D1 tidak ditemukan untuk upload ini.');
+
+  const confirmAlreadyDone=async()=>{
+    const verification=await processDriveBackupJob(env,job);
+    if(!verification.ok) {
+      const delay=await scheduleDriveBackupRetry(env,job.uploadId,verification.error);
+      await sendDriveBackupMessage(env,job.uploadId,delay/1000);
+      const error=new Error(String(verification.error||'Google Drive belum dapat diverifikasi.'));
+      error.backupQueued=true;
+      throw error;
+    }
+    await finishDriveBackupJob(env,job.uploadId);
+    notifyRealtime(env,ctx,job.year,{action:'driveBackupCompleted',driveBackupType:job.type,reportType:job.reportType||null,followupId:job.followupId||null,opdId:job.opdId||null,uploadId:job.uploadId,syncStatus:'done',storage:'R2 + Google Drive'});
+    return verification.gdriveId;
+  };
+
+  // A Queue consumer may already own this job due to a concurrent Cron tick.
+  // Give that in-flight upload a short chance to finish before returning pending.
+  if(Number(state.lease_until||0)>Date.now()) {
+    for(let i=0;i<24;i++) {
+      await waitMs(250);
+      state=await env.DB.prepare('SELECT status,next_attempt_at,lease_until,dispatch_until,r2_ready,attempts FROM drive_backup_jobs WHERE upload_id=? LIMIT 1').bind(String(job.uploadId)).first();
+      if(state?.status==='done') return confirmAlreadyDone();
+      if(!state || Number(state.lease_until||0)<=Date.now()) break;
+    }
+    if(state && Number(state.lease_until||0)>Date.now()) {
+      const error=new Error('Sinkronisasi Google Drive untuk file ini sedang dikerjakan proses lain. File belum dinyatakan berhasil; gunakan Ulangi Sinkronisasi setelah proses tersebut selesai.');
+      error.backupQueued=true;
+      throw error;
+    }
+  }
+
+  // A manual retry is an explicit request to retry now. Do not leave it blocked
+  // behind the previous exponential backoff after the operator clicks Retry.
+  const now=Date.now();
+  await runD1WithRetry(()=>env.DB.prepare(`UPDATE drive_backup_jobs
+    SET status='pending',next_attempt_at=?,dispatch_until=0,updated_at=?
+    WHERE upload_id=? AND status IN ('pending','retrying') AND r2_ready=1 AND lease_until<=?`)
+    .bind(now,now,String(job.uploadId),now));
+
   const claimed=await claimDriveBackupJob(env,job.uploadId);
   if(!claimed) {
-    const row=await env.DB.prepare('SELECT status,lease_until FROM drive_backup_jobs WHERE upload_id=? LIMIT 1').bind(String(job.uploadId)).first();
-    if(row?.status==='done') {
-      // Idempotent replay: a browser/proxy can retry after Drive succeeded but
-      // the original HTTP response was lost. Re-check the stable Drive uploadId
-      // and refresh D1 mirrors instead of reporting a false failure.
-      const verified=await processDriveBackupJob(env,job);
-      if(verified.ok) {
-        await finishDriveBackupJob(env,job.uploadId);
-        return verified.gdriveId;
-      }
-      const delay=await scheduleDriveBackupRetry(env,job.uploadId,verified.error);
-      await sendDriveBackupMessage(env,job.uploadId,delay/1000);
-      const err=new Error(String(verified.error||'Google Drive belum dapat diverifikasi.'));
-      err.backupQueued=true;
-      throw err;
-    }
-    throw new Error('Backup Google Drive sedang diproses oleh worker lain; status akan diperbarui otomatis.');
-  }
-  const result=await processDriveBackupJob(env,job);
-  if(result.ok) {
-    await finishDriveBackupJob(env,job.uploadId);
-    return result.gdriveId;
-  }
-  const message=String(result.error||'Google Drive belum berhasil menerima file.');
-  const delay=await scheduleDriveBackupRetry(env,job.uploadId,message);
-  // Fast path. If queue sending fails, the minute Cron dispatcher reads D1 outbox.
-  await sendDriveBackupMessage(env,job.uploadId,delay/1000);
-  notifyRealtime(env,ctx,job.year,{action:'driveBackupQueued',opdId:job.opdId,uploadId:job.uploadId,syncStatus:'retrying'});
-  const err=new Error(message);err.backupQueued=true;throw err;
-}
-
-// Queue consumer: D1 lease makes message delivery at-least-once but processing idempotent.
-export 
-// Queue-first path for normal evidence uploads/retries. Keep Google Drive I/O
-// out of the operator's HTTP request so multiple OPDs can upload concurrently.
-// R2 + D1 outbox are committed first; Queue/Cron completes Drive in background.
-async function queueDriveBackupInBackground(env, ctx, job) {
-  await enqueueDriveBackupJob(env, job);
-  const r2Head = await env.EVIDENCE_BUCKET.head(String(job.r2Key || ''));
-  if (!r2Head) {
-    const error = new Error('File belum dikonfirmasi di R2. Antrean tetap tersimpan dan Cron akan memeriksa ulang.');
-    error.backupQueued = true;
-    throw error;
-  }
-  await markDriveBackupR2Ready(env, job.uploadId);
-  await ensureDriveJobMetadata(env, job);
-  const state = await env.DB.prepare('SELECT status,next_attempt_at,lease_until,dispatch_until,r2_ready FROM drive_backup_jobs WHERE upload_id=? LIMIT 1')
-    .bind(String(job.uploadId)).first();
-
-  // Lost HTTP response after a completed Drive upload: verify the stable
-  // uploadId once, then return a real success instead of queuing a false retry.
-  if (state?.status === 'done') {
-    const verification = await processDriveBackupJob(env, job);
-    if (verification.ok) {
-      await finishDriveBackupJob(env, job.uploadId);
-      return verification.gdriveId;
-    }
-    const delay = await scheduleDriveBackupRetry(env, job.uploadId, verification.error);
-    await sendDriveBackupMessage(env, job.uploadId, delay / 1000);
-    const error = new Error(String(verification.error || 'Google Drive belum dapat diverifikasi.'));
-    error.backupQueued = true;
-    throw error;
-  }
-
-  // Do not create duplicate Queue messages from the browser's 15-second
-  // recovery loop while a Worker lease, a Queue dispatch lease, or Google
-  // backoff is still active. D1/Cron remains the durable retry authority.
-  const now=Date.now();
-  const alreadyScheduled=Number(state?.lease_until||0)>now ||
-    Number(state?.dispatch_until||0)>now || Number(state?.next_attempt_at||0)>now;
-  if(alreadyScheduled){
-    const error=new Error('File aman di R2. Backup Google Drive sudah berada dalam antrean atau jadwal retry; sistem melanjutkan otomatis tanpa membuat antrean ganda.');
+    state=await env.DB.prepare('SELECT status,lease_until FROM drive_backup_jobs WHERE upload_id=? LIMIT 1').bind(String(job.uploadId)).first();
+    if(state?.status==='done') return confirmAlreadyDone();
+    const error=new Error('Sistem belum memperoleh kunci pemrosesan upload. File belum dinyatakan masuk Google Drive; silakan ulangi sinkronisasi.');
     error.backupQueued=true;
     throw error;
   }
-  const dispatch=await runD1WithRetry(()=>env.DB.prepare(`UPDATE drive_backup_jobs SET dispatch_until=?,updated_at=?
-    WHERE upload_id=? AND status IN ('pending','retrying') AND r2_ready=1 AND next_attempt_at<=? AND lease_until<=? AND dispatch_until<=?`)
-    .bind(now+DRIVE_QUEUE_DISPATCH_LEASE_MS,now,String(job.uploadId),now,now,now));
-  const dispatchClaimed=Number(dispatch?.meta?.changes||0)>0;
-  const queueMessageSent=dispatchClaimed?await sendDriveBackupMessage(env,job.uploadId,5):false;
-  if(dispatchClaimed&&!queueMessageSent){
-    await runD1WithRetry(()=>env.DB.prepare("UPDATE drive_backup_jobs SET dispatch_until=0,updated_at=? WHERE upload_id=? AND status<>'done'")
-      .bind(Date.now(),String(job.uploadId)));
+
+  const result=await processDriveBackupJob(env,job);
+  if(result.ok && result.gdriveId) {
+    await finishDriveBackupJob(env,job.uploadId);
+    notifyRealtime(env,ctx,job.year,{action:'driveBackupCompleted',driveBackupType:job.type,reportType:job.reportType||null,followupId:job.followupId||null,opdId:job.opdId||null,uploadId:job.uploadId,syncStatus:'done',storage:'R2 + Google Drive'});
+    return result.gdriveId;
   }
-  notifyRealtime(env, ctx, job.year, {
-    action: 'driveBackupQueued',
-    driveBackupType: job.type,
-    reportType: job.reportType || null,
-    followupId: job.followupId || null,
-    opdId: job.opdId || null,
-    uploadId: job.uploadId,
-    syncStatus: 'retrying'
-  });
-  const message = queueMessageSent || !dispatchClaimed
-    ? 'File aman di R2. Sinkronisasi Google Drive sudah masuk antrean background atau sedang dijadwalkan Worker; status berubah setelah verifikasi.'
-    : 'File aman di R2 dan pekerjaan backup sudah tersimpan permanen di D1. Queue belum menerima pesan; Cron Worker akan mengirim ulang otomatis.';
-  const error = new Error(message);
-  error.backupQueued = true;
-  error.queueMessageSent = queueMessageSent;
-  error.code = 'DRIVE_BACKUP_PENDING';
+  const message=String(result.error||'Google Drive tidak mengembalikan ID file yang valid.');
+  const delay=await scheduleDriveBackupRetry(env,job.uploadId,message);
+  await sendDriveBackupMessage(env,job.uploadId,delay/1000);
+  notifyRealtime(env,ctx,job.year,{action:'driveBackupQueued',opdId:job.opdId,uploadId:job.uploadId,syncStatus:'retrying'});
+  const error=new Error(message);error.backupQueued=true;error.code='GOOGLE_DRIVE_UPLOAD_NOT_VERIFIED';
   throw error;
+}
+
+// Foreground upload path: do not report success until Google Drive has
+// accepted the bytes and the returned Drive object/folder has been verified.
+// Queue + D1 remain the durable recovery path only when Google is temporarily
+// unavailable; they are not the primary path for a normal upload or manual retry.
+async function syncDriveBackupBeforeUploadSuccess(env, ctx, job) {
+  await assertGoogleDriveUploadReady(env);
+  return runQueuedDriveBackup(env,ctx,job);
 }
 
 export async function processDriveBackupQueueMessage(env, uploadId, ctx = null) {
@@ -3525,6 +3564,7 @@ export async function onRequest({ request, env, ctx }) {
         return jsonResponse({status:'success',message:'Butir tindak lanjut dihapus.',cleanupWarnings});
       }
       case 'uploadLheEvidence': {
+        await assertGoogleDriveUploadReady(env);
         const opdId=String(params.opdId||''),followupId=String(params.followupId||''),uploadId=String(params.uploadId||crypto.randomUUID());
         if(!opdId||!followupId)throw new Error('OPD dan butir tindak lanjut wajib dipilih.');
         const rec=await env.DB.prepare('SELECT id,source_year,evidence_json FROM lhe_followup_items WHERE id=? AND year=? AND opd_id=? LIMIT 1').bind(followupId,String(year),opdId).first();if(!rec)throw new Error('Butir tindak lanjut tidak ditemukan.');
@@ -3539,7 +3579,7 @@ export async function onRequest({ request, env, ctx }) {
         await runD1WithRetry(()=>env.DB.prepare("UPDATE lhe_followup_items SET verification_status='Belum diverifikasi',verifier_name='',verifier_note='',updated_by=?,updated_at=? WHERE id=? AND year=? AND opd_id=?").bind(String(authSession.username||''),Date.now(),followupId,String(year),opdId));
         let gdriveId=null,syncStatus='retrying',driveError='';
         try{
-          gdriveId=await queueDriveBackupInBackground(env,ctx,lheJob);syncStatus='done';
+          gdriveId=await syncDriveBackupBeforeUploadSuccess(env,ctx,lheJob);syncStatus='done';
           await updateLheEvidenceStatus(env,lheJob,{gdriveId,syncStatus:'done',syncError:null});
         }catch(e){
           driveError=String(e?.message||e);
@@ -3740,6 +3780,7 @@ export async function onRequest({ request, env, ctx }) {
         return jsonResponse({status:'success',files,summary,allowedTargets:['T2','T3','T4']});
       }
       case 'uploadPemdaWorkbookEvidence': {
+        await assertGoogleDriveUploadReady(env);
         if(!['admin','irban','auditor','ppupd'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Hanya Admin, Irban, Auditor, atau PPUPD yang dapat mengunggah evidence Struktur dan Proses Pemda.'},403);
         const targetCode=String(params.targetCode||'').toUpperCase();
         if(!['T2','T3','T4'].includes(targetCode))throw new Error('Upload Pemda hanya diizinkan untuk KK3.2/T2, KK3.3/T3, dan KK3.4/T4.');
@@ -3785,7 +3826,7 @@ export async function onRequest({ request, env, ctx }) {
           throw storageError;
         }
         try{
-          const gdriveId=await queueDriveBackupInBackground(env,ctx,job);
+          const gdriveId=await syncDriveBackupBeforeUploadSuccess(env,ctx,job);
           await runD1WithRetry(()=>env.DB.prepare("UPDATE pemda_workbook_evidence_items SET gdrive_id=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=? AND year=?").bind(gdriveId,Date.now(),uploadId,String(year)));
           notifyRealtime(env,ctx,year,{action:'uploadPemdaWorkbookEvidence',uploadId,targetCode});
           return jsonResponse({status:'success',message:'Evidence Pemda tersimpan di R2 dan Google Drive.',uploadId,fileName:safeName,targetCode,level:levelByGrade[grade],url:privatePemdaEvidenceUrl(year,uploadId),r2Key,gdriveId,syncStatus:'done'});
@@ -4827,6 +4868,7 @@ export async function onRequest({ request, env, ctx }) {
         return new Response(JSON.stringify({status:'success',folderName,gdriveFolderId:driveFolder.evidenceFolder,folderUrl,r2Prefix,driveConfigured:true}),{status:200,headers:{'Content-Type':'application/json'}});
       }
       case 'uploadRtpEvidence': {
+        await assertGoogleDriveUploadReady(env);
         const file=params.file;
         const legacyData=params.fileData;
         if(!file && !legacyData && !request.body)throw new Error('File tidak diterima');
@@ -4857,14 +4899,11 @@ export async function onRequest({ request, env, ctx }) {
         if(existingRec.results?.length){
           let existingList=[];try{existingList=existingRec.results[0]?.rtp_evidence?JSON.parse(existingRec.results[0].rtp_evidence):[]}catch{}
           const existing=existingList.find(x=>x&&x.uploadId===uploadId);
-          if(existing?.gdriveId){
-            return jsonResponse({status:'success',url:privateEvidenceUrl(year,params.opdId,uploadId),fileName:existing.fileName||safeFileName,folderName:existing.folderName||folderName,gdriveId:existing.gdriveId,rtpEvidence:existingList.map(f=>f&&f.uploadId?{...f,url:privateEvidenceUrl(year,params.opdId,f.uploadId)}:f),syncStatus:'done',uploadId,backupQueued:false});
-          }
           if(existing?.r2Key) {
             try{
               const folderRec=await env.DB.prepare("SELECT rtp_evidence_folder_id FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
-              const existingJob={type:'rtp',uploadId,year,opdId:params.opdId,opdName:params.opdName||'OPD',r2Key:existing.r2Key,fileName:existing.fileName||safeFileName,fileType:existing.fileType||fileType,folderName:existing.folderName||folderName,gdriveFolderId:folderRec.results?.[0]?.rtp_evidence_folder_id||null};
-              const existingGdriveId=await queueDriveBackupInBackground(env,ctx,existingJob);
+              const existingJob={type:'rtp',uploadId,year,opdId:params.opdId,opdName:params.opdName||'OPD',r2Key:existing.r2Key,fileName:existing.fileName||safeFileName,fileType:existing.fileType||fileType,folderName:existing.folderName||folderName,gdriveFolderId:folderRec.results?.[0]?.rtp_evidence_folder_id||null,gdriveId:existing.gdriveId||null};
+              const existingGdriveId=await syncDriveBackupBeforeUploadSuccess(env,ctx,existingJob);
               await updateRtpFileStatus(env,existingJob,{gdriveId:existingGdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
               const latestExisting=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
               let latestExistingList=[];try{latestExistingList=latestExisting.results[0]?.rtp_evidence?JSON.parse(latestExisting.results[0].rtp_evidence):[]}catch{}
@@ -4887,7 +4926,7 @@ export async function onRequest({ request, env, ctx }) {
         notifyRealtime(env, ctx, year, { action: 'uploadRtpEvidence', opdId: params.opdId, uploadId });
         // MANDATORY GOOGLE DRIVE: RTP upload is successful only after Drive returns an ID.
         try {
-          const gdriveId=await queueDriveBackupInBackground(env,ctx,job);
+          const gdriveId=await syncDriveBackupBeforeUploadSuccess(env,ctx,job);
           await updateRtpFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
           notifyRealtime(env, ctx, year, { action: 'uploadRtpEvidence', opdId: params.opdId, uploadId, storage: 'R2 + Google Drive' });
           const latest=await env.DB.prepare("SELECT rtp_evidence FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
@@ -4922,6 +4961,7 @@ export async function onRequest({ request, env, ctx }) {
         const privateList=list.map(f=>f&&f.uploadId?{...f,url:privateEvidenceUrl(year,params.opdId,f.uploadId)}:f); return jsonResponse({status:'success',reportType:cfg.type,reports:privateList,folderName:cfg.folderName,folderId,folderUrl:folderId?`https://drive.google.com/drive/folders/${encodeURIComponent(folderId)}`:null});
       }
       case 'uploadReportFile': {
+        await assertGoogleDriveUploadReady(env);
         const cfg=reportFieldConfig(params.reportType);
         const file=params.file;
         const legacyData=params.fileData;
@@ -4948,13 +4988,10 @@ export async function onRequest({ request, env, ctx }) {
         const filePath=`kawal_spip/${year}/${safeOpd}/${cfg.folderName}/${uploadId}-${safeFileName}`;
         const list=parseJsonArray(rec.results[0]?.[cfg.listField]);
         const existing=list.find(x=>x&&x.uploadId===uploadId);
-        if(existing?.gdriveId){
-          return jsonResponse({status:'success',reportType:cfg.type,url:privateEvidenceUrl(year,params.opdId,uploadId),fileName:existing.fileName||safeFileName,gdriveId:existing.gdriveId,reports:list,syncStatus:'done',uploadId,folderName:cfg.folderName,folderId:gdriveFolderId,folderUrl:`https://drive.google.com/drive/folders/${encodeURIComponent(gdriveFolderId)}`});
-        }
         if(existing?.r2Key){
           try{
-            const job={type:'report',reportType:cfg.type,uploadId,year,opdId:params.opdId,opdName:safeOpd,r2Key:existing.r2Key,fileName:existing.fileName||safeFileName,fileType:existing.fileType||fileType,gdriveFolderId:existing.gdriveFolderId||gdriveFolderId};
-            const existingGdriveId=await queueDriveBackupInBackground(env,ctx,job);
+            const job={type:'report',reportType:cfg.type,uploadId,year,opdId:params.opdId,opdName:safeOpd,r2Key:existing.r2Key,fileName:existing.fileName||safeFileName,fileType:existing.fileType||fileType,gdriveFolderId:existing.gdriveFolderId||gdriveFolderId,gdriveId:existing.gdriveId||null};
+            const existingGdriveId=await syncDriveBackupBeforeUploadSuccess(env,ctx,job);
             await updateReportFileStatus(env,job,{gdriveId:existingGdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
             const latest=await env.DB.prepare(`SELECT ${cfg.listField} FROM opd_data WHERE id=? AND year=? LIMIT 1`).bind(params.opdId,year).all();
             return jsonResponse({status:'success',reportType:cfg.type,url:existing.url,fileName:existing.fileName||safeFileName,gdriveId:existingGdriveId,reports:parseJsonArray(latest.results[0]?.[cfg.listField]).map(f=>f&&f.uploadId?{...f,url:privateEvidenceUrl(year,params.opdId,f.uploadId)}:f),syncStatus:'done',uploadId,folderName:cfg.folderName,folderId:gdriveFolderId,folderUrl:`https://drive.google.com/drive/folders/${encodeURIComponent(gdriveFolderId)}`});
@@ -4973,7 +5010,7 @@ export async function onRequest({ request, env, ctx }) {
         const job=reportJob;
         notifyRealtime(env,ctx,year,{action:'uploadReportFile',reportType:cfg.type,opdId:params.opdId,uploadId});
         try{
-          const gdriveId=await queueDriveBackupInBackground(env,ctx,job);
+          const gdriveId=await syncDriveBackupBeforeUploadSuccess(env,ctx,job);
           await updateReportFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
           const latest=await env.DB.prepare(`SELECT ${cfg.listField} FROM opd_data WHERE id=? AND year=? LIMIT 1`).bind(params.opdId,year).all();
           const latestList=parseJsonArray(latest.results[0]?.[cfg.listField]);
@@ -5244,6 +5281,9 @@ export async function onRequest({ request, env, ctx }) {
       case 'uploadFile': {
         const sourceModel=String(params.sourceModel||'legacy');
         if(params.opdId) await assertAssessmentInputEditable(env,year,String(params.opdId));
+        // Both legacy and workbook evidence require a working Drive OAuth setup
+        // before the request is allowed to create a new R2-only upload.
+        await assertGoogleDriveUploadReady(env);
         if(sourceModel==='workbook'){
           const file=params.file,legacyData=params.fileData;if(!file&&!legacyData&&!request.body)throw new Error('File tidak diterima');let bytes=null,fileBody=null,fileName=String(params.fileName||'evidence'),fileType=String(params.fileType||'application/octet-stream');const fileSize=Number(params.fileSize)||0;
           if(file){fileName=file.name||fileName;fileType=file.type||fileType;if((file.size||0)>10*1024*1024)throw new Error('File > 10MB, terlalu besar!');bytes=await file.arrayBuffer();}else if(legacyData){bytes=decodeBase64File(legacyData,10);}else{if(fileSize>10*1024*1024)throw new Error('File > 10MB, terlalu besar!');fileBody=request.body;}
@@ -5279,11 +5319,11 @@ export async function onRequest({ request, env, ctx }) {
           }
           const verifiedReg=await env.DB.prepare('SELECT * FROM evidence_upload_registry WHERE upload_id=? LIMIT 1').bind(uploadId).first();
           if(!registryMatches(verifiedReg))throw new Error('Upload ID sudah dipakai oleh evidence lain. Pengiriman dibatalkan untuk mencegah salah penempatan.');
-          const old=(await env.DB.prepare('SELECT * FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uploadId,String(year),opdId).all()).results?.[0];if(old?.gdrive_id)return jsonResponse({status:'success',url:privateEvidenceUrl(year,opdId,uploadId),fileName:old.file_name||safeName,gdriveId:old.gdrive_id,syncStatus:'done',uploadId,r2Key:old.r2_key});
+          const old=(await env.DB.prepare('SELECT * FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uploadId,String(year),opdId).all()).results?.[0];
           if(!old)await runD1WithRetry(()=>env.DB.prepare(`INSERT OR IGNORE INTO opd_workbook_evidence_items(upload_id,year,opd_id,evidence_key,target_code,subunsur,param_id,grade,level,file_name,file_type,r2_key,sync_status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(uploadId,String(year),opdId,evidenceKey,targetCode,subCode,paramId,grade,level,safeName,fileType,filePath,'pending',now,now));
           const verifiedWorkbookItem=await env.DB.prepare('SELECT upload_id,year,opd_id,evidence_key,target_code,grade FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uploadId,String(year),opdId).first();
           if(!verifiedWorkbookItem || String(verifiedWorkbookItem.evidence_key)!==evidenceKey || String(verifiedWorkbookItem.target_code)!==targetCode || String(verifiedWorkbookItem.grade)!==grade)throw new Error('Identitas upload workbook bertabrakan dengan record evidence lain.');
-          const job={type:'workbook_evidence',uploadId,year:String(year),opdId,opdName:rec.results[0].opd||'OPD',r2Key:filePath,fileName:safeName,fileType,evidenceKey,targetCode,subunsur:subCode,paramId,grade,level};
+          const job={type:'workbook_evidence',uploadId,year:String(year),opdId,opdName:rec.results[0].opd||'OPD',r2Key:filePath,fileName:safeName,fileType,evidenceKey,targetCode,subunsur:subCode,paramId,grade,level,gdriveId:old?.gdrive_id||null};
           await enqueueDriveBackupJob(env,job);
           try{await putR2WithRetry(env, filePath,fileBody||bytes,{httpMetadata:{contentType:fileType}});}catch(storageError){
             // Keep the registry, evidence row, and D1 outbox as a durable recovery
@@ -5296,20 +5336,27 @@ export async function onRequest({ request, env, ctx }) {
             await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=? AND NOT (sync_status='done' AND gdrive_id IS NOT NULL) AND year=? AND opd_id=?").bind(message,Date.now(),uploadId,String(year),opdId)).catch(()=>{});
             throw storageError;
           }notifyRealtime(env,ctx,year,{action:'uploadWorkbookEvidence',opdId,uploadId,evidenceKey,grade,targetCode});
-          // Return as soon as R2 is verified. Google Drive is handled by the
-          // durable D1 outbox + Queue consumer, so a slow Google API never holds
-          // the operator's upload request open. The D1 job was persisted before
-          // R2 PUT; marking r2_ready makes it eligible for the consumer.
-          const r2Head=await env.EVIDENCE_BUCKET.head(filePath);
-          if(!r2Head)throw new Error('R2 belum mengonfirmasi file setelah upload.');
-          await markDriveBackupR2Ready(env,uploadId);
-          await updateWorkbookEvidenceFileStatus(env,job,{syncStatus:'retrying',syncError:'Menunggu sinkronisasi Google Drive.'});
-          await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=? AND NOT (sync_status='done' AND gdrive_id IS NOT NULL)").bind('Menunggu sinkronisasi Google Drive.',Date.now(),uploadId));
-          await sendDriveBackupMessage(env,uploadId,0);
-          return jsonResponse({status:'pending',message:'File sudah aman di R2. Google Drive sedang diproses otomatis; status akan berubah menjadi selesai setelah file Drive diverifikasi.',url:publicUrl,fileName:safeName,gdriveId:null,syncStatus:'retrying',uploadId,r2Key:filePath});
+          // MANDATORY DUAL STORAGE: the HTTP upload does not return success until
+          // Google Drive has accepted the file and its ID + destination folder are
+          // verified by the Drive API. Background Queue is recovery only.
+          try{
+            const r2Head=await env.EVIDENCE_BUCKET.head(filePath);
+            if(!r2Head)throw new Error('Cloudflare R2 belum mengonfirmasi objek; upload belum lengkap.');
+            const gdriveId=await runQueuedDriveBackup(env,ctx,job);
+            await updateWorkbookEvidenceFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
+            await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET gdrive_id=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=?").bind(gdriveId,Date.now(),uploadId));
+            notifyRealtime(env,ctx,year,{action:'uploadWorkbookEvidence',opdId,uploadId,evidenceKey,grade,targetCode,storage:'R2 + Google Drive',syncStatus:'done'});
+            return jsonResponse({status:'success',message:'Evidence berhasil diverifikasi tersimpan di Cloudflare R2 dan Google Drive.',url:publicUrl,fileName:safeName,gdriveId,googleDriveId:gdriveId,syncStatus:'done',uploadId,r2Key:filePath,r2Saved:true,backupQueued:false});
+          }catch(driveError){
+            const message=String(driveError?.message||driveError).slice(0,1500);
+            await updateWorkbookEvidenceFileStatus(env,job,{syncStatus:'retrying',syncError:message});
+            await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=? AND NOT (sync_status='done' AND gdrive_id IS NOT NULL)").bind(message,Date.now(),uploadId));
+            notifyRealtime(env,ctx,year,{action:'uploadWorkbookEvidence',opdId,uploadId,evidenceKey,grade,targetCode,storage:'R2',syncStatus:'retrying'});
+            return jsonResponse({status:'pending',message:'File tersimpan di R2 tetapi BELUM terverifikasi masuk Google Drive. Upload tidak dinyatakan berhasil; sistem menyimpan retry dan menampilkan penyebabnya.',url:publicUrl,fileName:safeName,gdriveId:null,syncStatus:'retrying',uploadId,r2Key:filePath,r2Saved:true,driveError:message});
+          }
         }
-        // Google Drive credentials are checked by the durable backup worker after
-        // R2 and the D1 outbox are safely recorded. A Drive outage must not block R2.
+        // Drive readiness was checked before accepting this upload. The shared
+        // foreground sync gate below must verify the Google Drive copy before success.
         const file=params.file;
         const legacyData=params.fileData;
         if(!file && !legacyData && !request.body) throw new Error('File tidak diterima');
@@ -5411,21 +5458,7 @@ export async function onRequest({ request, env, ctx }) {
         const existing=Array.isArray(existingArr)?existingArr.find(x=>x&&x.uploadId===uploadId):null;
         const regNow=(await env.DB.prepare("SELECT * FROM evidence_upload_registry WHERE upload_id=? LIMIT 1").bind(uploadId).all()).results?.[0];
 
-        if(existing?.gdriveId || regNow?.gdrive_id){
-          const gdriveId=existing?.gdriveId||regNow.gdrive_id;
-          return jsonResponse({
-            status:'success',
-            url:existing?.url||publicUrl,
-            fileName:existing?.fileName||fileName,
-            googleDriveId:gdriveId,
-            gdriveId,
-            syncStatus:'done',
-            uploadId,
-            backupQueued:false,
-            r2Saved:true,
-            r2Key:existing?.r2Key||regNow.r2_key||filePath
-          });
-        }
+
 
         let r2Key=existing?.r2Key||regNow?.r2_key||filePath;
         const durableJob={type:'evidence',uploadId,year,opdId,opdName:params.opdName||existingRec.results[0].opd||'OPD',
@@ -5460,7 +5493,7 @@ export async function onRequest({ request, env, ctx }) {
         notifyRealtime(env,ctx,year,{action:'uploadFile',opdId,uploadId});
 
         try{
-          const gdriveId=await queueDriveBackupInBackground(env,ctx,job);
+          const gdriveId=await syncDriveBackupBeforeUploadSuccess(env,ctx,job);
           await updateEvidenceFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
           await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET gdrive_id=?,sync_status='done',sync_error=NULL,updated_at=? WHERE upload_id=?")
             .bind(gdriveId,Date.now(),uploadId));
@@ -5496,6 +5529,7 @@ export async function onRequest({ request, env, ctx }) {
       }
 
       case 'retryDriveBackup': {
+        await assertGoogleDriveUploadReady(env);
         const {opdId, year: retryYear, uploadId, type='evidence', subunsur, paramId, level} = params;
         const targetYear=String(retryYear||year);
         if((type!=='pemda_workbook_evidence'&&!opdId) || !uploadId) throw new Error(type==='pemda_workbook_evidence'?'uploadId wajib diisi':'opdId dan uploadId wajib diisi');
@@ -5519,29 +5553,29 @@ export async function onRequest({ request, env, ctx }) {
           if(!rec.results.length) throw new Error('OPD tidak ditemukan');
           const list=parseJsonArray(rec.results[0]?.[cfg.listField]);
           const item=list.find(x=>x&&x.uploadId===uploadId); if(!item) throw new Error('Laporan tidak ditemukan pada OPD/lokasi yang sama');
-          job={type:'report',reportType:cfg.type,uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||(outboxMatches({type:'report',year:targetYear,opdId:String(opdId),reportType:cfg.type})?outboxJob?.r2Key:'')||'',fileName:item.fileName||outboxJob?.fileName||'laporan',fileType:item.fileType||'application/octet-stream',gdriveFolderId:item.gdriveFolderId||rec.results[0][cfg.folderIdField]||null};
+          job={type:'report',reportType:cfg.type,uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||(outboxMatches({type:'report',year:targetYear,opdId:String(opdId),reportType:cfg.type})?outboxJob?.r2Key:'')||'',fileName:item.fileName||outboxJob?.fileName||'laporan',fileType:item.fileType||'application/octet-stream',gdriveFolderId:item.gdriveFolderId||rec.results[0][cfg.folderIdField]||null,gdriveId:item.gdriveId||null};
         } else if(type==='rtp'){
           const rec=await env.DB.prepare("SELECT opd,rtp_evidence,rtp_evidence_folder,rtp_evidence_folder_id FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,targetYear).all();
           if(!rec.results.length) throw new Error('OPD tidak ditemukan');
           let list=[];try{list=rec.results[0]?.rtp_evidence?JSON.parse(rec.results[0].rtp_evidence):[]}catch{}
           const item=list.find(x=>x&&x.uploadId===uploadId); if(!item) throw new Error('Evidence RTP tidak ditemukan pada OPD/lokasi yang sama');
-          job={type:'rtp',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||(outboxMatches({type:'rtp',year:targetYear,opdId:String(opdId)})?outboxJob?.r2Key:'')||'',fileName:item.fileName||outboxJob?.fileName||'evidence',fileType:item.fileType||'application/octet-stream',folderName:item.folderName||rec.results[0].rtp_evidence_folder||'Evidence RTP',gdriveFolderId:rec.results[0].rtp_evidence_folder_id||null};
+          job={type:'rtp',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||'OPD',r2Key:item.r2Key||(outboxMatches({type:'rtp',year:targetYear,opdId:String(opdId)})?outboxJob?.r2Key:'')||'',fileName:item.fileName||outboxJob?.fileName||'evidence',fileType:item.fileType||'application/octet-stream',folderName:item.folderName||rec.results[0].rtp_evidence_folder||'Evidence RTP',gdriveFolderId:rec.results[0].rtp_evidence_folder_id||null,gdriveId:item.gdriveId||null};
         } else if(type==='workbook_evidence') {
           const q=await env.DB.prepare('SELECT o.opd,e.upload_id,e.evidence_key,e.target_code,e.subunsur,e.param_id,e.grade,e.level,e.file_name,e.file_type,e.r2_key,e.gdrive_id FROM opd_workbook_evidence_items e JOIN opd_data o ON o.id=e.opd_id AND o.year=e.year WHERE e.upload_id=? AND e.year=? AND e.opd_id=? LIMIT 1').bind(uploadId,targetYear,opdId).all();
           const item=q.results?.[0];if(!item)throw new Error('Evidence workbook tidak ditemukan pada OPD/lokasi yang sama.');
           const wbOutboxMatches=outboxMatches({type:'workbook_evidence',year:targetYear,opdId:String(opdId),evidenceKey:String(item.evidence_key||''),targetCode:String(item.target_code||''),subunsur:String(item.subunsur||''),paramId:String(item.param_id||''),grade:String(item.grade||''),level:String(item.level||0)});
-          job={type:'workbook_evidence',uploadId,year:targetYear,opdId,opdName:item.opd||'OPD',r2Key:item.r2_key||(wbOutboxMatches?outboxJob?.r2Key:'')||'',fileName:item.file_name||outboxJob?.fileName||'evidence',fileType:item.file_type||'application/octet-stream',evidenceKey:item.evidence_key||'',targetCode:item.target_code||'',subunsur:item.subunsur||'',paramId:item.param_id||'',grade:item.grade||'',level:Number(item.level||0)};
+          job={type:'workbook_evidence',uploadId,year:targetYear,opdId,opdName:item.opd||'OPD',r2Key:item.r2_key||(wbOutboxMatches?outboxJob?.r2Key:'')||'',fileName:item.file_name||outboxJob?.fileName||'evidence',fileType:item.file_type||'application/octet-stream',evidenceKey:item.evidence_key||'',targetCode:item.target_code||'',subunsur:item.subunsur||'',paramId:item.param_id||'',grade:item.grade||'',level:Number(item.level||0),gdriveId:item.gdrive_id||null};
         } else if(type==='pemda_workbook_evidence') {
           const item=await env.DB.prepare("SELECT upload_id,evidence_key,target_code,subunsur,param_id,grade,level,file_name,file_type,r2_key,gdrive_id FROM pemda_workbook_evidence_items WHERE upload_id=? AND year=? AND target_code IN ('T2','T3','T4') LIMIT 1").bind(uploadId,targetYear).first();
           if(!item)throw new Error('Evidence workbook Pemda tidak ditemukan pada tahun yang sama atau target bukan T2–T4.');
           const pemdaOutboxMatches=outboxMatches({type:'pemda_workbook_evidence',year:targetYear,evidenceKey:String(item.evidence_key||''),targetCode:String(item.target_code||''),subunsur:String(item.subunsur||''),paramId:String(item.param_id||''),grade:String(item.grade||''),level:String(item.level||0)});
-          job={type:'pemda_workbook_evidence',uploadId,year:targetYear,opdName:'PEMERINTAH KABUPATEN MAHAKAM ULU',r2Key:item.r2_key||(pemdaOutboxMatches?outboxJob?.r2Key:'')||'',fileName:item.file_name||outboxJob?.fileName||'evidence',fileType:item.file_type||'application/octet-stream',evidenceKey:item.evidence_key||'',targetCode:item.target_code||'',subunsur:item.subunsur||'',paramId:item.param_id||'',grade:item.grade||'',level:Number(item.level||0)};
+          job={type:'pemda_workbook_evidence',uploadId,year:targetYear,opdName:'PEMERINTAH KABUPATEN MAHAKAM ULU',r2Key:item.r2_key||(pemdaOutboxMatches?outboxJob?.r2Key:'')||'',fileName:item.file_name||outboxJob?.fileName||'evidence',fileType:item.file_type||'application/octet-stream',evidenceKey:item.evidence_key||'',targetCode:item.target_code||'',subunsur:item.subunsur||'',paramId:item.param_id||'',grade:item.grade||'',level:Number(item.level||0),gdriveId:item.gdrive_id||null};
         } else if(type==='lhe') {
           const rec=await env.DB.prepare('SELECT o.opd,l.evidence_json FROM lhe_followup_items l JOIN opd_data o ON o.id=l.opd_id AND o.year=l.year WHERE l.id=? AND l.year=? AND l.opd_id=? LIMIT 1').bind(String(params.followupId||''),targetYear,opdId).first();
           if(!rec)throw new Error('Butir tindak lanjut LHE tidak ditemukan pada OPD/tahun yang sama.');
           let list=[];try{list=JSON.parse(rec.evidence_json||'[]')}catch{};const item=(Array.isArray(list)?list:[]).find(x=>x&&String(x.uploadId||'')===String(uploadId));
           if(!item)throw new Error('Bukti LHE tidak ditemukan pada butir yang sama.');
-          job={type:'lhe_evidence',followupId:String(params.followupId),uploadId,year:targetYear,opdId,opdName:rec.opd||'OPD',r2Key:item.r2Key||(outboxMatches({type:'lhe_evidence',year:targetYear,opdId:String(opdId),followupId:String(params.followupId||'')})?outboxJob?.r2Key:'')||'',fileName:item.fileName||outboxJob?.fileName||'bukti',fileType:item.fileType||'application/octet-stream'};
+          job={type:'lhe_evidence',followupId:String(params.followupId),uploadId,year:targetYear,opdId,opdName:rec.opd||'OPD',r2Key:item.r2Key||(outboxMatches({type:'lhe_evidence',year:targetYear,opdId:String(opdId),followupId:String(params.followupId||'')})?outboxJob?.r2Key:'')||'',fileName:item.fileName||outboxJob?.fileName||'bukti',fileType:item.fileType||'application/octet-stream',gdriveId:item.gdriveId||null};
         } else {
           const rec=await env.DB.prepare("SELECT opd,subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(opdId,targetYear).all();
           if(!rec.results.length) throw new Error('OPD tidak ditemukan');
@@ -5574,7 +5608,7 @@ export async function onRequest({ request, env, ctx }) {
           // Repair an empty/missing legacy mirror from the exact outbox payload.
           job={type:'evidence',uploadId,year:targetYear,opdId,opdName:rec.results[0].opd||outboxJob?.opdName||'OPD',
             r2Key,fileName:item?.fileName||outboxJob?.fileName||'evidence',fileType:item?.fileType||outboxJob?.fileType||'application/octet-stream',
-            subunsur:String(subunsur),paramId:String(paramId),level:String(level)};
+            subunsur:String(subunsur),paramId:String(paramId),level:String(level),gdriveId:item?.gdriveId||reg?.gdrive_id||outboxJob?.gdriveId||null};
           await ensureGenericEvidenceMetadata(env,job);
           if(!reg){
             const now=Date.now();
@@ -5591,7 +5625,7 @@ export async function onRequest({ request, env, ctx }) {
         try{
           const obj=await env.EVIDENCE_BUCKET.head(job.r2Key);
           if(!obj) throw new Error('File sumber di R2 tidak ditemukan');
-          const gdriveId=await queueDriveBackupInBackground(env,ctx,job);
+          const gdriveId=await syncDriveBackupBeforeUploadSuccess(env,ctx,job);
           if(job.type==='rtp') await updateRtpFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
           else if(job.type==='report') await updateReportFileStatus(env,job,{gdriveId,storage:'R2 + Google Drive',syncStatus:'done',syncError:null});
           else if(job.type==='workbook_evidence') await updateWorkbookEvidenceFileStatus(env,job,{gdriveId,syncStatus:'done',syncError:null});
