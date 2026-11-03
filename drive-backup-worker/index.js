@@ -1,4 +1,5 @@
 import {
+  getGoogleDriveConfigurationStatus,
   dispatchDueDriveBackupJobs,
   drainDriveBackupQueue,
   processDriveBackupQueueMessage
@@ -80,7 +81,8 @@ export default {
     }
     const r2Bound=!!env.EVIDENCE_BUCKET;
     const queueProducerBound=!!env.DRIVE_BACKUP_QUEUE?.sendBatch;
-    const googleDriveConfigured=!!(env.GOOGLE_DRIVE_CLIENT_ID&&env.GOOGLE_DRIVE_CLIENT_SECRET&&env.GOOGLE_DRIVE_REFRESH_TOKEN&&env.GOOGLE_DRIVE_FOLDER_ID);
+    const driveConfiguration=getGoogleDriveConfigurationStatus(env);
+    const googleDriveConfigured=driveConfiguration.configured;
     const realtimeBound=!!env.REALTIME;
     const healthy=database==='ok'&&r2Bound&&queueProducerBound&&realtimeBound&&googleDriveConfigured;
     return Response.json({
@@ -91,6 +93,12 @@ export default {
       realtimeBound,
       r2Bound,
       googleDriveConfigured,
+      missingGoogleDriveVariables: driveConfiguration.missing,
+      googleDriveAuthenticationVerified: false,
+      configurationHelp: googleDriveConfigured
+        ? 'Runtime lengkap. Health ini tidak menguji OAuth atau izin folder; pastikan satu upload mencapai syncStatus done dan file terlihat di Drive.'
+        : 'Isi empat GOOGLE_DRIVE_* di Settings > Variables and Secrets (Runtime / Production) worker ini, bukan Build. Secrets Pages tidak diwariskan. Simpan dan deploy.',
+      build: '20261103-drive-runtime-diagnostics', 
       backupQueue,
       d1OutboxFallback: true,
       at: new Date().toISOString()
