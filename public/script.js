@@ -3,6 +3,9 @@ let rows = [];
 let currentYear = new Date().getFullYear().toString();
 let currentUser = null;
 let appInitializedAfterAuth = false;
+let appInitializationPromise=null;
+let authEpoch=0;
+let offlineAutosaveInitialized=false;
 let dashboardMode = 'internal';
 let bpkpOfficialScore = null;
 let bpkpScoreLoadedAt = 0;
@@ -60,7 +63,7 @@ function scheduleRealtimeRefresh(reason='Pembaruan operator lain') {
     } catch (e) {
       setRealtimeBadge('🟠 Realtime menunggu sinkron', 'error');
     }
-  }, 250);
+  }, 900+Math.floor(Math.random()*600));
 }
 
 function closeRealtimeSocket() {
@@ -523,6 +526,8 @@ function queueCurrentRowsForAutosave(reason='Koneksi terputus') {
 
 function initOfflineAutosave() {
   loadOfflineQueue();
+  if(offlineAutosaveInitialized)return;
+  offlineAutosaveInitialized=true;
 
   window.addEventListener('offline', () => {
     setConnectionStatus('📴 Koneksi terputus — perubahan berikutnya akan disimpan otomatis di perangkat', 'offline');
@@ -958,29 +963,45 @@ function escapeHtml(str) {
 
 // ====== PANGGIL SERVER ======
 // PERUBAHAN KEAMANAN: GANTI VERSI SEBELUMNYA DENGAN VERSI AMAN INI
-function callServer(action, params = {}) {
+const apiReadRequests=new Map();
+const apiDedupeReads=new Set(['getData','getYears','getSubunsurData','getWorkbookEvidenceFiles','getQaApipData','getKkMasterSheetRows']);
+function callServer(action,params={}){
+  const dedupe=apiDedupeReads.has(action);
+  const key=dedupe?JSON.stringify([currentUser?.username||'',action,params]):'';
+  if(dedupe&&apiReadRequests.has(key))return apiReadRequests.get(key);
+  const job=callServerRequest(action,params);
+  if(dedupe){apiReadRequests.set(key,job);job.finally(()=>{if(apiReadRequests.get(key)===job)apiReadRequests.delete(key);}).catch(()=>{});}
+  return job;
+}
+async function callServerRequest(action, params = {}) {
   const functionUrl='/myCloudinaryHandler';
   const readOnlyActions=new Set(['getYears','getData','getSubunsurData','getKkSheets','getRtpKkSheets','getRtpEvidence','getReportFiles','listBackups','getPemdaWorkflow','getPemdaWorkflowAudit','getPemdaKkPmWorkbook']);
   const isForm=params instanceof FormData;
   const isBinary=params && params.__binaryFile instanceof File;
   const cleanParams=isBinary ? Object.fromEntries(Object.entries(params).filter(([k])=>k!=='__binaryFile')) : params;
   const method=(isForm||isBinary)?'POST':((params.fileData||params.rows||!readOnlyActions.has(action))?'POST':'GET');
+  const controller=new AbortController();
+  const authRequest=['login','authMe','logout','verifyAccess'].includes(action);
+  const readRequest=apiDedupeReads.has(action)||readOnlyActions.has(action)||action.startsWith('get');
+  const timeoutMs=authRequest?20000:(readRequest?30000:180000);
+  const timeout=setTimeout(()=>controller.abort(),timeoutMs);
+  const requestFetch=(url,options)=>fetch(url,{...options,signal:controller.signal,credentials:'same-origin'});
   const makeRequest=()=>{
     if(method==='POST'){
       if(isBinary){
         const query=new URLSearchParams({action,...cleanParams}).toString();
-        return fetch(`${functionUrl}?${query}`,{method:'POST',headers:{'Content-Type':params.__binaryFile.type||'application/octet-stream','X-Upload-Id':params.uploadId||'','X-File-Name':params.fileName||params.__binaryFile.name||'evidence'},body:params.__binaryFile});
+        return requestFetch(`${functionUrl}?${query}`,{method:'POST',headers:{'Content-Type':params.__binaryFile.type||'application/octet-stream','X-Upload-Id':params.uploadId||'','X-File-Name':params.fileName||params.__binaryFile.name||'evidence'},body:params.__binaryFile});
       }
-      return fetch(functionUrl,{method:'POST',headers:isForm?{}:{'Content-Type':'application/json'},body:isForm?params:JSON.stringify({action,...params})});
+      return requestFetch(functionUrl,{method:'POST',headers:isForm?{}:{'Content-Type':'application/json'},body:isForm?params:JSON.stringify({action,...params})});
     }
     const queryParams = new URLSearchParams({action,...params});
     // getData/getSubunsurData must always be authoritative; never allow an old
     // browser/CDN cache to put a previous 0/default value back into the UI.
     queryParams.set('_ts', String(Date.now()));
     const query=queryParams.toString();
-    return fetch(`${functionUrl}?${query}`,{method:'GET', cache:'no-store', headers:{'Cache-Control':'no-cache'}});
+    return requestFetch(`${functionUrl}?${query}`,{method:'GET', cache:'no-store', headers:{'Cache-Control':'no-cache'}});
   };
-  return makeRequest().then(async response=>{
+  try{return await makeRequest().then(async response=>{
     const text=await response.text();
     let data=null;
     try{data=JSON.parse(text);}catch{}
@@ -1000,7 +1021,13 @@ function callServer(action, params = {}) {
       throw err;
     }
     return data;
-  });
+  });}catch(error){
+    if(error.name==='AbortError'){
+      const err=new Error(authRequest?'Pemeriksaan akun melewati 20 detik. Silakan coba lagi. Jika berulang, periksa layanan Cloudflare.':readRequest?'Pemuatan data melewati 30 detik. Silakan muat ulang data.':'Waktu permintaan habis. Periksa status penyimpanan sebelum mengulangi.');
+      err.code='REQUEST_TIMEOUT';err.transient=readRequest;throw err;
+    }
+    throw error;
+  }finally{clearTimeout(timeout);}
 }
 
 
@@ -1072,6 +1099,7 @@ function showOpdList() {
 
 // ====== LOGIN SERVER-SIDE SESUAI ROLE ======
 async function finishLogin(user){
+  const loginEpoch=authEpoch;
   currentUser=user||null;opdUnlocked=!!currentUser;
   const badge=document.getElementById('currentUserLabel');
   if(badge){badge.style.display=currentUser?'inline-block':'none';badge.textContent=currentUser?`${currentUser.displayName||currentUser.username} · ${String(currentUser.role||'').toUpperCase()}`:'';}
@@ -1082,19 +1110,23 @@ async function finishLogin(user){
   document.getElementById('opdAccessOverlay').style.display='none';
   document.getElementById('loadingOverlay').classList.remove('hidden');
   await initializeAppAfterAuth();
+  if(loginEpoch!==authEpoch||currentUser!==user)return;
   if(currentUser?.role==='opd'||currentUser?.scoped)showOpdList();else showDashboard();
 }
 document.getElementById('btnOpdAccess').addEventListener('click', async function() {
   const username=document.getElementById('opdAccessUsername')?.value.trim()||'';
   const password=document.getElementById('opdAccessPassword').value;
   const errorDiv=document.getElementById('opdAccessError');
+  if(this.disabled)return;
+  const attempt=++authEpoch;
   const button=this;button.disabled=true;button.textContent='Memeriksa akun…';
   errorDiv.style.display='none';
   try{
     let result;
     if(username){result=await callServer('login',{username,password});}
     else{result=await callServer('login',{username:'',password});}
-    if(result?.status==='success'&&result.user){await finishLogin(result.user);}
+    if(attempt!==authEpoch)return;
+    if(result?.status==='success'&&result.user){button.textContent='Memuat dashboard…';await finishLogin(result.user);}
     else throw new Error(result?.message||'Username atau password tidak sesuai.');
   }catch(err){
     errorDiv.textContent=err.message||'Login gagal.';errorDiv.style.display='block';errorDiv.style.background='#fee2e2';errorDiv.style.color='#dc2626';
@@ -1129,6 +1161,7 @@ document.getElementById('btnOpdAccessCancel').addEventListener('click', function
   username?.focus();
 });
 document.getElementById('btnLogout')?.addEventListener('click',async()=>{
+  authEpoch++;apiReadRequests.clear();
   try{await callServer('logout',{});}catch(e){console.warn('Logout server:',e.message);}
   closeRealtimeSocket();currentUser=null;opdUnlocked=false;appInitializedAfterAuth=false;rows=[];
   const pemdaNav=document.getElementById('btnPemdaWorkflow');if(pemdaNav)pemdaNav.style.display='none';
@@ -1143,7 +1176,7 @@ document.getElementById('btnLogout')?.addEventListener('click',async()=>{
 });
 
 // ====== LOAD TAHUN ======
-async function loadYears() {
+async function loadYears(options={}) {
   try {
     let years = await callServer('getYears');
     const select = document.getElementById('yearSelect');
@@ -1163,6 +1196,7 @@ async function loadYears() {
     select.value=currentYear;
   } catch (e) {
     console.error('Gagal memuat tahun:', e);
+    if(options.throwOnError)throw e;
   }
 }
 
@@ -1238,7 +1272,16 @@ function scheduleBackgroundWorkbookSync(){
 }
 
 // ====== LOAD DATA ======
-async function loadData() {
+const dashboardLoads=new Map();
+function loadData(options={}){
+  if(!currentUser)return Promise.resolve();
+  const key=JSON.stringify([authEpoch,currentUser.username,document.getElementById('yearSelect').value]);
+  if(dashboardLoads.has(key))return dashboardLoads.get(key);
+  const job=loadDataOnce(options).finally(()=>{if(dashboardLoads.get(key)===job)dashboardLoads.delete(key);});
+  dashboardLoads.set(key,job);return job;
+}
+async function loadDataOnce(options={}) {
+  const requestEpoch=authEpoch,requestUser=currentUser;
   const status = document.getElementById('saveStatus');
   status.textContent = '⏳ Memuat data...';
   const previousRows = Array.isArray(rows) ? rows : [];
@@ -1249,6 +1292,8 @@ async function loadData() {
   
   try {
     const data = await callServer('getData', { year });
+    if(requestEpoch!==authEpoch||requestUser!==currentUser||year!==document.getElementById('yearSelect').value)return;
+    if(!Array.isArray(data))throw new Error('Format data dashboard tidak valid.');
     rows = [];
     if (Array.isArray(data)) {
       rows = data.map(r => {
@@ -1274,6 +1319,7 @@ async function loadData() {
     loadBpkpOfficialScore(true).catch(err=>console.warn('KPI BPKP belum diperbarui:',err));
     scheduleBackgroundWorkbookSync();
   } catch (e) {
+    if(requestEpoch!==authEpoch||requestUser!==currentUser||year!==document.getElementById('yearSelect').value)return;
     status.textContent = '⚠️ ' + e.message;
     console.error(e);
     // JANGAN pernah mengosongkan UI hanya karena satu request GET gagal.
@@ -1282,6 +1328,7 @@ async function loadData() {
     applyOfflineQueueToRows();
     render();
     updateKpisLocal();
+    if(options.throwOnError)throw e;
   }
 }
 
@@ -2007,38 +2054,51 @@ document.getElementById('kpiChartClose').addEventListener('click', function() {
 // ====== INISIALISASI SETELAH SESI SERVER TERVERIFIKASI ======
 async function initializeAppAfterAuth(){
   if(appInitializedAfterAuth)return;
-  appInitializedAfterAuth=true;
+  if(appInitializationPromise)return appInitializationPromise;
+  appInitializationPromise=initializeAppData().finally(()=>{appInitializationPromise=null;});
+  return appInitializationPromise;
+}
+async function initializeAppData(){
+  const initializeEpoch=authEpoch;
   const loadingOverlay=document.getElementById('loadingOverlay');
   const loadingFill=document.getElementById('loadingFill');
   const loadingPercent=document.getElementById('loadingPercent');
   const loadingStatus=document.getElementById('loadingStatus');
   const loadingError=document.getElementById('loadingError');
   function setProgress(pct,status){loadingFill.style.width=pct+'%';loadingPercent.textContent=Math.round(pct)+'%';loadingStatus.textContent=status;}
+  loadingError.style.display='none';
   const timeoutId=setTimeout(()=>{loadingError.style.display='block';loadingError.textContent='Terlalu lama memuat data. Periksa server / koneksi internet Anda.';loadingStatus.textContent='Gagal memuat…';},15000);
   try{
     initOfflineAutosave();
     setProgress(12,'Memuat master dan tahun secara bersamaan…');
-    const [subunsurData]=await Promise.all([callServer('getSubunsurData'),loadYears()]);
+    const [subunsurData]=await Promise.all([callServer('getSubunsurData'),loadYears({throwOnError:true})]);
+    if(initializeEpoch!==authEpoch)return;
     SUBUNSUR_DATA=subunsurData||{};
     PARAM_LIST=[];Object.keys(SUBUNSUR_DATA).forEach(subCode=>{SUBUNSUR_DATA[subCode].params.forEach(param=>PARAM_LIST.push({subCode,paramId:param.id,desc:param.desc,levels:param.levels}));});
-    setProgress(65,'Memuat data sesuai hak akses…');await loadData();
+    setProgress(65,'Memuat data sesuai hak akses…');await loadData({throwOnError:true});
+    if(initializeEpoch!==authEpoch)return;
+    appInitializedAfterAuth=true;
     clearTimeout(timeoutId);setProgress(100,'Selesai memuat data.');
     setTimeout(()=>{loadingOverlay.classList.add('hidden');},250);
   }catch(e){
-    clearTimeout(timeoutId);appInitializedAfterAuth=false;console.error('Inisialisasi gagal:',e);
+    clearTimeout(timeoutId);if(initializeEpoch!==authEpoch)return;appInitializedAfterAuth=false;console.error('Inisialisasi gagal:',e);
     loadingError.style.display='block';loadingError.textContent='Terjadi kesalahan: '+e.message;loadingStatus.textContent='Gagal memuat data';
     document.getElementById('saveStatus').textContent='⚠️ '+e.message;
-    setTimeout(()=>{loadingOverlay.classList.add('hidden');},300);
-  }
+    loadingOverlay.classList.add('hidden');
+    document.getElementById('opdAccessOverlay').style.display='flex';
+    throw e;
+  }finally{clearTimeout(timeoutId);}
 }
 (async function bootstrapAuth(){
   const overlay=document.getElementById('opdAccessOverlay');
   const loading=document.getElementById('loadingOverlay');
+  const attempt=authEpoch;
   try{
     const me=await callServer('authMe',{});
+    if(attempt!==authEpoch)return;
     if(me?.authenticated&&me.user){await finishLogin(me.user);}
     else{loading.classList.add('hidden');overlay.style.display='flex';document.getElementById('opdAccessUsername')?.focus();}
-  }catch(err){console.warn('Sesi belum tersedia:',err.message);loading.classList.add('hidden');overlay.style.display='flex';}
+  }catch(err){if(attempt!==authEpoch)return;console.warn('Sesi belum tersedia:',err.message);loading.classList.add('hidden');overlay.style.display='flex';}
 })();
 
 // ====== EVENT NAVIGASI ======
@@ -3669,17 +3729,18 @@ function showWarning(message) {
 function liveEvidenceLines(value){const out=[];String(value??'').replace(/\r/g,'').split('\n').forEach(raw=>{const line=raw.trim().replace(/^[•●▪◦\-–—*\d]+[.)\s-]*/,'').trim();if(line&&!out.includes(line))out.push(line);});return out;}
 function applyLiveKkMasterRows(master,payload){
   if(!master||!payload?.live||!payload.sheets)return master;
+  const originalMaster=master;master=JSON.parse(JSON.stringify(master));
   const stageMap={A:'A – Perbaikan Berkelanjutan',B:'B – Evaluasi & Tindak Lanjut',C:'C – Implementasi',D:'D – Komunikasi & Pemahaman',E:'E – Kebijakan/Formalitas'};
   const prevGroups=new Map((master.mergedEvidence?.groups||[]).map(g=>[`${g.subCode}|${g.parameterKey}`,g]));
   (master.targets||[]).forEach(target=>{
-    const code=String(target.code||'').toUpperCase();const sourceRows=payload.sheets[code];if(!Array.isArray(sourceRows)||!sourceRows.length)return;
+    const code=String(target.code||'').toUpperCase();const sourceRows=payload.sheets[code];if(!Array.isArray(sourceRows)||!sourceRows.length)throw new Error(`Master ${code} kosong atau belum tersedia; pemetaan terakhir dipertahankan.`);
     const oldMap=new Map((target.parameters||[]).map(p=>[`${p.subCode}|${p.paramId}`,p]));
     const parsed=[];let currentSubCode='',currentSubName='',currentParam=null;
     sourceRows.forEach((row,index)=>{
       const vals=Array.isArray(row)?row:[];const val=i=>String(vals[i]??'').trim();
-      if(/^\d+\.\d+$/.test(val(0))){currentSubCode=val(0);currentSubName=val(1);currentParam=null;}
-      if(currentSubCode&&/^\d+$/.test(val(2))&&val(3)){
-        const no=Number(val(2));const paramId=`${currentSubCode}.${no}`;const old=oldMap.get(`${currentSubCode}|${paramId}`)||{};
+      if(/^\d+\.\d+\.?$/.test(val(0))){currentSubCode=val(0).replace(/\.$/,'');currentSubName=val(1);currentParam=null;}
+      if(currentSubCode&&/^(?:\d+\.\d+\.)?\d+\.?$/.test(val(2))&&val(3)){
+        const no=Number(val(2).replace(/\.$/,'').split('.').pop());const paramId=`${currentSubCode}.${no}`;const old=oldMap.get(`${currentSubCode}|${paramId}`)||{};
         currentParam={...old,subCode:currentSubCode,subunsur:currentSubName||old.subunsur||'',no,paramId,uraianParameter:val(3),kodeParameter:val(4),mri:val(5)||'-',iepk:val(6)||'-',target:code,sheet:payload.sheetNames?.[code]||target.sheet||'',workbookRow:index+1,gradeRows:[],grades:{}};
         parsed.push(currentParam);
       }
@@ -3697,6 +3758,7 @@ function applyLiveKkMasterRows(master,payload){
       p.resultInput=p.resultInput||{hasilPengujianColumn:'M',gradeResultColumn:'N',aoiClusterColumn:'O',aoiDescColumn:'P',causeClusterColumn:'Q',causeDescColumn:'R',conclusionColumn:'R'};
       return p;
     });
+    if(!valid.length||valid.some(p=>['A','B','C','D','E'].some(g=>!p.grades[g])))throw new Error(`Master ${code} belum terbaca lengkap (Grade A–E); pemetaan terakhir dipertahankan.`);
     if(valid.length){target.parameters=valid;target.parameterCount=valid.length;target.sheet=payload.sheetNames?.[code]||target.sheet;target.subunsurCount=new Set(valid.map(p=>p.subCode)).size;}
   });
   const grouped=new Map();
@@ -3706,15 +3768,26 @@ function applyLiveKkMasterRows(master,payload){
     const code=String(target.code||'').toUpperCase();const variantKey=p.evidenceKey||`SP-${String(p.subCode).replace(/\./g,'_')}-${p.no}-${code}`;
     const grades={};Object.entries(p.grades||{}).forEach(([g,value])=>{grades[g]={...value,evidenceByTarget:[{targetCode:code,targetLabel:`${code} · ${target.sheet||code}`,workbookRow:value.workbookRow,lines:Array.isArray(value.evidenceDisarankan)?value.evidenceDisarankan:[]}]};});
     const variant={variantKey,targets:[code],shared:false,primaryTarget:code,targetLabels:[`${code} · ${target.sheet||code}`],uraianParameter:p.uraianParameter,kodeParameter:p.kodeParameter,mri:p.mri,iepk:p.iepk,sourceRows:{[code]:p.workbookRow},grades,resultInput:p.resultInput};
-    group.variants.push(variant);if(!group.targets.includes(code))group.targets.push(code);if(!group.evidenceKeys.includes(variantKey))group.evidenceKeys.push(variantKey);group.variantCount=group.variants.length;
+    const shared=group.variants.find(v=>v.variantKey===variantKey);
+    if(shared){
+      if(!shared.targets.includes(code))shared.targets.push(code);
+      shared.shared=shared.targets.length>1;shared.targetLabels.push(...variant.targetLabels);Object.assign(shared.sourceRows,variant.sourceRows);
+      for(const [grade,value] of Object.entries(grades)){
+        if(!shared.grades[grade])shared.grades[grade]=value;
+        else shared.grades[grade].evidenceByTarget.push(...value.evidenceByTarget);
+      }
+    }else group.variants.push(variant);
+    group.sharedAcrossTargets=group.variants.some(v=>v.shared);
+    if(!group.targets.includes(code))group.targets.push(code);if(!group.evidenceKeys.includes(variantKey))group.evidenceKeys.push(variantKey);group.variantCount=group.variants.length;
   }));
   master.mergedEvidence={...(master.mergedEvidence||{}),groups:[...grouped.values()]};
   master.parameterBlocksTotal=(master.targets||[]).reduce((sum,t)=>sum+(t.parameters||[]).length,0);
-  master.liveSourceStatus={live:true,masterKind:payload.masterKind,updatedAt:payload.updatedAt,sheetNames:payload.sheetNames};
-  return master;
+  master.liveSourceStatus={live:true,masterKind:payload.masterKind,masterSpreadsheetId:payload.masterSpreadsheetId,updatedAt:payload.updatedAt,sheetNames:payload.sheetNames};
+  Object.assign(originalMaster,master);
+  return originalMaster;
 }
-async function refreshMasterFromGoogleSheet(master,kind){
-  try{const result=await callServerWithRetry('getKkMasterSheetRows',{masterKind:kind,forceRefresh:true},1);if(result?.live)return applyLiveKkMasterRows(master,result);if(master)master.liveSourceStatus={live:false,message:result?.message||'Memakai snapshot master lokal.'};}
+async function refreshMasterFromGoogleSheet(master,kind,forceRefresh=false){
+  try{const result=await callServerWithRetry('getKkMasterSheetRows',{masterKind:kind,forceRefresh},0);if(result?.live)return applyLiveKkMasterRows(master,result);if(master)master.liveSourceStatus={live:false,message:result?.message||'Memakai snapshot master lokal.'};}
   catch(err){if(master)master.liveSourceStatus={live:false,message:String(err?.message||err).slice(0,200)};}
   return master;
 }
@@ -3815,8 +3888,13 @@ async function ensureWorkbookEvidenceMasterLoaded(forceRefresh=true){
   // per browser; Sheets 429/retries must never block the evidence form.
   if(forceRefresh&&Date.now()-workbookLiveRefreshAt>900000&&!workbookLiveRefreshPromise){
     workbookLiveRefreshAt=Date.now();
-    workbookLiveRefreshPromise=refreshMasterFromGoogleSheet(workbookEvidenceMaster,'PK')
-      .then(()=>{applyWorkbookEvidenceSnapshotOverrides(workbookEvidenceMaster);qaApipEvidenceLocationMap=null;qaApipVariantTargetMap=null;})
+    workbookLiveRefreshPromise=refreshMasterFromGoogleSheet(workbookEvidenceMaster,'PM')
+      .then(()=>{
+        // The live PM source wins over the bundled historical column-L snapshot.
+        qaApipEvidenceLocationMap=null;qaApipVariantTargetMap=null;
+        if(qaApipCurrentRow){qaApipIndexEvidence(qaApipEvidenceFiles);if(!isEditingFormField()&&!qaApipSaveTimers.size)renderQaApipModal();}
+        if(workbookEvidenceRow&&!isEditingFormField())wbRender();
+      })
       .catch(()=>{}).finally(()=>{workbookLiveRefreshPromise=null;});
   }
   return workbookEvidenceMaster;
@@ -4146,26 +4224,7 @@ function closeEditModal() {
 
 // ====== AKSES LANGSUNG VIA PORTAL ======
 const urlParams = new URLSearchParams(window.location.search);
-if (urlParams.get('access') === 'portal') {
-  (async function init() {
-    try {
-      SUBUNSUR_DATA = await callServer('getSubunsurData');
-      PARAM_LIST = [];
-      Object.keys(SUBUNSUR_DATA).forEach(subCode => {
-        SUBUNSUR_DATA[subCode].params.forEach(param => {
-          PARAM_LIST.push({ subCode: subCode, paramId: param.id, desc: param.desc, levels: param.levels });
-        });
-      });
-      await loadYears();
-      await loadData();
-      connectRealtime();
-      showDashboard();
-    } catch (e) {
-      console.error('Inisialisasi gagal:', e);
-      document.getElementById('saveStatus').textContent = '⚠️ ' + e.message;
-    }
-  })();
-}
+// Portal links use bootstrapAuth above; no unauthenticated parallel initialization.
 // ====== SINKRONISASI OTOMATIS ======
 // Realtime is the primary update path. Polling is only a recovery fallback
 // while the socket is disconnected; avoid reloading every dashboard every
@@ -4173,7 +4232,7 @@ if (urlParams.get('access') === 'portal') {
 setInterval(async function() {
   const realtimeHealthy = typeof WebSocket !== 'undefined' &&
     realtimeSocket && realtimeSocket.readyState === WebSocket.OPEN;
-  if (document.hidden || realtimeHealthy) return;
+  if (!currentUser || !appInitializedAfterAuth || document.hidden || realtimeHealthy) return;
   if (!isSaving && !pendingSave && !kkPmDirty && !isEditModalOpen()) {
     const activeElement = document.activeElement;
     if (activeElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement.tagName)) return;
@@ -4575,10 +4634,12 @@ function qaApipEvidenceMasterLocations(){
   for(const group of (workbookEvidenceMaster?.mergedEvidence?.groups||[])){
     for(const variant of (group.variants||[])){
       if(!variant.variantKey)continue;
-      map.set(String(variant.variantKey).trim().toUpperCase(),{
+      const locationKey=String(variant.variantKey).trim().toUpperCase();
+      const previous=map.get(locationKey);
+      map.set(locationKey,{
         subCode:qaApipNormalizeSubCode(group.subCode),
         paramId:qaApipNormalizeParamId(group.parameterKey,group.subCode),
-        targetCodes:(variant.targets||[variant.primaryTarget]).map(t=>String(t||'').toUpperCase()).filter(t=>/^T[1-4]$/.test(t))
+        targetCodes:[...new Set([...(previous?.targetCodes||[]),...(variant.targets||[variant.primaryTarget]).map(t=>String(t||'').toUpperCase()).filter(t=>/^T[1-4]$/.test(t))])]
       });
     }
   }
@@ -4645,7 +4706,7 @@ function qaApipFileTargetCodes(file){
     for(const group of (workbookEvidenceMaster?.mergedEvidence?.groups||[])){
       for(const variant of (group.variants||[])){
         const targets=[...new Set((variant.targets||[]).map(x=>String(x).toUpperCase()).filter(x=>['T1','T2','T3','T4'].includes(x)))];
-        if(variant.variantKey)qaApipVariantTargetMap.set(String(variant.variantKey),targets);
+        if(variant.variantKey){const key=String(variant.variantKey);qaApipVariantTargetMap.set(key,[...new Set([...(qaApipVariantTargetMap.get(key)||[]),...targets])]);}
       }
     }
   }
@@ -5372,9 +5433,56 @@ async function exportQaApipExcel(){
   }catch(err){qaApipSetStatus('❌ Export QA APIP gagal: '+(err.message||err),'error');}
   finally{if(btn){btn.disabled=false;btn.textContent='⬇️ Export Excel';}}
 }
+let qaMappingPage=0;
+let qaMappingSearch='';
+function renderQaMappingInventory(){
+  const allowed=new Set(assessmentAllowedTargets(qaApipCurrentRow||''));
+  const source=workbookEvidenceMaster?.liveSourceStatus;
+  const counts=(workbookEvidenceMaster?.targets||[]).map(t=>`${QA_APIP_TARGET_LABEL[t.code]||t.code}: ${(t.parameters||[]).length} parameter`).join(' · ');
+  const q=qaMappingSearch.trim().toLocaleLowerCase('id');
+  const files=qaApipEvidenceFiles.filter(f=>!q||[f.fileName,f.paramId,f.subunsur,f.grade,...qaApipFileTargetCodes(f)].join(' ').toLocaleLowerCase('id').includes(q));
+  const pages=Math.max(1,Math.ceil(files.length/40));qaMappingPage=Math.min(qaMappingPage,pages-1);
+  const start=qaMappingPage*40;
+  const sourceLabel=source?.live?`Master PM terbaru · ${new Date(source.updatedAt).toLocaleString('id-ID')}`:`Snapshot bawaan · ${source?.message||'Pembaruan master sedang diperiksa.'}`;
+  return `<div class="qa-sheet-head"><div><h4>Pemetaan Evidence KK3.1–KK3.4</h4><p>${escapeHtml(counts)}</p><p>${escapeHtml(sourceLabel)}</p></div></div>
+    <div class="qa-workbook-note"><b>${qaApipEvidenceFiles.length} file unik ditarik dari ${qaApipSourceFilesCount} record sumber.</b> Setiap file tercatat di bawah. File yang target atau lokasinya belum cocok tetap dapat ditelusuri; nilainya baru dihitung pada target yang sesuai.</div>
+    <label>Cari nama file, parameter, Grade, atau T1–T4 <input id="qaMappingSearch" value="${escapeHtml(qaMappingSearch)}" placeholder="Cari evidence…" /></label>
+    <div class="qa-summary-table-wrap"><table><thead><tr><th>No.</th><th>File</th><th>Parameter</th><th>Grade</th><th>Target sumber</th><th>Status pemetaan</th></tr></thead><tbody>${files.slice(start,start+40).map((f,i)=>{
+      const targets=qaApipFileTargetCodes(f);const inScope=targets.some(t=>allowed.has(t));
+      const status=!f.qaLocationValid||!targets.length?'Metadata perlu diperiksa':inScope?'Terhubung ke form QA':'Di luar target OPD ini';
+      return `<tr><td>${start+i+1}</td><td>${escapeHtml(f.fileName||'Evidence')}</td><td>${escapeHtml(f.paramId||'—')}</td><td>${escapeHtml(f.grade||'—')}</td><td>${escapeHtml(targets.map(t=>QA_APIP_TARGET_LABEL[t]||t).join(' / ')||'Belum dikenali')}</td><td>${status}</td></tr>`;
+    }).join('')||'<tr><td colspan="6">Tidak ada file yang cocok.</td></tr>'}</tbody></table></div>
+    <div class="qa-apip-pagination"><span>${files.length?start+1:0}–${Math.min(start+40,files.length)} dari ${files.length} file · halaman ${qaMappingPage+1}/${pages}</span><div><button data-qa-mapping-page="prev" ${qaMappingPage===0?'disabled':''}>Sebelumnya</button><button data-qa-mapping-page="next" ${qaMappingPage>=pages-1?'disabled':''}>Berikutnya</button></div></div>`;
+}
+document.getElementById('qaApipContent')?.addEventListener('click',event=>{
+  const button=event.target.closest('[data-qa-mapping-page]');if(!button)return;
+  qaMappingPage=Math.max(0,qaMappingPage+(button.dataset.qaMappingPage==='next'?1:-1));renderQaApipModal();
+});
+let qaMappingSearchTimer;
+document.getElementById('qaApipContent')?.addEventListener('input',event=>{
+  if(event.target.id!=='qaMappingSearch')return;
+  qaMappingSearch=event.target.value;qaMappingPage=0;clearTimeout(qaMappingSearchTimer);
+  qaMappingSearchTimer=setTimeout(()=>{if(qaApipTab!=='mapping')return;const caret=document.getElementById('qaMappingSearch')?.selectionStart;renderQaApipModal();const input=document.getElementById('qaMappingSearch');input?.focus();if(caret!=null)input?.setSelectionRange(caret,caret);},200);
+});
+document.getElementById('qaApipRefreshMapping')?.addEventListener('click',async function(){
+  if(!qaApipCurrentRow||this.disabled)return;
+  const row=qaApipCurrentRow,year=String(currentYear);this.disabled=true;
+  qaApipSetStatus('Memperbarui master PM KK3.1–KK3.4 dan mencocokkan semua evidence…');
+  try{
+    // Refresh source only; never overwrite pending form edits or saved reviews.
+    if(workbookLiveRefreshPromise)await workbookLiveRefreshPromise;
+    await refreshMasterFromGoogleSheet(workbookEvidenceMaster,'PM',true);
+    if(qaApipCurrentRow!==row||String(currentYear)!==year)return;
+    const source=workbookEvidenceMaster?.liveSourceStatus;
+    qaApipIndexEvidence(qaApipEvidenceFiles);qaMappingPage=0;
+    if(source?.live){workbookLiveRefreshAt=Date.now();qaApipSetStatus(`Master terbaru diterapkan. ${qaApipEvidenceFiles.length} file unik dicocokkan; lihat tab Pemetaan Evidence.`,'success');}
+    else qaApipSetStatus(`Master live belum tersedia. Pemetaan terakhir dipertahankan: ${source?.message||'Coba kembali.'}`,'error');
+    if(!isEditingFormField()&&!qaApipSaveTimers.size)renderQaApipModal();
+  }catch(error){qaApipSetStatus(error.message,'error');}finally{this.disabled=false;}
+});
 function renderQaApipModal(){
   const row=qaApipCurrentRow;if(!row)return;document.querySelectorAll('#qaApipTabs [data-qa-tab]').forEach(b=>b.classList.toggle('active',b.dataset.qaTab===qaApipTab));qaApipUpdateModalSummary(row);const c=document.getElementById('qaApipContent');if(!c)return;
-  if(qaApipTab==='petunjuk')c.innerHTML=renderQaApipPetunjuk();else if(qaApipTab==='rekapParameter')c.innerHTML=renderQaApipRekapParameter();else if(qaApipTab==='rekapUnsur')c.innerHTML=renderQaApipRekapUnsur();else c.innerHTML=renderQaApipChecklist();
+  if(qaApipTab==='mapping')c.innerHTML=renderQaMappingInventory();else if(qaApipTab==='petunjuk')c.innerHTML=renderQaApipPetunjuk();else if(qaApipTab==='rekapParameter')c.innerHTML=renderQaApipRekapParameter();else if(qaApipTab==='rekapUnsur')c.innerHTML=renderQaApipRekapUnsur();else c.innerHTML=renderQaApipChecklist();
 }
 function qaApipSyncActiveItem(msg){
   if(!qaApipCurrentRow||String(qaApipCurrentRow.id)!==String(msg.opdId)||!qaApipMaster)return;
@@ -5389,7 +5497,7 @@ function qaApipSyncActiveItem(msg){
   if(qaApipTab!=='form')renderQaApipModal();
 }
 async function openQaApipModal(id){
-  const row=rows.find(r=>String(r.id)===String(id));if(!row)return;qaApipCurrentRow=row;qaApipEditingRowId=row.id;qaApipTab='form';qaApipDiagnosticPage=0;qaApipFilters={search:'',subCode:'all',grade:'all',target:'all',page:0};
+  const row=rows.find(r=>String(r.id)===String(id));if(!row)return;qaApipCurrentRow=row;qaApipEditingRowId=row.id;qaApipTab='form';qaApipDiagnosticPage=0;qaMappingPage=0;qaMappingSearch='';qaApipFilters={search:'',subCode:'all',grade:'all',target:'all',page:0};
   const modal=document.getElementById('qaApipModal');if(!modal)return;document.getElementById('qaApipModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;modal.classList.add('active');qaApipSetStatus('Memuat template QA APIP dan tarikan evidence...');
   const openedYear=String(currentYear);
   const stillCurrent=()=>qaApipCurrentRow&&String(qaApipCurrentRow.id)===String(row.id)&&String(currentYear)===openedYear;
@@ -5398,7 +5506,7 @@ async function openQaApipModal(id){
     if(!stillCurrent())return;
     const loaded=await loadQaApipData(row);
     if(!loaded||!stillCurrent())return;
-    qaApipSetStatus('✓ Template QA APIP dan sumber rekomendasi KK3.1–KK3.4 siap; evidence terkait sudah ditarik.','success');renderQaApipModal();
+    qaApipSetStatus(`✓ ${qaApipEvidenceFiles.length} file unik ditarik. Pemetaan KK3.1–KK3.4 tersedia pada tab Pemetaan Evidence.${workbookEvidenceMaster?.liveSourceStatus?.live?' Master PM live terhubung.':' Snapshot tersedia; pembaruan master live diperiksa terpisah.'}`,'success');renderQaApipModal();
   }
   catch(err){if(stillCurrent())qaApipSetStatus('Gagal memuat QA APIP: '+(err.message||err),'error');}
 }
