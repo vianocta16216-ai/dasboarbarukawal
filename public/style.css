@@ -3093,3 +3093,40 @@ button.danger, .confirm-actions button.danger,
 .preview-external-button{background:#1d4ed8!important;color:#fff!important;border:0;border-radius:8px;padding:10px 13px;font-size:12px;font-weight:800;cursor:pointer}
 .preview-external-button:hover{background:#1e40af!important}.preview-external-button:focus-visible{outline:3px solid #93c5fd;outline-offset:3px}
 .preview-external-small{align-self:flex-start;padding:7px 10px;font-size:10px;margin-top:5px}
+
+/* QA APIP — review fields are displayed ONLY for matching uploaded evidence files */
+.qa-file-bound-list{display:grid;gap:12px;max-height:none}
+.qa-file-bound-card{display:flex;flex-direction:column;gap:9px;background:#fff!important;border:1px solid #ccd9e9!important;border-radius:14px!important;padding:14px!important;box-shadow:0 3px 12px #0f172a0a}
+.qa-file-bound-card .qa-merged-file-main{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.qa-file-bound-card .qa-merged-file-name{flex:1;min-width:150px;font-weight:800;overflow-wrap:anywhere;color:#182944}
+.qa-file-order{font-size:10px;letter-spacing:.07em;border-radius:20px;background:#eaf1ff;color:#27469a;padding:5px 9px;font-weight:850;white-space:nowrap}
+.qa-file-review{border-top:1px solid #dfe8f2;padding-top:10px}
+.qa-file-review-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:9px;align-items:center}
+.qa-file-review-head strong{font-size:12px;color:#23416b}
+.qa-file-review-head small{font-size:10px;color:#64748b}
+.qa-file-bound-card .qa-item-row{margin:0!important;border:1px solid #e1e9f3!important;border-radius:10px!important;padding:12px!important;background:#f9fbff!important}
+.qa-file-bound-card .qa-merged-evaluation-title{margin-bottom:10px}
+.qa-file-review-hint{border-top:1px solid #e2e8f0;padding:10px 0 0;font-size:12px;color:#527089}
+.qa-file-review-hint.is-warning{color:#9a6700}
+.qa-grade-file-empty{padding:16px;border-radius:10px;background:#f5f8ff;border:1px dashed #bdcadc}
+.qa-preview-file-btn svg{flex-shrink:0}
+/* Uniform evidence preview for QA / Structure / RTP / LHE / PM / Pemda */
+.evidence-preview-tabs button{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.evidence-preview-modal .sheet-links-header{flex-shrink:0}
+.preview-loading{height:100%;min-height:270px;background:#fff;border:1px solid #d8e3f0;border-radius:15px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:22px;text-align:center;color:#334155}
+.preview-loading strong{font-size:15px;color:#18335d}
+.preview-loading span,.preview-loading small{font-size:12px;color:#64748b}
+.preview-loading-svg{width:54px;height:54px;animation:preview-spin 1.25s linear infinite}
+.preview-ring-track{stroke:#dce7fb;stroke-width:5}
+.preview-ring-progress{stroke:#315cbb;stroke-width:5;stroke-linecap:round;stroke-dasharray:81 119}
+.preview-loading-progress{height:8px;width:min(330px,85%);border-radius:99px;background:#e6edf7;overflow:hidden}
+.preview-loading-progress i{display:block;height:100%;background:linear-gradient(90deg,#315cbb,#27a6a0);border-radius:inherit;transition:width .18s ease}
+.preview-stream-wrap{width:100%;height:100%;min-height:340px;position:relative;display:flex;justify-content:center;align-items:center}
+.preview-stream-wrap.is-image{overflow:auto}
+.preview-stream-wrap>.evidence-preview-frame{height:100%;min-height:390px}
+.preview-stream-loading{position:absolute;inset:0;display:flex;gap:10px;align-items:center;justify-content:center;background:#f8fafcea;color:#425874;pointer-events:none;z-index:1;font-weight:700;font-size:13px}
+.preview-stream-spinner{width:23px;height:23px;display:inline-block;border-radius:50%;border:3px solid #d9e5f5;border-top-color:#2e61ca;animation:preview-spin .85s linear infinite}
+@keyframes preview-spin{to{transform:rotate(360deg)}}
+.evidence-preview-btn svg{vertical-align:middle;margin-right:5px}
+@media (prefers-reduced-motion:reduce){.preview-loading-svg,.preview-stream-spinner{animation:none}}
+@media (max-width:700px){.qa-file-bound-card{padding:10px!important}.qa-file-review-head{display:block}.preview-stream-wrap{min-height:280px}}
