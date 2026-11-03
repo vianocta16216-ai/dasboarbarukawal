@@ -16,7 +16,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KAWAL SPIP - Dashboard Lengkap</title>
 <link rel="icon" type="image/png" href="/favicon.png">
-<link rel="stylesheet" href="/style.css?v=20261028-sheets-quota-resumable-retry-v8">
+<link rel="stylesheet" href="/style.css?v=20261103-40users-evidence-ui-v2">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -277,7 +277,7 @@
 
 <!-- Modal Edit Subunsur -->
 <div class="modal-overlay" id="editModal"><div class="modal"><div class="modal-header"><h3>📁 Evidence Struktur dan Proses: <span id="modalOpdName"></span></h3><button class="modal-close" id="modalClose">&times;</button></div><div class="sub-grid" id="subunsurContainer"></div>
-  <div id="modalSaveStatus" style="display:none; margin-bottom:15px; text-align:center; font-weight:bold; font-size:14px;"></div>
+  <div id="modalSaveStatus" role="status" aria-live="polite" style="display:none; margin-bottom:15px; text-align:center; font-weight:bold; font-size:14px;"></div>
   <div class="modal-actions"><button id="modalCancel" class="danger">Batal</button><button id="modalSave" class="primary">Simpan Detail</button></div></div></div>
 
 <!-- Modal Hapus OPD -->
@@ -366,8 +366,8 @@
     <h4 style="margin:0 0 8px;">Reset Password Akun</h4>
     <p id="accountResetPasswordTarget" style="margin:0 0 16px;color:var(--text-secondary);">Pilih akun yang akan direset.</p>
     <form id="accountResetPasswordForm" autocomplete="off">
-      <label>Password baru<input id="accountResetPassword1" type="password" required minlength="16" maxlength="128" autocomplete="new-password" style="display:block;width:100%;box-sizing:border-box;padding:10px;margin-top:6px;margin-bottom:12px;border:1px solid var(--border);border-radius:8px;"></label>
-      <label>Ulangi password baru<input id="accountResetPassword2" type="password" required minlength="16" maxlength="128" autocomplete="new-password" style="display:block;width:100%;box-sizing:border-box;padding:10px;margin-top:6px;margin-bottom:12px;border:1px solid var(--border);border-radius:8px;"></label>
+      <label>Password baru<span class="password-visibility-wrap"><input id="accountResetPassword1" type="password" required minlength="16" maxlength="128" autocomplete="new-password" style="display:block;width:100%;box-sizing:border-box;padding:10px;margin-top:6px;margin-bottom:12px;border:1px solid var(--border);border-radius:8px;"><button type="button" class="password-visibility-toggle" data-toggle-reset-password="accountResetPassword1" aria-label="Tampilkan password" aria-pressed="false" title="Tampilkan password"><svg class="password-visibility-svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+      <label>Ulangi password baru<span class="password-visibility-wrap"><input id="accountResetPassword2" type="password" required minlength="16" maxlength="128" autocomplete="new-password" style="display:block;width:100%;box-sizing:border-box;padding:10px;margin-top:6px;margin-bottom:12px;border:1px solid var(--border);border-radius:8px;"><button type="button" class="password-visibility-toggle" data-toggle-reset-password="accountResetPassword2" aria-label="Tampilkan password" aria-pressed="false" title="Tampilkan password"><svg class="password-visibility-svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
       <p style="font-size:12px;color:var(--text-secondary);">Minimal 16 karakter. Sesi akun akan dicabut setelah reset berhasil.</p>
       <div style="display:flex;gap:8px;justify-content:flex-end;"><button type="button" id="accountResetPasswordCancel" class="danger">Batal</button><button type="submit" id="accountResetPasswordSubmit" class="primary">Simpan Password</button></div>
       <p id="accountResetPasswordStatus" aria-live="polite" style="font-size:13px;margin-bottom:0;"></p>
@@ -710,4 +710,14 @@
 
 </style>
 
-<script src="/script.js?v=20261028-sheets-quota-resumable-retry-v8&amp;rev=20261103-evidence-fix-speed" defer></script>
+
+<!-- Konfirmasi penutupan berlaku untuk semua tombol Tutup dan ikon silang modal. -->
+<div id="safeCloseOverlay" class="safe-close-overlay" hidden>
+  <div class="safe-close-dialog" role="alertdialog" aria-modal="true" aria-labelledby="safeCloseTitle" aria-describedby="safeCloseMessage">
+    <div class="safe-close-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="5"/><path d="M9 9l6 6M15 9l-6 6"/></svg></div>
+    <h3 id="safeCloseTitle">Tutup tampilan ini?</h3>
+    <p id="safeCloseMessage">Pastikan Anda sudah selesai. Proses upload yang telah diterima R2 dapat dilanjutkan ke Google Drive oleh server.</p>
+    <div class="safe-close-actions"><button type="button" id="safeCloseNo">Tidak, tetap di sini</button><button type="button" id="safeCloseYes" class="primary">Ya, tutup</button></div>
+  </div>
+</div>
+<script src="/script.js?v=20261028-sheets-quota-resumable-retry-v8&amp;rev=20261103-40users-evidence-ui-v2" defer></script>

@@ -595,6 +595,7 @@ async function retryIndexedDbUploads(){
   const pending=await getPendingUploadsFromIndexedDB();
   for(const rec of pending){
     if(Number(rec.nextRetryAt||0)>now) continue;
+    if(pendingUploadFiles.has(rec.uploadId) && !rec.nextRetryAt) continue; // currently being uploaded in this tab
     const type=String(rec.type||'evidence');
     const row=rec.opdId?rows.find(r=>String(r.id)===String(rec.opdId)):null;
     if(!row && type!=='pemda_workbook_evidence') continue;
@@ -2013,9 +2014,26 @@ document.getElementById('btnAccountManagementNav')?.addEventListener('click',asy
 document.getElementById('accountManagementClose')?.addEventListener('click',()=>document.getElementById('accountManagementModal')?.classList.remove('active'));
 document.getElementById('accountReloadBtn')?.addEventListener('click',loadAuthUsers);
 let accountResetTargetUsername='';
-function openAccountPasswordReset(username){accountResetTargetUsername=String(username||'');document.getElementById('accountResetPasswordTarget').textContent=`Akun: ${accountResetTargetUsername}`;document.getElementById('accountResetPassword1').value='';document.getElementById('accountResetPassword2').value='';document.getElementById('accountResetPasswordStatus').textContent='';document.getElementById('accountResetPasswordStatus').style.color='var(--text-secondary)';document.getElementById('accountResetPasswordModal').classList.add('active');setTimeout(()=>document.getElementById('accountResetPassword1')?.focus(),50);}
-function closeAccountPasswordReset(){document.getElementById('accountResetPasswordModal')?.classList.remove('active');accountResetTargetUsername='';document.getElementById('accountResetPassword1').value='';document.getElementById('accountResetPassword2').value='';}
+function openAccountPasswordReset(username){accountResetTargetUsername=String(username||'');document.getElementById('accountResetPasswordTarget').textContent=`Akun: ${accountResetTargetUsername}`;document.getElementById('accountResetPassword1').value='';document.getElementById('accountResetPassword2').value='';document.getElementById('accountResetPasswordStatus').textContent='';document.getElementById('accountResetPasswordStatus').style.color='var(--text-secondary)';document.getElementById('accountResetPasswordModal').classList.add('active');resetPasswordVisibility();setTimeout(()=>document.getElementById('accountResetPassword1')?.focus(),50);}
+function closeAccountPasswordReset(){document.getElementById('accountResetPasswordModal')?.classList.remove('active');accountResetTargetUsername='';document.getElementById('accountResetPassword1').value='';document.getElementById('accountResetPassword2').value='';resetPasswordVisibility();}
 document.getElementById('accountResetPasswordCancel')?.addEventListener('click',closeAccountPasswordReset);
+
+// Aksesibilitas: kontrol hide/unhide reset sandi menggunakan ikon SVG (bukan emoji).
+const resetEyeSvgOpen = '<svg class="password-visibility-svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.8-7 10-7 10 7 10 7-3.8 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const resetEyeSvgClosed = '<svg class="password-visibility-svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.2 10.2 0 0 1 12 5c6.2 0 10 7 10 7a15 15 0 0 1-3.2 3.9M6.4 6.4C3.6 8.2 2 12 2 12s3.8 7 10 7c1.6 0 3.1-.5 4.3-1.2"/><path d="M10 10a3 3 0 0 0 4 4"/></svg>';
+function resetPasswordVisibility(){
+  document.querySelectorAll('[data-toggle-reset-password]').forEach(button=>{
+    const input=document.getElementById(button.dataset.toggleResetPassword);if(!input)return;
+    input.type='password';button.setAttribute('aria-pressed','false');button.setAttribute('aria-label','Tampilkan password');button.title='Tampilkan password';button.innerHTML=resetEyeSvgOpen;
+  });
+}
+document.querySelectorAll('[data-toggle-reset-password]').forEach(button=>button.addEventListener('click',()=>{
+  const input=document.getElementById(button.dataset.toggleResetPassword);if(!input)return;
+  const isVisible=input.type==='text';input.type=isVisible?'password':'text';
+  button.setAttribute('aria-pressed',String(!isVisible));button.setAttribute('aria-label',isVisible?'Tampilkan password':'Sembunyikan password');button.title=isVisible?'Tampilkan password':'Sembunyikan password';button.innerHTML=isVisible?resetEyeSvgOpen:resetEyeSvgClosed;
+  input.focus({preventScroll:true});
+}));
+
 document.getElementById('accountResetPasswordForm')?.addEventListener('submit',async event=>{event.preventDefault();if(currentUser?.role!=='admin'||!accountResetTargetUsername){document.getElementById('accountResetPasswordStatus').textContent='Akses tidak diizinkan.';return;}const password=document.getElementById('accountResetPassword1').value;const confirmPassword=document.getElementById('accountResetPassword2').value;const status=document.getElementById('accountResetPasswordStatus');if(password.length<16){status.textContent='Password minimal 16 karakter.';status.style.color='#b91c1c';return;}if(password!==confirmPassword){status.textContent='Konfirmasi password tidak sama.';status.style.color='#b91c1c';return;}const button=document.getElementById('accountResetPasswordSubmit');button.disabled=true;button.textContent='Menyimpan…';status.textContent='Memproses reset password…';try{const result=await callServer('resetAuthUserPassword',{username:accountResetTargetUsername,password});status.textContent=result.message||'Password berhasil direset.';status.style.color='#047857';await loadAuthUsers();setTimeout(closeAccountPasswordReset,700);}catch(err){status.textContent=err.message||'Reset password gagal.';status.style.color='#b91c1c';}finally{button.disabled=false;button.textContent='Simpan Password';}});
 accountRoleField?.addEventListener('change',updateAccountRoleFields);
 document.getElementById('accountUserForm')?.addEventListener('submit',async event=>{event.preventDefault();if(currentUser?.role!=='admin'){setAccountStatus('Akses hanya untuk Super Admin.','error');return;}const username=document.getElementById('accountUsername').value.trim();const displayName=document.getElementById('accountDisplayName').value.trim();const role=String(accountRoleField?.value||'opd');const password=document.getElementById('accountPassword').value;const opdName=document.getElementById('accountOpdName').value;
@@ -3547,7 +3565,12 @@ document.getElementById('confirmNameOk').addEventListener('click', async functio
   document.getElementById('editNameModal').classList.remove('active');
 });
 
-window.addEventListener('beforeunload', () => { if (isEditModalOpen()) writeModalDraftNow(); });
+window.addEventListener('beforeunload', event => {
+  if(isEditModalOpen())writeModalDraftNow();
+  // Once R2 has acknowledged a file, the server-side queue continues without the browser.
+  // While browser-origin bytes are still pending, warn and keep an IndexedDB copy for next session.
+  if(pendingUploadFiles.size>0){event.preventDefault();event.returnValue='';}
+});
 window.addEventListener('pagehide', () => { if (isEditModalOpen()) writeModalDraftNow(); });
 
 // ====== MODAL WARNING ======
@@ -3695,7 +3718,7 @@ function applyWorkbookEvidenceSnapshotOverrides(master){
 }
 async function ensureWorkbookEvidenceMasterLoaded(forceRefresh=true){
   if(!workbookEvidenceMaster){
-    const r=await fetch('/workbook-structure-process-master.json?v=20261102.1',{cache:'no-store'});
+    const r=await fetch('/workbook-structure-process-master.json?v=20261103-40users-v1',{cache:'force-cache'});
     if(!r.ok)throw new Error(`Master Struktur & Proses workbook tidak dapat dimuat (HTTP ${r.status}). Pastikan file master ikut ter-deploy.`);
     workbookEvidenceMaster=await r.json();
     // Capture the approved Excel evidence once. Older live Google Sheets snapshots must not
@@ -3723,6 +3746,8 @@ function wbScheduleDriveAutoRefresh(row, attempts=0){
   if(wbDriveAutoRefreshTimers.has(key))return;
   const timer=setTimeout(async()=>{
     wbDriveAutoRefreshTimers.delete(key);
+    // Do not overwrite another OPD's evidence after this modal was closed/switches.
+    if(String(workbookEvidenceRow?.id||'')!==key || !document.getElementById('editModal')?.classList.contains('active')) return;
     try{
       await loadWorkbookEvidenceFiles(row);
       wbRender();
@@ -3883,12 +3908,24 @@ async function openWorkbookEvidenceModal(id){
   modal.dataset.mode='workbook'; modal.classList.add('active');
   document.getElementById('modalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;
   document.getElementById('modalSave').style.display='none'; document.getElementById('modalCancel').textContent='Tutup';
-  const status=document.getElementById('modalSaveStatus');status.style.display='block';status.style.color='var(--text-secondary)';status.textContent='⏳ Memuat master workbook dan evidence...';
-  try{await Promise.all([ensureWorkbookEvidenceMasterLoaded(),loadWorkbookEvidenceFiles(row)]);status.style.display='none';wbRender();}
-  catch(err){status.style.display='block';status.style.color='#dc2626';status.textContent='❌ '+(err.message||err);}
+  const status=document.getElementById('modalSaveStatus');status.style.display='block';status.style.color='var(--text-secondary)';
+  let loadedTasks=0;
+  const showLoadProgress=(message,completed)=>{
+    const percent=completed*50;const circumference=2*Math.PI*19;
+    status.innerHTML=`<div class="wb-loading-shell"><div class="wb-loading-symbol"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><circle cx="24" cy="24" r="19" class="wb-loading-ring-bg"/><circle cx="24" cy="24" r="19" class="wb-loading-ring-value" stroke-dasharray="${circumference}" stroke-dashoffset="${circumference*(100-percent)/100}"/><path d="M18 24h12M24 18v12" class="wb-loading-ring-mark"/></svg></div><div class="wb-loading-body"><div class="wb-loading-label"><strong>${escapeHtml(message)}</strong><b>${percent}%</b></div><div class="wb-loading-track" role="progressbar" aria-label="Progres memuat evidence" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><span style="width:${percent}%"></span></div><small>${completed}/2 tahap data selesai · master workbook dan daftar evidence</small></div></div>`;
+  };
+  showLoadProgress('Menyiapkan master workbook dan evidence',0);
+  const markLoaded=label=>{loadedTasks++;showLoadProgress(label,loadedTasks);};
+  try{
+    await Promise.all([ensureWorkbookEvidenceMasterLoaded().then(()=>markLoaded('Master workbook siap')),loadWorkbookEvidenceFiles(row).then(()=>markLoaded('Daftar evidence siap'))]);
+    // Modal may have been closed/switched while the request was awaiting data.
+    if(workbookEvidenceRow?.id!==row.id||!modal.classList.contains('active'))return;
+    wbRender();status.style.display='none';
+  }catch(err){status.style.display='block';status.style.color='#dc2626';status.textContent='Gagal memuat workbook: '+(err.message||err);}
 }
 async function wbUploadSelected(input){
   if(!workbookEvidenceRow||!input||input.dataset.uploading==='1')return;
+  const uploadRow=workbookEvidenceRow;const uploadYear=currentYear;
   const files=Array.from(input.files||[]); if(!files.length)return;
   const progressKey=`${input.dataset.evidenceKey}-${input.dataset.grade}`;
   let success=0,failed=0,pending=0,completed=0;const failedFiles=[],pendingIssues=[];
@@ -3900,9 +3937,9 @@ async function wbUploadSelected(input){
       const file=files[i];
       wbUpdateUploadProgress(progressKey,{total:files.length,completed,success,failed,pending,message:`Mengunggah ${i+1}/${files.length}: ${file.name}`,finished:false,error:false});
       const uploadId=crypto.randomUUID();
-      const pendingRecord={type:'workbook_evidence',uploadId,opdId:workbookEvidenceRow.id,opdName:workbookEvidenceRow.opd||'OPD',year:currentYear,evidenceKey:input.dataset.evidenceKey,targetCode:input.dataset.target,subCode:input.dataset.sub,paramId:input.dataset.param,grade:input.dataset.grade,level:String(({A:5,B:4,C:3,D:2,E:1})[input.dataset.grade]||0),file,fileName:file.name,fileType:file.type||'application/octet-stream',createdAt:Date.now()};
+      const pendingRecord={type:'workbook_evidence',uploadId,opdId:uploadRow.id,opdName:uploadRow.opd||'OPD',year:uploadYear,evidenceKey:input.dataset.evidenceKey,targetCode:input.dataset.target,subCode:input.dataset.sub,paramId:input.dataset.param,grade:input.dataset.grade,level:String(({A:5,B:4,C:3,D:2,E:1})[input.dataset.grade]||0),file,fileName:file.name,fileType:file.type||'application/octet-stream',createdAt:Date.now()};
       pendingUploadFiles.set(uploadId,file);
-      const payload={__binaryFile:file,opdId:workbookEvidenceRow.id,opdName:workbookEvidenceRow.opd||'OPD',year:currentYear,sourceModel:'workbook',evidenceKey:input.dataset.evidenceKey,targetCode:input.dataset.target,subunsur:input.dataset.sub,paramId:input.dataset.param,grade:input.dataset.grade,level:String(({A:5,B:4,C:3,D:2,E:1})[input.dataset.grade]||0),fileName:file.name,fileType:file.type||'application/octet-stream',uploadId};
+      const payload={__binaryFile:file,opdId:uploadRow.id,opdName:uploadRow.opd||'OPD',year:uploadYear,sourceModel:'workbook',evidenceKey:input.dataset.evidenceKey,targetCode:input.dataset.target,subunsur:input.dataset.sub,paramId:input.dataset.param,grade:input.dataset.grade,level:String(({A:5,B:4,C:3,D:2,E:1})[input.dataset.grade]||0),fileName:file.name,fileType:file.type||'application/octet-stream',uploadId};
       try{
         await persistUploadBeforeSend(pendingRecord);
         const result=await callServerWithRetry('uploadFile',payload,3);
@@ -3929,12 +3966,12 @@ async function wbUploadSelected(input){
       wbUpdateUploadProgress(progressKey,{total:files.length,completed,success,failed,pending,message:`${completed}/${files.length} diproses · ${success} berhasil${pending?`, ${pending} BELUM masuk Google Drive`:''}${tail}${latestError}${latestDriveError}`,finished:completed===files.length,error:failed>0||pending>0});
     }
     input.value='';
-    try{await loadWorkbookEvidenceFiles(workbookEvidenceRow);}catch(err){wbUpdateUploadProgress(progressKey,{total:files.length,completed,success,failed,pending,message:`Upload selesai, tetapi daftar file gagal dimuat ulang: ${err.message||err}`,finished:true,error:true});}
-    wbRender();
-    const row=rows.find(r=>String(r.id)===String(workbookEvidenceRow.id));if(row)refreshWorkbookEvidenceCountsOnRow(row);
+    try{if(workbookEvidenceRow?.id===uploadRow.id)await loadWorkbookEvidenceFiles(uploadRow);}catch(err){wbUpdateUploadProgress(progressKey,{total:files.length,completed,success,failed,pending,message:`Upload selesai, tetapi daftar file gagal dimuat ulang: ${err.message||err}`,finished:true,error:true});}
+    if(workbookEvidenceRow?.id===uploadRow.id)wbRender();
+    const row=rows.find(r=>String(r.id)===String(uploadRow.id));if(row)refreshWorkbookEvidenceCountsOnRow(row);
     const finalMessage=`Upload diterima R2: ${success} sudah terverifikasi di Google Drive${pending?`, ${pending} sedang diproses otomatis menuju Google Drive`:''}${failed?`, ${failed} belum diterima dan akan dicoba ulang otomatis`:''}.`;
     wbUpdateUploadProgress(progressKey,{total:files.length,completed:files.length,success,failed,pending,message:finalMessage,finished:true,error:failed>0});
-    if(pending)wbScheduleDriveAutoRefresh(workbookEvidenceRow);
+    if(pending)wbScheduleDriveAutoRefresh(uploadRow);
     if(failed){
       const errorDetail=failedFiles.length?'\n\nRincian file gagal:\n'+failedFiles.slice(0,5).join('\n')+(failedFiles.length>5?'\n…dan file gagal lainnya.':''):'';
       showWarning(`Sebagian file gagal dikirim ke penyimpanan. ${finalMessage}${errorDetail}`);
@@ -5948,6 +5985,23 @@ async function loadPemdaPmManifest(){
   pemdaPmDash.manifest=await pemdaPmManifestPromise;return pemdaPmDash.manifest;
 }
 const PEMDA_PM_ALLOWED_TARGETS=['T2','T3','T4'];
+
+let pemdaEvidenceExcelSource=null;
+let pemdaEvidenceExcelPromise=null;
+async function loadPemdaEvidenceExcelSource(){
+  if(pemdaEvidenceExcelSource)return pemdaEvidenceExcelSource;
+  if(!pemdaEvidenceExcelPromise){
+    pemdaEvidenceExcelPromise=fetch('/pemda-evidence-recommendations-2026.json?v=20261103-700',{cache:'no-cache'})
+      .then(r=>{if(!r.ok)throw new Error(`Referensi evidence Pemda Excel tidak dapat dimuat (HTTP ${r.status})`);return r.json();})
+      .then(d=>{if(d?.sourceColumn!=='L'||!d?.recommendations?.T2||!d?.recommendations?.T3||!d?.recommendations?.T4)throw new Error('Data kolom L Excel Pemda tidak lengkap');pemdaEvidenceExcelSource=d;return d;})
+      .finally(()=>{pemdaEvidenceExcelPromise=null;});
+  }
+  return pemdaEvidenceExcelPromise;
+}
+function pemdaExcelGradeEvidence(target,parameter,grade){
+  return pemdaEvidenceExcelSource?.recommendations?.[target]?.[`${parameter?.subCode||''}|${parameter?.paramId||''}`]?.[grade]||null;
+}
+
 const PEMDA_PM_TARGET_LABELS={T2:'T2 · KK3.2 — Keandalan Pelaporan Keuangan',T3:'T3 · KK3.3 — Pengamanan Aset Daerah',T4:'T4 · KK3.4 — Ketaatan Peraturan'};
 function pemdaPmRole(){return String(currentUser?.role||'').toLowerCase();}
 function pemdaPmCanUploadEvidence(){return ['admin','irban','auditor','ppupd'].includes(pemdaPmRole());}
@@ -5969,8 +6023,9 @@ function renderPemdaPmEvidenceGuidance(){
   const g=parameter?.grades?.[grade];
   const target=document.getElementById('pemdaEvidenceTarget')?.value||'T2';
   if(!g){panel.innerHTML='<p class="muted">Panduan grade ini belum tersedia pada master parameter. Muat ulang master KK PM.</p>';return;}
-  const evidence=Array.isArray(g.evidenceDisarankan)?g.evidenceDisarankan:[];
-  panel.innerHTML=`<div class="wb-grade-card"><div class="wb-grade-head"><span class="kk-pm-grade-pill">${escapeHtml(grade)}</span><b>Level ${escapeHtml(String(g.level||({A:5,B:4,C:3,D:2,E:1})[grade]))}</b><span>${escapeHtml(g.stage||'')}</span></div><p>${escapeHtml(PEMDA_PM_TARGET_LABELS[target]||target)} · ${escapeHtml(parameter.uraianParameter||'')}</p><div class="wb-grade-grid"><div><b>Kriteria</b><p>${escapeHtml(g.kriteria||'Belum tersedia pada master.')}</p></div><div><b>Penjelasan</b><p>${escapeHtml(g.penjelasan||'Belum tersedia pada master.')}</p></div><div><b>Cara Pengujian</b><p>${escapeHtml(g.caraPengujian||'Belum tersedia pada master.')}</p></div><div><b>Evidence yang Disarankan</b>${evidence.length?`<ul>${evidence.map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`:'<p>Belum ada rekomendasi eksplisit pada master untuk grade ini.</p>'}</div></div><small>${escapeHtml(g.evidenceSource||'Sumber: master KK PM, sesuai target dan grade terpilih.')}</small></div>`;
+  const excelGrade=pemdaExcelGradeEvidence(target,parameter,grade);
+  const evidence=excelGrade?.lines||[];
+  panel.innerHTML=`<div class="wb-grade-card"><div class="wb-grade-head"><span class="kk-pm-grade-pill">${escapeHtml(grade)}</span><b>Level ${escapeHtml(String(g.level||({A:5,B:4,C:3,D:2,E:1})[grade]))}</b><span>${escapeHtml(g.stage||'')}</span></div><p>${escapeHtml(PEMDA_PM_TARGET_LABELS[target]||target)} · ${escapeHtml(parameter.uraianParameter||'')}</p><div class="wb-grade-grid"><div><b>Kriteria</b><p>${escapeHtml(g.kriteria||'Belum tersedia pada master.')}</p></div><div><b>Penjelasan</b><p>${escapeHtml(g.penjelasan||'Belum tersedia pada master.')}</p></div><div><b>Cara Pengujian</b><p>${escapeHtml(g.caraPengujian||'Belum tersedia pada master.')}</p></div><div><b>Evidence yang Disarankan</b>${evidence.length?`<ul>${evidence.map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`:'<p>Belum ada rekomendasi eksplisit pada master untuk grade ini.</p>'}</div></div><small>${excelGrade?`Sumber: Excel 2026 · ${escapeHtml(pemdaEvidenceExcelSource.sheets[target])} · kolom L · baris ${excelGrade.row}`:'Sumber kolom L Excel belum termuat; rekomendasi tidak ditampilkan agar tidak keliru.'}</small></div>`;
 }
 function renderPemdaPmEvidenceSelectors(){
   const targetSelect=document.getElementById('pemdaEvidenceTarget'),subSelect=document.getElementById('pemdaEvidenceSubunsur'),paramSelect=document.getElementById('pemdaEvidenceParam');
@@ -6277,7 +6332,7 @@ async function loadPemdaPmDashboard(showStatus=true,{forceMasterRefresh=false}={
     const [workflow,workbook]=await Promise.all([callServer('getPemdaWorkflow',{year:currentYear}),callServerWithRetry('getPemdaKkPmWorkbook',{year:currentYear,forceRefresh:Boolean(forceMasterRefresh)},2)]);
     pemdaPmDash.workflow=Array.isArray(workflow.rows)?workflow.rows:[];pemdaPmDash.workbook={...(workbook?.workbook||{}),exists:!!workbook?.exists,needsSync:!!workbook?.needsSync,needsSyncReason:workbook?.needsSyncReason||'',permissions:workbook?.permissions||{},version:Number(workbook?.version||0),updatedAt:Number(workbook?.updatedAt||0),updatedBy:workbook?.updatedBy||''};pemdaPmDash.sheets=Array.isArray(workbook.sheets)?workbook.sheets:[];pemdaPmDash.permissions=workbook.permissions||{canManage:['admin','irban'].includes(String(currentUser?.role||'')),canRefreshAll:['admin','irban'].includes(String(currentUser?.role||''))};pemdaPmDash.lastLoadedAt=Date.now();
     await loadPemdaPmManifest();
-    try{await ensureKkPmMasterLoaded(false);}catch(err){pemdaPmDash.evidenceError='Master parameter KK PM belum dapat dimuat: '+(err.message||err);}
+    try{await Promise.all([ensureKkPmMasterLoaded(false),loadPemdaEvidenceExcelSource()]);}catch(err){pemdaPmDash.evidenceError='Referensi KK PM atau kolom L Excel belum dapat dimuat: '+(err.message||err);}
     await Promise.all([loadPemdaPmTemplateConfig(forceMasterRefresh),loadPemdaPmEvidenceFiles()]);
     renderPemdaPmEvidenceSelectors();renderPemdaPmDashboard();
     if(showStatus)pemdaPmDashStatus(`Data tahun ${currentYear} berhasil dimuat. Workbook Pemda, workbook OPD, dan evidence Pemda disimpan terpisah.`, 'success');
@@ -6371,4 +6426,79 @@ document.addEventListener('click',e=>{if(e.target===document.getElementById('pem
   byId('bpkpOfficialUnlock')?.addEventListener('click',async()=>{const adminPassword=byId('bpkpOfficialPassword')?.value;if(!adminPassword){status('Masukkan password admin untuk membuka kunci.');return;}const btn=byId('bpkpOfficialUnlock');btn.disabled=true;try{const result=await callServerWithRetry('unlockBpkpOfficialScore',{year:currentYear,adminPassword,updatedBy:byId('bpkpOfficialBy')?.value||'Admin Inspektorat'},1);await loadBpkpOfficialScore(true);fill(bpkpOfficialScore);status(result.message||'Kunci dibuka.');}catch(err){status('Gagal membuka kunci: '+err.message);}finally{btn.disabled=false;}});
   document.addEventListener('click',event=>{if(event.target===modal)close();});
   loadBpkpOfficialScore(true).then(()=>setDashboardMode(dashboardMode)).catch(()=>{});
+})();
+
+
+// ===== UNIVERSAL SAFE MODAL CLOSE =====
+// Capture before legacy listeners so all existing modal state and cleanup remain intact.
+(function installSafeCloseConfirmation(){
+  const overlay=document.getElementById('safeCloseOverlay');
+  const yes=document.getElementById('safeCloseYes'),no=document.getElementById('safeCloseNo');
+  if(!overlay||!yes||!no)return;
+  let pendingClick=null, previousFocus=null, bypass=false;
+  const isCloseButton=button=>{
+    const text=(button.textContent||'').replace(/\s+/g,' ').trim().toLowerCase();
+    return text==='tutup'||text==='tutup detail'||button.matches('.modal-close,.sheet-links-close')||/close(?:footer)?$/i.test(button.id||'');
+  };
+  function isModalRoot(el){return el?.matches?.('.modal-overlay,.sheet-links-overlay,.confirm-overlay,.safe-close-overlay')||false;}
+  function requestClose(target){
+    previousFocus=document.activeElement;
+    pendingClick=target;
+    const incomplete=pendingUploadFiles.size;
+    document.getElementById('safeCloseMessage').textContent=incomplete
+      ?`Masih ada ${incomplete} file yang belum dikonfirmasi tersimpan di R2. Menutup panel tidak menghentikan upload selama halaman tetap terbuka. Menutup browser dapat menghentikan kiriman; file disimpan di perangkat untuk dilanjutkan saat aplikasi dibuka kembali. Tetap tutup panel?`
+      :'Pastikan Anda sudah selesai. Jika file telah tersimpan di R2, antrean Google Drive dapat tetap diproses oleh server setelah panel ditutup.';
+    overlay.hidden=false;
+    no.focus();
+  }
+  function dismiss(){overlay.hidden=true;pendingClick=null;if(previousFocus?.isConnected)previousFocus.focus({preventScroll:true});previousFocus=null;}
+  no.addEventListener('click',dismiss);
+  yes.addEventListener('click',()=>{
+    const element=pendingClick;overlay.hidden=true;pendingClick=null;previousFocus=null;
+    if(element){bypass=true;try{element.click();}finally{bypass=false;}}
+  });
+  overlay.addEventListener('click',e=>{if(e.target===overlay)dismiss();});
+  document.addEventListener('keydown',e=>{
+    if(overlay.hidden)return;
+    if(e.key==='Escape'){e.preventDefault();dismiss();}
+    else if(e.key==='Tab'){
+      const buttons=[no,yes];const i=buttons.indexOf(document.activeElement);
+      if(e.shiftKey&&i===0){e.preventDefault();yes.focus();}
+      else if(!e.shiftKey&&i===1){e.preventDefault();no.focus();}
+    }
+  },true);
+  document.addEventListener('click',e=>{
+    if(bypass||!overlay.hidden)return;
+    const target=e.target;
+    const button=target?.closest?.('button');
+    const root=target?.closest?.('.modal-overlay,.sheet-links-overlay,.confirm-overlay');
+    if(!root||!isModalRoot(root)||!root.classList.contains('active'))return;
+    if(button&&isCloseButton(button)){
+      // Do not treat the deletion confirmation modal's own Cancel as a new close.
+      e.preventDefault();e.stopImmediatePropagation();requestClose(button);
+    }else if(target===root){
+      e.preventDefault();e.stopImmediatePropagation();requestClose(root);
+    }
+  },true);
+})();
+
+
+// Persistent lightweight upload status when the user closes the evidence panel
+// but keeps this browser tab open; does not claim the server has received the bytes.
+(function installUploadActivityBadge(){
+  const badge=document.createElement('div');badge.id='uploadActivityBadge';badge.hidden=true;
+  badge.setAttribute('role','status');badge.setAttribute('aria-live','polite');
+  badge.innerHTML='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span id="uploadActivityMessage"></span><span class="upload-activity-dot" aria-hidden="true"></span>';
+  document.body.appendChild(badge);
+  let lastCount=-1;
+  const update=()=>{
+    const count=pendingUploadFiles.size;
+    badge.hidden=count===0;
+    if(count!==lastCount){
+      const text=document.getElementById('uploadActivityMessage');
+      if(text)text.textContent=`${count} file belum terkonfirmasi R2 · upload/retry berjalan selama tab terbuka`;
+      lastCount=count;
+    }
+  };
+  update();setInterval(update,1200);
 })();
