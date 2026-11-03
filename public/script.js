@@ -4403,6 +4403,8 @@ let qaApipEvidenceIndex=new Map();
 let qaApipMasterIndex=new Map();
 let qaApipFilters={search:'',subCode:'all',grade:'all',target:'all',page:0};
 const QA_APIP_PAGE_SIZE=35;
+// Layar QA dikelompokkan per parameter; 671 baris tetap dipakai untuk penilaian dan ekspor.
+const QA_APIP_PARAMETER_PAGE_SIZE=6;
 const QA_APIP_GRADE_ORDER=['E','D','C','B','A'];
 const QA_APIP_TARGET_LABEL={T1:'KK3.1',T2:'KK3.2',T3:'KK3.3',T4:'KK3.4'};
 function qaApipSetStatus(msg,type=''){
@@ -4469,6 +4471,8 @@ function qaApipEvidenceKey(subCode,paramId,grade){
 }
 function qaApipIndexEvidence(files){
   // Indeks berbasis identitas workbook lengkap; target T1-T4 tetap melekat ke masing-masing file.
+  // Master bisa dimutakhirkan setelah refresh Google Sheets; bangun ulang peta target.
+  qaApipVariantTargetMap=null;
   qaApipEvidenceIndex=new Map();const seen=new Set();const uniqueFiles=[];
   const targetOrder={T1:1,T2:2,T3:3,T4:4};
   (Array.isArray(files)?files:[]).forEach(file=>{
@@ -4557,39 +4561,50 @@ function qaApipTargetCounts(row=qaApipCurrentRow){
   const allowed=new Set(assessmentAllowedTargets(row||''));const out={T1:0,T2:0,T3:0,T4:0};qaApipEvidenceFiles.forEach(f=>qaApipFileTargetCodes(f).forEach(code=>{if(allowed.has(code)&&Object.prototype.hasOwnProperty.call(out,code))out[code]++;}));return out;
 }
 function qaApipUpdateModalSummary(row){
-  const s=qaApipSummary();const allowed=assessmentAllowedTargets(row||'');const targets=qaApipTargetCounts(row);const ev=Object.values(targets).reduce((a,n)=>a+n,0);
+  const s=qaApipSummary();const allowed=assessmentAllowedTargets(row||'');const targets=qaApipTargetCounts(row);const ev=qaApipEvidenceFiles.filter(f=>qaApipFileTargetCodes(f).some(code=>allowed.includes(code))).length; // hitung file fisik sekali, walau satu file dipakai beberapa target
   const el=document.getElementById('qaApipSummary');if(!el)return;
   el.innerHTML=`<div class="qa-summary-card qa-summary-result"><span>Hasil QA APIP</span><strong>${s.percentage.toFixed(2)}%</strong><small>Rata-rata nilai item yang sudah dinilai</small></div><div class="qa-summary-card"><span>Total Item Template</span><strong>${s.total}</strong><small>4 sheet · 671 baris evidence</small></div><div class="qa-summary-card"><span>Progres Evaluasi</span><strong>${s.completion.toFixed(2)}%</strong><small>${s.checked}/${s.total} termasuk N/A</small></div><div class="qa-summary-card"><span>Nilai Item</span><strong>${s.pass} / ${s.partial} / ${s.fail}</strong><small>Memenuhi / sebagian / tidak memenuhi</small></div><div class="qa-summary-card"><span>Evidence Terhubung</span><strong>${ev}</strong><small>Ditautkan dari kolom Evidence Struktur & Proses</small></div><div class="qa-summary-card"><span>Target Sumber</span><strong>${allowed.map(code=>`${code} ${targets[code]}`).join(' · ')}</strong><small>${allowed.map(code=>assessmentTargetLabel(code)).join(' · ')}</small></div>`;
   const enriched={...s,evidenceFiles:ev};updateQaApipTableSummary(row,enriched);if(row)row.qaApipSummary=enriched;
 }
 function renderQaApipPetunjuk(){
   const info=qaApipMaster?.petunjuk?.fields||{};
-  return `<div class="qa-sheet-head"><div><div class="qa-kicker">PETUNJUK TEMPLATE EXCEL</div><h4>Kertas Kerja Penjaminan Kualitas / Quality Assurance APIP</h4><p>Tampilan, struktur parameter, alur penilaian, dan perhitungan memakai template <b>Template_Penjaminan_Kualitas_QA_APIP_KAWAL_SPIP.xlsx</b>. Tahun aktif: <b>${escapeHtml(String(currentYear))}</b> · OPD: <b>${escapeHtml(String(qaApipCurrentRow?.opd||''))}</b>.</p></div></div><div class="qa-workbook-note"><b>1. Sumber evidence.</b> Unggah, ganti, dan hapus dokumen hanya dari kolom <b>Evidence Struktur dan Proses</b>. QA APIP menarik dokumen yang cocok secara otomatis dan hanya menampilkan tautan baca-saja; tidak ada tab atau tempat upload evidence kedua.</div><div class="qa-instruction-table-wrap"><table class="qa-instruction-table"><thead><tr><th>No.</th><th>Bagian template</th><th>Aturan di aplikasi</th></tr></thead><tbody><tr><td>1</td><td>KK Penjaminan Kualitas</td><td>671 item penilaian. Kode subunsur, parameter, Grade A–E, tahapan, kriteria, fokus, dan nomor item berasal dari template QA; Nama Evidence yang Disarankan diambil dari kolom L workbook KK3.1–KK3.4 sesuai target dan level. Filter dan halaman digunakan agar tidak memuat ratusan input sekaligus.</td></tr><tr><td>2</td><td>Tarikan file evidence (kolom K)</td><td>File ditautkan berdasarkan kode subunsur, kode parameter lengkap, Grade, dan target T1–T4. Lampiran dikelompokkan per target agar file T1 · KK3.1 tidak tercampur tanpa label dengan T2 · KK3.2, T3 · KK3.3, atau T4 · KK3.4. Hanya file aktif yang tersimpan di sistem evidence yang ditarik.</td></tr><tr><td>3</td><td>Kolom L–Q</td><td>Pilih Ketersediaan (Ada/Tidak Ada/N/A), isi Identitas Dokumen, Keabsahan, Periode Sesuai, Substansi terhadap Kriteria, dan Catatan QA APIP.</td></tr><tr><td>4</td><td>Kolom R–S</td><td>Nilai dan kesimpulan dihitung otomatis: kosong/N/A = tanpa nilai; Tidak Ada = 0; Tidak Sesuai = 0; Ya + Ya + Sesuai = 1; kombinasi lain yang sudah dinilai = 0,5.</td></tr><tr><td>5</td><td>Rekap Parameter & Rekap Unsur</td><td>Persentase dihitung dari nilai numerik yang sudah dinilai, N/A dan item kosong tidak masuk penyebut nilai. Level indikatif memeriksa Grade E→D→C→B→A dengan ambang ${Math.round(Number(qaApipMaster?.gradeThreshold??1)*100)}%.</td></tr><tr><td>6</td><td>Ekspor Excel</td><td>Mengunduh workbook template empat sheet dan mengisi data OPD, tahun, tautan evidence, serta isian QA. Rumus asli pada kolom R, S, U dan formula rekap dipertahankan untuk dihitung kembali ketika file dibuka di Excel.</td></tr></tbody></table></div><div class="qa-formula-box"><b>Catatan sumber:</b> File tidak ditemukan bila belum diunggah pada Evidence Struktur & Proses untuk kombinasi subunsur/parameter/grade terkait. Pastikan dokumen ditempatkan pada target KK3.1–KK3.4 yang benar. Data QA disimpan terpisah per OPD dan tahun; rekap satu OPD tidak tercampur dengan OPD lain.</div>`;
+  return `<div class="qa-sheet-head"><div><div class="qa-kicker">PETUNJUK TEMPLATE EXCEL</div><h4>Kertas Kerja Penjaminan Kualitas / Quality Assurance APIP</h4><p>Tampilan, struktur parameter, alur penilaian, dan perhitungan memakai template <b>Template_Penjaminan_Kualitas_QA_APIP_KAWAL_SPIP.xlsx</b>. Tahun aktif: <b>${escapeHtml(String(currentYear))}</b> · OPD: <b>${escapeHtml(String(qaApipCurrentRow?.opd||''))}</b>.</p></div></div><div class="qa-workbook-note"><b>1. Sumber evidence.</b> Unggah, ganti, dan hapus dokumen hanya dari kolom <b>Evidence Struktur dan Proses</b>. QA APIP menarik dokumen yang cocok secara otomatis dan hanya menampilkan tautan baca-saja; tidak ada tab atau tempat upload evidence kedua.</div><div class="qa-instruction-table-wrap"><table class="qa-instruction-table"><thead><tr><th>No.</th><th>Bagian template</th><th>Aturan di aplikasi</th></tr></thead><tbody><tr><td>1</td><td>KK Penjaminan Kualitas</td><td>671 item penilaian. Kode subunsur, parameter, Grade A–E, tahapan, kriteria, fokus, dan nomor item berasal dari template QA; Nama Evidence yang Disarankan diambil dari kolom L workbook KK3.1–KK3.4 sesuai target dan level. Form dikelompokkan menjadi satu panel dan satu daftar evidence per parameter; Grade A–E tetap sebagai subbagian. Parameter tambahan dari KK3.4 Inspektorat tampil sebagai tautan evidence saja, tanpa membuat baris QA baru.</td></tr><tr><td>2</td><td>Tarikan file evidence (kolom K)</td><td>File ditautkan berdasarkan kode subunsur, kode parameter lengkap, Grade, dan target T1–T4. Lampiran digabung sekali per parameter dari Grade A–E dan target T1–T4, dengan label Grade serta asal target pada setiap berkas. Hanya file aktif yang tersimpan di sistem evidence yang ditarik. Target dipilih menurut akun OPD: umum T1; BPKAD T1/T2/T3; Inspektorat T1/T4.</td></tr><tr><td>3</td><td>Kolom L–Q</td><td>Pilih Ketersediaan (Ada/Tidak Ada/N/A), isi Identitas Dokumen, Keabsahan, Periode Sesuai, Substansi terhadap Kriteria, dan Catatan QA APIP.</td></tr><tr><td>4</td><td>Kolom R–S</td><td>Nilai dan kesimpulan dihitung otomatis: kosong/N/A = tanpa nilai; Tidak Ada = 0; Tidak Sesuai = 0; Ya + Ya + Sesuai = 1; kombinasi lain yang sudah dinilai = 0,5.</td></tr><tr><td>5</td><td>Rekap Parameter & Rekap Unsur</td><td>Persentase dihitung dari nilai numerik yang sudah dinilai, N/A dan item kosong tidak masuk penyebut nilai. Level indikatif memeriksa Grade E→D→C→B→A dengan ambang ${Math.round(Number(qaApipMaster?.gradeThreshold??1)*100)}%.</td></tr><tr><td>6</td><td>Ekspor Excel</td><td>Mengunduh workbook template empat sheet dan mengisi data OPD, tahun, tautan evidence, serta isian QA. Rumus asli pada kolom R, S, U dan formula rekap dipertahankan untuk dihitung kembali ketika file dibuka di Excel.</td></tr></tbody></table></div><div class="qa-formula-box"><b>Catatan sumber:</b> File tidak ditemukan bila belum diunggah pada Evidence Struktur & Proses untuk kombinasi subunsur/parameter/grade terkait. Pastikan dokumen ditempatkan pada target KK3.1–KK3.4 yang benar. Data QA disimpan terpisah per OPD dan tahun; rekap satu OPD tidak tercampur dengan OPD lain.</div>`;
 }
 function qaApipSelect(field,value,options,label){
   return `<label class="qa-input-label"><span>${escapeHtml(label)}</span><select data-qa-field="${field}" aria-label="${escapeHtml(label)}"><option value="">— Pilih —</option>${options.map(o=>`<option value="${escapeHtml(o)}" ${String(value||'')===o?'selected':''}>${escapeHtml(o)}</option>`).join('')}</select></label>`;
 }
-function qaApipFileMarkup(item){
-  const files=qaApipFilesForItem(item,qaApipFilters.target);
-  const allowedTargets=assessmentAllowedTargets(qaApipCurrentRow||'');const targetCodes=qaApipFilters.target==='all'?allowedTargets:[qaApipFilters.target];
-  const targetLabel=code=>assessmentTargetLabel(code);
+function qaApipFileMarkup(parameterItems){
+  // Satu daftar evidence per PARAMETER (seluruh grade), bukan diulang pada butir 1, 2, 3.
+  const items=Array.isArray(parameterItems)?parameterItems:[parameterItems];
+  const item=items[0];
+  // File yang digunakan pada beberapa target tetap ditampilkan sekali dengan label targetnya.
+  const files=items.flatMap(entry=>qaApipFilesForItem(entry,qaApipFilters.target));
+  const allowed=new Set(assessmentAllowedTargets(qaApipCurrentRow||''));
   if(!files.length){
-    const targetMsg=qaApipFilters.target==='all'?'untuk parameter dan grade ini':`pada ${targetLabel(qaApipFilters.target)}`;
-    return `<div class="qa-file-empty"><span class="qa-no-file">Belum ada file dari Evidence Struktur & Proses ${targetMsg}.</span><small class="qa-file-count">Kunci: ${escapeHtml(item.subCode)} · ${escapeHtml(item.paramId||`${item.subCode}.${item.paramNo}`)} · Grade ${escapeHtml(item.grade)}</small></div>`;
+    const label=qaApipFilters.target==='all'?'parameter ini':assessmentTargetLabel(qaApipFilters.target);
+    return `<div class="qa-file-empty"><span class="qa-no-file">Belum ada evidence untuk ${escapeHtml(label)}.</span><small class="qa-file-count">Sumber: Evidence Struktur &amp; Proses · parameter ${escapeHtml(item?.paramId||'—')} · seluruh grade terpilih</small></div>`;
   }
-  const groups=targetCodes.map(code=>({code,files:files.filter(f=>qaApipFileTargetCodes(f).includes(code))})).filter(g=>g.files.length||qaApipFilters.target!=='all');
-  const renderFile=(file,index)=>{
+  const unique=new Map();
+  files.forEach(file=>{
+    const key=String(file.uploadId||file.r2Key||file.r2_key||file.url||`${file.targetCode}|${file.fileName}`);
+    if(!unique.has(key))unique.set(key,{file,grades:new Set()});
+    unique.get(key).grades.add(String(file.grade||''));
+  });
+  const list=[...unique.values()];
+  const renderFile=(entry,index)=>{
+    const file=entry.file;
     const name=qaApipFileName(file,index);const url=qaApipFileUrl(file);const sync=qaApipFileSyncLabel(file);
     const link=url?`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="Buka evidence: ${escapeHtml(name)}">${escapeHtml(name)}</a>`:`<span class="qa-file-name">${escapeHtml(name)}</span>`;
+    const targets=qaApipFileTargetCodes(file).filter(code=>allowed.has(code)&&(qaApipFilters.target==='all'||qaApipFilters.target===code));
+    const labels=[...new Set(targets)].map(code=>`<span class="qa-merged-target">${escapeHtml(assessmentTargetLabel(code))}</span>`).join('');
     const error=file.syncError||file.sync_error||'';
-    return `<div class="qa-target-file-row">${link}<span class="qa-drive-pill ${sync.className}" title="${escapeHtml(error||sync.label)}">${escapeHtml(sync.label)}</span></div>`;
+    const grades=[...entry.grades].filter(g=>QA_APIP_GRADE_ORDER.includes(g));
+    const gradeLabels=grades.map(grade=>`<span class="qa-merged-target qa-merged-grade-label">Grade ${escapeHtml(grade)}</span>`).join('');
+    return `<div class="qa-merged-file"><div class="qa-merged-file-name">${link}</div><div class="qa-merged-file-meta">${gradeLabels}${labels}<span class="qa-drive-pill ${sync.className}" title="${escapeHtml(error||sync.label)}">${escapeHtml(sync.label)}</span></div></div>`;
   };
-  const groupHtml=groups.map(group=>{
-    const items=group.files;const visible=items.slice(0,3).map(renderFile).join('');
-    const more=items.length>3?`<details class="qa-file-more"><summary>Lihat ${items.length-3} file lainnya</summary>${items.slice(3).map((f,i)=>renderFile(f,i+3)).join('')}</details>`:'';
-    return `<section class="qa-target-file-group"><div class="qa-target-file-head"><b>${escapeHtml(targetLabel(group.code))}</b><span>${items.length} file</span></div>${visible}${more}</section>`;
-  }).join('');
-  return `<div class="qa-file-stack qa-file-stack-targets">${groupHtml}<small class="qa-file-count">${files.length} file terhubung · sumber baca-saja</small></div>`;
+  const preview=list.slice(0,5).map(renderFile).join('');
+  const more=list.length>5?`<details class="qa-merged-more"><summary>Lihat ${list.length-5} file lainnya</summary>${list.slice(5).map((f,i)=>renderFile(f,i+5)).join('')}</details>`:'';
+  return `<div class="qa-merged-files"><div class="qa-merged-files-head"><b>Evidence terhubung</b><span>${list.length} file unik</span></div>${preview}${more}<small class="qa-file-count">Tautan baca-saja · unggah/hapus hanya di Evidence Struktur &amp; Proses</small></div>`;
 }
 function qaApipRecommendedEvidenceGroups(item){
   const master=workbookEvidenceMaster;const selected=qaApipFilters?.target||'all';const allowed=assessmentAllowedTargets(qaApipCurrentRow||'');
@@ -4604,9 +4619,17 @@ function qaApipRecommendedEvidenceGroups(item){
   return result;
 }
 function qaApipRecommendedEvidenceMarkup(item){
+  // Rekomendasi identik dari T1-T4 cukup satu kali, namun asal target tetap tercatat.
   const groups=qaApipRecommendedEvidenceGroups(item);
   if(!groups.length)return escapeHtml(item?.recommendedEvidence||'—');
-  return groups.map(g=>`<div class="qa-suggested-group"><b>${escapeHtml(g.label)}</b><ul>${g.lines.map(line=>`<li>${escapeHtml(line)}</li>`).join('')}</ul></div>`).join('');
+  const unique=new Map();
+  groups.forEach(group=>{
+    const lines=(group.lines||[]).map(x=>String(x).trim()).filter(Boolean);
+    const key=JSON.stringify(lines);
+    if(!unique.has(key))unique.set(key,{labels:[],lines});
+    unique.get(key).labels.push(group.label);
+  });
+  return [...unique.values()].map(group=>`<div class="qa-suggested-group"><b>${escapeHtml(group.labels.join(' · '))}</b><ul>${group.lines.map(line=>`<li>${escapeHtml(line)}</li>`).join('')}</ul></div>`).join('');
 }
 function qaApipRecommendedEvidenceSearchText(item){
   const groups=qaApipRecommendedEvidenceGroups(item);
@@ -4616,24 +4639,85 @@ function qaApipFilteredItems(){
   let list=qaApipMaster?.items||[];const f=qaApipFilters;
   if(f.subCode!=='all')list=list.filter(x=>x.subCode===f.subCode);
   if(f.grade!=='all')list=list.filter(x=>x.grade===f.grade);
+  // Filter target harus mengikuti parameter yang benar-benar ada di sheet KK3.1–KK3.4.
+  if(f.target!=='all'){
+    const masterTarget=(workbookEvidenceMaster?.targets||[]).find(t=>String(t.code||'').toUpperCase()===String(f.target).toUpperCase());
+    if(masterTarget){const valid=new Set((masterTarget.parameters||[]).map(p=>`${qaApipNormalizeSubCode(p.subCode)}|${qaApipNormalizeParamId(p.paramId,p.subCode)}`));list=list.filter(x=>valid.has(`${x.subCode}|${x.paramId}`));}
+  }
   if(f.search.trim()){
     const q=f.search.trim().toLocaleLowerCase('id');
     list=list.filter(x=>[x.id,x.subCode,x.subunsur,x.paramNo,x.parameter,x.grade,x.stage,x.criteria,x.focus,x.itemNo,x.recommendedEvidence,qaApipRecommendedEvidenceSearchText(x)].some(v=>String(v??'').toLocaleLowerCase('id').includes(q)));
   }
   return list;
 }
-function renderQaApipChecklist(){
-  const all=qaApipMaster?.items||[];const filtered=qaApipFilteredItems();const pages=Math.max(1,Math.ceil(filtered.length/QA_APIP_PAGE_SIZE));qaApipFilters.page=Math.max(0,Math.min(qaApipFilters.page,pages-1));const start=qaApipFilters.page*QA_APIP_PAGE_SIZE;const pageItems=filtered.slice(start,start+QA_APIP_PAGE_SIZE);const s=qaApipSummary();
-  const codes=[...new Map(all.map(x=>[x.subCode,x.subunsur])).entries()];
-  const allowedTargets=assessmentAllowedTargets(qaApipCurrentRow||'');if(qaApipFilters.target!=='all'&&!allowedTargets.includes(qaApipFilters.target))qaApipFilters.target='all';
-  const targetOptions=allowedTargets.map(code=>`<option value="${code}" ${qaApipFilters.target===code?'selected':''}>${escapeHtml(assessmentTargetLabel(code))}</option>`).join('');
-  let html=`<div class="qa-sheet-head"><div><div class="qa-kicker">KK PENJAMINAN KUALITAS</div><h4>Form Penjaminan Kualitas / Quality Assurance APIP</h4><p>${escapeHtml(assessmentScopeDescription(qaApipCurrentRow))} Evidence rekomendasi dan tautan file ditarik dari master Structure &amp; Process sesuai target yang berwenang; data antar OPD tidak dicampur.</p></div><div class="qa-param-score-box"><span>Nilai QA APIP</span><strong>${s.percentage.toFixed(2)}%</strong><small>${s.evaluated} dinilai · ${s.na} N/A · ${s.pending} belum dinilai</small></div></div><div class="qa-apip-filter-bar"><label><span>Cari kode / parameter / evidence</span><input id="qaApipSearch" type="search" placeholder="Mis. 3.1, risiko, dokumen..." value="${escapeHtml(qaApipFilters.search)}"></label><label><span>Subunsur</span><select id="qaApipSubFilter"><option value="all">Semua subunsur</option>${codes.map(([code,name])=>`<option value="${escapeHtml(code)}" ${qaApipFilters.subCode===code?'selected':''}>${escapeHtml(code)} — ${escapeHtml(name)}</option>`).join('')}</select></label><label><span>Grade</span><select id="qaApipGradeFilter"><option value="all">Semua Grade</option>${QA_APIP_GRADE_ORDER.slice().reverse().map(g=>`<option value="${g}" ${qaApipFilters.grade===g?'selected':''}>Grade ${g}</option>`).join('')}</select></label><label><span>Target sumber evidence</span><select id="qaApipTargetFilter"><option value="all" ${qaApipFilters.target==='all'?'selected':''}>Semua target yang berlaku</option>${targetOptions}</select></label><div class="qa-apip-filter-count"><b>${filtered.length.toLocaleString('id-ID')}</b><span>dari ${all.length} item</span><small>Rekomendasi dan lampiran dibatasi sesuai cakupan OPD ini.</small></div></div><div class="qa-table-wrap qa-apip-item-table-wrap"><table class="qa-item-table qa-apip-template-table"><thead><tr><th>Kode Subunsur / Parameter</th><th>Grade / Tahapan / Kriteria / Fokus</th><th>No. Item</th><th>Nama Evidence yang Disarankan</th><th>File Evidence · Tarikan Evidence Struktur & Proses</th><th>Ketersediaan</th><th>Identitas Dokumen yang Diperiksa</th><th>Keabsahan</th><th>Periode Sesuai</th><th>Substansi vs Kriteria</th><th>Catatan Penjamin Kualitas / QA APIP</th><th>Nilai</th><th>Kesimpulan Item</th></tr></thead><tbody>`;
-  pageItems.forEach(it=>{
-    const st=qaApipGetState(it.id);const score=qaApipToScore(st);const concl=qaApipConclusion(st,score);
-    html+=`<tr class="qa-item-row" data-qa-item="${it.id}"><td><div class="qa-stage"><b>${escapeHtml(it.subCode)} · ${escapeHtml(String(it.paramNo))}</b><span>${escapeHtml(it.subunsur)}</span><small>${escapeHtml(it.parameter)}</small><small>Kunci: ${escapeHtml(it.paramId)} · baris template ${it.sourceRow}</small></div></td><td><div class="qa-stage"><b>Grade ${escapeHtml(it.grade)} · ${escapeHtml(it.stage)}</b><span>${escapeHtml(it.criteria)}</span><small><b>Fokus:</b> ${escapeHtml(it.focus)}</small></div></td><td class="qa-item-no">${it.itemNo}</td><td><div class="qa-suggested">${qaApipRecommendedEvidenceMarkup(it)}</div></td><td>${qaApipFileMarkup(it)}</td><td>${qaApipSelect('availability',st.availability,['Ada','Tidak Ada','N/A'],'Ketersediaan')}</td><td><label class="qa-input-label"><span>Identitas dokumen</span><input type="text" data-qa-field="identityDoc" maxlength="500" value="${escapeHtml(st.identityDoc||'')}" placeholder="Judul, nomor, tanggal" /></label></td><td>${qaApipSelect('validity',st.validity,['Ya','Tidak'],'Keabsahan')}</td><td>${qaApipSelect('periodOk',st.periodOk,['Ya','Tidak'],'Periode')}</td><td>${qaApipSelect('substance',st.substance,['Sesuai','Sebagian','Tidak Sesuai'],'Substansi')}</td><td><label class="qa-input-label"><span>Catatan / alasan N/A</span><textarea data-qa-field="note" rows="2" maxlength="1000" placeholder="Catatan penjamin kualitas">${escapeHtml(st.note||'')}</textarea></label></td><td class="qa-score"><b data-qa-score>${score===null?'—':score.toLocaleString('id-ID',{maximumFractionDigits:1})}</b></td><td class="qa-conclusion"><span class="qa-conclusion-badge" data-qa-conclusion>${escapeHtml(concl)}</span></td></tr>`;
+function qaApipGroupedParameters(items){
+  const groups=new Map();
+  (items||[]).forEach(item=>{
+    const key=`${item.subCode}|${item.paramId}`;
+    if(!groups.has(key))groups.set(key,{key,first:item,items:[],grades:new Map(),gradeRefs:new Map(),sourceOnly:false});
+    const group=groups.get(key);group.items.push(item);
+    if(!group.grades.has(item.grade))group.grades.set(item.grade,[]);
+    group.grades.get(item.grade).push(item);
   });
-  if(!pageItems.length)html+=`<tr><td colspan="13" class="qa-empty-filter">Tidak ada item yang sesuai pencarian/filter.</td></tr>`;
-  html+=`</tbody></table></div><div class="qa-apip-pagination"><span>Menampilkan ${filtered.length?start+1:0}–${Math.min(start+QA_APIP_PAGE_SIZE,filtered.length)} dari ${filtered.length} item · halaman ${qaApipFilters.page+1}/${pages}</span><div><button type="button" class="qa-apip-page-btn" data-qa-page="prev" ${qaApipFilters.page<=0?'disabled':''}>← Sebelumnya</button><button type="button" class="qa-apip-page-btn" data-qa-page="next" ${qaApipFilters.page>=pages-1?'disabled':''}>Berikutnya →</button></div></div><div class="qa-formula-box"><b>Formula nilai:</b> N/A atau ketersediaan kosong tidak menghasilkan nilai; Tidak Ada = 0; Tidak Sesuai = 0; Keabsahan = Ya + Periode = Ya + Substansi = Sesuai menghasilkan 1; kombinasi lain yang sudah dinilai menghasilkan 0,5. Perubahan tersimpan otomatis.</div>`;
+  // Sebagian parameter khusus KK3.4 Inspektorat tidak terdapat dalam template QA
+  // 671 butir. Tetap tampilkan evidence-nya, TANPA membuat butir/nilai QA palsu.
+  const originalKeys=new Set((qaApipMaster?.items||[]).map(item=>`${item.subCode}|${item.paramId}`));
+  const allowed=new Set(assessmentAllowedTargets(qaApipCurrentRow||''));
+  const f=qaApipFilters;const q=f.search.trim().toLocaleLowerCase('id');
+  for(const target of (workbookEvidenceMaster?.targets||[])){
+    const code=String(target.code||'').toUpperCase();
+    if(!allowed.has(code)||(f.target!=='all'&&code!==f.target))continue;
+    for(const p of (target.parameters||[])){
+      const subCode=qaApipNormalizeSubCode(p.subCode);const paramId=qaApipNormalizeParamId(p.paramId,subCode);const key=`${subCode}|${paramId}`;
+      if(originalKeys.has(key)||(f.subCode!=='all'&&f.subCode!==subCode))continue;
+      for(const [grade,data] of Object.entries(p.grades||{})){
+        if(!QA_APIP_GRADE_ORDER.includes(grade)||(f.grade!=='all'&&f.grade!==grade))continue;
+        const evidence=Array.isArray(data.evidenceDisarankan)?data.evidenceDisarankan:[];
+        const text=[subCode,paramId,p.subunsur,p.uraianParameter,grade,data.stage,data.kriteria,data.penjelasan,...evidence].join(' ').toLocaleLowerCase('id');
+        if(q&&!text.includes(q))continue;
+        if(!groups.has(key))groups.set(key,{
+          key,first:{subCode,paramId,subunsur:p.subunsur||'',parameter:p.uraianParameter||'Parameter khusus '+code},
+          items:[],grades:new Map(),gradeRefs:new Map(),sourceOnly:true,sourceTarget:code
+        });
+        const group=groups.get(key);
+        if(!group.grades.has(grade))group.grades.set(grade,[]);
+        if(!group.gradeRefs.has(grade))group.gradeRefs.set(grade,{
+          subCode,paramId,grade,subunsur:p.subunsur||'',parameter:p.uraianParameter||'',
+          stage:data.stage||'',criteria:data.kriteria||'',focus:data.penjelasan||'',recommendedEvidence:evidence.join('\n')
+        });
+      }
+    }
+  }
+  return [...groups.values()].sort((a,b)=>a.key.localeCompare(b.key,'id',{numeric:true}));
+}
+function qaApipGradeEditor(item){
+  // Setiap butir template tetap dapat diperiksa secara independen. Penyimpanan,
+  // status, rumus, dan export Excel tetap menggunakan 671 ID baris yang asli.
+  const st=qaApipGetState(item.id);const score=qaApipToScore(st);const conclusion=qaApipConclusion(st,score);
+  return `<div class="qa-item-row qa-merged-evaluation-item" data-qa-item="${escapeHtml(item.id)}"><div class="qa-merged-evaluation-title"><b>Butir ${Number(item.itemNo)||1}</b><small>Baris ${Number(item.sourceRow)||'—'} pada template Excel</small><div class="qa-merged-evaluation-result"><span>Nilai: <strong data-qa-score>${score===null?'—':score.toLocaleString('id-ID',{maximumFractionDigits:1})}</strong></span><span class="qa-conclusion-badge" data-qa-conclusion>${escapeHtml(conclusion)}</span></div></div><div class="qa-merged-evaluation-grid">${qaApipSelect('availability',st.availability,['Ada','Tidak Ada','N/A'],'Ketersediaan')}<label class="qa-input-label qa-merged-identity"><span>Identitas dokumen yang diperiksa</span><input type="text" data-qa-field="identityDoc" maxlength="500" value="${escapeHtml(st.identityDoc||'')}" placeholder="Judul, nomor, tanggal" /></label>${qaApipSelect('validity',st.validity,['Ya','Tidak'],'Keabsahan')}${qaApipSelect('periodOk',st.periodOk,['Ya','Tidak'],'Periode')}${qaApipSelect('substance',st.substance,['Sesuai','Sebagian','Tidak Sesuai'],'Substansi')}<label class="qa-input-label qa-merged-note"><span>Catatan QA / alasan N/A</span><textarea data-qa-field="note" rows="2" maxlength="1000" placeholder="Catatan penjamin kualitas">${escapeHtml(st.note||'')}</textarea></label></div></div>`;
+}
+function renderQaApipChecklist(){
+  const all=qaApipMaster?.items||[];const allowedTargets=assessmentAllowedTargets(qaApipCurrentRow||'');if(qaApipFilters.target!=='all'&&!allowedTargets.includes(qaApipFilters.target))qaApipFilters.target='all';const filtered=qaApipFilteredItems();const groups=qaApipGroupedParameters(filtered);
+  const pages=Math.max(1,Math.ceil(groups.length/QA_APIP_PARAMETER_PAGE_SIZE));
+  qaApipFilters.page=Math.max(0,Math.min(qaApipFilters.page,pages-1));
+  const start=qaApipFilters.page*QA_APIP_PARAMETER_PAGE_SIZE;const pageGroups=groups.slice(start,start+QA_APIP_PARAMETER_PAGE_SIZE);
+  const s=qaApipSummary();const codes=[...new Map(all.map(x=>[x.subCode,x.subunsur])).entries()];
+  const targetOptions=allowedTargets.map(code=>`<option value="${code}" ${qaApipFilters.target===code?'selected':''}>${escapeHtml(assessmentTargetLabel(code))}</option>`).join('');
+  let html=`<div class="qa-sheet-head"><div><div class="qa-kicker">KK PENJAMINAN KUALITAS · EVIDENCE TERGABUNG</div><h4>Form Penjaminan Kualitas / Quality Assurance APIP</h4><p>${escapeHtml(assessmentScopeDescription(qaApipCurrentRow))} Satu parameter ditampilkan satu kali dan seluruh evidence Grade A–E digabung menjadi satu daftar, termasuk parameter khusus sheet yang berlaku pada akun. Semua lampiran diambil otomatis dari Evidence Struktur &amp; Proses; tidak ada upload ulang pada QA APIP.</p></div><div class="qa-param-score-box"><span>Nilai QA APIP</span><strong>${s.percentage.toFixed(2)}%</strong><small>${s.evaluated} dinilai · ${s.na} N/A · ${s.pending} belum dinilai</small></div></div><div class="qa-apip-filter-bar"><label><span>Cari kode / parameter / evidence</span><input id="qaApipSearch" type="search" placeholder="Mis. 3.1, risiko, dokumen..." value="${escapeHtml(qaApipFilters.search)}"></label><label><span>Subunsur</span><select id="qaApipSubFilter"><option value="all">Semua subunsur</option>${codes.map(([code,name])=>`<option value="${escapeHtml(code)}" ${qaApipFilters.subCode===code?'selected':''}>${escapeHtml(code)} — ${escapeHtml(name)}</option>`).join('')}</select></label><label><span>Grade</span><select id="qaApipGradeFilter"><option value="all">Semua Grade</option>${QA_APIP_GRADE_ORDER.slice().reverse().map(g=>`<option value="${g}" ${qaApipFilters.grade===g?'selected':''}>Grade ${g}</option>`).join('')}</select></label><label><span>Target sumber evidence</span><select id="qaApipTargetFilter"><option value="all" ${qaApipFilters.target==='all'?'selected':''}>Semua target yang berlaku</option>${targetOptions}</select></label><div class="qa-apip-filter-count"><b>${groups.length.toLocaleString('id-ID')} parameter</b><span>${filtered.length} butir template</span><small>Evidence dari semua grade digabung sekali per parameter.</small></div></div><div class="qa-merged-parameters">`;
+  pageGroups.forEach(group=>{
+    const it=group.first;const sub=escapeHtml(it.subunsur||'');const name=escapeHtml(it.parameter||'');
+    const gradeCount=group.grades.size;const m=qaApipMetrics(group.items);
+    html+=`<section class="qa-merged-param-card" data-qa-parameter="${escapeHtml(group.key)}"><header class="qa-merged-param-head"><div><span class="qa-merged-param-code">PARAMETER ${escapeHtml(it.paramId)}</span><small>${escapeHtml(it.subCode)} · ${sub}</small><h5>${name}</h5></div><div class="qa-merged-param-count"><b>${gradeCount} Grade</b><span>${group.items.length} butir penilaian</span><small>${group.sourceOnly?'Parameter khusus sumber · tanpa baris QA':m.checked+' sudah dinilai / N/A'}</small></div></header><div class="qa-merged-param-evidence"><h6>Evidence Struktur &amp; Proses · seluruh Grade untuk parameter ${escapeHtml(it.paramId)}</h6><p>Semua dokumen terhubung dikumpulkan pada satu tempat. Label Grade dan target menunjukkan asal masing-masing dokumen.</p>${qaApipFileMarkup(group.sourceOnly?[...group.gradeRefs.values()]:group.items)}</div><div class="qa-merged-grades">`;
+    for(const grade of QA_APIP_GRADE_ORDER.slice().reverse()){
+      const gradeItems=group.grades.get(grade);if(!gradeItems)continue;
+      const first=gradeItems[0]||group.gradeRefs.get(grade);if(!first)continue;
+      const gm=qaApipMetrics(gradeItems);
+      html+=`<section class="qa-merged-grade" data-qa-grade="${escapeHtml(grade)}"><div class="qa-merged-grade-head"><span class="qa-grade-badge grade-${escapeHtml(grade)}">${escapeHtml(grade)}</span><div><b>Grade ${escapeHtml(grade)} · ${escapeHtml(first.stage||'')}</b><p>${escapeHtml(first.criteria||'')}</p><small><strong>Fokus:</strong> ${escapeHtml(first.focus||'—')}</small></div><span class="qa-merged-grade-progress">${group.sourceOnly?'Sumber '+escapeHtml(group.sourceTarget||'KK'):gm.checked+'/'+gm.total+' butir diperiksa'}</span></div><div class="qa-merged-grade-evidence"><div class="qa-merged-evidence-panel"><h6>Evidence yang disarankan untuk Grade ${escapeHtml(grade)}</h6><div class="qa-suggested">${qaApipRecommendedEvidenceMarkup(first)}</div></div></div>${group.sourceOnly?`<div class="qa-merged-source-note">Parameter khusus ${escapeHtml(group.sourceTarget||'KK')} · tersedia pada Evidence Struktur &amp; Proses tetapi tidak ada pada 671 baris template QA. Evidence dapat diperiksa tanpa mengubah perhitungan/ekspor QA asli.</div>`:`<details class="qa-merged-grade-assessment"><summary><span>Penilaian QA APIP (${gradeItems.length} butir sesuai template Excel)</span><small>Buka untuk menilai per butir · evidence di atas tetap satu daftar</small></summary><div class="qa-merged-evaluation-list">${gradeItems.map(qaApipGradeEditor).join('')}</div></details>`}</section>`;
+    }
+    html+='</div></section>';
+  });
+  if(!pageGroups.length)html+='<div class="qa-empty-filter">Tidak ada parameter yang sesuai pencarian/filter.</div>';
+  html+=`</div><div class="qa-apip-pagination"><span>Menampilkan parameter ${groups.length?start+1:0}–${Math.min(start+QA_APIP_PARAMETER_PAGE_SIZE,groups.length)} dari ${groups.length} parameter · ${filtered.length} butir · halaman ${qaApipFilters.page+1}/${pages}</span><div><button type="button" class="qa-apip-page-btn" data-qa-page="prev" ${qaApipFilters.page<=0?'disabled':''}>← Sebelumnya</button><button type="button" class="qa-apip-page-btn" data-qa-page="next" ${qaApipFilters.page>=pages-1?'disabled':''}>Berikutnya →</button></div></div><div class="qa-formula-box"><b>Penilaian aman:</b> seluruh file evidence disatukan satu daftar per parameter (termasuk grade yang berbeda); tidak diulang pada butir 1, 2, dan 3. Parameter khusus KK3.4 tampil sebagai sumber evidence tanpa menambah butir QA fiktif. Setiap butir penilaian asli tetap tersedia untuk diedit bila diperlukan, sehingga nilai, rekap, data lama, dan ekspor Excel 671 baris tidak berubah. Perubahan penilaian tersimpan otomatis seperti sebelumnya.</div>`;
   return html;
 }
 function qaApipGroupMetrics(items){
