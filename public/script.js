@@ -5961,6 +5961,17 @@ function pemdaPmCurrentParameter(){
   const pair=String(document.getElementById('pemdaEvidenceParam')?.value||'').split('|');
   return pemdaPmTargetParams(target).find(p=>String(p.subCode)===subCode&&String(p.paramId)===String(pair[1]||''))||null;
 }
+function renderPemdaPmEvidenceGuidance(){
+  const panel=document.getElementById('pemdaEvidenceGuidance');
+  if(!panel)return;
+  const parameter=pemdaPmCurrentParameter();
+  const grade=String(document.getElementById('pemdaEvidenceGrade')?.value||'C');
+  const g=parameter?.grades?.[grade];
+  const target=document.getElementById('pemdaEvidenceTarget')?.value||'T2';
+  if(!g){panel.innerHTML='<p class="muted">Panduan grade ini belum tersedia pada master parameter. Muat ulang master KK PM.</p>';return;}
+  const evidence=Array.isArray(g.evidenceDisarankan)?g.evidenceDisarankan:[];
+  panel.innerHTML=`<div class="wb-grade-card"><div class="wb-grade-head"><span class="kk-pm-grade-pill">${escapeHtml(grade)}</span><b>Level ${escapeHtml(String(g.level||({A:5,B:4,C:3,D:2,E:1})[grade]))}</b><span>${escapeHtml(g.stage||'')}</span></div><p>${escapeHtml(PEMDA_PM_TARGET_LABELS[target]||target)} · ${escapeHtml(parameter.uraianParameter||'')}</p><div class="wb-grade-grid"><div><b>Kriteria</b><p>${escapeHtml(g.kriteria||'Belum tersedia pada master.')}</p></div><div><b>Penjelasan</b><p>${escapeHtml(g.penjelasan||'Belum tersedia pada master.')}</p></div><div><b>Cara Pengujian</b><p>${escapeHtml(g.caraPengujian||'Belum tersedia pada master.')}</p></div><div><b>Evidence yang Disarankan</b>${evidence.length?`<ul>${evidence.map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`:'<p>Belum ada rekomendasi eksplisit pada master untuk grade ini.</p>'}</div></div><small>${escapeHtml(g.evidenceSource||'Sumber: master KK PM, sesuai target dan grade terpilih.')}</small></div>`;
+}
 function renderPemdaPmEvidenceSelectors(){
   const targetSelect=document.getElementById('pemdaEvidenceTarget'),subSelect=document.getElementById('pemdaEvidenceSubunsur'),paramSelect=document.getElementById('pemdaEvidenceParam');
   if(!targetSelect||!subSelect||!paramSelect)return;
@@ -5974,7 +5985,9 @@ function renderPemdaPmEvidenceSelectors(){
   paramSelect.innerHTML=filtered.length?filtered.map(p=>{const value=`${p.subCode}|${p.paramId}`;const label=`${p.paramId} — ${p.uraianParameter||p.subunsur||'Parameter'}`;return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;}).join(''):'<option value="">Parameter tidak tersedia</option>';
   if(filtered.some(p=>`${p.subCode}|${p.paramId}`===oldPair))paramSelect.value=oldPair;
   const ready=!!filtered.length;
-  ['pemdaEvidenceSubunsur','pemdaEvidenceParam','pemdaEvidenceGrade','pemdaEvidenceInput','pemdaEvidenceUpload'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=!ready||!pemdaPmCanUploadEvidence();});
+  ['pemdaEvidenceSubunsur','pemdaEvidenceParam','pemdaEvidenceGrade'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=!ready;});
+  ['pemdaEvidenceInput','pemdaEvidenceUpload'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=!ready||!pemdaPmCanUploadEvidence();});
+  renderPemdaPmEvidenceGuidance();
 }
 function pemdaPmVerificationLabel(status){return ({diterima:'Diterima',diterima_catatan:'Diterima dengan Catatan',dikembalikan:'Dikembalikan'})[String(status||'')]||'Belum diverifikasi';}
 function renderPemdaPmEvidenceFiles(){
@@ -6306,6 +6319,7 @@ document.getElementById('pemdaPmTemplateOpenLink')?.addEventListener('click',()=
 document.getElementById('pemdaEvidenceTarget')?.addEventListener('change',()=>renderPemdaPmEvidenceSelectors());
 document.getElementById('pemdaEvidenceSubunsur')?.addEventListener('change',()=>renderPemdaPmEvidenceSelectors());
 document.getElementById('pemdaEvidenceParam')?.addEventListener('change',()=>renderPemdaPmEvidenceSelectors());
+document.getElementById('pemdaEvidenceGrade')?.addEventListener('change',renderPemdaPmEvidenceGuidance);
 document.getElementById('pemdaPmEvidenceRefresh')?.addEventListener('click',loadPemdaPmEvidenceFiles);
 document.getElementById('pemdaEvidenceHistoryTabs')?.addEventListener('click',e=>{const btn=e.target.closest('[data-pemda-evidence-history-target]');if(!btn)return;const target=btn.dataset.pemdaEvidenceHistoryTarget;if(!PEMDA_PM_ALLOWED_TARGETS.includes(target))return;pemdaPmDash.evidenceHistoryTarget=target;pemdaPmDash.evidenceHistoryParamKey='';pemdaPmDash.evidenceHistoryLevelKey='';renderPemdaPmEvidenceFiles();});
 document.getElementById('pemdaEvidenceHistoryParameter')?.addEventListener('change',e=>{const key=String(e.target.value||'');if(!key)return;const parts=key.split('|');if(parts.length!==3||!PEMDA_PM_ALLOWED_TARGETS.includes(parts[0]))return;pemdaPmDash.evidenceHistoryTarget=parts[0];pemdaPmDash.evidenceHistoryParamKey=key;pemdaPmDash.evidenceHistoryLevelKey='';renderPemdaPmEvidenceFiles();});
