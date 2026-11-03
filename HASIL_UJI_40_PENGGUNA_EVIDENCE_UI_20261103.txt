@@ -1,0 +1,36 @@
+HASIL PENGUJIAN SOURCE — 2026-11-03
+Pengujian lokal, bukan produksi Cloudflare.
+
+PASS tools/validate-all-accounts-pm-workbook-update.mjs
+PASS tools/validate-cloudflare-deployment-prereqs.mjs
+PASS tools/validate-drive-retry-registry-race.mjs
+PASS tools/validate-drive-worker-esm-build.mjs
+PASS tools/validate-dual-storage-contract.mjs
+PASS tools/validate-durable-drive-backup-queue.mjs
+PASS tools/validate-dynamic-master-sheet-inventory.mjs
+PASS tools/validate-evidence-score-preview-ppupd.mjs
+PASS tools/validate-evidence-ui-preview-fast-upload.mjs
+PASS tools/validate-google-sheets-quota-optimization.mjs
+PASS tools/validate-inspektorat-20261014.mjs
+PASS tools/validate-lhe-followup-export-score-refresh.mjs
+PASS tools/validate-lhe-neutral-templates.mjs
+PASS tools/validate-nov03-pemda-performance-ui.mjs
+PASS tools/validate-pemda-evidence-history-tabs.mjs
+PASS tools/validate-pemda-kkpm-dashboard.mjs
+PASS tools/validate-pemda-pm-evidence-template.mjs
+PASS tools/validate-pemda-sampling-workflow.mjs
+PASS tools/validate-pm-bulk-retry-resume-v8.mjs
+PASS tools/validate-pm-master-source-binding-v4.mjs
+PASS tools/validate-pm-template-profile-refresh.mjs
+PASS tools/validate-pm-template-resolution.mjs
+PASS tools/validate-realtime-scope-isolation.mjs
+PASS tools/validate-spip-integration.mjs
+PASS tools/validate-verification-roles-score.mjs
+PASS tools/validate-workbook-concurrency.mjs
+PASS tools/validate-workbook-rollover-lhe-years.mjs
+PASS tools/test-drive-runtime-pemda-guidance.mjs
+PASS tools/test_d1_retry_recovery.mjs
+PASS tools/test_drive_retry_db_regressions.py
+PASS tools/test_durable_drive_queue_concurrency.py
+
+TOTAL: PASS=31 FAIL=0
