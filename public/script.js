@@ -210,7 +210,7 @@ function connectRealtime() {
         if (msg.action === 'uploadWorkbookEvidence' || msg.action === 'deleteWorkbookEvidence' || msg.action === 'saveWorkbookEvidenceVerification' || msg.action === 'replaceWorkbookEvidenceFile' || msg.action === 'retryDriveBackup') {
           scheduleRealtimeRefresh('Evidence workbook diperbarui operator lain');
           if (msg.opdId && typeof qaApipCurrentRow !== 'undefined' && qaApipCurrentRow && String(qaApipCurrentRow.id) === String(msg.opdId) && document.getElementById('qaApipModal')?.classList.contains('active')) {
-            refreshQaApipEvidenceFiles(true);
+            scheduleQaApipEvidenceRefresh();
           }
           return;
         }
@@ -1221,6 +1221,22 @@ async function backgroundSyncKkComputedValues(){
   }finally{computedSyncBusy=false;}
 }
 
+// Don't read every OPD's Google Sheets each time the UI changes or reloads.
+// Each browser/year runs at most once every 15 minutes, staggered to reduce
+// thundering herds from many operators opening the dashboard simultaneously.
+const workbookBackgroundSyncAt=new Map();
+let workbookBackgroundSyncTimer=null;
+function scheduleBackgroundWorkbookSync(){
+  const year=String(currentYear),now=Date.now();
+  if(document.hidden||workbookBackgroundSyncTimer||now-(workbookBackgroundSyncAt.get(year)||0)<900000)return;
+  workbookBackgroundSyncAt.set(year,now);
+  workbookBackgroundSyncTimer=setTimeout(()=>{
+    workbookBackgroundSyncTimer=null;
+    if(document.hidden||String(currentYear)!==year)return;
+    backgroundSyncKkComputedValues().catch(err=>console.warn('Penyegaran workbook tertunda:',err));
+  },5000+Math.floor(Math.random()*7500));
+}
+
 // ====== LOAD DATA ======
 async function loadData() {
   const status = document.getElementById('saveStatus');
@@ -1253,9 +1269,10 @@ async function loadData() {
     setTimeout(() => { status.textContent = ''; }, 1500);
     render();
     updateKpisLocal();
-    await loadBpkpOfficialScore(true);
     setDashboardMode(dashboardMode);
-    backgroundSyncKkComputedValues().catch(()=>{});
+    // Optional KPI and Google Sheets refresh happen *after* the screen is ready.
+    loadBpkpOfficialScore(true).catch(err=>console.warn('KPI BPKP belum diperbarui:',err));
+    scheduleBackgroundWorkbookSync();
   } catch (e) {
     status.textContent = '⚠️ ' + e.message;
     console.error(e);
@@ -1608,7 +1625,36 @@ const kpiGlowPlugin = {
   }
 };
 
-function showChart(type) {
+const exportLibraryPromises=new Map();
+function ensureExportLibrary(which){
+  const manifest={XLSX:'/vendor/xlsx.full.min.js?v=0.18.5',JSZip:'/vendor/jszip.min.js?v=3.10.1'};
+  if(!Object.prototype.hasOwnProperty.call(manifest,which))return Promise.reject(new Error('Library ekspor tidak dikenali.'));
+  if(window[which])return Promise.resolve(window[which]);
+  if(exportLibraryPromises.has(which))return exportLibraryPromises.get(which);
+  const promise=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');script.src=manifest[which];script.async=true;
+    script.onload=()=>window[which]?resolve(window[which]):reject(new Error('Library '+which+' gagal dimuat.'));
+    script.onerror=()=>reject(new Error('Jaringan tidak dapat membuka library '+which+'.'));
+    document.head.appendChild(script);
+  }).catch(err=>{exportLibraryPromises.delete(which);throw err;});
+  exportLibraryPromises.set(which,promise);return promise;
+}
+let chartLibraryPromise=null;
+function ensureChartLibrary(){
+  if(window.Chart)return Promise.resolve(window.Chart);
+  if(chartLibraryPromise)return chartLibraryPromise;
+  chartLibraryPromise=new Promise((resolve,reject)=>{
+    const el=document.createElement('script');
+    el.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js';
+    el.async=true;el.onload=()=>window.Chart?resolve(window.Chart):reject(new Error('Pustaka grafik tidak tersedia.'));
+    el.onerror=()=>reject(new Error('Jaringan tidak dapat memuat pustaka grafik.'));
+    document.head.appendChild(el);
+  }).catch(err=>{chartLibraryPromise=null;throw err;});
+  return chartLibraryPromise;
+}
+async function showChart(type) {
+  try{await ensureChartLibrary();}
+  catch(err){alert('Grafik tidak dapat dibuka saat ini: '+err.message);return;}
   const titles={
     nilaiStrukturProses:'Nilai Struktur dan Proses per OPD',
     nilaiMaturitas:'Nilai Maturitas Penyelenggaraan SPIP Terintegrasi per OPD',
@@ -1971,11 +2017,11 @@ async function initializeAppAfterAuth(){
   const timeoutId=setTimeout(()=>{loadingError.style.display='block';loadingError.textContent='Terlalu lama memuat data. Periksa server / koneksi internet Anda.';loadingStatus.textContent='Gagal memuat…';},15000);
   try{
     initOfflineAutosave();
-    setProgress(10,'Memuat data subunsur…');
-    SUBUNSUR_DATA=await callServer('getSubunsurData');
+    setProgress(12,'Memuat master dan tahun secara bersamaan…');
+    const [subunsurData]=await Promise.all([callServer('getSubunsurData'),loadYears()]);
+    SUBUNSUR_DATA=subunsurData||{};
     PARAM_LIST=[];Object.keys(SUBUNSUR_DATA).forEach(subCode=>{SUBUNSUR_DATA[subCode].params.forEach(param=>PARAM_LIST.push({subCode,paramId:param.id,desc:param.desc,levels:param.levels}));});
-    setProgress(45,'Memuat daftar tahun…');await loadYears();
-    setProgress(70,'Memuat data sesuai hak akses…');await loadData();
+    setProgress(65,'Memuat data sesuai hak akses…');await loadData();
     clearTimeout(timeoutId);setProgress(100,'Selesai memuat data.');
     setTimeout(()=>{loadingOverlay.classList.add('hidden');},250);
   }catch(e){
@@ -3752,20 +3798,27 @@ function applyWorkbookEvidenceSnapshotOverrides(master){
   master.evidenceSourceWorkbook=master.evidenceSourceWorkbook||'KK_PM_Evaluasi_SPIP_Pemda_RPJMD_2026_REVISI_SASARAN.xlsx';
   return master;
 }
+let workbookEvidenceMasterPromise=null;
+let workbookLiveRefreshPromise=null;
+let workbookLiveRefreshAt=0;
 async function ensureWorkbookEvidenceMasterLoaded(forceRefresh=true){
   if(!workbookEvidenceMaster){
-    const r=await fetch('/workbook-structure-process-master.json?v=20261103-40users-v1',{cache:'force-cache'});
-    if(!r.ok)throw new Error(`Master Struktur & Proses workbook tidak dapat dimuat (HTTP ${r.status}). Pastikan file master ikut ter-deploy.`);
-    workbookEvidenceMaster=await r.json();
-    // Capture the approved Excel evidence once. Older live Google Sheets snapshots must not
-    // silently replace the newer Evidence suggestions while other live fields keep refreshing.
-    workbookEvidenceSnapshotOverrides=buildWorkbookEvidenceSnapshotOverrides(workbookEvidenceMaster);
+    // Dedupe concurrent opens of QA and Structure & Process; cache the 2.5MB asset.
+    if(!workbookEvidenceMasterPromise)workbookEvidenceMasterPromise=fetch('/workbook-structure-process-master.json?v=20261104-kk31-34-perf-v1',{cache:'force-cache'})
+      .then(r=>{if(!r.ok)throw new Error(`Master workbook gagal dimuat (HTTP ${r.status})`);return r.json();})
+      .then(master=>{workbookEvidenceMaster=master;workbookEvidenceSnapshotOverrides=buildWorkbookEvidenceSnapshotOverrides(master);applyWorkbookEvidenceSnapshotOverrides(master);return master;})
+      .catch(err=>{workbookEvidenceMasterPromise=null;throw err;});
+    await workbookEvidenceMasterPromise;
   }
-  // Ambil snapshot Google Sheets terbaru setiap kali kolom dibuka. Backend memakai cache singkat
-  // agar perubahan master segera terlihat tanpa mengunduh ulang workbook statis.
-  if(forceRefresh)await refreshMasterFromGoogleSheet(workbookEvidenceMaster,'PK');
-  applyWorkbookEvidenceSnapshotOverrides(workbookEvidenceMaster);
   if(!workbookEvidenceMaster?.mergedEvidence?.groups?.length)throw new Error('Master merged Evidence workbook tidak valid.');
+  // An explicit live refresh runs in the background at most once every 15 min
+  // per browser; Sheets 429/retries must never block the evidence form.
+  if(forceRefresh&&Date.now()-workbookLiveRefreshAt>900000&&!workbookLiveRefreshPromise){
+    workbookLiveRefreshAt=Date.now();
+    workbookLiveRefreshPromise=refreshMasterFromGoogleSheet(workbookEvidenceMaster,'PK')
+      .then(()=>{applyWorkbookEvidenceSnapshotOverrides(workbookEvidenceMaster);qaApipEvidenceLocationMap=null;qaApipVariantTargetMap=null;})
+      .catch(()=>{}).finally(()=>{workbookLiveRefreshPromise=null;});
+  }
   return workbookEvidenceMaster;
 }
 async function loadWorkbookEvidenceFiles(row){
@@ -3938,7 +3991,8 @@ function wbRender(){
 }
 async function openWorkbookEvidenceModal(id){
   let row=rows.find(r=>String(r.id)===String(id)); if(!row)return;
-  try{const fresh=await fetchAuthoritativeRow(id); if(fresh)row=fresh;}catch{}
+  // Authenticated detail requests below are authoritative; a full getData roundtrip
+  // here duplicated dashboard loading and held the modal closed for seconds.
   workbookEvidenceRow=row; workbookEvidenceNav={screen:'unsur',unsur:'',sub:'',groupId:''};
   const modal=document.getElementById('editModal'); if(!modal)return;
   modal.dataset.mode='workbook'; modal.classList.add('active');
@@ -4439,6 +4493,9 @@ let qaApipEvidenceIndex=new Map();
 let qaApipSourceFilesCount=0;
 let qaApipEvidenceUnmapped=[];
 let qaApipExtraItems=new Map(); // one review per overflow file, not a fake Excel template row
+let qaApipDiagnosticPage=0;
+let qaApipSearchTimer=null;
+const QA_APIP_DIAGNOSTIC_PAGE_SIZE=30;
 let qaApipEvidenceLocationMap=null;
 let qaApipMasterIndex=new Map();
 let qaApipFilters={search:'',subCode:'all',grade:'all',target:'all',page:0};
@@ -4480,9 +4537,9 @@ async function ensureQaApipMasterLoaded(forceReload=false){
   // Versi dinamis mencegah browser/CDN memakai master QA APIP lama setelah deploy.
   const asset='/qa-apip-workbook-master.json';
   let data=null,lastError='';
-  for(const url of [`${asset}?v=20261014.1`,`${asset}?retry=${Date.now()}`]){
+  for(const [url,cacheMode] of [[`${asset}?v=20261104-perf-qa-v1`,'force-cache'],[`${asset}?retry=${Date.now()}`,'no-store']]){
     try{
-      const response=await fetch(url,{cache:'no-store'});
+      const response=await fetch(url,{cache:cacheMode});
       if(!response.ok){lastError=`HTTP ${response.status} pada ${url}`;continue;}
       data=await response.json();
       if(data&&Array.isArray(data.items)&&data.items.length===671&&Array.isArray(data.rekapParameters)&&Array.isArray(data.rekapUnsur))break;
@@ -4612,10 +4669,13 @@ function qaApipFileSyncLabel(file){
   return {label:'Drive menunggu',className:'is-pending'};
 }
 async function loadQaApipData(row){
+  const requestOpdId=String(row.id),requestYear=String(currentYear);
   const [qaData,evidenceData]=await Promise.all([
     callServerWithRetry('getQaApipData',{opdId:row.id,year:currentYear},2),
     callServerWithRetry('getWorkbookEvidenceFiles',{opdId:row.id,year:currentYear},2)
   ]);
+  // Responses from closed/switching modals must never contaminate a new OPD.
+  if(!qaApipCurrentRow||String(qaApipCurrentRow.id)!==requestOpdId||String(currentYear)!==requestYear)return null;
   qaApipStateMap=new Map();
   (Array.isArray(qaData?.items)?qaData.items:[]).forEach(saved=>{
     const item=qaApipMasterIndex.get(qaApipLocationKey(saved.subunsur,saved.paramId,saved.grade,saved.itemNo));
@@ -4708,10 +4768,12 @@ function qaApipUpdateModalSummary(row){
   const s=qaApipSummary(),live=qaApipLiveSummary();const allowed=assessmentAllowedTargets(row||'');const targets=qaApipTargetCounts(row);const ev=qaApipVisibleEvidenceForScope().length;
   const unmapped=qaApipEvidenceUnmapped.length;
   const wrongScope=qaApipEvidenceFiles.filter(f=>f.qaLocationValid&&f.qaTargetCodes?.length&&!f.qaTargetCodes.some(t=>allowed.includes(t))).length;
-  const missing=Math.max(0,qaApipSourceFilesCount-ev);
+  const missing=Math.max(0,qaApipEvidenceFiles.length-ev);
   const el=document.getElementById('qaApipSummary');if(!el)return;
-  el.innerHTML=`<div class="qa-summary-card qa-summary-result"><span>Hasil QA APIP</span><strong>${live.percentage.toFixed(2)}%</strong><small>Nilai file evidence aktif yang sudah dinilai</small></div><div class="qa-summary-card"><span>Jumlah Item Evidence</span><strong>${live.total}</strong><small>Dari ${s.total} slot template QA; mengikuti file yang diunggah</small></div><div class="qa-summary-card"><span>Progres Evaluasi</span><strong>${live.completion.toFixed(2)}%</strong><small>${live.checked}/${live.total} file evidence aktif, termasuk N/A</small></div><div class="qa-summary-card"><span>Nilai Item</span><strong>${live.pass} / ${live.partial} / ${live.fail}</strong><small>Memenuhi / sebagian / tidak memenuhi</small></div><div class="qa-summary-card"><span>Evidence Terhubung</span><strong>${ev} / ${qaApipSourceFilesCount}</strong><small>${missing?`${missing} file belum tertaut: ${unmapped} metadata belum dikenali · ${wrongScope} di luar target akun`:'Seluruh file sumber pada cakupan akun sudah tertaut'} · sumber Evidence Struktur &amp; Proses</small></div><div class="qa-summary-card"><span>Target Sumber</span><strong>${allowed.map(code=>`${code} ${targets[code]}`).join(' · ')}</strong><small>${allowed.map(code=>assessmentTargetLabel(code)).join(' · ')}</small></div>`;
-  const enriched={...live,evidenceFiles:ev};updateQaApipTableSummary(row,enriched);if(row)row.qaApipSummary=enriched;
+  // Total source files are present in QA, but ONLY valid target/grade files
+  // contribute to the official QA score. Wrong-scope files remain traceable.
+  el.innerHTML=`<div class="qa-summary-card qa-summary-result"><span>Hasil QA APIP</span><strong>${live.percentage.toFixed(2)}%</strong><small>Nilai dari evidence sesuai target akun</small></div><div class="qa-summary-card"><span>Seluruh File dari Evidence</span><strong>${qaApipEvidenceFiles.length}</strong><small>${ev} siap QA · ${missing} perlu koreksi pemetaan · ${s.total} butir template lama</small></div><div class="qa-summary-card"><span>Progres Evaluasi</span><strong>${live.completion.toFixed(2)}%</strong><small>${live.checked}/${live.total} file sesuai target, termasuk N/A</small></div><div class="qa-summary-card"><span>Nilai Item</span><strong>${live.pass} / ${live.partial} / ${live.fail}</strong><small>Memenuhi / sebagian / tidak memenuhi</small></div><div class="qa-summary-card"><span>File Sumber Terdata di QA</span><strong>${qaApipEvidenceFiles.length} / ${qaApipSourceFilesCount}</strong><small>${ev} sesuai target · ${unmapped} metadata perlu pemeriksaan · ${wrongScope} di luar cakupan akun; file tetap dapat ditelusuri</small></div><div class="qa-summary-card"><span>Target untuk Penilaian</span><strong>${allowed.map(code=>`${code} ${targets[code]}`).join(' · ')}</strong><small>${allowed.map(code=>assessmentTargetLabel(code)).join(' · ')}</small></div>`;
+  const enriched={...live,evidenceFiles:qaApipEvidenceFiles.length,scopeFiles:ev,unmappedFiles:missing};updateQaApipTableSummary(row,enriched);if(row)row.qaApipSummary=enriched;
 }
 function renderQaApipPetunjuk(){
   const info=qaApipMaster?.petunjuk?.fields||{};
@@ -4923,6 +4985,28 @@ function qaApipGroupedParameters(items){
   }
   return [...groups.values()].sort((a,b)=>a.key.localeCompare(b.key,'id',{numeric:true}));
 }
+function qaApipLiveParameterSource(subCode,paramId){
+  // Read the latest KK3.1–KK3.4 master, not the historical QA template
+  // headings. Never merge a target outside the current account scope.
+  const allowed=new Set(assessmentAllowedTargets(qaApipCurrentRow||''));
+  const targetFilter=String(qaApipFilters.target||'all').toUpperCase();
+  const list=[];
+  for(const target of (workbookEvidenceMaster?.targets||[])){
+    const code=String(target.code||'').toUpperCase();
+    if(!allowed.has(code)||(targetFilter!=='ALL'&&targetFilter!==code))continue;
+    const found=(target.parameters||[]).find(p=>qaApipNormalizeSubCode(p.subCode)===subCode&&qaApipNormalizeParamId(p.paramId,p.subCode)===paramId);
+    if(found)list.push({code,subunsur:String(found.subunsur||''),parameter:String(found.uraianParameter||'')});
+  }
+  return list;
+}
+function qaApipLiveParameterHeading(subCode,paramId){
+  const list=qaApipLiveParameterSource(subCode,paramId);
+  if(!list.length)return '';
+  const labels=list.map(x=>QA_APIP_TARGET_LABEL[x.code]||x.code).join(' / ');
+  const titles=[...new Set(list.map(x=>x.parameter.trim()).filter(Boolean))];
+  const subs=[...new Set(list.map(x=>x.subunsur.trim()).filter(Boolean))];
+  return `<div class="qa-current-source-heading"><span>MASTER EVIDENCE TERBARU · ${escapeHtml(labels)}</span><p><b>Subunsur:</b> ${escapeHtml(subs.join(' / ')||subCode)}</p><p><b>Parameter ${escapeHtml(paramId)}:</b> ${escapeHtml(titles.join(' / ')||'Mengikuti workbook KK terbaru')}</p></div>`;
+}
 function qaApipGradeEditor(item,fileUploadId="",fileName=""){
   // Seluruh butir asli tetap menggunakan 671 ID historisnya. File melebihi
   // kapasitas slot memakai ID QA-FILE-uploadId tersendiri.
@@ -4940,13 +5024,16 @@ function renderQaApipChecklist(){
   if(qaApipSourceFilesCount!==qaApipVisibleEvidenceForScope().length){
     const allowed=new Set(assessmentAllowedTargets(qaApipCurrentRow||''));
     const rejected=qaApipEvidenceFiles.filter(f=>!f.qaLocationValid||!f.qaTargetCodes?.some(t=>allowed.has(t)));
-    html+=`<details class="qa-mapping-diagnostic"><summary>⚠ ${rejected.length} evidence belum sesuai pemetaan QA akun ini — periksa rincian (tidak dihapus)</summary><p>File bersumber dari OPD/tahun yang sama. Periksa target KK3.1–KK3.4, kode parameter, Grade dan riwayat unggahan sebelum melakukan koreksi sumber. Sistem tidak memindahkan file atau mengubah target secara diam-diam.</p><div class="qa-mapping-list">${rejected.map(f=>`<div><b>${escapeHtml(qaApipFileName(f))}</b><span>${escapeHtml(f.evidenceKey||'tanpa key')} · ${escapeHtml(f.subunsur||'?')}/${escapeHtml(f.paramId||'?')} · ${escapeHtml(f.grade||'?')} · ${escapeHtml((f.qaTargetCodes||[]).join(',')||'target tidak diketahui')} ${escapeHtml(f.qaMappingWarning||'target tidak berlaku untuk OPD')}</span>${f.uploadId?`<button type="button" class="qa-preview-file-btn evidence-preview-btn" data-opd-id="${escapeHtml(String(qaApipCurrentRow.id))}" data-upload-id="${escapeHtml(String(f.uploadId))}" data-file-name="${escapeHtml(qaApipFileName(f))}" data-file-type="${escapeHtml(f.fileType||'application/octet-stream')}">Pratinjau</button>`:''}</div>`).join('')}</div></details>`;
+    const diagPages=Math.max(1,Math.ceil(rejected.length/QA_APIP_DIAGNOSTIC_PAGE_SIZE));
+    qaApipDiagnosticPage=Math.max(0,Math.min(qaApipDiagnosticPage,diagPages-1));
+    const diagStart=qaApipDiagnosticPage*QA_APIP_DIAGNOSTIC_PAGE_SIZE;
+    html+=`<details class="qa-mapping-diagnostic" ${qaApipDiagnosticPage>0?'open':''}><summary>⚠ ${rejected.length} evidence belum sesuai target akun — seluruh file tetap terdata</summary><p><b>Perlu rekonsiliasi data:</b> file T2/KK3.2 tidak otomatis menjadi T1/KK3.1. Periksa target dan parameter sumber sebelum koreksi. File masih dapat dipratinjau dan tercantum di ekspor Excel, tetapi tidak masuk nilai QA yang salah target.</p><div class="qa-mapping-list">${rejected.slice(diagStart,diagStart+QA_APIP_DIAGNOSTIC_PAGE_SIZE).map(f=>`<div><b>${escapeHtml(qaApipFileName(f))}</b><span>${escapeHtml(f.evidenceKey||'tanpa key')} · ${escapeHtml(f.subunsur||'?')}/${escapeHtml(f.paramId||'?')} · Grade ${escapeHtml(f.grade||'?')} · ${escapeHtml((f.qaTargetCodes||[]).join(',')||'target tidak diketahui')} · ${escapeHtml(f.qaMappingWarning||'Target tidak berlaku untuk akun ini')}</span>${f.uploadId?`<button type="button" class="qa-preview-file-btn evidence-preview-btn" data-opd-id="${escapeHtml(String(qaApipCurrentRow.id))}" data-upload-id="${escapeHtml(String(f.uploadId))}" data-file-name="${escapeHtml(qaApipFileName(f))}" data-file-type="${escapeHtml(f.fileType||'application/octet-stream')}">Pratinjau</button>`:''}</div>`).join('')}</div><div class="qa-diagnostic-pager"><span>${diagStart+1}–${Math.min(diagStart+QA_APIP_DIAGNOSTIC_PAGE_SIZE,rejected.length)} dari ${rejected.length} file</span><button type="button" data-qa-diagnostic="prev" ${qaApipDiagnosticPage===0?'disabled':''}>Sebelumnya</button><button type="button" data-qa-diagnostic="next" ${qaApipDiagnosticPage>=diagPages-1?'disabled':''}>Berikutnya</button></div></details>`;
   }
   pageGroups.forEach(group=>{
     const it=group.first;const sub=escapeHtml(it.subunsur||'');const name=escapeHtml(it.parameter||'');
     const gradeCount=group.grades.size;
     const m=qaApipLiveItemMetrics(group.items,null,{subCode:it.subCode,paramId:it.paramId});
-    html+=`<section class="qa-merged-param-card" data-qa-parameter="${escapeHtml(group.key)}"><header class="qa-merged-param-head"><div><span class="qa-merged-param-code">PARAMETER ${escapeHtml(it.paramId)}</span><small>${escapeHtml(it.subCode)} · ${sub}</small><h5>${name}</h5></div><div class="qa-merged-param-count"><b>${gradeCount} Grade</b><span>${group.items.length} butir penilaian</span><small>${group.sourceOnly?'Butir QA per file':m.checked+' sudah dinilai / N/A'}</small></div></header><div class="qa-merged-grades">`;
+    html+=`<section class="qa-merged-param-card" data-qa-parameter="${escapeHtml(group.key)}"><header class="qa-merged-param-head"><div><span class="qa-merged-param-code">PARAMETER ${escapeHtml(it.paramId)}</span><small>${escapeHtml(it.subCode)} · ${sub}</small><h5>${name}</h5>${qaApipLiveParameterHeading(it.subCode,it.paramId)}</div><div class="qa-merged-param-count"><b>${gradeCount} Grade</b><span>${group.items.length} butir penilaian</span><small>${group.sourceOnly?'Butir QA per file':m.checked+' sudah dinilai / N/A'}</small></div></header><div class="qa-merged-grades">`;
     for(const grade of QA_APIP_GRADE_ORDER.slice().reverse()){
       const gradeItems=group.grades.get(grade);if(!gradeItems)continue;
       const first=gradeItems[0]||group.gradeRefs.get(grade);if(!first)continue;
@@ -5064,7 +5151,27 @@ function scheduleQaApipSave(rowEl){
   qaApipPendingRows.set(key,rowEl);
   qaApipSaveTimers.set(key,setTimeout(()=>{qaApipSaveTimers.delete(key);qaApipPendingRows.delete(key);saveQaApipChecklistFromDom(rowEl);},550));
 }
+let qaApipRefreshPromise=null;
+let qaApipRefreshPromiseKey='';
+let qaApipRefreshTimer=null;
 async function refreshQaApipEvidenceFiles(silent=false){
+  if(!qaApipCurrentRow)return;
+  const key=String(qaApipCurrentRow.id)+'|'+String(currentYear);
+  // Deduplicate only within the same OPD/year. A request from an old
+  // modal must not absorb the first refresh of a newly opened OPD.
+  if(qaApipRefreshPromise&&qaApipRefreshPromiseKey===key)return qaApipRefreshPromise;
+  const promise=refreshQaApipEvidenceFilesInner(silent).finally(()=>{
+    if(qaApipRefreshPromise===promise){qaApipRefreshPromise=null;qaApipRefreshPromiseKey='';}
+  });
+  qaApipRefreshPromiseKey=key;
+  qaApipRefreshPromise=promise;
+  return promise;
+}
+function scheduleQaApipEvidenceRefresh(){
+  clearTimeout(qaApipRefreshTimer);
+  qaApipRefreshTimer=setTimeout(()=>{qaApipRefreshTimer=null;refreshQaApipEvidenceFiles(true).catch(()=>{});},950);
+}
+async function refreshQaApipEvidenceFilesInner(silent=false){
   if(!qaApipCurrentRow)return;
   const rowId=String(qaApipCurrentRow.id),year=currentYear;
   try{
@@ -5207,9 +5314,10 @@ async function qaApipAddFullEvidenceSheet(zip){
   return physical.length;
 }
 async function exportQaApipExcel(){
-  if(!qaApipCurrentRow||!window.JSZip||!qaApipMaster){qaApipSetStatus('Export Excel QA APIP tidak tersedia. Pastikan pustaka ekspor dimuat.','error');return;}
+  if(!qaApipCurrentRow||!qaApipMaster){qaApipSetStatus('Export Excel QA APIP tidak tersedia.','error');return;}
   const btn=document.getElementById('qaApipExport');if(btn){btn.disabled=true;btn.textContent='⏳ Menyiapkan Excel...';}
   try{
+    await ensureExportLibrary('JSZip');
     // Muat ulang sumber file sekali agar isi export mengikutkan upload Evidence Struktur & Proses yang paling baru.
     await refreshQaApipEvidenceFiles(true);
     const res=await fetch('/Template_Penjaminan_Kualitas_QA_APIP_KAWAL_SPIP.xlsx?v=20261012.3',{cache:'no-cache'});
@@ -5281,26 +5389,41 @@ function qaApipSyncActiveItem(msg){
   if(qaApipTab!=='form')renderQaApipModal();
 }
 async function openQaApipModal(id){
-  const row=rows.find(r=>String(r.id)===String(id));if(!row)return;qaApipCurrentRow=row;qaApipEditingRowId=row.id;qaApipTab='form';qaApipFilters={search:'',subCode:'all',grade:'all',target:'all',page:0};
+  const row=rows.find(r=>String(r.id)===String(id));if(!row)return;qaApipCurrentRow=row;qaApipEditingRowId=row.id;qaApipTab='form';qaApipDiagnosticPage=0;qaApipFilters={search:'',subCode:'all',grade:'all',target:'all',page:0};
   const modal=document.getElementById('qaApipModal');if(!modal)return;document.getElementById('qaApipModalOpdName').textContent=`${row.opd||'Tanpa Nama'} · Tahun ${currentYear}`;modal.classList.add('active');qaApipSetStatus('Memuat template QA APIP dan tarikan evidence...');
-  try{await Promise.all([ensureQaApipMasterLoaded(),ensureWorkbookEvidenceMasterLoaded()]);await loadQaApipData(row);qaApipSetStatus('✓ Template QA APIP dan sumber rekomendasi KK3.1–KK3.4 siap; evidence terkait sudah ditarik.','success');renderQaApipModal();}
-  catch(err){qaApipSetStatus('Gagal memuat QA APIP: '+(err.message||err),'error');}
+  const openedYear=String(currentYear);
+  const stillCurrent=()=>qaApipCurrentRow&&String(qaApipCurrentRow.id)===String(row.id)&&String(currentYear)===openedYear;
+  try{
+    await Promise.all([ensureQaApipMasterLoaded(),ensureWorkbookEvidenceMasterLoaded()]);
+    if(!stillCurrent())return;
+    const loaded=await loadQaApipData(row);
+    if(!loaded||!stillCurrent())return;
+    qaApipSetStatus('✓ Template QA APIP dan sumber rekomendasi KK3.1–KK3.4 siap; evidence terkait sudah ditarik.','success');renderQaApipModal();
+  }
+  catch(err){if(stillCurrent())qaApipSetStatus('Gagal memuat QA APIP: '+(err.message||err),'error');}
 }
 function closeQaApipModal(){
   // Flush the currently rendered dirty rows before releasing the OPD context.
   qaApipSaveTimers.forEach((timer,id)=>{clearTimeout(timer);const rowEl=qaApipPendingRows.get(String(id))||document.querySelector(`#qaApipContent [data-qa-item="${CSS.escape(String(id))}"]`);if(rowEl)saveQaApipChecklistFromDom(rowEl);});
+  clearTimeout(qaApipRefreshTimer);qaApipRefreshTimer=null;
+  clearTimeout(qaApipSearchTimer);qaApipSearchTimer=null;
   qaApipSaveTimers.clear();qaApipPendingRows.clear();document.getElementById('qaApipModal')?.classList.remove('active');qaApipEditingRowId=null;qaApipCurrentRow=null;qaApipStateMap=new Map();qaApipEvidenceFiles=[];qaApipEvidenceIndex=new Map();qaApipEvidenceUnmapped=[];qaApipSourceFilesCount=0;qaApipExtraItems=new Map();qaApipEvidenceLocationMap=null;
 }
 document.addEventListener('click',e=>{
-  const tab=e.target.closest('#qaApipTabs [data-qa-tab]');if(tab){qaApipTab=tab.dataset.qaTab;renderQaApipModal();if(qaApipTab==='rekapParameter'||qaApipTab==='rekapUnsur')refreshQaApipEvidenceFiles(true);return;}
+  const tab=e.target.closest('#qaApipTabs [data-qa-tab]');if(tab){qaApipTab=tab.dataset.qaTab;renderQaApipModal();return;}
   const exp=e.target.closest('#qaApipExport');if(exp){exportQaApipExcel();return;}
+  const diagBtn=e.target.closest('[data-qa-diagnostic]');
+  if(diagBtn&&!diagBtn.disabled){qaApipDiagnosticPage=Math.max(0,qaApipDiagnosticPage+(diagBtn.dataset.qaDiagnostic==='next'?1:-1));renderQaApipModal();const diag=document.querySelector('#qaApipContent .qa-mapping-diagnostic');if(diag)diag.open=true;return;}
   const pageBtn=e.target.closest('.qa-apip-page-btn');if(pageBtn&&!pageBtn.disabled){qaApipFilters.page=Math.max(0,qaApipFilters.page+(pageBtn.dataset.qaPage==='next'?1:-1));renderQaApipModal();return;}
   const qbtn=e.target.closest('.btn-qa-apip');if(qbtn){openQaApipModal(qbtn.dataset.id);return;}
 });
 document.addEventListener('input',e=>{
   const target=e.target;
   if(target?.id==='qaApipSearch'){
-    const value=target.value;const pos=target.selectionStart;qaApipFilters.search=value;qaApipFilters.page=0;renderQaApipModal();const next=document.getElementById('qaApipSearch');if(next){next.focus();try{next.setSelectionRange(pos,pos);}catch{}}return;
+    const value=target.value;const pos=target.selectionStart;qaApipFilters.search=value;qaApipFilters.page=0;
+    clearTimeout(qaApipSearchTimer);
+    qaApipSearchTimer=setTimeout(()=>{if(!qaApipCurrentRow)return;renderQaApipModal();const next=document.getElementById('qaApipSearch');if(next){next.focus();try{next.setSelectionRange(pos,pos);}catch{}}},200);
+    return;
   }
   const f=target?.closest?.('#qaApipContent [data-qa-field]');if(f){const rowEl=f.closest('.qa-item-row');if(rowEl){qaApipUpdateItemRow(rowEl);scheduleQaApipSave(rowEl);}}
 });
@@ -5707,9 +5830,11 @@ async function exportKkPmFullWorkbook(){
   if(!kkPmCurrentRow)return; kkPmSetStatus('⏳ Menyiapkan export workbook lengkap...');
   try{const response=await fetch('/myCloudinaryHandler',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'exportKkPmWorkbook',opdId:kkPmCurrentRow.id,year:currentYear})}); if(!response.ok){const tx=await response.text();throw new Error(tx||`HTTP ${response.status}`);} const blob=await response.blob();const name=`${(kkPmCurrentRow.opd||'OPD').replace(/[\\/:*?"<>|]/g,' ').trim().substring(0,65)||'OPD'}-${currentYear}-KK-PM-SPIP-FULL.xlsx`;const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);kkPmSetStatus('✓ Export workbook lengkap berhasil.','success');}catch(err){kkPmSetStatus('❌ Export workbook lengkap gagal: '+(err.message||err),'error');}
 }
-function exportKkPmExcel(){
-  if(!kkPmCurrentRow||!window.XLSX||!kkPmMaster)return kkPmSetStatus('Export Excel tidak tersedia.','error');
+async function exportKkPmExcel(){
+  if(!kkPmCurrentRow||!kkPmMaster)return kkPmSetStatus('Export Excel tidak tersedia.','error');
   try{
+    kkPmSetStatus('Memuat pustaka ekspor Excel...');
+    await ensureExportLibrary('XLSX');
     const wb=XLSX.utils.book_new(); const s=kkPmOverallSummary();
     const recap=[['KERTAS KERJA PM SPIP',''],['OPD',kkPmCurrentRow.opd||''],['Tahun',currentYear],[],['Target','Total Parameter','Dinilai','Pending','Progress','Rata-rata Level','Evidence Terhubung'],...s.targets.map(x=>[x.target,x.total,x.evaluated,x.pending,x.completion,x.avgLevel||'',x.evidence])];
     recap.push([],['Nilai Existing','Nilai'],['Nilai Struktur & Proses',Number(getRowStructureProcessBreakdown(kkPmCurrentRow).value||0)],['Nilai Maturitas SPIP',computedValueOf(kkPmCurrentRow,'nilaiMaturitas')??''],['MRI',computedValueOf(kkPmCurrentRow,'mri')??''],['IEPK',computedValueOf(kkPmCurrentRow,'iepk')??''],['Nilai Kapabilitas APIP',computedValueOf(kkPmCurrentRow,'nilaiKapabilitasApip')??'']);
@@ -6053,9 +6178,9 @@ async function saveLheFollowup(){
   }catch(err){lheStatus('Gagal menyimpan: '+err.message,'error');}
   finally{lheField('lheSaveButton').disabled=false;}
 }
-function exportLheFollowupsExcel(){
+async function exportLheFollowupsExcel(){
   if(!Array.isArray(lheUi.items)||!lheUi.items.length){lheStatus('Belum ada butir tersimpan untuk diekspor.','error');return;}
-  if(typeof XLSX==='undefined'){lheStatus('Fitur Excel belum termuat. Muat ulang aplikasi lalu coba lagi.','error');return;}
+  try{await ensureExportLibrary('XLSX');}catch(err){lheStatus('Fitur Excel tidak dapat dimuat: '+err.message,'error');return;}
   const row=rows.find(r=>String(r.id)===String(lheUi.opdId));
   const year=String(currentYear||new Date().getFullYear());
   const aoa=[
