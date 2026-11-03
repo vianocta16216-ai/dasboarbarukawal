@@ -300,8 +300,16 @@ function schedulePmMasterPropagation(env,year,ctx){
   if(ctx?.waitUntil)ctx.waitUntil(task);else task.catch(()=>{});
 }
 
+const defaultOpdSeedJobs=new Map();
 async function ensureDefaultMahuluOpds(env,year){
-  // Reconcile the default OPD master on every data load. Older deployments
+  const key=String(year),now=Date.now(),previous=defaultOpdSeedJobs.get(key);
+  if(previous&&previous.validUntil>now)return previous.job;
+  const job=ensureDefaultMahuluOpdsInner(env,year);
+  defaultOpdSeedJobs.set(key,{validUntil:now+60000,job});
+  try{return await job;}catch(err){defaultOpdSeedJobs.delete(key);throw err;}
+}
+async function ensureDefaultMahuluOpdsInner(env,year){
+  // Reconcile the default OPD master once per minute, including new/deleted rows. Older deployments
   // may already contain a partial list; a one-time seed marker must not prevent
   // missing default OPDs from being added. Existing names are preserved.
   const seedKey=`mahulu-opds-v2:${String(year)}`;
@@ -584,6 +592,12 @@ async function upgradeSeededLegacyAuthPassword(env,row,password){
 async function ensureAuthUsersSeeded(env){
   const accounts=parseAccountConfig(env);
   if(!accounts.length)return;
+  // Re-seed when KAWAL_SPIP_USERS_JSON changes, not on every login.
+  // Only the digest is stored; secrets/passwords never enter seed metadata.
+  const seedDigest=(await sha256Hex(String(env.KAWAL_SPIP_USERS_JSON||''))).slice(0,32);
+  const seedKey=`KAWAL_SPIP_USERS_JSON_v2_${seedDigest}`;
+  const seeded=await env.DB.prepare('SELECT seed_key FROM auth_user_seed_state WHERE seed_key=? LIMIT 1').bind(seedKey).first();
+  if(seeded?.seed_key)return;
   const now=Date.now();
   // Seed missing JSON-managed accounts on every login/administration bootstrap, not
   // only on the very first deployment. Existing admin-created users are never changed.
@@ -606,9 +620,8 @@ async function ensureAuthUsersSeeded(env){
   }
   for(let i=0;i<inserts.length;i+=8)await env.DB.batch(inserts.slice(i,i+8));
   for(let i=0;i<updates.length;i+=50)await env.DB.batch(updates.slice(i,i+50));
-  await env.DB.prepare(`INSERT INTO auth_user_seed_state(seed_key,seeded_at,account_count)
-    VALUES('KAWAL_SPIP_USERS_JSON_v1',?,?) ON CONFLICT(seed_key) DO UPDATE SET seeded_at=excluded.seeded_at,account_count=excluded.account_count`)
-    .bind(now,accounts.length).run();
+  await env.DB.prepare(`INSERT OR IGNORE INTO auth_user_seed_state(seed_key,seeded_at,account_count)
+    VALUES(?,?,?)`).bind(seedKey,now,accounts.length).run();
 }
 function parseJsonStringArray(value){try{const parsed=JSON.parse(value||'[]');return Array.isArray(parsed)?parsed.map(x=>String(x)):[]}catch{return []}}
 async function migrateAuthOpdNameScope(env,oldName,newName){
@@ -663,7 +676,8 @@ async function createAuthSession(env,user){
   await env.DB.prepare(`INSERT INTO auth_sessions(token_hash,username,display_name,role,opd_id,opd_name,opd_ids_json,opd_names_json,created_at,expires_at,last_seen_at)
     VALUES(?,?,?,?,?,?,?,?,?,?,?)`).bind(tokenHash,user.username,user.displayName||user.username,user.role,user.opdIds?.length===1?user.opdIds[0]:null,user.opdNames?.length===1?user.opdNames[0]:null,JSON.stringify(user.opdIds||[]),JSON.stringify(user.opdNames||[]),now,expires,now).run();
   // Clean up expired records opportunistically to keep D1 small.
-  await env.DB.prepare('DELETE FROM auth_sessions WHERE expires_at<?').bind(now).run().catch(()=>{});
+  // Session cleanup must never delay a successful login response.
+  env.DB.prepare('DELETE FROM auth_sessions WHERE expires_at<?').bind(now).run().catch(()=>{});
   return {token,tokenHash,session:{token_hash:tokenHash,username:user.username,display_name:user.displayName||user.username,role:user.role,opd_id:user.opdIds?.length===1?user.opdIds[0]:null,opd_name:user.opdNames?.length===1?user.opdNames[0]:null,opdIds:user.opdIds||[],opdNames:user.opdNames||[],created_at:now,expires_at:expires}};
 }
 function sessionHasWideScope(session){
@@ -818,6 +832,14 @@ async function ensureOpdSchema(env){
   if(schemaReady)return;
   if(schemaReadyPromise)return schemaReadyPromise;
   schemaReadyPromise=(async()=>{
+    // Cloudflare may create many cold isolates when all OPDs log in together.
+    // The completed migration marker lives in D1 (not an isolate-local cache).
+    // Bump PERF_SCHEMA_REV only when a future release changes ensureOpdSchema.
+    const PERF_SCHEMA_REV='schema_complete_20261104_perf_v1';
+    try {
+      const completed=await env.DB.prepare('SELECT seed_key FROM auth_user_seed_state WHERE seed_key=? LIMIT 1').bind(PERF_SCHEMA_REV).first();
+      if(completed?.seed_key){schemaReady=true;return;}
+    } catch (_) { /* Fresh DB: create its schema below. */ }
     const info=await env.DB.prepare("PRAGMA table_info(opd_data)").all();
     const cols=new Set((info.results||[]).map(x=>x.name));
     const hadStructureField=cols.has('nilai_struktur_proses');
@@ -1300,6 +1322,9 @@ async function ensureOpdSchema(env){
       }
     } catch (e) { console.warn('Backfill opd_parameter_levels dilewati:', e?.message || e); }
 
+    // Mark complete ONLY after every migration and legacy backfill has finished.
+    await env.DB.prepare("INSERT OR IGNORE INTO auth_user_seed_state(seed_key,seeded_at,account_count) VALUES(?,?,0)")
+      .bind(PERF_SCHEMA_REV,Date.now()).run();
     schemaReady=true;
   })().catch(err=>{schemaReadyPromise=null;throw err;});
   return schemaReadyPromise;
@@ -3342,6 +3367,7 @@ async function readWorkbookComputedValues(env,spreadsheetId,sourceInfo={}){
   try{return await job;}finally{if(WORKBOOK_COMPUTED_VALUES_PENDING.get(cacheKey)===job)WORKBOOK_COMPUTED_VALUES_PENDING.delete(cacheKey);}
 }
 
+let lastLegacyScoreRepairAt=0;
 export async function onRequest({ request, env, ctx }) {
   const ACCESS_PASSWORD = env.ACCESS_PASSWORD;
   const DELETE_PASSWORD = env.DELETE_PASSWORD;
@@ -3399,14 +3425,18 @@ export async function onRequest({ request, env, ctx }) {
   // Password yang benar selalu dapat masuk, sekaligus mereset penghitung percobaan.
   let clientIp = 'unknown';
   let loginRateLimited = false;
+  let loginRateAction=action;
   if (action === 'login' || action === 'verifyAccess' || action === 'verifyDelete') {
     clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+    // A hospital/office NAT can share one IP across dozens of OPDs.
+    // Hash username to avoid writing plaintext identifiers to rate-limit logs.
+    if(action==='login')loginRateAction='login:'+((await sha256Hex(String(params.username||'').trim().toLowerCase())).slice(0,28));
     try {
       const now = Date.now();
       const windowMs = 10 * 60 * 1000;
       const { results } = await env.DB.prepare(
         "SELECT COUNT(*) as count FROM login_attempts WHERE ip = ? AND action = ? AND timestamp > ?"
-      ).bind(clientIp, action, now - windowMs).all();
+      ).bind(clientIp, loginRateAction, now - windowMs).all();
       loginRateLimited = Number(results?.[0]?.count || 0) >= 5;
     } catch (err) {
       console.warn('Rate-limit check dilewati:', err);
@@ -3551,10 +3581,10 @@ export async function onRequest({ request, env, ctx }) {
           if(!user && accountCount===0 && !hasJsonConfig && username.toLowerCase()==='bpkp' && password && password===env.BPKP_ADMIN_PASSWORD) user={username:'bpkp',displayName:'Verifikator BPKP',role:'bpkp',opdIds:[],opdNames:[]};
         } catch (e) { return jsonResponse({status:'error',message:e?.message||'Konfigurasi akun tidak valid.'},500); }
         if(!user){
-          try{await env.DB.prepare("INSERT INTO login_attempts (ip, action, timestamp) VALUES (?, ?, ?)").bind(clientIp,'login',Date.now()).run();}catch{}
+          try{await env.DB.prepare("INSERT INTO login_attempts (ip, action, timestamp) VALUES (?, ?, ?)").bind(clientIp,loginRateAction,Date.now()).run();}catch{}
           return jsonResponse({status:'error',message:'Username atau password tidak sesuai, atau akun dinonaktifkan.'},401);
         }
-        try{await env.DB.prepare("DELETE FROM login_attempts WHERE ip = ? AND action = ?").bind(clientIp,'login').run();}catch{}
+        try{await env.DB.prepare("DELETE FROM login_attempts WHERE ip = ? AND action = ?").bind(clientIp,loginRateAction).run();}catch{}
         const created=await createAuthSession(env,user);
         return jsonResponse({status:'success',message:'Login berhasil.',authenticated:true,user:publicSessionUser(created.session)},200,{'Set-Cookie':sessionCookie(created.token),'X-Content-Type-Options':'nosniff'});
       }
@@ -4415,8 +4445,11 @@ export async function onRequest({ request, env, ctx }) {
           const n=(v)=>{const x=Number(v); return Number.isFinite(x)&&x>0?x:null;};
           return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,evaluated:qaEvaluated,na:qaNa,pass:qaPass,partial:qaPartial,fail:qaFail,pending:qaPending,sum:qaSum,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus,targets:[...pmScope]},nilaiStrukturProses:verifiedStructureBreakdown.value,sa:verifiedStructureBreakdown.value,strukturProsesStatus:strukturStatus,structureProcessBreakdown:verifiedStructureBreakdown,computedWorkbook, nilaiMaturitas:n(cv.nilaiMaturitas),nilaiMRI:n(cv.mri),nilaiIEPK:n(cv.iepk),nilaiKapabilitasApip:n(cv.nilaiKapabilitasApip),mri:n(cv.mri),iepk:n(cv.iepk),workbookEvidenceSummary:{totalFiles:Number(wb?.total_files||0),evidenceGroups:Number(wb?.evidence_groups||0),verifiedFiles:Number(wb?.verified_files||0),reviewedFiles:Number(wb?.reviewed_files||0),withNotesFiles:Number(wb?.with_notes_files||0),returnedFiles:Number(wb?.returned_files||0),syncedFiles:Number(wb?.synced_files||0),targetStats:{T1:{groups:Number(wb?.groups_t1||0),files:Number(wb?.files_t1||0),verifiedFiles:Number(wb?.verified_t1||0)},T2:{groups:Number(wb?.groups_t2||0),files:Number(wb?.files_t2||0),verifiedFiles:Number(wb?.verified_t2||0)},T3:{groups:Number(wb?.groups_t3||0),files:Number(wb?.files_t3||0),verifiedFiles:Number(wb?.verified_t3||0)},T4:{groups:Number(wb?.groups_t4||0),files:Number(wb?.files_t4||0),verifiedFiles:Number(wb?.verified_t4||0)}}}};
         });
-        if(scoreRefreshCandidates.length){
-          try{
+        if(scoreRefreshCandidates.length && ctx?.waitUntil && Date.now()-lastLegacyScoreRepairAt>120000){
+          // Limit opportunistic writes to one batch per isolate per two minutes.
+          lastLegacyScoreRepairAt=Date.now();
+          // Do not stall every dashboard GET behind legacy score repair writes.
+          ctx.waitUntil((async()=>{try{
             for(let i=0;i<scoreRefreshCandidates.length;i+=40){
               const writes=scoreRefreshCandidates.slice(i,i+40).map(c=>env.DB.prepare(`UPDATE opd_data SET sa=?,nilai_struktur_proses=?,struktur_proses_status=?
                 WHERE id=? AND year=? AND COALESCE(subunsurs,'{}')=?
@@ -4429,7 +4462,7 @@ export async function onRequest({ request, env, ctx }) {
                   )),'')=?`).bind(c.value,c.value,c.status,c.id,String(year),c.rawSubunsurs,c.oldSa,c.oldNilai,c.oldStatus,String(year),c.id,c.fingerprint));
               await env.DB.batch(writes);
             }
-          }catch(scoreSyncError){console.warn('Koreksi persistensi nilai Struktur dan Proses tertunda; respons tetap memakai nilai hitung terbaru:',scoreSyncError?.message||scoreSyncError);}
+          }catch(scoreSyncError){console.warn('Koreksi persistensi nilai Struktur dan Proses tertunda; respons tetap memakai nilai hitung terbaru:',scoreSyncError?.message||scoreSyncError);}})());
         }
         let visibleRows=mapped.filter(r=>sessionCanAccessOrg(authSession,r.id,r.opd));
         // Evidence URLs are routed through the authenticated download endpoint rather than the public r2.dev hostname.
