@@ -24,7 +24,7 @@ assert.match(source, /Upload ID antrean sudah digunakan oleh file atau tujuan ba
 assert.match(source, /async function queueDriveBackupInBackground\(env, ctx, job\)/);
 assert.match(source, /export async function processDriveBackupQueueMessage\(env, uploadId, ctx = null\)/);
 assert.match(source, /const completionGuard = patch\?\.syncStatus && patch\.syncStatus !== 'done'/);
-assert.match(source, /const queueMessageSent = await sendDriveBackupMessage\(env, job\.uploadId, 5\)/);
+assert.match(source, /const queueMessageSent=readyMarked \? await sendDriveBackupMessage\(env,safeJob\.uploadId,0\) : false/);
 assert.match(source, /notifyRealtime\(env,ctx,job\.year,\{action:'driveBackupCompleted',driveBackupType:job\.type/);
 assert.match(browser, /msg\.action === 'driveBackupCompleted' \|\| msg\.action === 'driveBackupQueued'/);
 assert.match(browser, /loadPemdaPmEvidenceFiles\(\)\.catch/);
@@ -39,11 +39,11 @@ for (const action of ['uploadLheEvidence','uploadPemdaWorkbookEvidence','uploadR
 const uploadFileBlock = routeBlock('uploadFile', 30000);
 assert.match(uploadFileBlock, /enqueueDriveBackupJob/);
 assert.match(uploadFileBlock, /queueDriveBackupInBackground\(env,ctx,/);
-assert.match(uploadFileBlock, /sendDriveBackupMessage\(env,uploadId,0\)/); // workbook variant is already queue-first
+assert.match(uploadFileBlock, /queueDriveBackupInBackground\(env,ctx,job\)/); // workbook path uses the shared R2-ready outbox helper
 const retryBlock = routeBlock('retryDriveBackup', 20000);
 assert.ok(retryBlock.includes('e.upload_id=? AND e.year=? AND e.opd_id=?'));
-assert.ok(retryBlock.includes("job.type==='pemda_workbook_evidence'"));
-assert.ok(retryBlock.includes("UPDATE pemda_workbook_evidence_items SET sync_status='retrying'"));
+assert.ok(retryBlock.includes("type==='pemda_workbook_evidence'"));
+assert.ok(retryBlock.includes("job={type:'pemda_workbook_evidence'"));
 for (const subtype of ["type==='lhe'", "type==='rtp'", "type==='report'", "type==='workbook_evidence'", "type==='pemda_workbook_evidence'"]) {
   assert.ok(retryBlock.includes(subtype));
 }
@@ -58,24 +58,25 @@ for (const action of ['replaceWorkbookEvidenceFile','replaceEvidenceFile','repla
 // A completed upload can be replayed after the HTTP response was lost.
 // Re-check the stable uploadId and refresh metadata instead of false failure.
 const runQueuedStart = source.indexOf('async function runQueuedDriveBackup');
-const runQueuedEnd = source.indexOf('// Queue consumer:', runQueuedStart);
+const runQueuedEnd = source.indexOf('export async function processDriveBackupQueueMessage', runQueuedStart);
 const runQueuedBlock = source.slice(runQueuedStart, runQueuedEnd);
-assert.match(runQueuedBlock, /row\?\.status==='done'/);
+assert.match(runQueuedBlock, /state\?\.status==='done'/);
 assert.match(runQueuedBlock, /processDriveBackupJob\(env,job\)/);
 assert.match(runQueuedBlock, /finishDriveBackupJob\(env,job\.uploadId\)/);
 
-// Pending Pemda response returns R2 key so browser recovery does Drive-only retry.
+// Pending Pemda response exposes R2 acknowledgement; Drive retry remains server-owned.
 const pemdaUploadBlock = routeBlock('uploadPemdaWorkbookEvidence');
-assert.ok(pemdaUploadBlock.includes("r2Key,syncStatus:'retrying',r2Saved:true"));
-assert.ok(pemdaUploadBlock.includes("r2Key,gdriveId,syncStatus:'done'"));
+assert.match(pemdaUploadBlock,/queueDriveBackupInBackground\(env,ctx,job\)/);
+assert.match(pemdaUploadBlock,/r2Key,gdriveId,syncStatus,r2Saved:true/);
+assert.doesNotMatch(browser,/callServerWithRetry\(['\"]retryDriveBackup/);
 
 // UI must report "done" only when both status and gdriveId are confirmed.
-assert.match(browser, /result\?\.syncStatus==='done'&&result\?\.gdriveId/);
-assert.match(browser, /d\.syncStatus==='done'&&d\.gdriveId/);
-assert.match(browser, /const driveDone=r\?\.syncStatus==='done'/);
-assert.match(browser, /if\(r\?\.syncStatus==='done'&&r\?\.gdriveId\)/);
-assert.match(browser, /autoRetryPendingDriveBackups/);
+assert.match(browser, /const driveDone=result\?\.syncStatus==='done' && !!\(result\?\.gdriveId\|\|result\?\.googleDriveId\)/);
+assert.match(browser, /const done=!!f\.gdriveId&&f\.syncStatus==='done'/);
+assert.match(browser, /autoRetryPendingDriveBackups/); // legacy shim is intentionally inert
 assert.match(browser, /retryIndexedDbUploads/);
+assert.match(browser,/Only re-send local files whose upload did not receive an R2 acknowledgement/);
+assert.doesNotMatch(browser,/Tombol Retry tersedia|Ulangi Sinkronisasi/);
 
 // Queue Worker must be able to import its named handler from the Pages module.
 assert.match(source, /export async function processDriveBackupQueueMessage\(env, uploadId, ctx = null\)/);
@@ -89,5 +90,8 @@ for (const action of ['replaceWorkbookEvidenceFile','replaceEvidenceFile','repla
   assert.match(block, /runQueuedDriveBackup\(env,ctx,/);
 }
 assert.match(source, /const completionGuard = patch\?\.syncStatus && patch\.syncStatus !== 'done'/);
+assert.match(source,/Number\(uploaded\.size\)!==Number\(bytes\.byteLength\)/);
+assert.match(source,/Number\(verified\.size\)===Number\(bytes\.byteLength\)/);
+assert.match(browser,/driveBackupCompleted/);
 
 console.log('PASS: Drive retry SQL, duplicate upload race, background Queue upload paths, retry UI status, and replacement sync guards');

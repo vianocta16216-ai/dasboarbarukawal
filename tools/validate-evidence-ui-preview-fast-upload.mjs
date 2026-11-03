@@ -7,9 +7,9 @@ const checks=[
   ['Delete button uses manage permission',js.includes('${canManageEvidence?`<button type="button" class="wb-action-delete"')],
   ['XLSX local preview enabled',js.includes('window.XLSX.read(buffer,{type:\'array\',cellDates:true})')],
   ['PDF preview uses signed streaming URL',js.includes('Pratinjau streaming privat dari R2')],
-  ['Workbook upload marks R2 ready before queue',api.includes('await markDriveBackupR2Ready(env,uploadId)')],
-  ['Workbook upload sends queue message after R2',api.includes('await sendDriveBackupMessage(env,uploadId,0)')],
-  ['Workbook upload returns pending until Drive is verified',api.includes("syncStatus:'retrying',uploadId,r2Key:filePath")],
+  ['Queue-first helper verifies R2 before marking the durable job ready',api.includes('const r2Head=await env.EVIDENCE_BUCKET.head')&&api.includes('await markDriveBackupR2Ready(env,safeJob.uploadId)')],
+  ['Queue-first helper dispatches the R2-ready job immediately',api.includes('sendDriveBackupMessage(env,safeJob.uploadId,0)')],
+  ['Workbook upload returns a pending state until Drive is verified',/status:driveQueue\.done\?'success':'pending'[\s\S]*?r2Key:filePath,r2Saved:true/.test(api)],
   ['Queue completion broadcasts realtime',api.includes("action:'driveBackupCompleted'")]
 ];
 for(const [name,ok] of checks){console.log(`${ok?'PASS':'FAIL'} ${name}`);if(!ok)process.exitCode=1;}

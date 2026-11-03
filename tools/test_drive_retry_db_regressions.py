@@ -44,14 +44,14 @@ handler=(project_root/'functions'/'myCloudinaryHandler.js').read_text()
 start=handler.index('INSERT INTO drive_backup_jobs')
 end=handler.index('  `).bind(',start)
 outbox_sql=handler[start:end]
-assert outbox_sql.count('?')==8, f'Unexpected outbox bind count: {outbox_sql.count("?")}'
+assert outbox_sql.count('?')==6, f'Unexpected outbox bind count: {outbox_sql.count("?")}'
 queue_db=sqlite3.connect(':memory:')
 queue_db.executescript((project_root/'database/migrations/20261102_durable_drive_backup_queue.sql').read_text())
 queue_db.executescript((project_root/'database/migrations/20261103_durable_drive_queue_dispatch_and_pacing.sql').read_text())
 stamp=1700000000000
 def upsert(job):
     return queue_db.execute(outbox_sql,(
-        job['uploadId'],json.dumps(job,separators=(',',':')),stamp,'',stamp,stamp,stamp,stamp
+        job['uploadId'],json.dumps(job,separators=(',',':')),stamp,'',stamp,stamp
     ))
 job={'type':'workbook_evidence','uploadId':'same-job','year':'2026','opdId':'opd-a','r2Key':'r2/opd-a/a.pdf','evidenceKey':'T1|1.1|1.1.1'}
 upsert(job)

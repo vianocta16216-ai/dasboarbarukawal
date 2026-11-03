@@ -1,0 +1,32 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+const read = (p) => fs.readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
+const handler = read('functions/myCloudinaryHandler.js');
+const worker = read('drive-backup-worker/index.js');
+const workerConfig = read('drive-backup-worker/wrangler.toml');
+const pagesConfig = read('wrangler.toml');
+const browser = read('public/script.js');
+const queueHelper = handler.slice(handler.indexOf('async function queueDriveBackupInBackground'), handler.indexOf('async function readDriveBackupMetadataStatus'));
+assert.match(queueHelper, /enqueueDriveBackupJob\(env,job\)/);
+assert.match(queueHelper, /EVIDENCE_BUCKET\.head/);
+assert.match(queueHelper, /markDriveBackupR2Ready/);
+assert.match(queueHelper, /sendDriveBackupMessage/);
+assert.doesNotMatch(queueHelper, /getGoogleAccessToken|directGoogleDriveBackup|fetch\(/, 'Pages request path must not synchronously call Google Drive API');
+for (const action of ['uploadLheEvidence','uploadPemdaWorkbookEvidence','uploadRtpEvidence','uploadReportFile','uploadFile']) {
+  const start = handler.indexOf(`case '${action}'`);
+  assert.notEqual(start, -1, `${action} handler exists`);
+  const next = handler.indexOf("case '", start + 8);
+  const block = handler.slice(start, next === -1 ? undefined : next);
+  assert.match(block, /queueDriveBackupInBackground\(env,ctx,/ , `${action} dispatches Drive work to durable queue`);
+}
+assert.match(worker, /processDriveBackupQueueMessage\(env, uploadId, ctx\)/);
+assert.match(worker, /dispatchDueDriveBackupJobs\(env, 100\)/);
+assert.match(worker, /realtimeBound/);
+assert.match(workerConfig, /queue = "kawal-spip-drive-backup"/);
+assert.match(workerConfig, /dead_letter_queue = "kawal-spip-drive-backup-dlq"/);
+assert.match(workerConfig, /script_name = "kawal-spip-realtime"/);
+assert.match(pagesConfig, /queue = "kawal-spip-drive-backup"/);
+assert.doesNotMatch(browser, /callServerWithRetry\(['"]retryDriveBackup['"]/, 'Browser must not retry Google Drive directly');
+assert.match(browser, /realtimeSocket\.readyState === WebSocket\.OPEN/);
+assert.match(browser, /}, 45000\)/, 'Full dashboard polling should be a slower fallback');
+console.log('PASS: dual-storage queue-first contract, R2 readiness gate, Queue/cron worker, realtime binding, and no browser-triggered Drive retry.');

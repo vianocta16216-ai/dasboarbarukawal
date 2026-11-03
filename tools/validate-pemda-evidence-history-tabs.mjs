@@ -17,7 +17,7 @@ const checks=[
  ['parameter switching changes only selected parameter state', js.includes("getElementById('pemdaEvidenceHistoryParameter')?.addEventListener('change'")&&js.includes('pemdaPmDash.evidenceHistoryParamKey=key')],
  ['upload jumps to the exact parameter and level whose files were uploaded', js.includes('pemdaPmDash.evidenceHistoryParamKey=`${target}|${p.subCode}|${p.paramId}`')&&js.includes('pemdaPmDash.evidenceHistoryLevelKey=String(({A:5,B:4,C:3,D:2,E:1})[grade])')],
  ['upload form retains its own target and parameter fields', html.includes('id="pemdaEvidenceTarget"')&&html.includes('id="pemdaEvidenceParam"')],
- ['verification, delete and retry actions preserved', ['data-pemda-evidence-verify','data-pemda-evidence-delete','data-pemda-evidence-retry'].every(x=>js.includes(x))],
+ ['verification/delete actions remain while Drive retry is automatic', js.includes('data-pemda-evidence-verify')&&js.includes('data-pemda-evidence-delete')&&js.includes('Google Drive sedang diproses otomatis')&&!js.includes('data-pemda-evidence-retry')&&!js.includes("callServerWithRetry('retryDriveBackup'")],
  ['responsive target tabs and parameter selector styles exist', css.includes('.pemda-pm-evidence-history-tabs')&&css.includes('.pemda-pm-evidence-history-filter')&&css.includes('@media(max-width:600px){.pemda-pm-evidence-history-tabs')],
 ];
 for (const [name,ok] of checks) console.log(`${ok?'PASS':'FAIL'} ${name}`);
