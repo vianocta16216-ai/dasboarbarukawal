@@ -3130,3 +3130,10 @@ button.danger, .confirm-actions button.danger,
 .evidence-preview-btn svg{vertical-align:middle;margin-right:5px}
 @media (prefers-reduced-motion:reduce){.preview-loading-svg,.preview-stream-spinner{animation:none}}
 @media (max-width:700px){.qa-file-bound-card{padding:10px!important}.qa-file-review-head{display:block}.preview-stream-wrap{min-height:280px}}
+
+/* Retry uses the existing R2 object/ID, with one server-side Drive job per file. */
+.drive-manual-retry-btn { display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  padding:6px 9px;border:1px solid #94a3b8;border-radius:8px;background:#eff6ff;
+  color:#1e40af;cursor:pointer;font-size:12px;font-weight:700;white-space:normal;max-width:100%; }
+.drive-manual-retry-btn:hover:not(:disabled) { background:#dbeafe;border-color:#60a5fa; }
+.drive-manual-retry-btn:disabled { opacity:.65;cursor:wait; }

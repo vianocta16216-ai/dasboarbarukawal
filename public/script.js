@@ -2822,7 +2822,7 @@ function renderFileList(row, subCode, paramId, level) {
     div.className = 'evidence-file-card';
     const status = isObject ? (fileObj.syncStatus || (fileObj.gdriveId ? 'done' : 'pending')) : 'pending';
     const statusLabel = status === 'done' ? '✅ R2 + Google Drive' : (status === 'retrying' ? '🔄 Google Drive diproses otomatis (tanpa klik ulang)' : '⏳ R2 diterima; Google Drive sedang diproses otomatis');
-    const retryButton = ''; // Google Drive retry is handled only by the server-side Queue worker.
+    const retryButton = isObject ? driveRetryButton(fileObj,{type:'evidence',opdId:row.id,subunsur:subCode,paramId,level}) : '';
 
     const verification = normalizeVerification(fileObj?.verification);
     const verifiedClass = verification.status ? ` is-${verification.status}` : '';
@@ -2844,7 +2844,7 @@ function renderFileList(row, subCode, paramId, level) {
         </div>
         <label class="verify-note-label">Catatan Pemeriksa<textarea maxlength="1000" class="verify-note" placeholder="Catatan, alasan pengembalian, atau koreksi yang perlu ditindaklanjuti...">${escapeHtml(verification.note)}</textarea></label>
         <div class="verification-save-row"><span class="verification-updated">${verification.verifiedAt ? 'Diverifikasi: ' + escapeHtml(formatVerificationDate(verification.verifiedAt)) : 'Belum diverifikasi'}</span><button type="button" class="verification-save-btn" data-verify-evidence="1">💾 Simpan Verifikasi</button>${replaceHtml}</div>
-      </div>` : (canVerify ? `<div class="file-verification-legacy">Alur audit: Auditor mengirim → Irban memverifikasi → BPKP memutuskan verifikasi akhir.${replacementNotice}${replaceHtml}</div>` : `
+      </div>` : (canVerify ? `<div class="file-verification-legacy">Alur audit: Asesor PM OPD memeriksa → Auditor / PPUPD mengirim → BPKP memverifikasi akhir.${replacementNotice}${replaceHtml}</div>` : `
       <div class="file-verification-legacy">⚠️ File lama belum memiliki identitas upload. Upload ulang file ini untuk mengaktifkan verifikasi per file.</div>`);
 
     div.innerHTML = `
@@ -2886,12 +2886,36 @@ function renderFileList(row, subCode, paramId, level) {
   });
 }
 
-async function retryUploadedFile(opdId, subCode, paramId, level, uploadId) {
-  // Compatibility shim for any cached/legacy markup: never trigger a browser Drive retry.
-  const row=rows.find(r=>String(r.id)===String(opdId));
-  if(row){renderFileList(row,subCode,paramId,level);}
-  return {queued:true,automatic:true};
+// Retry always operates on the existing server-side upload ID; no new R2 object
+// or browser duplicate is created. Backend validates each file's OPD and location.
+function driveRetryButton(file,options={}){
+  if(!file?.uploadId || (file.syncStatus==='done'&&file.gdriveId) || file.syncStatus==='deleted' || file.localPending)return '';
+  const attr=(k,v)=>` data-${k}="${escapeHtml(String(v??''))}"`;
+  return `<button type="button" class="drive-manual-retry-btn"${attr('retry-upload',file.uploadId)}${attr('retry-type',options.type||'evidence')}${attr('retry-opd',options.opdId||'')}${attr('retry-sub',options.subunsur||'')}${attr('retry-param',options.paramId||'')}${attr('retry-level',options.level||'')}${attr('retry-report',options.reportType||'')}${attr('retry-followup',options.followupId||'')}>↻ Retry Google Drive</button>`;
 }
+async function retryUploadedFile(opdId,subCode,paramId,level,uploadId){
+  return callServerWithRetry('retryDriveBackup',{opdId,subunsur:subCode,paramId,level,uploadId,year:currentYear,type:'evidence'},1);
+}
+const driveRetryInFlight=new Set();
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('.drive-manual-retry-btn');if(!button)return;
+  event.preventDefault();
+  const uploadId=button.dataset.retryUpload||'';if(!uploadId||driveRetryInFlight.has(uploadId))return;
+  driveRetryInFlight.add(uploadId);button.disabled=true;
+  const original=button.textContent;button.textContent='↻ Mengirim Retry…';
+  try{
+    const payload={type:button.dataset.retryType||'evidence',uploadId,year:currentYear,
+      opdId:button.dataset.retryOpd||undefined,subunsur:button.dataset.retrySub||undefined,
+      paramId:button.dataset.retryParam||undefined,level:button.dataset.retryLevel||undefined,
+      reportType:button.dataset.retryReport||undefined,followupId:button.dataset.retryFollowup||undefined};
+    const result=await callServerWithRetry('retryDriveBackup',payload,1);
+    button.textContent=result?.syncStatus==='done'?'✓ Sudah tersinkron':(result?.busy?'⏳ Sedang diproses':'✓ Retry diprioritaskan');
+    button.title=result?.message||'R2 tetap aman; Google Drive akan diproses oleh worker.';
+    // The worker reports completion over realtime. Keep a visible user-friendly
+    // state without polling or bulk-refreshing all OPD data from every browser.
+  }catch(err){button.textContent='⚠ Retry gagal — coba lagi';button.title=String(err?.message||err);button.disabled=false;}
+  finally{driveRetryInFlight.delete(uploadId);if(button.disabled&&button.textContent.startsWith('✓ Retry')){setTimeout(()=>{if(button.isConnected){button.disabled=false;button.textContent=original;}},12000);}else if(button.textContent.startsWith('⏳'))setTimeout(()=>{if(button.isConnected){button.disabled=false;button.textContent=original;}},12000);}
+});
 
 async function autoRetryPendingDriveBackups(){
   // Deliberately disabled: D1 outbox + Queue consumer + cron dispatcher own Drive retries.
@@ -3820,7 +3844,7 @@ function wbEvidenceFileHtml(file){
   const opdId=escapeHtml(workbookEvidenceRow?.id||'');
   const previewButton=file?.uploadId?`<button type="button" class="wb-action-preview evidence-preview-btn" data-opd-id="${opdId}" data-upload-id="${uploadId}" data-file-name="${name}" data-file-type="${escapeHtml(file.fileType||'application/octet-stream')}">👁 Pratinjau</button>`:'';
   const workflowButton=file?.uploadId?`<button type="button" class="evidence-workflow-btn wb-action-preview" data-opd-id="${opdId}" data-upload-id="${uploadId}" data-file-name="${name}">🛡️ Alur Verifikasi</button>`:'';
-  const retryButton=''; // Worker retries Drive automatically; no manual sync button.
+  const retryButton=driveRetryButton(file,{type:'workbook_evidence',opdId:workbookEvidenceRow?.id});
   const role=String(currentUser?.role||'');
   const canDirectVerify=['admin','auditor','ppupd','irban'].includes(role);
   // OPD operators may delete their own scoped evidence and replace it only
@@ -4208,7 +4232,7 @@ const REPORT_CONFIG={
 function reportListForRow(row,type){return type==='pm_spip'?(Array.isArray(row.pmSpipReports)?row.pmSpipReports:[]):(Array.isArray(row.rrRtpReports)?row.rrRtpReports:[]);}
 function setReportListForRow(row,type,list){if(type==='pm_spip')row.pmSpipReports=list;else row.rrRtpReports=list;}
 function reportSetStatus(msg,type=''){const e=document.getElementById('reportUploadStatus');if(!e)return;e.textContent=msg||'';e.className='sheet-links-status'+(type?' '+type:'');e.style.display=msg?'block':'none';}
-function renderReportUploadList(row,type){const e=document.getElementById('reportUploadList');if(!e)return;const a=reportListForRow(row,type);const cfg=REPORT_CONFIG[type];if(!a.length){e.innerHTML=`<div class="sheet-link-card">Belum ada file pada folder <b>${sheetLinksEsc(cfg.folder)}</b>.</div>`;return;}e.innerHTML='<div class="rtp-file-list">'+a.map((f,i)=>{const done=!!f.gdriveId&&f.syncStatus==='done';const status=done?'✅ Google Drive + R2':(f.syncStatus==='retrying'?'🔄 Mengirim otomatis ke Google Drive':'⏳ Google Drive menunggu pengiriman otomatis');const retry='';const open=f.uploadId&&f.url?f.url:(f.gdriveId?`https://drive.google.com/file/d/${encodeURIComponent(f.gdriveId)}/view`:(f.url||'#'));const workflow=f.uploadId?`<button class="evidence-workflow-btn" data-opd-id="${sheetLinksEsc(row.id)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Laporan')}">🛡️ Alur Verifikasi</button>`:'';const preview=f.uploadId?`<button type="button" class="evidence-preview-btn" data-opd-id="${sheetLinksEsc(row.id)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Laporan')}" data-file-type="${sheetLinksEsc(f.fileType||'application/octet-stream')}">👁 Pratinjau</button>`:'';const canDelete=!['irban','bpkp'].includes(String(currentUser?.role||''));return `<div class="rtp-file-item"><div><div class="rtp-file-name">${cfg.icon} ${sheetLinksEsc(f.fileName||'Laporan')}</div><div class="rtp-file-meta">${status}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions">${preview}${workflow}${retry}${canDelete?`<button class="report-delete-btn" data-index="${i}">Hapus</button>`:''}</div></div>`;}).join('')+'</div>';}
+function renderReportUploadList(row,type){const e=document.getElementById('reportUploadList');if(!e)return;const a=reportListForRow(row,type);const cfg=REPORT_CONFIG[type];if(!a.length){e.innerHTML=`<div class="sheet-link-card">Belum ada file pada folder <b>${sheetLinksEsc(cfg.folder)}</b>.</div>`;return;}e.innerHTML='<div class="rtp-file-list">'+a.map((f,i)=>{const done=!!f.gdriveId&&f.syncStatus==='done';const status=done?'✅ Google Drive + R2':(f.syncStatus==='retrying'?'🔄 Mengirim otomatis ke Google Drive':'⏳ Google Drive menunggu pengiriman otomatis');const retry=driveRetryButton(f,{type:'report',opdId:row.id,reportType:type});const open=f.uploadId&&f.url?f.url:(f.gdriveId?`https://drive.google.com/file/d/${encodeURIComponent(f.gdriveId)}/view`:(f.url||'#'));const workflow=f.uploadId?`<button class="evidence-workflow-btn" data-opd-id="${sheetLinksEsc(row.id)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Laporan')}">🛡️ Alur Verifikasi</button>`:'';const preview=f.uploadId?`<button type="button" class="evidence-preview-btn" data-opd-id="${sheetLinksEsc(row.id)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Laporan')}" data-file-type="${sheetLinksEsc(f.fileType||'application/octet-stream')}">👁 Pratinjau</button>`:'';const canDelete=!['irban','bpkp'].includes(String(currentUser?.role||''));return `<div class="rtp-file-item"><div><div class="rtp-file-name">${cfg.icon} ${sheetLinksEsc(f.fileName||'Laporan')}</div><div class="rtp-file-meta">${status}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions">${preview}${workflow}${retry}${canDelete?`<button class="report-delete-btn" data-index="${i}">Hapus</button>`:''}</div></div>`;}).join('')+'</div>';}
 async function openReportUploadModal(id,type){const row=rows.find(r=>r.id===id);if(!row)return;reportUploadEditingRowId=id;reportUploadEditingType=type;const cfg=REPORT_CONFIG[type],modal=document.getElementById('reportUploadModal');if(!modal)return;const canUpload=['admin','auditor','opd'].includes(String(currentUser?.role||''));const chooser=document.getElementById('reportUploadChoose');if(chooser)chooser.style.display=canUpload?'inline-flex':'none';document.getElementById('reportUploadTitle').innerHTML=`${cfg.icon} ${cfg.title} - <span id="reportUploadOpdName">${sheetLinksEsc(row.opd||'Tanpa Nama')}</span>`;document.getElementById('reportUploadDescription').textContent=cfg.desc;document.getElementById('reportUploadChoose').textContent=cfg.button;modal.classList.add('active');reportSetStatus(`Memuat folder ${cfg.folder}...`);try{const d=await callServer('getReportFiles',{opdId:id,year:currentYear,reportType:type});const list=Array.isArray(d.reports)?d.reports:[];setReportListForRow(row,type,list);row[type==='pm_spip'?'pmSpipFolder':'rrRtpFolder']=d.folderName||cfg.folder;row[type==='pm_spip'?'pmSpipFolderId':'rrRtpFolderId']=d.folderId||null;const driveLink=document.getElementById('reportUploadDriveLink');if(driveLink){driveLink.href=d.folderUrl||'#';driveLink.style.display=d.folderUrl?'inline-flex':'none';}renderReportUploadList(row,type);reportSetStatus(d.folderUrl?`✅ Folder Google Drive terhubung: ${cfg.folder}.`:`Folder ${cfg.folder} siap dibuat saat upload.`,d.folderUrl?'success':'');}catch(err){reportSetStatus('Gagal memuat: '+err.message,'error');}}
 function closeReportUploadModal(){document.getElementById('reportUploadModal')?.classList.remove('active');reportUploadEditingRowId=null;}
 async function uploadReportFileClient(row,type,file,existingUploadId=null){if(!file)return null;if(file.size>MAX_FILE_UPLOAD_BYTES)throw new Error('File terlalu besar! Maks 10 MB per file.');const uploadId=existingUploadId||crypto.randomUUID();const payload={__binaryFile:file,opdId:row.id,opdName:row.opd||'OPD',reportType:type,year:currentYear,fileName:file.name,fileType:file.type||'application/octet-stream',uploadId};const result=await callServerWithRetry('uploadReportFile',payload,3);return{url:result.url,fileName:result.fileName,gdriveId:result.gdriveId||null,syncStatus:result.syncStatus||'pending',syncError:result.driveError||null,uploadId:result.uploadId||uploadId,r2Key:result.r2Key||null,r2Saved:!!result.r2Saved,folderName:result.folderName||REPORT_CONFIG[type].folder,gdriveFolderId:result.folderId||null};}
@@ -4259,7 +4283,7 @@ function renderRtpEvidenceList(row){
   if(!a.length){e.innerHTML=summaryHtml+'<div class="sheet-link-card">Belum ada evidence RTP.</div>';updateRtpVerificationTableSummary(row);return;}
   e.innerHTML=summaryHtml+'<div class="rtp-file-list">'+a.map((f,i)=>{
     const status=f.gdriveId?'✅ Google Drive + R2':(f.syncStatus==='retrying'?'🔄 Mengirim otomatis ke Google Drive':'⏳ Mengirim ke Google Drive');
-    const retry='';
+    const retry=driveRetryButton(f,{type:'rtp',opdId:row.id});
     const v=normalizeVerification(f?.verification);
     const verifyScore=getVerificationScore(f);
     const canReplace=f?.uploadId && v.status==='dikembalikan';
@@ -4276,7 +4300,7 @@ function renderRtpEvidenceList(row){
       </div>
       <label class="verify-note-label">Catatan Pemeriksa<textarea maxlength="1000" class="rtp-verify-note" placeholder="Catatan, alasan pengembalian, atau koreksi yang perlu ditindaklanjuti...">${sheetLinksEsc(v.note)}</textarea></label>
       <div class="verification-save-row"><span class="verification-updated">${v.verifiedAt ? 'Diverifikasi: '+sheetLinksEsc(formatVerificationDate(v.verifiedAt)) : 'Belum diverifikasi'}</span><button class="verification-save-btn rtp-verification-save" data-upload-id="${sheetLinksEsc(f.uploadId)}">💾 Simpan Verifikasi</button>${replaceHtml}</div>
-    </div>`:(f?.uploadId?`<div class="file-verification-legacy">Alur audit: Auditor mengirim → Irban memverifikasi → BPKP verifikator akhir.${replacementNotice}${replaceHtml}</div>`:'<div class="file-verification-legacy">⚠️ File lama belum memiliki identitas upload. Upload ulang untuk mengaktifkan verifikasi.</div>');
+    </div>`:(f?.uploadId?`<div class="file-verification-legacy">Alur audit: Asesor PM OPD memeriksa → Auditor / PPUPD mengirim → BPKP verifikator akhir.${replacementNotice}${replaceHtml}</div>`:'<div class="file-verification-legacy">⚠️ File lama belum memiliki identitas upload. Upload ulang untuk mengaktifkan verifikasi.</div>');
     const canDeleteRtp=!['irban','bpkp'].includes(String(currentUser?.role||''));
     return `<div class="rtp-file-item rtp-file-item-expanded"><div class="rtp-file-top"><div><div class="rtp-file-name">📄 ${sheetLinksEsc(f.fileName||'File')}</div><div class="rtp-file-meta">${status}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}</div></div><div class="rtp-file-actions">${previewButton}${workflowButton}${retry}${canDeleteRtp?`<button class="rtp-delete-btn" data-index="${i}">Hapus</button>`:''}</div></div>${verifyHtml}</div>`;
   }).join('')+'</div>';
@@ -5690,7 +5714,7 @@ function renderLheEvidenceList(files=[]){
   if(!arr.length){root.innerHTML='<div class="sheet-link-card">Belum ada bukti dukung untuk butir ini.</div>';return;}
   root.innerHTML=arr.map(f=>{
     const workflow=f.uploadId?`<button type="button" class="evidence-workflow-btn" data-opd-id="${sheetLinksEsc(lheUi.opdId)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Bukti LHE')}">🛡️ Alur Verifikasi</button>`:'';const preview=f.uploadId?`<button type="button" class="evidence-preview-btn" data-opd-id="${sheetLinksEsc(lheUi.opdId)}" data-upload-id="${sheetLinksEsc(f.uploadId)}" data-file-name="${sheetLinksEsc(f.fileName||'Bukti LHE')}" data-file-type="${sheetLinksEsc(f.fileType||'application/octet-stream')}">👁 Pratinjau</button>`:'';
-    const retry='';
+    const retry=driveRetryButton(f,{type:'lhe',opdId:lheUi.opdId,followupId:lheUi.selectedFollowupId});
     const del=currentUser?.role==='bpkp'?'':`<button type="button" class="lhe-evidence-delete" data-upload-id="${sheetLinksEsc(f.uploadId)}">Hapus</button>`;
     return `<div class="rtp-file-item"><div><div class="rtp-file-name">📎 ${sheetLinksEsc(f.fileName||'Bukti dukung')}</div><div class="rtp-file-meta">${sheetLinksEsc(f.syncStatus||'tersimpan')}${f.uploadedAt?' · '+sheetLinksEsc(f.uploadedAt):''}${f.syncError?' · '+sheetLinksEsc(f.syncError):''}</div></div><div class="rtp-file-actions">${preview}${workflow}${retry}${del}</div></div>`;
   }).join('');
@@ -5883,24 +5907,24 @@ function openEvidencePreview(info){
   renderEvidencePreview({...info,year:info.year||currentYear});
 }
 
-// ====== ALUR VERIFIKASI BERTAHAP: AUDITOR / PPUPD → IRBAN → BPKP ======
+// ====== ALUR VERIFIKASI: ASESOR PM OPD → AUDITOR / PPUPD → BPKP ======
 const workflowUi={opdId:null,uploadId:null,fileName:'Evidence',data:null};
-const workflowStageLabels={auditor:'Auditor / PPUPD (input/pengiriman)',irban:'Irban (verifikator)',bpkp:'BPKP (verifikator akhir)'};
+const workflowStageLabels={asesor:'Asesor PM OPD (pemeriksaan awal)',auditor:'Auditor / PPUPD (pengiriman)',bpkp:'BPKP (verifikator akhir)',irban:'Irban (riwayat alur lama)'};
 function workflowDate(value){if(!value)return '—';try{return new Date(Number(value)).toLocaleString('id-ID');}catch{return '—';}}
 function workflowStatusLabel(status){return ({menunggu:'Menunggu',dikirim:'Dikirim Auditor / PPUPD',diterima:'Diterima',diterima_catatan:'Diterima dengan Catatan',dikembalikan:'Dikembalikan'})[status]||status||'Menunggu';}
 function workflowSetStatus(message,type=''){const el=document.getElementById('evidenceWorkflowStatus');if(!el)return;el.textContent=message||'';el.className='sheet-links-status'+(type?' '+type:'');el.style.display=message?'block':'none';}
 function workflowCanSubmit(stage,data){
-  const role=String(currentUser?.role||'');const roleStage=role==='ppupd'?'auditor':role;if(role!=='admin'&&roleStage!==stage)return false;
+  const role=String(currentUser?.role||'');const roleStage=role==='ppupd'?'auditor':(role==='opd'?'asesor':role);if(role!=='admin'&&roleStage!==stage)return false;
   const stages=data?.stages||{};
-  if(stage==='irban'&&stages.auditor?.status!=='dikirim')return false;
-  if(stage==='bpkp'&&!['diterima','diterima_catatan'].includes(stages.irban?.status))return false;
+  if(stage==='auditor'&&!['diterima','diterima_catatan'].includes(stages.asesor?.status))return false;
+  if(stage==='bpkp'&&(stages.auditor?.status!=='dikirim'||!['diterima','diterima_catatan'].includes(stages.asesor?.status)))return false;
   return true;
 }
 function renderWorkflowStageCards(data){
   const root=document.getElementById('evidenceWorkflowStages');if(!root)return;
-  root.innerHTML=['auditor','irban','bpkp'].map(stage=>{
+  root.innerHTML=['asesor','auditor','bpkp'].map(stage=>{
     const item=data?.stages?.[stage]||{status:'menunggu'};
-    const good=item.status==='diterima'||item.status==='dikirim';
+    const good=['diterima','diterima_catatan','dikirim'].includes(item.status);
     const color=item.status==='dikembalikan'?'#b91c1c':good?'#166534':'#64748b';
     return `<div class="workflow-stage-card"><div><div class="workflow-stage-title">${workflowStageLabels[stage]}</div><div class="workflow-stage-status" style="color:${color};">${sheetLinksEsc(workflowStatusLabel(item.status))}</div></div><div><div style="font-size:12px;color:#475569;">Pemeriksa: ${sheetLinksEsc(item.examinerName||'—')} · ${sheetLinksEsc(workflowDate(item.updatedAt))}</div><p>${sheetLinksEsc(item.note||'Belum ada catatan.')}</p></div></div>`;
   }).join('');
@@ -5910,10 +5934,15 @@ function renderWorkflowStageCards(data){
 }
 function workflowUpdateForm(){
   const stageEl=document.getElementById('workflowStageSelect'),statusEl=document.getElementById('workflowStatusSelect'),save=document.getElementById('workflowSaveButton');if(!stageEl||!statusEl||!save)return;
-  const role=String(currentUser?.role||'');if(role!=='admin'&&['auditor','ppupd','irban','bpkp'].includes(role))stageEl.value=role==='ppupd'?'auditor':role;
+  const role=String(currentUser?.role||'');if(role!=='admin'&&['opd','auditor','ppupd','bpkp'].includes(role))stageEl.value=role==='ppupd'?'auditor':(role==='opd'?'asesor':role);
   stageEl.disabled=role!=='admin';
-  const stage=stageEl.value;const data=workflowUi.data||{};const statuses=stage==='auditor'?[['dikirim','Kirim ke Irban']]:[['diterima','Diterima'],['diterima_catatan','Diterima dengan Catatan'],['dikembalikan','Dikembalikan / perlu perbaikan']];
+  const stage=stageEl.value;const data=workflowUi.data||{};const statuses=stage==='auditor'?[['dikirim','Kirim ke BPKP']]:[['diterima','Diterima'],['diterima_catatan','Diterima dengan Catatan'],['dikembalikan','Dikembalikan / perlu perbaikan']];
+  // Keep the operator's selected result when a note is typed or a status is
+  // changed. Rebuilding the options without preserving it silently forces
+  // 'Diterima', preventing 'Dikembalikan' and 'Diterima dengan Catatan'.
+  const selectedStatus=statusEl.value;
   statusEl.innerHTML=statuses.map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+  if(statuses.some(([v])=>v===selectedStatus))statusEl.value=selectedStatus;
   const can=workflowCanSubmit(stage,data);const ready=!['dikembalikan','diterima_catatan'].includes(statusEl.value)||document.getElementById('workflowNote').value.trim().length>=2;
   save.disabled=!can||!ready;save.title=!can?'Role belum sesuai atau tahap sebelumnya belum disetujui':'';
   const me=document.getElementById('workflowExaminer');if(me&&!me.value)me.value=currentUser?.displayName||currentUser?.username||'';
@@ -6238,7 +6267,7 @@ function renderPemdaPmEvidenceFiles(){
     const id=String(file.uploadId||'');const target=PEMDA_PM_TARGET_LABELS[file.targetCode]||file.targetCode;const status=file.verificationStatus||'';const statusClass=status==='diterima'?'done':status==='diterima_catatan'?'progress':status==='dikembalikan'?'warning':'pending';
     const verify=canVerify?`<div class="pemda-pm-evidence-verification"><label>Status Pemeriksaan<select data-pemda-evidence-status="${escapeHtml(id)}"><option value="" ${!status?'selected':''}>Pilih status…</option><option value="diterima" ${status==='diterima'?'selected':''}>Diterima</option><option value="diterima_catatan" ${status==='diterima_catatan'?'selected':''}>Diterima dengan Catatan</option><option value="dikembalikan" ${status==='dikembalikan'?'selected':''}>Dikembalikan</option></select></label><label>Nama Pemeriksa<input type="text" maxlength="100" data-pemda-evidence-examiner="${escapeHtml(id)}" value="${escapeHtml(file.verificationExaminer||'')}" placeholder="Nama pemeriksa"></label><label class="pemda-pm-evidence-note">Catatan Pemeriksa<textarea rows="2" maxlength="2000" data-pemda-evidence-note="${escapeHtml(id)}" placeholder="Wajib untuk status catatan/dikembalikan">${escapeHtml(file.verificationNote||'')}</textarea></label><button type="button" data-pemda-evidence-verify="${escapeHtml(id)}">Simpan Verifikasi</button></div>`:'';
     const del=canDelete?`<button type="button" class="danger" data-pemda-evidence-delete="${escapeHtml(id)}">Hapus</button>`:'';
-    const retry='';
+    const retry=file.r2Saved?driveRetryButton(file,{type:'pemda_workbook_evidence'}):'';
     const sync=file.syncStatus==='done'?'Tersimpan di R2 + Google Drive':(file.syncStatus==='deleted'?'Dihapus':`Menunggu konfirmasi penyimpanan R2 + Google Drive (${file.syncStatus==='retrying'?'pengiriman otomatis diulang':'sedang diproses'})`);
     return `<article class="pemda-pm-evidence-card"><div class="pemda-pm-evidence-card-head"><div><span class="pemda-pm-evidence-target">${escapeHtml(target)}</span><h5>${escapeHtml(file.fileName||'Evidence')}</h5><p>Subunsur ${escapeHtml(file.subunsur||'—')} · Parameter ${escapeHtml(file.paramId||'—')} · Grade ${escapeHtml(file.grade||'—')} · Level ${Number(file.level||0)}</p></div><span class="pemda-pm-stage ${statusClass}">${escapeHtml(pemdaPmVerificationLabel(status))}</span></div><div class="pemda-pm-evidence-card-actions"><button type="button" class="evidence-preview-btn" data-preview-scope="pemda" data-upload-id="${escapeHtml(id)}" data-file-name="${escapeHtml(file.fileName||'Evidence')}" data-file-type="${escapeHtml(file.fileType||'application/octet-stream')}"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.7-7 10-7 10 7 10 7-3.7 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg> Pratinjau</button><small>${escapeHtml(sync)}${file.syncError?' · '+escapeHtml(file.syncError):''}</small>${retry}${del}</div>${file.verificationExaminer?`<p class="pemda-pm-evidence-saved-verification">Pemeriksa: <b>${escapeHtml(file.verificationExaminer)}</b>${file.verificationNote?' · '+escapeHtml(file.verificationNote):''}</p>`:''}${verify}</article>`;
   }).join('');
