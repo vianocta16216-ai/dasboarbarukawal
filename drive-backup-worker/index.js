@@ -81,12 +81,14 @@ export default {
     const r2Bound=!!env.EVIDENCE_BUCKET;
     const queueProducerBound=!!env.DRIVE_BACKUP_QUEUE?.sendBatch;
     const googleDriveConfigured=!!(env.GOOGLE_DRIVE_CLIENT_ID&&env.GOOGLE_DRIVE_CLIENT_SECRET&&env.GOOGLE_DRIVE_REFRESH_TOKEN&&env.GOOGLE_DRIVE_FOLDER_ID);
-    const healthy=database==='ok'&&r2Bound&&googleDriveConfigured;
+    const realtimeBound=!!env.REALTIME;
+    const healthy=database==='ok'&&r2Bound&&queueProducerBound&&realtimeBound&&googleDriveConfigured;
     return Response.json({
       status: healthy ? 'ok' : 'degraded',
       service: 'kawal-spip-drive-backup-worker',
       database,
       queueProducerBound,
+      realtimeBound,
       r2Bound,
       googleDriveConfigured,
       backupQueue,

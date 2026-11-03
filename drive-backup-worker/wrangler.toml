@@ -17,7 +17,7 @@ bucket_name = "kawal-spip-files"
 [[queues.consumers]]
 queue = "kawal-spip-drive-backup"
 max_batch_size = 10
-max_batch_timeout = 5
+max_batch_timeout = 1
 max_retries = 100
 dead_letter_queue = "kawal-spip-drive-backup-dlq"
 max_concurrency = 10
@@ -25,3 +25,8 @@ max_concurrency = 10
 [[queues.producers]]
 binding = "DRIVE_BACKUP_QUEUE"
 queue = "kawal-spip-drive-backup"
+
+[[durable_objects.bindings]]
+name = "REALTIME"
+class_name = "RealtimeHub"
+script_name = "kawal-spip-realtime"
