@@ -3059,3 +3059,37 @@ button.danger, .confirm-actions button.danger,
 @media(max-width:780px){.qa-merged-param-evidence .qa-merged-files{grid-template-columns:1fr}}
 
 .qa-merged-source-note{font-size:10px;color:#475569;background:#f8fafc;border-top:1px solid #e2e8f0;padding:11px 13px;line-height:1.55}
+
+/* QA APIP: satu parameter, lampiran ditempatkan pada Grade/Level aslinya. */
+.qa-merged-grade-evidence{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:11px;align-items:start}
+.qa-grade-uploaded{background:#f0fdfa;border-color:#a6ded5}
+.qa-grade-uploaded h6{color:#0f766e}
+.qa-grade-uploaded .qa-merged-files{display:flex;flex-direction:column;gap:8px}
+.qa-merged-file-main{display:flex;justify-content:space-between;gap:10px;align-items:center;min-width:0}
+.qa-merged-file-name{flex:1;min-width:0;overflow-wrap:anywhere}
+.qa-preview-file-btn{display:inline-flex!important;flex-shrink:0;align-items:center;gap:6px;background:#fff!important;color:#1d4ed8!important;border:1px solid #bfdbfe!important;border-radius:8px;padding:6px 9px;font-size:10px;font-weight:800;cursor:pointer;line-height:1.2;transition:background .15s,border-color .15s}
+.qa-preview-file-btn svg{width:15px;height:15px;display:block;stroke:#1d4ed8!important;fill:none!important}
+.qa-preview-file-btn:hover{background:#dbeafe!important;border-color:#60a5fa!important;color:#1e40af!important}
+.qa-preview-file-btn:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
+.qa-preview-unavailable{font-size:10px;color:#64748b}
+.qa-grade-file-empty{margin:0;padding:12px;background:#fff;border:1px dashed #99d5cb;border-radius:9px}
+.qa-grade-file-empty .qa-file-count{display:block;margin-top:5px}
+.qa-grade-uploaded .qa-merged-file{background:#fff}
+@media(max-width:1100px){.qa-merged-grade-evidence{grid-template-columns:1fr}}
+@media(max-width:640px){.qa-merged-file-main{flex-wrap:wrap}.qa-preview-file-btn{min-height:32px}}
+
+/* Viewer: pratinjau dan detail tetap dimount terpisah sehingga tab tidak memuat file ulang. */
+#evidencePreviewBody .evidence-preview-pane{height:100%;min-height:0}
+#evidencePreviewBody .evidence-preview-pane[hidden]{display:none!important}
+#evidencePreviewBody .evidence-preview-sheet-wrap{height:100%;display:flex;flex-direction:column;background:#fff;border:1px solid #cbd5e1;border-radius:9px;overflow:hidden}
+#evidencePreviewBody .evidence-preview-sheet-scroll{flex:1;overflow:auto;min-height:0}
+.preview-sheet-tabs{display:flex;gap:5px;overflow-x:auto;padding:9px 12px;border-bottom:1px solid #e2e8f0;background:#f8fafc;flex-shrink:0}
+.preview-sheet-tab{border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#334155;font-size:11px;font-weight:750;padding:6px 10px;white-space:nowrap;cursor:pointer}
+.preview-sheet-tab.active{background:#dbeafe;color:#1e40af;border-color:#93c5fd}
+.preview-local-office{height:100%;display:flex;flex-direction:column;gap:9px}
+.preview-local-office-head{display:flex;flex-direction:column;gap:4px;border:1px solid #cbd5e1;background:#fff;padding:12px;border-radius:9px}
+.preview-local-office-head strong{font-size:13px;color:#0f172a}.preview-local-office-head span{font-size:11px;color:#64748b}
+.preview-local-office .evidence-preview-text{flex:1;min-height:0;margin:0;line-height:1.7}
+.preview-external-button{background:#1d4ed8!important;color:#fff!important;border:0;border-radius:8px;padding:10px 13px;font-size:12px;font-weight:800;cursor:pointer}
+.preview-external-button:hover{background:#1e40af!important}.preview-external-button:focus-visible{outline:3px solid #93c5fd;outline-offset:3px}
+.preview-external-small{align-self:flex-start;padding:7px 10px;font-size:10px;margin-top:5px}

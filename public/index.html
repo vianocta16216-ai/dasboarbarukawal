@@ -16,7 +16,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KAWAL SPIP - Dashboard Lengkap</title>
 <link rel="icon" type="image/png" href="/favicon.png">
-<link rel="stylesheet" href="/style.css?v=20261103-qa-apip-grouped-v2">
+<link rel="stylesheet" href="/style.css?v=20261103-qa-level-preview-v3">
 
 <!-- Perbaikan khusus ikon SVG mata Reset Password. Tidak mengubah fitur lain. -->
 <style id="reset-password-eye-only-fix">
@@ -732,7 +732,7 @@
   <div class="sheet-links-modal evidence-preview-modal">
     <div class="sheet-links-header"><h3 id="evidencePreviewTitle">Pratinjau File Evidence</h3><button class="sheet-links-close" id="evidencePreviewClose" aria-label="Tutup pratinjau">&times;</button></div>
     <div class="evidence-preview-tabs" role="tablist" aria-label="Tab pratinjau file"><button type="button" class="active" data-preview-tab="preview" role="tab">👁 Pratinjau</button><button type="button" data-preview-tab="details" role="tab">ℹ️ Detail File</button></div>
-    <div id="evidencePreviewBody" class="evidence-preview-body"></div>
+    <div id="evidencePreviewBody" class="evidence-preview-body"><div id="evidencePreviewContent" class="evidence-preview-pane"></div><div id="evidencePreviewDetails" class="evidence-preview-pane" hidden></div></div>
     <div class="sheet-links-footer"><span class="evidence-preview-security-note">Pratinjau melalui akses terotorisasi. File aktif tidak dieksekusi di dalam website.</span><button type="button" id="evidencePreviewCloseFooter">Tutup</button></div>
   </div>
 </div>
@@ -789,4 +789,4 @@
     <div class="safe-close-actions"><button type="button" id="safeCloseNo">Tidak, tetap di sini</button><button type="button" id="safeCloseYes" class="primary">Ya, tutup</button></div>
   </div>
 </div>
-<script src="/script.js?v=20261028-sheets-quota-resumable-retry-v8&amp;rev=20261103-qa-apip-grouped-v2" defer></script>
+<script src="/script.js?v=20261028-sheets-quota-resumable-retry-v8&amp;rev=20261103-qa-level-preview-v3" defer></script>
