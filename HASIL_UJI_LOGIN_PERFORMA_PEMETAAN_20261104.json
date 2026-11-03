@@ -1,0 +1,213 @@
+{
+  "scope": "Local Node WebCrypto + SQLite, VM frontend and bundled regression checks; no live deployment or real-browser execution.",
+  "tests": [
+    {
+      "test": "test-drive-runtime-pemda-guidance.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "test-frontend-performance-mapping-20261104.mjs",
+      "result": "PASS",
+      "original_result": "NEW",
+      "diagnostic": ""
+    },
+    {
+      "test": "test-login-performance-20261104.mjs",
+      "result": "PASS",
+      "original_result": "NEW",
+      "diagnostic": ""
+    },
+    {
+      "test": "test-login-ui-state-20261104.mjs",
+      "result": "PASS",
+      "original_result": "NEW",
+      "diagnostic": ""
+    },
+    {
+      "test": "test_d1_retry_recovery.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-all-accounts-pm-workbook-update.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-cloudflare-deployment-prereqs.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-drive-retry-registry-race.mjs",
+      "result": "FAIL",
+      "original_result": "FAIL",
+      "diagnostic": "AssertionError [ERR_ASSERTION]: The input was expected to not match the regular expression /callServerWithRetry\\(['\\\"]retryDriveBackup/. Input:"
+    },
+    {
+      "test": "validate-drive-worker-esm-build.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-dual-storage-contract.mjs",
+      "result": "FAIL",
+      "original_result": "FAIL",
+      "diagnostic": "AssertionError [ERR_ASSERTION]: Browser must not retry Google Drive directly"
+    },
+    {
+      "test": "validate-durable-drive-backup-queue.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-dynamic-master-sheet-inventory.mjs",
+      "result": "FAIL",
+      "original_result": "FAIL",
+      "diagnostic": "AssertionError [ERR_ASSERTION]: FAIL: HTML uses cache-busted master-source-binding build"
+    },
+    {
+      "test": "validate-evidence-score-preview-ppupd.mjs",
+      "result": "FAIL",
+      "original_result": "FAIL",
+      "diagnostic": "AssertionError [ERR_ASSERTION]: Office document preview integration must be present"
+    },
+    {
+      "test": "validate-evidence-ui-preview-fast-upload.mjs",
+      "result": "FAIL",
+      "original_result": "FAIL",
+      "diagnostic": "FAIL XLSX local preview enabled"
+    },
+    {
+      "test": "validate-google-sheets-quota-optimization.mjs",
+      "result": "FAIL",
+      "original_result": "FAIL",
+      "diagnostic": "AssertionError [ERR_ASSERTION]: FAIL: latest build marker and cache-buster are aligned"
+    },
+    {
+      "test": "validate-inspektorat-20261014.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-lhe-followup-export-score-refresh.mjs",
+      "result": "FAIL",
+      "original_result": "FAIL",
+      "diagnostic": "AssertionError [ERR_ASSERTION]: Verification prerequisite message must mention Auditor / PPUPD"
+    },
+    {
+      "test": "validate-lhe-neutral-templates.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-nov03-pemda-performance-ui.mjs",
+      "result": "FAIL",
+      "original_result": "FAIL",
+      "diagnostic": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:"
+    },
+    {
+      "test": "validate-pemda-evidence-history-tabs.mjs",
+      "result": "FAIL",
+      "original_result": "FAIL",
+      "diagnostic": "FAIL verification/delete actions remain while Drive retry is automatic"
+    },
+    {
+      "test": "validate-pemda-kkpm-dashboard.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-pemda-pm-evidence-template.mjs",
+      "result": "FAIL",
+      "original_result": "FAIL",
+      "diagnostic": "AssertionError [ERR_ASSERTION]: FAIL: front-end includes upload, automatic Drive queue refresh, delete and verification actions"
+    },
+    {
+      "test": "validate-pemda-sampling-workflow.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-performance-qa-scope-20261104.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-pm-bulk-retry-resume-v8.mjs",
+      "result": "FAIL",
+      "original_result": "FAIL",
+      "diagnostic": "AssertionError [ERR_ASSERTION]: FAIL: backend build version and frontend cache-buster are aligned"
+    },
+    {
+      "test": "validate-pm-master-source-binding-v4.mjs",
+      "result": "FAIL",
+      "original_result": "FAIL",
+      "diagnostic": "AssertionError [ERR_ASSERTION]: fresh frontend build URL prevents prior JS cache"
+    },
+    {
+      "test": "validate-pm-template-profile-refresh.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-pm-template-resolution.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-realtime-scope-isolation.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-spip-integration.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-verification-roles-score.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-workbook-concurrency.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "validate-workbook-rollover-lhe-years.mjs",
+      "result": "PASS",
+      "original_result": "PASS",
+      "diagnostic": ""
+    },
+    {
+      "test": "test_drive_retry_db_regressions.py",
+      "result": "PASS",
+      "diagnostic": "PASS: retry JOIN query and 25-way idempotent upload registry claim\nPASS: exact durable outbox UPSERT is idempotent and rejects cross-OPD uploadId collisions"
+    },
+    {
+      "test": "test_durable_drive_queue_concurrency.py",
+      "result": "PASS",
+      "diagnostic": "PASS: migration order, 100 simultaneous distinct claims, 25-way same-upload lock (one winner), and durable retry retention."
+    }
+  ]
+}

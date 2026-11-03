@@ -1,0 +1,61 @@
+{
+  "source": "dasboarbarukawal-main (73)(1).zip",
+  "removedFiles": [],
+  "changedFiles": [
+    {
+      "path": "BACA_DULU_PERBAIKAN_20261104.md",
+      "change": "added",
+      "sha256": "48e56193beb833084a03d802eeea9792b056e53051a4b6a1ba8bcf17a7649556"
+    },
+    {
+      "path": "HASIL_UJI_LOGIN_PERFORMA_PEMETAAN_20261104.json",
+      "change": "added",
+      "sha256": "f371e4e97a6290d54482344a6f68d805df4f91f08826749da0f9f947f3ceba6c"
+    },
+    {
+      "path": "functions/myCloudinaryHandler.js",
+      "change": "modified",
+      "sha256": "707b3319e4b04c98c6dd99979fd3c1239234d3d4b64883bef71677ca12ea352f"
+    },
+    {
+      "path": "public/_headers",
+      "change": "added",
+      "sha256": "3ba47b8a983c2a321656954ecfc8f75520384a5f3d8562c81fcb462432be16fa"
+    },
+    {
+      "path": "public/_routes.json",
+      "change": "added",
+      "sha256": "7b55f8bef2b04d0a5825515b231b2100290af8cd75297714e921c3c776c3a972"
+    },
+    {
+      "path": "public/index.html",
+      "change": "modified",
+      "sha256": "f8340d0698dbab0d0603e0d8f4ea635a9f48fcfdd15105a7d82a75c7084fb58f"
+    },
+    {
+      "path": "public/script.js",
+      "change": "modified",
+      "sha256": "4074efe2f808cfcec8b4e2008e1149d04fede1a997cb668a1b086721719f2add"
+    },
+    {
+      "path": "tools/test-frontend-performance-mapping-20261104.mjs",
+      "change": "added",
+      "sha256": "e0db9d169a89210b528b6c5dd22c293c773262c3b450b163c6b1889359110a3d"
+    },
+    {
+      "path": "tools/test-login-performance-20261104.mjs",
+      "change": "added",
+      "sha256": "4f981ff3586f0489a34110dcba8e59e068c61f34b13b0be432cfa172f58fd6d3"
+    },
+    {
+      "path": "tools/test-login-ui-state-20261104.mjs",
+      "change": "added",
+      "sha256": "69f8670d28bfaf4efc23f211a63e32ecc62fbdbd1f89488a9e63e0b5316bb67d"
+    },
+    {
+      "path": "tools/validate-inspektorat-20261014.mjs",
+      "change": "modified",
+      "sha256": "0ac35751d90077e1190b104ae6133eaffe14e7a287893c8ab07bf56df4592c0e"
+    }
+  ]
+}
