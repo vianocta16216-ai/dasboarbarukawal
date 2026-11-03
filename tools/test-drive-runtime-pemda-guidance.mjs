@@ -25,16 +25,20 @@ for(const configured of [false,true]){
 console.log('PASS runtime missing/blank/complete credentials and health; values not disclosed; no false OAuth verification');
 const js=fs.readFileSync(new URL('../public/script.js',import.meta.url),'utf8');
 const fragment=js.slice(js.indexOf('function renderPemdaPmEvidenceGuidance(){'),js.indexOf('function renderPemdaPmEvidenceSelectors(){'));
-const master=JSON.parse(fs.readFileSync(new URL('../public/kk-pm-workpaper-master.json',import.meta.url),'utf8'));
+const master=JSON.parse(fs.readFileSync(new URL('../public/kk-pm-exact-workbook-master.json',import.meta.url),'utf8'));
+const excel=JSON.parse(fs.readFileSync(new URL('../public/pemda-evidence-recommendations-2026.json',import.meta.url),'utf8'));
 const panel={innerHTML:''};let parameter,target,grade;
 const escapeHtml=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
-const context=vm.createContext({document:{getElementById:id=>id==='pemdaEvidenceGuidance'?panel:{value:id==='pemdaEvidenceTarget'?target:grade}},pemdaPmCurrentParameter:()=>parameter,escapeHtml,PEMDA_PM_TARGET_LABELS:{T2:'T2',T3:'T3',T4:'T4'}});
+const context=vm.createContext({document:{getElementById:id=>id==='pemdaEvidenceGuidance'?panel:{value:id==='pemdaEvidenceTarget'?target:grade}},pemdaPmCurrentParameter:()=>parameter,escapeHtml,PEMDA_PM_TARGET_LABELS:{T2:'T2',T3:'T3',T4:'T4'},pemdaEvidenceExcelSource:excel,pemdaExcelGradeEvidence:(t,p,g)=>excel.recommendations[t]?.[`${p?.subCode||''}|${p?.paramId||''}`]?.[g]||null});
 vm.runInContext(fragment,context);let count=0;
 for(const t of master.targets.filter(t=>['T2','T3','T4'].includes(t.code))){target=t.code;
  for(const p of t.parameters){parameter=p;for(const g of ['A','B','C','D','E']){grade=g;context.renderPemdaPmEvidenceGuidance();
   assert.ok(panel.innerHTML.includes('Penjelasan'));assert.ok(panel.innerHTML.includes('Evidence yang Disarankan'));
   if(p.grades[g].penjelasan)assert.ok(panel.innerHTML.includes(escapeHtml(p.grades[g].penjelasan)));
-  for(const e of p.grades[g].evidenceDisarankan||[])assert.ok(panel.innerHTML.includes(escapeHtml(e)));
+  const excelGrade=excel.recommendations[target]?.[`${p.subCode}|${p.paramId}`]?.[g];
+  assert.ok(excelGrade?.lines?.length,`${target} ${p.paramId} ${g} has no source Excel L evidence`);
+  for(const e of excelGrade.lines)assert.ok(panel.innerHTML.includes(escapeHtml(e)));
+  assert.ok(panel.innerHTML.includes(`baris ${excelGrade.row}`));
   count++;
  }}
 }

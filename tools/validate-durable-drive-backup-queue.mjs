@@ -35,14 +35,14 @@ assert.match(worker,/healthy=database==='ok'&&r2Bound&&queueProducerBound&&realt
 assert.match(worker,/processDriveBackupQueueMessage\(env, uploadId, ctx\)/);
 assert.match(worker,/async queue\(batch, env, ctx\)/);
 assert.match(worker,/drainDriveBackupQueue\(env, 10, true, ctx\)/);
-assert.match(worker,/MESSAGE_CONCURRENCY = 3/);
+assert.match(worker,/MESSAGE_CONCURRENCY = 2/);
 assert.match(worker,/message\.retry\(\{ delaySeconds: 30 \}\)/);
 assert.match(workerConfig,/max_batch_size = 10/);
 assert.match(workerConfig,/max_batch_timeout = 1/);
 assert.match(workerConfig,/name = "REALTIME"/);
 assert.match(workerConfig,/script_name = "kawal-spip-realtime"/);
 assert.match(workerConfig,/max_retries = 100/);
-assert.match(workerConfig,/max_concurrency = 10/);
+assert.match(workerConfig,/max_concurrency = 3/);
 assert.match(workerConfig,/binding = "DRIVE_BACKUP_QUEUE"/);
 assert.match(workerConfig,/dead_letter_queue = "kawal-spip-drive-backup-dlq"/);
 assert.match(pagesConfig,/binding = "DRIVE_BACKUP_QUEUE"/);
