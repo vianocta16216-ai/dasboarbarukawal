@@ -456,7 +456,7 @@ const COMMON_READ_ACTIONS = new Set([
   'getYears','getData','getSubunsurData','getKkMasterSheetRows','getKkSheets','getRtpKkSheets',
   'getRtpEvidence','getReportFiles','getWorkbookEvidenceFiles','getKkPmSheets','getKkPmTemplateConfig','getKkPmData',
   'getKkPmDataDetailed','getKkRpjmdMappings','getQaApipData','getQaApipChecklistData','getEvidenceWorkflow','previewEvidence','createEvidencePreviewLink','downloadEvidence',
-  'getBpkpOfficialScore','exportKkPmWorkbook','getLheFollowups','getPemdaWorkflow','getPemdaWorkflowAudit','getPemdaKkPmWorkbook','getPemdaWorkbookEvidenceFiles','downloadPemdaEvidence'
+  'getBpkpOfficialScore','exportKkPmWorkbook','getLheFollowups','getPemdaWorkflow','getPemdaWorkflowAudit','getPemdaKkPmWorkbook','getPemdaWorkbookEvidenceFiles','downloadPemdaEvidence','previewPemdaEvidence'
 ]);
 const ADMIN_ONLY_ACTIONS = new Set([
   'addOpd','deleteOpd','addYear','deleteYear','createBackup','restoreBackup','deleteBackup',
@@ -732,12 +732,17 @@ async function evidencePreviewStreamResponse(env,request,file,{signed=false}={})
     if(!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<start||start>=size)return new Response(null,{status:416,headers:{'Content-Range':`bytes */${size}`,'Accept-Ranges':'bytes'}});
     end=Math.min(end,size-1);offset=start;length=end-start+1;status=206;object=await env.EVIDENCE_BUCKET.get(key,{range:{offset,length}});
   }else if(request.method!=='HEAD'){object=await env.EVIDENCE_BUCKET.get(key);}
-  const contentType=String(file.fileType||head.httpMetadata?.contentType||'application/octet-stream').split(';')[0].trim().toLowerCase();
   const name=String(file.fileName||'evidence').replace(/[\r\n"\\]/g,'_').slice(0,180)||'evidence';
+  const rawMime=String(file.fileType||head.httpMetadata?.contentType||'application/octet-stream').split(';')[0].trim().toLowerCase();
+  // Browsers may upload files with empty MIME types. Infer only passive,
+  // browser-renderable types for inline preview so PDF/images do not download.
+  const extension=name.split('.').pop().toLowerCase();
+  const inlineMime={pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',bmp:'image/bmp',avif:'image/avif',mp4:'video/mp4',webm:'video/webm',mov:'video/quicktime',mp3:'audio/mpeg',wav:'audio/wav',ogg:'audio/ogg',m4a:'audio/mp4'};
+  const contentType=rawMime==='application/octet-stream'&&inlineMime[extension]?inlineMime[extension]:rawMime;
   const headers=new Headers({'Content-Type':contentType,'Content-Disposition':`inline; filename="${name.replace(/[^\x20-\x7E]/g,'_')}"`,'Cache-Control':'private, no-store, max-age=0','X-Content-Type-Options':'nosniff','Accept-Ranges':'bytes'});
   if(size)headers.set('Content-Length',String(length));if(status===206)headers.set('Content-Range',`bytes ${offset}-${offset+length-1}/${size}`);
   if(signed){headers.set('Access-Control-Allow-Origin','*');headers.set('Access-Control-Allow-Methods','GET, HEAD, OPTIONS');headers.set('Access-Control-Allow-Headers','Range, Content-Type');headers.set('Access-Control-Expose-Headers','Content-Length, Content-Range, Accept-Ranges');}
-  else{headers.set('Referrer-Policy','no-referrer');headers.set('Content-Security-Policy',"default-src 'none'; frame-ancestors 'self'; sandbox");}
+  else{headers.set('Referrer-Policy','no-referrer');headers.set('Content-Security-Policy',contentType==='application/pdf'?"default-src 'none'; frame-ancestors 'self'":"default-src 'none'; frame-ancestors 'self'; sandbox");}
   if(head.httpEtag)headers.set('ETag',head.httpEtag);
   return new Response(request.method==='HEAD'?null:object?.body||null,{status,headers});
 }
@@ -1127,6 +1132,16 @@ async function ensureOpdSchema(env){
     )`).run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_qa_apip_opd ON opd_qa_apip_items(year, opd_id)").run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_opd_qa_apip_param ON opd_qa_apip_items(year, opd_id, subunsur, param_id)").run();
+    // A review belongs to one actual evidence file. Keep associations separate
+    // from template assessment rows so historical scores/formulas stay untouched.
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS opd_qa_apip_file_bindings (
+      year TEXT NOT NULL, opd_id TEXT NOT NULL, subunsur TEXT NOT NULL,
+      param_id TEXT NOT NULL, grade TEXT NOT NULL, item_no INTEGER NOT NULL,
+      upload_id TEXT NOT NULL, updated_at INTEGER NOT NULL,
+      PRIMARY KEY (year, opd_id, subunsur, param_id, grade, item_no),
+      UNIQUE (year, opd_id, upload_id)
+    )`).run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_qa_file_bindings_opd ON opd_qa_apip_file_bindings(year,opd_id,subunsur,param_id,grade)").run();
 
     // Legacy 10-item checklist table retained only for backward compatibility.
     // The active QA APIP UI uses opd_qa_apip_items with 671 template-aligned items.
@@ -3537,6 +3552,14 @@ export async function onRequest({ request, env, ctx }) {
         if(object.httpEtag)headers.set('ETag',object.httpEtag);
         return new Response(object.body,{status:200,headers});
       }
+      case 'previewPemdaEvidence': {
+        if(!['admin','irban','auditor','ppupd','bpkp'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Akun ini tidak diizinkan membuka evidence Pemda.'},403);
+        const uploadId=String(params.uploadId||'');
+        const file=await env.DB.prepare("SELECT file_name,file_type,r2_key FROM pemda_workbook_evidence_items WHERE upload_id=? AND year=? AND target_code IN ('T2','T3','T4') AND TRIM(COALESCE(r2_key,''))<>'' LIMIT 1")
+          .bind(uploadId,String(year)).first();
+        if(!file)return jsonResponse({status:'error',message:'Evidence Pemda tidak ditemukan.'},404);
+        return evidencePreviewStreamResponse(env,request,{r2Key:file.r2_key,fileName:file.file_name,fileType:file.file_type},{signed:false});
+      }
       case 'downloadPemdaEvidence': {
         if(!['admin','irban','auditor','ppupd','bpkp'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Akun ini tidak diizinkan mengunduh evidence Pemda.'},403);
         const uploadId=String(params.uploadId||'');
@@ -5169,6 +5192,16 @@ export async function onRequest({ request, env, ctx }) {
         const {results}=await env.DB.prepare(`SELECT subunsur,param_id,grade,item_no,availability,identity_doc,validity,period_ok,substance,note,score,conclusion,examiner_name,updated_at
           FROM opd_qa_apip_items WHERE year=? AND opd_id=? ORDER BY subunsur,param_id,CASE grade WHEN 'E' THEN 1 WHEN 'D' THEN 2 WHEN 'C' THEN 3 WHEN 'B' THEN 4 WHEN 'A' THEN 5 ELSE 9 END,item_no`).bind(String(year),opdId).all();
         const items=(results||[]).map(x=>({subunsur:String(x.subunsur),paramId:String(x.param_id),grade:String(x.grade),itemNo:Number(x.item_no),availability:x.availability||'',identityDoc:x.identity_doc||'',validity:x.validity||'',periodOk:x.period_ok||'',substance:x.substance||'',note:x.note||'',score:x.score===null?null:Number(x.score),conclusion:x.conclusion||'',examinerName:x.examiner_name||'',updatedAt:Number(x.updated_at||0)}));
+        const bindings=(await env.DB.prepare(`SELECT subunsur,param_id,grade,item_no,upload_id FROM opd_qa_apip_file_bindings WHERE year=? AND opd_id=?`).bind(String(year),opdId).all()).results||[];
+        const byLocation=new Map(items.map(item=>[[item.subunsur,item.paramId,item.grade,item.itemNo].join('|'),item]));
+        for(const link of bindings){
+          const key=[link.subunsur,link.param_id,link.grade,Number(link.item_no)].join('|');
+          if(!byLocation.has(key)){
+            const item={subunsur:String(link.subunsur),paramId:String(link.param_id),grade:String(link.grade),itemNo:Number(link.item_no),availability:'',identityDoc:'',validity:'',periodOk:'',substance:'',note:'',score:null,conclusion:'',examinerName:'',updatedAt:0};
+            items.push(item);byLocation.set(key,item);
+          }
+          byLocation.get(key).fileUploadId=String(link.upload_id||'');
+        }
         return jsonResponse({status:'success',items});
       }
 
@@ -5179,6 +5212,19 @@ export async function onRequest({ request, env, ctx }) {
         const grade=String(params.grade||'').toUpperCase();
         const itemNo=Number(params.itemNo);
         if(!opdId || !validQaItemLocation(subunsur,paramId,grade,itemNo)) throw new Error('Identitas item QA APIP tidak valid.');
+        const fileUploadId=String(params.fileUploadId||'').trim();
+        if(fileUploadId){
+          // Never allow a QA grade to bind to evidence from a different OPD, parameter or level.
+          const source=await env.DB.prepare(`SELECT upload_id FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? AND subunsur=? AND param_id=? AND grade=? AND TRIM(COALESCE(r2_key,''))<>'' LIMIT 1`)
+            .bind(fileUploadId,String(year),opdId,subunsur,paramId,grade).first();
+          if(!source)throw new Error('File evidence tidak ditemukan pada OPD, parameter, dan level yang sama. Muat ulang tarikan evidence.');
+          const prior=await env.DB.prepare(`SELECT upload_id FROM opd_qa_apip_file_bindings WHERE year=? AND opd_id=? AND subunsur=? AND param_id=? AND grade=? AND item_no=? LIMIT 1`)
+            .bind(String(year),opdId,subunsur,paramId,grade,itemNo).first();
+          if(prior?.upload_id && String(prior.upload_id)!==fileUploadId)throw new Error('Butir QA sudah terikat ke file lain. Muat ulang agar penilaian lama tidak tertukar.');
+          await env.DB.prepare(`INSERT INTO opd_qa_apip_file_bindings(year,opd_id,subunsur,param_id,grade,item_no,upload_id,updated_at) VALUES(?,?,?,?,?,?,?,?)
+            ON CONFLICT(year,opd_id,subunsur,param_id,grade,item_no) DO UPDATE SET upload_id=excluded.upload_id,updated_at=excluded.updated_at`)
+            .bind(String(year),opdId,subunsur,paramId,grade,itemNo,fileUploadId,Date.now()).run();
+        }
         const availability=sanitizeQaText(params.availability,30);
         const identityDoc=sanitizeQaText(params.identityDoc,500);
         const validity=sanitizeQaText(params.validity,10);
@@ -5220,8 +5266,8 @@ export async function onRequest({ request, env, ctx }) {
         const qaStatus=completion>=100?'Selesai':(checked>0?'Proses':'Belum');
         await env.DB.prepare("UPDATE opd_data SET qa_apip=? WHERE id=? AND year=?").bind(qaStatus,opdId,String(year)).run();
         const summary={total,evaluated,na,checked,pass,partial,fail,pending,sum,percentage,completion,evidenceFiles,status:qaStatus};
-        notifyRealtime(env,ctx,year,{action:'saveQaApipItem',opdId,subunsur,paramId,grade,itemNo,item:{subunsur,paramId,grade,itemNo,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now},summary});
-        return jsonResponse({status:'success',item:{subunsur,paramId,grade,itemNo,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now},summary});
+        notifyRealtime(env,ctx,year,{action:'saveQaApipItem',opdId,subunsur,paramId,grade,itemNo,item:{subunsur,paramId,grade,itemNo,fileUploadId,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now},summary});
+        return jsonResponse({status:'success',item:{subunsur,paramId,grade,itemNo,fileUploadId,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now},summary});
       }
 
       case 'deleteQaApipItem': {
