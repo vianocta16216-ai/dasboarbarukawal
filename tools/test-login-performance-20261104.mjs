@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {onRequest} from '../functions/myCloudinaryHandler.js';
+const sqlite=new DatabaseSync(':memory:');
+const queries=[];
+const DB={prepare(sql){const q={sql,args:[],bind(...args){return {...this,args};},async first(){queries.push({sql:this.sql,args:this.args});return sqlite.prepare(this.sql).get(...this.args)||null;},async all(){queries.push({sql:this.sql,args:this.args});return {results:sqlite.prepare(this.sql).all(...this.args)};},async run(){queries.push({sql:this.sql,args:this.args});const r=sqlite.prepare(this.sql).run(...this.args);return {success:true,meta:{changes:Number(r.changes)}};}};return q;},async batch(list){const out=[];sqlite.exec('BEGIN');try{for(const q of list){queries.push({sql:q.sql,args:q.args});const st=sqlite.prepare(q.sql);if(st.columns().length)out.push({results:st.all(...q.args),meta:{changes:0}});else{const r=st.run(...q.args);out.push({results:[],meta:{changes:Number(r.changes)}});}}sqlite.exec('COMMIT');return out;}catch(e){sqlite.exec('ROLLBACK');throw e;}}};
+const users=Array.from({length:40},(_,i)=>({username:`operator${i}`,password:`test-password-${i}`,role:'opd',opdIds:[`opd${i}`]}));
+const env={DB,KAWAL_SPIP_USERS_JSON:JSON.stringify(users)};
+const background=[];
+async function api(action,params={},cookie=''){const req=new Request('https://test.local/myCloudinaryHandler',{method:'POST',headers:{'Content-Type':'application/json','Cookie':cookie,'CF-Connecting-IP':'127.0.0.1'},body:JSON.stringify({action,...params})});const res=await onRequest({request:req,env,waitUntil(p){background.push(p);}});return {res,body:await res.json()};}
+const me=await api('authMe');assert.equal(me.body.authenticated,false);assert.equal(queries.length,0,'fresh browser must not access D1');
+const first=await api('login',{username:users[0].username,password:users[0].password});assert.equal(first.res.status,200);assert.equal(first.body.user.username,'operator0');assert.equal(sqlite.prepare('SELECT count(*) AS n FROM auth_users').get().n,1,'first login must not hash all 40 accounts');assert.ok(!queries.some(q=>/opd_data|PRAGMA|opd_parameter_levels/i.test(q.sql)),'login cannot initialize business data');
+const cookie1=first.res.headers.get('set-cookie').split(';')[0];assert.match(first.res.headers.get('set-cookie'),/HttpOnly; Secure; SameSite=Strict/);
+const second=await api('login',{username:users[0].username,password:users[0].password});const cookie2=second.res.headers.get('set-cookie').split(';')[0];assert.notEqual(cookie1,cookie2);assert.equal((await api('authMe',{},cookie1)).body.authenticated,true);assert.equal((await api('authMe',{},cookie2)).body.authenticated,true);
+assert.equal((await api('login',{username:users[0].username,password:'wrong'})).res.status,401);
+const start=performance.now();const logins=await Promise.all(users.map(u=>api('login',{username:u.username,password:u.password})));const duration=performance.now()-start;
+assert.ok(logins.every(x=>x.res.status===200));assert.equal(sqlite.prepare('SELECT count(*) AS n FROM auth_users').get().n,40);
+await api('logout',{},cookie1);assert.equal((await api('authMe',{},cookie1)).body.authenticated,false);assert.equal((await api('authMe',{},cookie2)).body.authenticated,true);
+sqlite.prepare('UPDATE auth_users SET enabled=0 WHERE username_key=?').run('operator0');assert.equal((await api('authMe',{},cookie2)).body.authenticated,false);assert.equal((await api('login',{username:'operator0',password:users[0].password})).res.status,401);sqlite.prepare('UPDATE auth_users SET enabled=1 WHERE username_key=?').run('operator0');
+// Prepare a representative legacy database then exercise real migration and SQL.
+sqlite.exec(`CREATE TABLE opd_data (id TEXT PRIMARY KEY,opd TEXT,year TEXT,sa REAL,mri REAL,iepk REAL,evidence TEXT,qa_apip TEXT,rtp TEXT,status TEXT,subunsurs TEXT,kk_data TEXT); CREATE TABLE years(year TEXT PRIMARY KEY);`);
+const data=await api('getData',{year:'2026'},logins[1].res.headers.get('set-cookie').split(';')[0]);assert.equal(data.res.status,200,JSON.stringify(data.body));
+// Add two records; only one user's evidence is allowed into aggregate queries.
+sqlite.prepare("INSERT INTO opd_data(id,opd,year,subunsurs) VALUES(?,?,?,?)").run('opd1','OPD 1','2026','{}');sqlite.prepare("INSERT INTO opd_data(id,opd,year,subunsurs) VALUES(?,?,?,?)").run('opd2','OPD 2','2026','{}');
+const before=queries.length;const scoped=await api('getData',{year:'2026'},logins[1].res.headers.get('set-cookie').split(';')[0]);assert.equal(scoped.res.status,200);assert.deepEqual(scoped.body.map(r=>r.id),['opd1']);
+const aggregates=queries.slice(before).filter(q=>!q.sql.startsWith('UPDATE')&&/FROM opd_(qa_apip_items|kk_pm_workpaper_items|workbook_evidence_items|parameter_levels_v2) WHERE|FROM opd_workbook_evidence_items\s+WHERE/.test(q.sql));assert.ok(aggregates.length>=4);assert.ok(aggregates.every(q=>q.sql.includes('json_each(?)')&&q.args.includes('["opd1"]')),'aggregates must be scoped in SQL');
+await Promise.allSettled(background);
+console.log(JSON.stringify({status:'PASS',freshBrowserDbQueries:0,firstLoginAccountsHashed:1,concurrentLogins:40,localSQLiteDurationMs:Math.round(duration),independentBrowserSessions:true,disabledAccountRevocation:true,scopedDashboardQueries:true,note:'Local SQLite + WebCrypto; not Cloudflare load benchmark'},null,2));

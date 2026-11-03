@@ -29,7 +29,7 @@ check(worker.includes("const isTrustedMasterWebhook=action==='syncKkPmMasterNow'
 check(worker.includes('suppliedMasterSyncSecret.length===configuredMasterSyncSecret.length'), 'Webhook secret comparison is missing');
 check(worker.includes("'syncKkPmMasterNow'"), 'Webhook must remain an explicit API action');
 check(app.includes('ensureKkPmMasterLoaded(true)'), 'Kertas Kerja must refresh master when opened');
-check(app.includes('{masterKind:kind,forceRefresh:true}'), 'Master refresh should request a fresh live master read');
+check(app.includes('async function refreshMasterFromGoogleSheet(master,kind,forceRefresh=false)')&&app.includes('{masterKind:kind,forceRefresh}')&&app.includes("refreshMasterFromGoogleSheet(workbookEvidenceMaster,'PM',true)"), 'Automatic refresh reuses the short server cache; explicit mapping refresh bypasses it');
 check(app.includes('function lheYearPair()'), 'Dynamic LHE year helper missing');
 check(app.includes('function lheRefreshYearLabels()'), 'Dynamic LHE labels and target-year input must refresh');
 check(app.includes("lheField('lheTargetYear')"), 'LHE target-year field must be linked to the current application year');
