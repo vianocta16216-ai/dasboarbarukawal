@@ -3342,7 +3342,10 @@ export async function onRequest({ request, env, ctx }) {
   }
 
   const year = String(params.year || new Date().getFullYear());
-  await ensureOpdSchema(env);
+  // Existing-file reads must not run migrations/backfills on every cold isolate.
+  // Login/upload still initializes schema; all authentication and scope checks below remain mandatory.
+  const previewReadOnly=new Set(['previewEvidence','previewPemdaEvidence','previewPublicEvidence','downloadEvidence','downloadPemdaEvidence']);
+  if(!previewReadOnly.has(action))await ensureOpdSchema(env);
 
   // Rate limiting untuk aksi login: hanya percobaan SALAH yang dihitung.
   // Password yang benar selalu dapat masuk, sekaligus mereset penghitung percobaan.
@@ -3523,7 +3526,8 @@ export async function onRequest({ request, env, ctx }) {
       }
       case 'previewEvidence': {
         const opdId=String(params.opdId||''),uploadId=String(params.uploadId||'');
-        await assertSessionCanAccessOpd(env,authSession,year,opdId);
+        // The mandatory global OPD gate above already checked this request.
+        if(!opdId)return jsonResponse({status:'error',message:'Identitas OPD wajib diisi.'},400);
         const file=await assertUploadBelongsToOpd(env,year,opdId,uploadId);if(!file?.r2Key)return jsonResponse({status:'error',message:'Berkas belum tersedia di penyimpanan privat.'},404);
         return await evidencePreviewStreamResponse(env,request,file,{signed:false});
       }
