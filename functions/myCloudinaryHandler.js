@@ -589,6 +589,62 @@ async function upgradeSeededLegacyAuthPassword(env,row,password){
     .bind(record.salt,record.hash,record.iterations,now,row.username_key,iterations).run();
   return await env.DB.prepare('SELECT * FROM auth_users WHERE username_key=? LIMIT 1').bind(row.username_key).first();
 }
+const authSchemaJobs=new WeakMap();
+async function ensureAuthSchema(env){
+  if(authSchemaJobs.has(env.DB))return authSchemaJobs.get(env.DB);
+  const job=(async()=>{
+    const key='auth_schema_20261104_v1';
+    try{if(await env.DB.prepare('SELECT seed_key FROM auth_user_seed_state WHERE seed_key=? LIMIT 1').bind(key).first())return;}catch{}
+    await env.DB.batch([
+      env.DB.prepare(`CREATE TABLE IF NOT EXISTS auth_users (
+        username_key TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL DEFAULT '', role TEXT NOT NULL,
+        opd_ids_json TEXT NOT NULL DEFAULT '[]', opd_names_json TEXT NOT NULL DEFAULT '[]', password_salt TEXT NOT NULL,
+        password_hash TEXT NOT NULL, password_iterations INTEGER NOT NULL DEFAULT 100000, enabled INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, password_changed_at INTEGER NOT NULL,
+        created_by TEXT NOT NULL DEFAULT '', last_login_at INTEGER)`),
+      env.DB.prepare(`CREATE TABLE IF NOT EXISTS auth_sessions (
+        token_hash TEXT PRIMARY KEY, username TEXT NOT NULL, display_name TEXT NOT NULL DEFAULT '', role TEXT NOT NULL,
+        opd_id TEXT, opd_name TEXT, opd_ids_json TEXT NOT NULL DEFAULT '[]', opd_names_json TEXT NOT NULL DEFAULT '[]',
+        created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL)`),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at ON auth_sessions(expires_at)'),
+      env.DB.prepare('CREATE TABLE IF NOT EXISTS auth_user_seed_state(seed_key TEXT PRIMARY KEY, seeded_at INTEGER NOT NULL, account_count INTEGER NOT NULL DEFAULT 0)'),
+      env.DB.prepare('CREATE TABLE IF NOT EXISTS login_attempts(id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, action TEXT NOT NULL, timestamp INTEGER NOT NULL)'),
+      env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_login_attempts_lookup ON login_attempts(ip,action,timestamp)')
+    ]);
+    await env.DB.prepare('INSERT OR IGNORE INTO auth_user_seed_state(seed_key,seeded_at,account_count) VALUES(?,?,0)').bind(key,Date.now()).run();
+  })();
+  authSchemaJobs.set(env.DB,job);
+  try{return await job;}catch(error){authSchemaJobs.delete(env.DB);throw error;}
+}
+// A login hashes only the requested missing account. Never hash every OPD's
+// bootstrap password on the critical path. Existing admin resets stay intact.
+const authUserSeedJobs=new WeakMap();
+async function ensureLoginAccountSeeded(env,username){
+  const key=String(username||'').trim().toLowerCase();
+  const user=parseAccountConfig(env).find(x=>x.username.toLowerCase()===key);
+  if(!user)return;
+  const digest=await sha256Hex(JSON.stringify(user));
+  let jobs=authUserSeedJobs.get(env.DB);if(!jobs){jobs=new Map();authUserSeedJobs.set(env.DB,jobs);}
+  if(jobs.has(key+digest))return jobs.get(key+digest);
+  const job=(async()=>{
+    const seedKey=`auth_user_v3:${key}:${digest}`;
+    if(await env.DB.prepare('SELECT seed_key FROM auth_user_seed_state WHERE seed_key=? LIMIT 1').bind(seedKey).first())return;
+    const old=await env.DB.prepare('SELECT username_key,created_by FROM auth_users WHERE username_key=? LIMIT 1').bind(key).first();
+    const now=Date.now();
+    if(!old){
+      const pass=await makeAuthPasswordRecord(user.password);
+      await env.DB.prepare(`INSERT OR IGNORE INTO auth_users(username_key,username,display_name,role,opd_ids_json,opd_names_json,password_salt,password_hash,password_iterations,enabled,created_at,updated_at,password_changed_at,created_by,last_login_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)`)
+        .bind(key,user.username,user.displayName,user.role,JSON.stringify(user.opdIds||[]),JSON.stringify(user.opdNames||[]),pass.salt,pass.hash,pass.iterations,user.enabled?1:0,now,now,now,'KAWAL_SPIP_USERS_JSON').run();
+    }else if(old.created_by==='KAWAL_SPIP_USERS_JSON'){
+      await env.DB.prepare(`UPDATE auth_users SET username=?,display_name=?,role=?,opd_ids_json=?,opd_names_json=?,updated_at=? WHERE username_key=? AND created_by='KAWAL_SPIP_USERS_JSON'`)
+        .bind(user.username,user.displayName,user.role,JSON.stringify(user.opdIds||[]),JSON.stringify(user.opdNames||[]),now,key).run();
+    }
+    await env.DB.prepare('INSERT OR IGNORE INTO auth_user_seed_state(seed_key,seeded_at,account_count) VALUES(?,?,1)').bind(seedKey,now).run();
+  })();
+  jobs.set(key+digest,job);
+  try{return await job;}finally{jobs.delete(key+digest);}
+}
+
 async function ensureAuthUsersSeeded(env){
   const accounts=parseAccountConfig(env);
   if(!accounts.length)return;
@@ -640,7 +696,7 @@ function cookieValue(request,name){
   const header=request.headers.get('Cookie')||'';
   for(const part of header.split(';')){
     const idx=part.indexOf('=');if(idx<0)continue;
-    if(part.slice(0,idx).trim()===name)return decodeURIComponent(part.slice(idx+1).trim());
+    if(part.slice(0,idx).trim()===name){try{return decodeURIComponent(part.slice(idx+1).trim());}catch{return '';}}
   }
   return '';
 }
@@ -669,7 +725,8 @@ async function readAuthSession(env,request){
   let ids=[],names=[];try{ids=JSON.parse(row.opd_ids_json||'[]')}catch{}try{names=JSON.parse(row.opd_names_json||'[]')}catch{}
   return {...row,opdIds:Array.isArray(ids)?ids:[],opdNames:Array.isArray(names)?names:[]};
 }
-async function createAuthSession(env,user){
+let lastAuthCleanupAt=0;
+async function createAuthSession(env,user,ctx){
   const bytes=crypto.getRandomValues(new Uint8Array(32));
   const token=[...bytes].map(b=>b.toString(16).padStart(2,'0')).join('');
   const tokenHash=await sha256Hex(token);const now=Date.now();const expires=now+SESSION_TTL_SECONDS*1000;
@@ -677,7 +734,13 @@ async function createAuthSession(env,user){
     VALUES(?,?,?,?,?,?,?,?,?,?,?)`).bind(tokenHash,user.username,user.displayName||user.username,user.role,user.opdIds?.length===1?user.opdIds[0]:null,user.opdNames?.length===1?user.opdNames[0]:null,JSON.stringify(user.opdIds||[]),JSON.stringify(user.opdNames||[]),now,expires,now).run();
   // Clean up expired records opportunistically to keep D1 small.
   // Session cleanup must never delay a successful login response.
-  env.DB.prepare('DELETE FROM auth_sessions WHERE expires_at<?').bind(now).run().catch(()=>{});
+  if(ctx?.waitUntil&&now-lastAuthCleanupAt>3600000){
+    lastAuthCleanupAt=now;
+    ctx.waitUntil(env.DB.batch([
+      env.DB.prepare('DELETE FROM auth_sessions WHERE expires_at<?').bind(now),
+      env.DB.prepare('DELETE FROM login_attempts WHERE timestamp<?').bind(now-86400000)
+    ]).catch(()=>{}));
+  }
   return {token,tokenHash,session:{token_hash:tokenHash,username:user.username,display_name:user.displayName||user.username,role:user.role,opd_id:user.opdIds?.length===1?user.opdIds[0]:null,opd_name:user.opdNames?.length===1?user.opdNames[0]:null,opdIds:user.opdIds||[],opdNames:user.opdNames||[],created_at:now,expires_at:expires}};
 }
 function sessionHasWideScope(session){
@@ -3368,7 +3431,24 @@ async function readWorkbookComputedValues(env,spreadsheetId,sourceInfo={}){
 }
 
 let lastLegacyScoreRepairAt=0;
-export async function onRequest({ request, env, ctx }) {
+export async function onRequest(context) {
+  const started=Date.now();
+  const {request,env}=context;
+  const owner=context.ctx||context;
+  const ctx=typeof owner.waitUntil==='function'?{waitUntil:owner.waitUntil.bind(owner)}:null;
+  try {
+    const response=await handleRequest({request,env,ctx});
+    // WebSocket upgrades are served by /realtime, never by this handler.
+    response.headers.set('Server-Timing',`app;dur=${Date.now()-started}`);
+    response.headers.set('Cache-Control','private, no-store');
+    return response;
+  } catch(error) {
+    console.error('API request failed:',error?.message||error);
+    return jsonResponse({status:'error',code:'API_UNAVAILABLE',message:'Layanan data belum siap atau sedang terganggu. Coba kembali; periksa log Functions bila berulang.'},503);
+  }
+}
+
+async function handleRequest({ request, env, ctx }) {
   const ACCESS_PASSWORD = env.ACCESS_PASSWORD;
   const DELETE_PASSWORD = env.DELETE_PASSWORD;
   const url = new URL(request.url);
@@ -3419,7 +3499,11 @@ export async function onRequest({ request, env, ctx }) {
   // Existing-file reads must not run migrations/backfills on every cold isolate.
   // Login/upload still initializes schema; all authentication and scope checks below remain mandatory.
   const previewReadOnly=new Set(['previewEvidence','previewPemdaEvidence','previewPublicEvidence','downloadEvidence','downloadPemdaEvidence']);
-  if(!previewReadOnly.has(action))await ensureOpdSchema(env);
+  const authOnly=new Set(['login','authMe','logout','verifyAccess']);
+  // A new browser with no cookie can immediately show the login form, without D1.
+  if(action==='authMe'&&!cookieValue(request,SESSION_COOKIE_NAME))return jsonResponse({status:'success',authenticated:false,user:null});
+  if(authOnly.has(action))await ensureAuthSchema(env);
+  else if(!previewReadOnly.has(action))await ensureOpdSchema(env);
 
   // Rate limiting untuk aksi login: hanya percobaan SALAH yang dihitung.
   // Password yang benar selalu dapat masuk, sekaligus mereset penghitung percobaan.
@@ -3562,7 +3646,7 @@ export async function onRequest({ request, env, ctx }) {
         const password=String(params.password||'');
         let user=null;
         try {
-          await ensureAuthUsersSeeded(env);
+          await ensureLoginAccountSeeded(env,username);
           let stored= username ? await env.DB.prepare('SELECT * FROM auth_users WHERE username_key=? LIMIT 1').bind(username.toLowerCase()).first() : null;
           if(stored && Number(stored.enabled)===1 && password){
             if(Number(stored.password_iterations)>AUTH_PASSWORD_MAX_ITERATIONS){
@@ -3574,7 +3658,7 @@ export async function onRequest({ request, env, ctx }) {
               await env.DB.prepare('UPDATE auth_users SET last_login_at=? WHERE username_key=?').bind(Date.now(),stored.username_key).run();
             }
           }
-          const accountCount=Number((await env.DB.prepare('SELECT COUNT(*) AS n FROM auth_users').first())?.n||0);
+          const accountCount=user?1:Number((await env.DB.prepare('SELECT COUNT(*) AS n FROM auth_users').first())?.n||0);
           const hasJsonConfig=Boolean(String(env.KAWAL_SPIP_USERS_JSON||'').trim());
           // Emergency compatibility login only while there are no managed/configured users at all.
           if(!user && accountCount===0 && !hasJsonConfig && password && password===ACCESS_PASSWORD) user={username:'admin',displayName:'Administrator',role:'admin',opdIds:[],opdNames:[]};
@@ -3585,7 +3669,7 @@ export async function onRequest({ request, env, ctx }) {
           return jsonResponse({status:'error',message:'Username atau password tidak sesuai, atau akun dinonaktifkan.'},401);
         }
         try{await env.DB.prepare("DELETE FROM login_attempts WHERE ip = ? AND action = ?").bind(clientIp,loginRateAction).run();}catch{}
-        const created=await createAuthSession(env,user);
+        const created=await createAuthSession(env,user,ctx);
         return jsonResponse({status:'success',message:'Login berhasil.',authenticated:true,user:publicSessionUser(created.session)},200,{'Set-Cookie':sessionCookie(created.token),'X-Content-Type-Options':'nosniff'});
       }
       case 'logout': {
@@ -3821,7 +3905,7 @@ export async function onRequest({ request, env, ctx }) {
 
       case 'verifyAccess': {
         let configuredAccounts=[];try{await ensureAuthUsersSeeded(env);configuredAccounts=parseAccountConfig(env)}catch(e){return jsonResponse({status:'error',message:e.message},500)}
-        const accountCount=Number((await env.DB.prepare('SELECT COUNT(*) AS n FROM auth_users').first())?.n||0);
+        const accountCount=user?1:Number((await env.DB.prepare('SELECT COUNT(*) AS n FROM auth_users').first())?.n||0);
         const ok = !configuredAccounts.length && accountCount===0 && Boolean(ACCESS_PASSWORD) && params.password === ACCESS_PASSWORD;
         if (ok) {
           try { await env.DB.prepare("DELETE FROM login_attempts WHERE ip = ? AND action = ?").bind(clientIp, action).run(); } catch {}
@@ -3856,7 +3940,7 @@ export async function onRequest({ request, env, ctx }) {
         const masterKind=String(params.masterKind||'PK').toUpperCase()==='PM'?'PM':'PK';
         try{
           const snapshot=await readLiveKkMasterRows(env,masterKind,{forceRefresh:params.forceRefresh===true||params.forceRefresh==='true'});
-          if(masterKind==='PM'&&snapshot.live)schedulePmMasterPropagation(env,year,ctx);
+          // Master propagation is performed by syncKkPmMasterNow / workbook refresh, not a form read.
           return jsonResponse({status:'success',...snapshot});
         }catch(err){return jsonResponse({status:'success',live:false,masterKind,message:String(err?.message||err).slice(0,500),fallback:'snapshot'});}
       }
@@ -4307,9 +4391,18 @@ export async function onRequest({ request, env, ctx }) {
       }
       case 'getData': {
         await ensureDefaultMahuluOpds(env,year);
-        const {results}=await env.DB.prepare("SELECT * FROM opd_data WHERE year=? ORDER BY CAST(nilai_maturitas AS REAL) DESC, CAST(nilai_struktur_proses AS REAL) DESC, CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC").bind(year).all();
-        const levelRows=await env.DB.prepare("SELECT opd_id,subunsur,param_id,level FROM opd_parameter_levels_v2 WHERE year=?").bind(String(year)).all();
-        const qaSummaryRows=await env.DB.prepare(`
+        const scoped=!sessionHasWideScope(authSession);
+        // Resolve scope from small identity rows before reading large evidence JSON.
+        const identityRows=scoped?(await env.DB.prepare('SELECT id,opd FROM opd_data WHERE year=?').bind(year).all()).results||[]:[];
+        const visibleIds=identityRows.filter(r=>sessionCanAccessOrg(authSession,r.id,r.opd)).map(r=>String(r.id));
+        const dataScope=scoped?' AND id IN (SELECT value FROM json_each(?))':'';
+        const dataArgs=scoped?[year,JSON.stringify(visibleIds)]:[year];
+        const initialRows=await env.DB.prepare(`SELECT * FROM opd_data WHERE year=?${dataScope} ORDER BY CAST(nilai_maturitas AS REAL) DESC, CAST(nilai_struktur_proses AS REAL) DESC, CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC`).bind(...dataArgs).all();
+        const results=(initialRows.results||[]).filter(r=>sessionCanAccessOrg(authSession,r.id,r.opd));
+        const scopeSql=scoped?' AND opd_id IN (SELECT value FROM json_each(?))':'';
+        const scopeArgs=scoped?[String(year),JSON.stringify(results.map(r=>String(r.id)))]:[String(year)];
+        const levelStatement=env.DB.prepare(`SELECT opd_id,subunsur,param_id,level FROM opd_parameter_levels_v2 WHERE year=?${scopeSql}`).bind(...scopeArgs);
+        const qaSummaryStatement=env.DB.prepare(`
           SELECT opd_id,
                  SUM(CASE WHEN score IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_items,
                  SUM(CASE WHEN availability='N/A' THEN 1 ELSE 0 END) AS na_items,
@@ -4317,22 +4410,16 @@ export async function onRequest({ request, env, ctx }) {
                  SUM(CASE WHEN score=1 THEN 1 ELSE 0 END) AS pass_items,
                  SUM(CASE WHEN score=0.5 THEN 1 ELSE 0 END) AS partial_items,
                  SUM(CASE WHEN score=0 THEN 1 ELSE 0 END) AS fail_items
-          FROM opd_qa_apip_items WHERE year=? GROUP BY opd_id
-        `).bind(String(year)).all();
-        const qaSummaryMap=new Map();
-        for(const q of (qaSummaryRows.results||[])) qaSummaryMap.set(String(q.opd_id),q);
-        const kkPmSummaryRows=await env.DB.prepare(`
+          FROM opd_qa_apip_items WHERE year=?${scopeSql} GROUP BY opd_id
+        `).bind(...scopeArgs);
+        const kkPmSummaryStatement=env.DB.prepare(`
           SELECT opd_id,target,
                  COUNT(*) AS evaluated_items,
                  COALESCE(SUM(CASE grade_result WHEN 'A' THEN 5 WHEN 'B' THEN 4 WHEN 'C' THEN 3 WHEN 'D' THEN 2 WHEN 'E' THEN 1 ELSE 0 END),0) AS sum_levels
           FROM opd_kk_pm_workpaper_items
-          WHERE year=? AND grade_result IN ('A','B','C','D','E') GROUP BY opd_id,target
-        `).bind(String(year)).all();
-        const kkPmSummaryMap=new Map();
-        for(const q of (kkPmSummaryRows.results||[])){
-          const key=String(q.opd_id);if(!kkPmSummaryMap.has(key))kkPmSummaryMap.set(key,[]);kkPmSummaryMap.get(key).push(q);
-        }
-        const workbookEvidenceSummaryRows=await env.DB.prepare(`
+          WHERE year=?${scopeSql} AND grade_result IN ('A','B','C','D','E') GROUP BY opd_id,target
+        `).bind(...scopeArgs);
+        const workbookEvidenceSummaryStatement=env.DB.prepare(`
           SELECT opd_id,
                  COUNT(DISTINCT upload_id) AS total_files,
                  COUNT(DISTINCT evidence_key) AS evidence_groups,
@@ -4354,16 +4441,25 @@ export async function onRequest({ request, env, ctx }) {
                  COUNT(DISTINCT CASE WHEN target_code='T3' AND verification_status='diterima' THEN upload_id END) AS verified_t3,
                  COUNT(DISTINCT CASE WHEN target_code='T4' AND verification_status='diterima' THEN upload_id END) AS verified_t4
           FROM opd_workbook_evidence_items
-          WHERE year=? AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>''
+          WHERE year=?${scopeSql} AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>''
           GROUP BY opd_id
-        `).bind(String(year)).all();
-        const workbookEvidenceSummaryMap=new Map();
-        for(const q of (workbookEvidenceSummaryRows.results||[])) workbookEvidenceSummaryMap.set(String(q.opd_id),q);
+        `).bind(...scopeArgs);
         // One batched read supplies the authoritative status/level source for every OPD.
         // Do not derive the reported score from self-selected parameter levels.
-        const verifiedEvidenceQuery=await env.DB.prepare(`SELECT opd_id,upload_id,subunsur,param_id,level,verification_status,verification_at,updated_at,r2_key,file_name
-          FROM opd_workbook_evidence_items WHERE year=?
-          ORDER BY opd_id,upload_id`).bind(String(year)).all();
+        const verifiedEvidenceStatement=env.DB.prepare(`SELECT opd_id,upload_id,subunsur,param_id,level,verification_status,verification_at,updated_at,r2_key,file_name
+          FROM opd_workbook_evidence_items WHERE year=?${scopeSql}
+          ORDER BY opd_id,upload_id`).bind(...scopeArgs);
+        const [levelRows,qaSummaryRows,kkPmSummaryRows,workbookEvidenceSummaryRows,verifiedEvidenceQuery]=await env.DB.batch([
+          levelStatement,qaSummaryStatement,kkPmSummaryStatement,workbookEvidenceSummaryStatement,verifiedEvidenceStatement
+        ]);
+        const qaSummaryMap=new Map();
+        for(const q of (qaSummaryRows.results||[])) qaSummaryMap.set(String(q.opd_id),q);
+        const kkPmSummaryMap=new Map();
+        for(const q of (kkPmSummaryRows.results||[])){
+          const key=String(q.opd_id);if(!kkPmSummaryMap.has(key))kkPmSummaryMap.set(key,[]);kkPmSummaryMap.get(key).push(q);
+        }
+        const workbookEvidenceSummaryMap=new Map();
+        for(const q of (workbookEvidenceSummaryRows.results||[])) workbookEvidenceSummaryMap.set(String(q.opd_id),q);
         const verifiedEvidenceMap=new Map();
         for(const evidenceRow of (verifiedEvidenceQuery.results||[])){
           const key=String(evidenceRow.opd_id||'');if(!verifiedEvidenceMap.has(key))verifiedEvidenceMap.set(key,[]);verifiedEvidenceMap.get(key).push(evidenceRow);
@@ -5498,7 +5594,6 @@ export async function onRequest({ request, env, ctx }) {
         // Ensure the calendar year is always available so fresh deployments and a new
         // annual LHE follow-up do not fall back to the newest historical year in D1.
         const calendarYear=String(new Date().getFullYear());
-        await env.DB.prepare('INSERT OR IGNORE INTO years (year) VALUES (?)').bind(calendarYear).run();
         const { results } = await env.DB.prepare("SELECT year FROM years").all();
         const years = results.map(x => String(x.year));
         if (!years.includes(calendarYear)) years.push(calendarYear);
