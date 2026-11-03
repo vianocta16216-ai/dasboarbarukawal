@@ -4553,6 +4553,47 @@ function qaApipMetrics(items){
   return {total,checked:evaluated+na,evaluated,na,pending,pass,partial,fail,sum:Math.round(sum*10000)/10000,percentage,completion,status:completion>=100?'Selesai':(evaluated+na>0?'Proses':'Belum')};
 }
 function qaApipSummary(){return qaApipMetrics(qaApipMaster?.items||[]);}
+// Hitung item rekap berdasarkan *file aktif* yang telah ditarik dari Struktur & Proses.
+// Template QA 671 baris tetap utuh. Nilai QA yang filenya sudah dihapus tidak
+// diperhitungkan dalam rekap aktif, tetapi data historisnya tetap tersimpan.
+function qaApipVisibleEvidenceForScope(subCode='',isElement=false,paramId=''){
+  const code=qaApipNormalizeSubCode(subCode),parameter=paramId?qaApipNormalizeParamId(paramId,code):'';
+  const allowed=new Set(assessmentAllowedTargets(qaApipCurrentRow||''));
+  return qaApipEvidenceFiles.filter(file=>{
+    if(!qaApipFileTargetCodes(file).some(target=>allowed.has(target)))return false;
+    const fileCode=qaApipNormalizeSubCode(file.subunsur);
+    if(code&&!(isElement?(fileCode===code||fileCode.startsWith(code+'.')):fileCode===code))return false;
+    return !parameter||qaApipNormalizeParamId(file.paramId,fileCode)===parameter;
+  });
+}
+function qaApipLiveItemMetrics(items,actualFileTotal=null){
+  const list=Array.isArray(items)?items:[],groups=new Map();
+  for(const item of list){
+    const key=qaApipEvidenceKey(item.subCode,item.paramId,item.grade);
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(item);
+  }
+  let fileTotal=0;const activeItems=[];
+  for(const gradeItems of groups.values()){
+    const files=qaApipFilesAtGrade(gradeItems,'all');
+    fileTotal+=files.length;
+    for(const assignment of qaApipReviewAssignments(gradeItems,files.filter(file=>Boolean(file.uploadId)))){
+      if(assignment.item)activeItems.push(assignment.item);
+    }
+  }
+  // Sumber khusus KK3.4 yang tidak memiliki slot QA tetap masuk jumlah evidence,
+  // namun tidak ditambahkan nilai/penilaian yang tidak ada pada template asli.
+  const total=actualFileTotal===null?fileTotal:Math.max(fileTotal,Number(actualFileTotal)||0);
+  const metrics=qaApipMetrics(activeItems);
+  const pending=Math.max(0,total-metrics.evaluated-metrics.na);
+  const completion=total?Math.round(((metrics.evaluated+metrics.na)/total)*10000)/100:0;
+  return {...metrics,total,pending,completion,templateTotal:list.length,
+    status:total&&completion===100?'Selesai':metrics.checked?'Proses':'Belum'};
+}
+function qaApipLiveSummary(){
+  return qaApipLiveItemMetrics(qaApipMaster?.items||[],qaApipVisibleEvidenceForScope().length);
+}
+
 function updateQaApipTableSummary(row,summary){
   const s=summary||row?.qaApipSummary||{};const el=document.querySelector(`.qa-apip-table-summary[data-id="${CSS.escape(String(row?.id||''))}"]`);
   if(el)el.innerHTML=`${Number(s.percentage||0).toFixed(2)}%<small>${Number((s.checked ?? ((Number(s.evaluated)||0)+(Number(s.na)||0))) || 0)}/${Number(s.total||671)} item dinilai · ${Number(s.evidenceFiles||0)} file</small>`;
@@ -4561,14 +4602,14 @@ function qaApipTargetCounts(row=qaApipCurrentRow){
   const allowed=new Set(assessmentAllowedTargets(row||''));const out={T1:0,T2:0,T3:0,T4:0};qaApipEvidenceFiles.forEach(f=>qaApipFileTargetCodes(f).forEach(code=>{if(allowed.has(code)&&Object.prototype.hasOwnProperty.call(out,code))out[code]++;}));return out;
 }
 function qaApipUpdateModalSummary(row){
-  const s=qaApipSummary();const allowed=assessmentAllowedTargets(row||'');const targets=qaApipTargetCounts(row);const ev=qaApipEvidenceFiles.filter(f=>qaApipFileTargetCodes(f).some(code=>allowed.includes(code))).length; // hitung file fisik sekali, walau satu file dipakai beberapa target
+  const s=qaApipSummary(),live=qaApipLiveSummary();const allowed=assessmentAllowedTargets(row||'');const targets=qaApipTargetCounts(row);const ev=qaApipVisibleEvidenceForScope().length; // satu file fisik, meski beberapa target
   const el=document.getElementById('qaApipSummary');if(!el)return;
-  el.innerHTML=`<div class="qa-summary-card qa-summary-result"><span>Hasil QA APIP</span><strong>${s.percentage.toFixed(2)}%</strong><small>Rata-rata nilai item yang sudah dinilai</small></div><div class="qa-summary-card"><span>Total Item Template</span><strong>${s.total}</strong><small>671 slot template (tidak berarti semuanya sudah memiliki file)</small></div><div class="qa-summary-card"><span>Progres Evaluasi</span><strong>${s.completion.toFixed(2)}%</strong><small>${s.checked}/${s.total} termasuk N/A</small></div><div class="qa-summary-card"><span>Nilai Item</span><strong>${s.pass} / ${s.partial} / ${s.fail}</strong><small>Memenuhi / sebagian / tidak memenuhi</small></div><div class="qa-summary-card"><span>Evidence Terhubung</span><strong>${ev}</strong><small>Ditautkan dari kolom Evidence Struktur & Proses</small></div><div class="qa-summary-card"><span>Target Sumber</span><strong>${allowed.map(code=>`${code} ${targets[code]}`).join(' · ')}</strong><small>${allowed.map(code=>assessmentTargetLabel(code)).join(' · ')}</small></div>`;
+  el.innerHTML=`<div class="qa-summary-card qa-summary-result"><span>Hasil QA APIP</span><strong>${live.percentage.toFixed(2)}%</strong><small>Nilai file evidence aktif yang sudah dinilai</small></div><div class="qa-summary-card"><span>Jumlah Item Evidence</span><strong>${live.total}</strong><small>Dari ${s.total} slot template QA; mengikuti file yang diunggah</small></div><div class="qa-summary-card"><span>Progres Evaluasi</span><strong>${live.completion.toFixed(2)}%</strong><small>${live.checked}/${live.total} file evidence aktif, termasuk N/A</small></div><div class="qa-summary-card"><span>Nilai Item</span><strong>${live.pass} / ${live.partial} / ${live.fail}</strong><small>Memenuhi / sebagian / tidak memenuhi</small></div><div class="qa-summary-card"><span>Evidence Terhubung</span><strong>${ev}</strong><small>Ditautkan dari kolom Evidence Struktur & Proses</small></div><div class="qa-summary-card"><span>Target Sumber</span><strong>${allowed.map(code=>`${code} ${targets[code]}`).join(' · ')}</strong><small>${allowed.map(code=>assessmentTargetLabel(code)).join(' · ')}</small></div>`;
   const enriched={...s,evidenceFiles:ev};updateQaApipTableSummary(row,enriched);if(row)row.qaApipSummary=enriched;
 }
 function renderQaApipPetunjuk(){
   const info=qaApipMaster?.petunjuk?.fields||{};
-  return `<div class="qa-sheet-head"><div><div class="qa-kicker">PETUNJUK TEMPLATE EXCEL</div><h4>Kertas Kerja Penjaminan Kualitas / Quality Assurance APIP</h4><p>Tampilan, struktur parameter, alur penilaian, dan perhitungan memakai template <b>Template_Penjaminan_Kualitas_QA_APIP_KAWAL_SPIP.xlsx</b>. Tahun aktif: <b>${escapeHtml(String(currentYear))}</b> · OPD: <b>${escapeHtml(String(qaApipCurrentRow?.opd||''))}</b>.</p></div></div><div class="qa-workbook-note"><b>1. Sumber evidence.</b> Unggah, ganti, dan hapus dokumen hanya dari kolom <b>Evidence Struktur dan Proses</b>. QA APIP menarik dokumen yang cocok secara otomatis dan hanya menampilkan tautan baca-saja; tidak ada tab atau tempat upload evidence kedua.</div><div class="qa-instruction-table-wrap"><table class="qa-instruction-table"><thead><tr><th>No.</th><th>Bagian template</th><th>Aturan di aplikasi</th></tr></thead><tbody><tr><td>1</td><td>KK Penjaminan Kualitas</td><td>671 item penilaian. Kode subunsur, parameter, Grade A–E, tahapan, kriteria, fokus, dan nomor item berasal dari template QA; Nama Evidence yang Disarankan diambil dari kolom L workbook KK3.1–KK3.4 sesuai target dan level. Satu kartu per parameter, Grade dipisah menurut Level. Butir QA baru muncul ketika ada file evidence pada Grade terkait; satu butir terikat ke satu file, bukan ditampilkan sebelum upload. Parameter tambahan dari KK3.4 Inspektorat tampil sebagai tautan evidence saja, tanpa membuat baris QA baru.</td></tr><tr><td>2</td><td>Tarikan file evidence (kolom K)</td><td>File ditautkan berdasarkan kode subunsur, kode parameter lengkap, Grade, dan target T1–T4. Lampiran hanya muncul pada Grade/Level asalnya, sekali per file per Grade, dengan label target T1–T4 sesuai cakupan akun. Hanya file aktif yang tersimpan di sistem evidence yang ditarik. Target dipilih menurut akun OPD: umum T1; BPKAD T1/T2/T3; Inspektorat T1/T4.</td></tr><tr><td>3</td><td>Kolom L–Q</td><td>Pilih Ketersediaan (Ada/Tidak Ada/N/A), isi Identitas Dokumen, Keabsahan, Periode Sesuai, Substansi terhadap Kriteria, dan Catatan QA APIP.</td></tr><tr><td>4</td><td>Kolom R–S</td><td>Nilai dan kesimpulan dihitung otomatis: kosong/N/A = tanpa nilai; Tidak Ada = 0; Tidak Sesuai = 0; Ya + Ya + Sesuai = 1; kombinasi lain yang sudah dinilai = 0,5.</td></tr><tr><td>5</td><td>Rekap Parameter & Rekap Unsur</td><td>Persentase dihitung dari nilai numerik yang sudah dinilai, N/A dan item kosong tidak masuk penyebut nilai. Level indikatif memeriksa Grade E→D→C→B→A dengan ambang ${Math.round(Number(qaApipMaster?.gradeThreshold??1)*100)}%.</td></tr><tr><td>6</td><td>Ekspor Excel</td><td>Mengunduh workbook template empat sheet dan mengisi data OPD, tahun, tautan evidence, serta isian QA. Rumus asli pada kolom R, S, U dan formula rekap dipertahankan untuk dihitung kembali ketika file dibuka di Excel.</td></tr></tbody></table></div><div class="qa-formula-box"><b>Catatan sumber:</b> File tidak ditemukan bila belum diunggah pada Evidence Struktur & Proses untuk kombinasi subunsur/parameter/grade terkait. Pastikan dokumen ditempatkan pada target KK3.1–KK3.4 yang benar. Data QA disimpan terpisah per OPD dan tahun; rekap satu OPD tidak tercampur dengan OPD lain.</div>`;
+  return `<div class="qa-sheet-head"><div><div class="qa-kicker">PETUNJUK TEMPLATE EXCEL</div><h4>Kertas Kerja Penjaminan Kualitas / Quality Assurance APIP</h4><p>Tampilan, struktur parameter, alur penilaian, dan perhitungan memakai template <b>Template_Penjaminan_Kualitas_QA_APIP_KAWAL_SPIP.xlsx</b>. Tahun aktif: <b>${escapeHtml(String(currentYear))}</b> · OPD: <b>${escapeHtml(String(qaApipCurrentRow?.opd||''))}</b>.</p></div></div><div class="qa-workbook-note"><b>1. Sumber evidence.</b> Unggah, ganti, dan hapus dokumen hanya dari kolom <b>Evidence Struktur dan Proses</b>. QA APIP menarik dokumen yang cocok secara otomatis dan hanya menampilkan tautan baca-saja; tidak ada tab atau tempat upload evidence kedua.</div><div class="qa-instruction-table-wrap"><table class="qa-instruction-table"><thead><tr><th>No.</th><th>Bagian template</th><th>Aturan di aplikasi</th></tr></thead><tbody><tr><td>1</td><td>KK Penjaminan Kualitas</td><td>671 item penilaian. Kode subunsur, parameter, Grade A–E, tahapan, kriteria, fokus, dan nomor item berasal dari template QA; Nama Evidence yang Disarankan diambil dari kolom L workbook KK3.1–KK3.4 sesuai target dan level. Satu kartu per parameter, Grade dipisah menurut Level. Butir QA baru muncul ketika ada file evidence pada Grade terkait; satu butir terikat ke satu file, bukan ditampilkan sebelum upload. Parameter tambahan dari KK3.4 Inspektorat tampil sebagai tautan evidence saja, tanpa membuat baris QA baru.</td></tr><tr><td>2</td><td>Tarikan file evidence (kolom K)</td><td>File ditautkan berdasarkan kode subunsur, kode parameter lengkap, Grade, dan target T1–T4. Lampiran hanya muncul pada Grade/Level asalnya, sekali per file per Grade, dengan label target T1–T4 sesuai cakupan akun. Hanya file aktif yang tersimpan di sistem evidence yang ditarik. Target dipilih menurut akun OPD: umum T1; BPKAD T1/T2/T3; Inspektorat T1/T4.</td></tr><tr><td>3</td><td>Kolom L–Q</td><td>Pilih Ketersediaan (Ada/Tidak Ada/N/A), isi Identitas Dokumen, Keabsahan, Periode Sesuai, Substansi terhadap Kriteria, dan Catatan QA APIP.</td></tr><tr><td>4</td><td>Kolom R–S</td><td>Nilai dan kesimpulan dihitung otomatis: kosong/N/A = tanpa nilai; Tidak Ada = 0; Tidak Sesuai = 0; Ya + Ya + Sesuai = 1; kombinasi lain yang sudah dinilai = 0,5.</td></tr><tr><td>5</td><td>Rekap Parameter & Rekap Unsur</td><td>Jumlah item pada Rekap Parameter/Unsur dihitung dari file evidence aktif per parameter dan subunsur, bukan seluruh slot template. Persentase dihitung dari nilai numerik atas file aktif; N/A dan file belum dinilai tidak masuk penyebut nilai. Level indikatif memeriksa Grade E→D→C→B→A dengan ambang ${Math.round(Number(qaApipMaster?.gradeThreshold??1)*100)}%.</td></tr><tr><td>6</td><td>Ekspor Excel</td><td>Mengunduh workbook template empat sheet dan mengisi data OPD, tahun, tautan evidence, serta isian QA. Rumus asli pada kolom R, S, U dan formula rekap dipertahankan untuk dihitung kembali ketika file dibuka di Excel.</td></tr></tbody></table></div><div class="qa-formula-box"><b>Catatan sumber:</b> File tidak ditemukan bila belum diunggah pada Evidence Struktur & Proses untuk kombinasi subunsur/parameter/grade terkait. Pastikan dokumen ditempatkan pada target KK3.1–KK3.4 yang benar. Data QA disimpan terpisah per OPD dan tahun; rekap satu OPD tidak tercampur dengan OPD lain.</div>`;
 }
 function qaApipSelect(field,value,options,label){
   return `<label class="qa-input-label"><span>${escapeHtml(label)}</span><select data-qa-field="${field}" aria-label="${escapeHtml(label)}"><option value="">— Pilih —</option>${options.map(o=>`<option value="${escapeHtml(o)}" ${String(value||'')===o?'selected':''}>${escapeHtml(o)}</option>`).join('')}</select></label>`;
@@ -4741,8 +4782,8 @@ function renderQaApipChecklist(){
   return html;
 }
 function qaApipGroupMetrics(items){
-  const metrics=qaApipMetrics(items);const grade={};
-  QA_APIP_GRADE_ORDER.forEach(g=>{const gi=items.filter(x=>x.grade===g);const gm=qaApipMetrics(gi);grade[g]={...gm,percent:gm.evaluated?gm.percentage:null,items:gi.length};});
+  const metrics=qaApipLiveItemMetrics(items);const grade={};
+  QA_APIP_GRADE_ORDER.forEach(g=>{const gi=items.filter(x=>x.grade===g);const gm=qaApipLiveItemMetrics(gi);grade[g]={...gm,percent:gm.evaluated?gm.percentage:null,items:gm.total};});
   let level=0;
   QA_APIP_GRADE_ORDER.forEach((g,i)=>{if(level===i&&grade[g].percent!==null&&grade[g].percent+1e-8>=Number(qaApipMaster?.gradeThreshold??1)*100)level=i+1;});
   return {...metrics,grade,level};
@@ -4750,28 +4791,58 @@ function qaApipGroupMetrics(items){
 function qaApipLevelNext(level,items){
   if(!items.length)return 'Tidak ada item';
   if(level>=5)return 'Seluruh Grade E–A terpenuhi';
-  const next=QA_APIP_GRADE_ORDER[level];const gradeItems=items.filter(x=>x.grade===next);const m=qaApipMetrics(gradeItems);
-  if(!gradeItems.length)return `Grade ${next} tidak memiliki item`;
-  const pending=m.pending;return pending?`Lengkapi ${pending} item Grade ${next}`:`Periksa pemenuhan Grade ${next}`;
+  const next=QA_APIP_GRADE_ORDER[level];const gradeItems=items.filter(x=>x.grade===next);const m=qaApipLiveItemMetrics(gradeItems);
+  if(!m.total)return `Belum ada evidence Grade ${next}`;
+  const pending=m.pending;return pending?`Lengkapi penilaian ${pending} file Grade ${next}`:`Periksa pemenuhan Grade ${next}`;
+}
+function qaApipAdditionalSourceRekapRows(){
+  // Rekap 43 parameter template tidak mencakup seluruh parameter KK3.4.
+  // Parameter tambahan yang *sudah memiliki file* dicatat di rekap sebagai
+  // evidence saja, tanpa menambah butir template, nilai, atau rumus QA.
+  const templateKeys=new Set((qaApipMaster?.rekapParameters||[]).map(p=>
+    `${qaApipNormalizeSubCode(p.subCode)}|${qaApipNormalizeParamId(p.paramId,p.subCode)}`));
+  const grouped=new Map();
+  for(const file of qaApipVisibleEvidenceForScope()){
+    const subCode=qaApipNormalizeSubCode(file.subunsur);
+    const paramId=qaApipNormalizeParamId(file.paramId,subCode);
+    const key=`${subCode}|${paramId}`;
+    if(templateKeys.has(key))continue;
+    if(!grouped.has(key))grouped.set(key,{subCode,paramId,count:0});
+    grouped.get(key).count++;
+  }
+  return [...grouped.values()].map(g=>{
+    let meta=null;
+    for(const target of (workbookEvidenceMaster?.targets||[])){
+      const found=(target.parameters||[]).find(p=>
+        qaApipNormalizeSubCode(p.subCode)===g.subCode&&
+        qaApipNormalizeParamId(p.paramId,p.subCode)===g.paramId);
+      if(found){meta=found;break;}
+    }
+    const p={no:'—',subCode:g.subCode,subunsur:meta?.subunsur||g.subCode,
+      paramNo:g.paramId.split('.').pop(),paramId:g.paramId,parameterKey:`${g.subCode}|${g.paramId}`};
+    const m=qaApipLiveItemMetrics([],g.count);
+    m.level=0;m.grade=Object.fromEntries(QA_APIP_GRADE_ORDER.map(grade=>[grade,{percent:null}]));
+    return {p,items:[{parameter:meta?.uraianParameter||`Parameter ${g.paramId} (sumber evidence)`}],m,sourceOnly:true};
+  }).sort((a,b)=>String(a.p.paramId).localeCompare(String(b.p.paramId),'id',{numeric:true}));
 }
 function renderQaApipRekapParameter(){
   const master=qaApipMaster?.rekapParameters||[];const rows=master.map(p=>{
     const items=(qaApipMaster.items||[]).filter(it=>it.parameterKey===p.parameterKey);const m=qaApipGroupMetrics(items);
     return {p,items,m};
-  });
-  const all=qaApipSummary();
-  return `<div class="qa-sheet-head"><div><div class="qa-kicker">REKAP PARAMETER · SHEET EXCEL 3</div><h4>Rekap Parameter</h4><p>43 parameter mengikuti susunan template. Nilai per grade dihitung dari item yang sudah mempunyai nilai numerik; N/A dan item kosong tidak masuk penyebut persentase.</p></div><div class="qa-param-score-box"><span>Nilai QA APIP</span><strong>${all.percentage.toFixed(2)}%</strong><small>${all.evaluated}/${all.total} item dinilai</small></div></div><div class="qa-summary-table-wrap"><table><thead><tr><th>No</th><th class="qa-left">Kode Subunsur</th><th class="qa-left">Uraian Subunsur</th><th>No Par.</th><th class="qa-left">Uraian Parameter</th><th>Jml Item</th><th>N/A</th><th>Dinilai</th><th>Belum</th><th>% Grade E</th><th>% Grade D</th><th>% Grade C</th><th>% Grade B</th><th>% Grade A</th><th>% Pemenuhan Parameter</th><th>Grade Indikatif</th><th>Level</th><th>Grade Berikutnya</th></tr></thead><tbody>${rows.map(({p,items,m})=>`<tr><td>${p.no}</td><td class="qa-left">${escapeHtml(p.subCode)}</td><td class="qa-left">${escapeHtml(p.subunsur)}</td><td>${p.paramNo}</td><td class="qa-left">${escapeHtml(items[0]?.parameter||p.paramId)}</td><td>${m.total}</td><td>${m.na}</td><td>${m.evaluated}</td><td>${m.pending}</td>${QA_APIP_GRADE_ORDER.map(g=>`<td>${m.grade[g].percent===null?'—':m.grade[g].percent.toFixed(2)+'%'}</td>`).join('')}<td>${m.evaluated?m.percentage.toFixed(2)+'%':'—'}</td><td><b>${m.level?QA_APIP_GRADE_ORDER[m.level-1]:'—'}</b></td><td>${m.level||0}</td><td class="qa-left">${escapeHtml(qaApipLevelNext(m.level,items))}</td></tr>`).join('')}</tbody></table></div><div class="qa-formula-box">Urutan indikatif grade: E → D → C → B → A. Ambang yang dipakai adalah ${Math.round(Number(qaApipMaster?.gradeThreshold??1)*100)}%, mengikuti nilai awal pada template. Data tersimpan per OPD/tahun.</div>`;
+  }).concat(qaApipAdditionalSourceRekapRows());
+  const all=qaApipLiveSummary();
+  return `<div class="qa-sheet-head"><div><div class="qa-kicker">REKAP PARAMETER · SHEET EXCEL 3</div><h4>Rekap Parameter</h4><p>43 parameter mengikuti susunan template, ditambah parameter khusus yang sudah memiliki evidence (tanpa nilai QA). Kolom Jml Item menghitung file evidence aktif pada parameter dan Level/Grade terkait (bukan jumlah slot template). Nilai per Grade hanya berasal dari pemeriksaan file aktif; file tanpa penilaian masuk jumlah belum dinilai.</p></div><div class="qa-param-score-box"><span>Nilai QA APIP</span><strong>${all.percentage.toFixed(2)}%</strong><small>${all.evaluated}/${all.total} item dinilai</small></div></div><div class="qa-summary-table-wrap"><table><thead><tr><th>No</th><th class="qa-left">Kode Subunsur</th><th class="qa-left">Uraian Subunsur</th><th>No Par.</th><th class="qa-left">Uraian Parameter</th><th>Jml Item</th><th>N/A</th><th>Dinilai</th><th>Belum</th><th>% Grade E</th><th>% Grade D</th><th>% Grade C</th><th>% Grade B</th><th>% Grade A</th><th>% Pemenuhan Parameter</th><th>Grade Indikatif</th><th>Level</th><th>Grade Berikutnya</th></tr></thead><tbody>${rows.map(({p,items,m,sourceOnly})=>`<tr><td>${p.no}</td><td class="qa-left">${escapeHtml(p.subCode)}</td><td class="qa-left">${escapeHtml(p.subunsur)}</td><td>${p.paramNo}</td><td class="qa-left">${escapeHtml(items[0]?.parameter||p.paramId)}</td><td>${m.total}</td><td>${m.na}</td><td>${m.evaluated}</td><td>${m.pending}</td>${QA_APIP_GRADE_ORDER.map(g=>`<td>${m.grade[g].percent===null?'—':m.grade[g].percent.toFixed(2)+'%'}</td>`).join('')}<td>${m.evaluated?m.percentage.toFixed(2)+'%':'—'}</td><td><b>${m.level?QA_APIP_GRADE_ORDER[m.level-1]:'—'}</b></td><td>${m.level||0}</td><td class="qa-left">${escapeHtml(sourceOnly?'Parameter sumber: tanpa butir QA pada template':qaApipLevelNext(m.level,items))}</td></tr>`).join('')}</tbody></table></div><div class="qa-formula-box">Urutan indikatif grade: E → D → C → B → A. Ambang yang dipakai adalah ${Math.round(Number(qaApipMaster?.gradeThreshold??1)*100)}%, mengikuti nilai awal pada template. Data tersimpan per OPD/tahun.</div>`;
 }
 function renderQaApipRekapUnsur(){
   const master=qaApipMaster?.rekapUnsur||[];const allItems=qaApipMaster?.items||[];const rows=master.map(u=>{
-    const items=allItems.filter(it=>u.isElement?it.subCode.startsWith(u.code+'.'):it.subCode===u.code);const m=qaApipGroupMetrics(items);
+    const items=allItems.filter(it=>u.isElement?it.subCode.startsWith(u.code+'.'):it.subCode===u.code);const m=qaApipLiveItemMetrics(items,qaApipVisibleEvidenceForScope(u.code,u.isElement).length);
     const paramRows=(qaApipMaster.rekapParameters||[]).filter(p=>u.isElement?p.subCode.startsWith(u.code+'.'):p.subCode===u.code);
     const paramsWithLevel3=paramRows.filter(p=>{const its=allItems.filter(it=>it.parameterKey===p.parameterKey);return qaApipGroupMetrics(its).level>=3;}).length;
     const category=m.evaluated===0?'Belum dinilai':m.percentage>=80?'Tinggi':m.percentage>=60?'Cukup':m.percentage>=40?'Kurang':'Rendah';
     return {u,items,m,paramCount:paramRows.length,paramsWithLevel3,category};
   });
-  const overall=qaApipSummary();
-  return `<div class="qa-sheet-head"><div><div class="qa-kicker">REKAP UNSUR · SHEET EXCEL 4</div><h4>Rekap Unsur dan KPI QA APIP</h4><p>Ringkasan lima unsur serta seluruh subunsur, mengikuti baris rekap pada template.</p></div><div class="qa-param-score-box"><span>KPI QA APIP</span><strong>${overall.percentage.toFixed(2)}%</strong><small>Σ nilai / jumlah item bernilai numerik</small></div></div><div class="qa-summary-table-wrap"><table><thead><tr><th class="qa-left">Kode</th><th class="qa-left">Unsur / Subunsur</th><th>Jml Parameter</th><th>Jml Item Evidence</th><th>Item N/A</th><th>Item Dinilai</th><th>Σ Nilai</th><th>% Pemenuhan Dokumen</th><th>Parameter ≥ Level 3</th><th>Kategori</th><th>Progress</th></tr></thead><tbody>${rows.map(({u,items,m,paramCount,paramsWithLevel3,category})=>`<tr class="${u.isElement?'qa-unsur-row':''}"><td class="qa-left">${escapeHtml(u.code)}</td><td class="qa-left">${escapeHtml(u.name)}</td><td>${paramCount}</td><td>${items.length}</td><td>${m.na}</td><td>${m.evaluated}</td><td>${m.sum.toLocaleString('id-ID',{maximumFractionDigits:2})}</td><td>${m.evaluated?m.percentage.toFixed(2)+'%':'—'}</td><td>${paramsWithLevel3}/${paramCount}</td><td><span class="qa-category ${category.toLocaleLowerCase('id').replace(/[^a-z0-9]+/g,'-')}">${category}</span></td><td>${m.completion.toFixed(2)}%</td></tr>`).join('')}</tbody></table></div><div class="qa-formula-box"><b>Perhitungan KPI:</b> jumlah nilai numerik dibagi jumlah item dengan nilai numerik, dikali 100. Nilai kosong dan N/A dikecualikan dari penyebut, sesuai formula KPI pada template Excel.</div>`;
+  const overall=qaApipLiveSummary();
+  return `<div class="qa-sheet-head"><div><div class="qa-kicker">REKAP UNSUR · SHEET EXCEL 4</div><h4>Rekap Unsur dan KPI QA APIP</h4><p>Jml Item Evidence dihitung otomatis dari file aktif di Evidence Struktur &amp; Proses, dikelompokkan menurut unsur dan subunsur. Parameter khusus KK3.4 ikut dihitung sebagai evidence, tetapi tidak membuat nilai QA fiktif.</p></div><div class="qa-param-score-box"><span>KPI QA APIP</span><strong>${overall.percentage.toFixed(2)}%</strong><small>Σ nilai / jumlah item bernilai numerik</small></div></div><div class="qa-summary-table-wrap"><table><thead><tr><th class="qa-left">Kode</th><th class="qa-left">Unsur / Subunsur</th><th>Jml Parameter</th><th>Jml Item Evidence</th><th>Item N/A</th><th>Item Dinilai</th><th>Σ Nilai</th><th>% Pemenuhan Dokumen</th><th>Parameter ≥ Level 3</th><th>Kategori</th><th>Progress</th></tr></thead><tbody>${rows.map(({u,items,m,paramCount,paramsWithLevel3,category})=>`<tr class="${u.isElement?'qa-unsur-row':''}"><td class="qa-left">${escapeHtml(u.code)}</td><td class="qa-left">${escapeHtml(u.name)}</td><td>${paramCount}</td><td>${m.total}</td><td>${m.na}</td><td>${m.evaluated}</td><td>${m.sum.toLocaleString('id-ID',{maximumFractionDigits:2})}</td><td>${m.evaluated?m.percentage.toFixed(2)+'%':'—'}</td><td>${paramsWithLevel3}/${paramCount}</td><td><span class="qa-category ${category.toLocaleLowerCase('id').replace(/[^a-z0-9]+/g,'-')}">${category}</span></td><td>${m.completion.toFixed(2)}%</td></tr>`).join('')}</tbody></table></div><div class="qa-formula-box"><b>Perhitungan KPI:</b> jumlah nilai numerik dibagi jumlah item dengan nilai numerik, dikali 100. Nilai kosong dan N/A dikecualikan dari penyebut, sesuai formula KPI pada template Excel.</div>`;
 }
 function qaApipReadStateFromRow(rowEl){
   const get=f=>rowEl.querySelector(`[data-qa-field="${f}"]`)?.value||'';
@@ -4808,8 +4879,16 @@ function scheduleQaApipSave(rowEl){
 }
 async function refreshQaApipEvidenceFiles(silent=false){
   if(!qaApipCurrentRow)return;
-  try{const d=await callServerWithRetry('getWorkbookEvidenceFiles',{opdId:qaApipCurrentRow.id,year:currentYear},2);qaApipIndexEvidence(d?.files||[]);qaApipUpdateModalSummary(qaApipCurrentRow);if(qaApipTab==='form')renderQaApipModal();if(!silent)qaApipSetStatus('✓ Tarikan Evidence Struktur & Proses diperbarui.','success');}
-  catch(err){if(!silent)qaApipSetStatus('Tidak dapat memperbarui tarikan evidence: '+(err.message||err),'error');}
+  const rowId=String(qaApipCurrentRow.id),year=currentYear;
+  try{
+    const d=await callServerWithRetry('getWorkbookEvidenceFiles',{opdId:rowId,year},2);
+    // Abaikan respons akun/tahun lama jika pengguna sudah pindah modal.
+    if(!qaApipCurrentRow||String(qaApipCurrentRow.id)!==rowId||currentYear!==year)return;
+    qaApipIndexEvidence(d?.files||[]);
+    qaApipUpdateModalSummary(qaApipCurrentRow);
+    renderQaApipModal(); // Form, Rekap Parameter, dan Rekap Unsur memakai data terbaru.
+    if(!silent)qaApipSetStatus('✓ Tarikan Evidence Struktur & Proses diperbarui.','success');
+  }catch(err){if(!silent)qaApipSetStatus('Tidak dapat memperbarui tarikan evidence: '+(err.message||err),'error');}
 }
 function qaApipXmlEscape(value){
   return String(value??'').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
@@ -4956,7 +5035,7 @@ function closeQaApipModal(){
   qaApipSaveTimers.clear();qaApipPendingRows.clear();document.getElementById('qaApipModal')?.classList.remove('active');qaApipEditingRowId=null;qaApipCurrentRow=null;qaApipStateMap=new Map();qaApipEvidenceFiles=[];qaApipEvidenceIndex=new Map();
 }
 document.addEventListener('click',e=>{
-  const tab=e.target.closest('#qaApipTabs [data-qa-tab]');if(tab){qaApipTab=tab.dataset.qaTab;renderQaApipModal();return;}
+  const tab=e.target.closest('#qaApipTabs [data-qa-tab]');if(tab){qaApipTab=tab.dataset.qaTab;renderQaApipModal();if(qaApipTab==='rekapParameter'||qaApipTab==='rekapUnsur')refreshQaApipEvidenceFiles(true);return;}
   const exp=e.target.closest('#qaApipExport');if(exp){exportQaApipExcel();return;}
   const pageBtn=e.target.closest('.qa-apip-page-btn');if(pageBtn&&!pageBtn.disabled){qaApipFilters.page=Math.max(0,qaApipFilters.page+(pageBtn.dataset.qaPage==='next'?1:-1));renderQaApipModal();return;}
   const qbtn=e.target.closest('.btn-qa-apip');if(qbtn){openQaApipModal(qbtn.dataset.id);return;}
