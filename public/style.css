@@ -3137,3 +3137,21 @@ button.danger, .confirm-actions button.danger,
   color:#1e40af;cursor:pointer;font-size:12px;font-weight:700;white-space:normal;max-width:100%; }
 .drive-manual-retry-btn:hover:not(:disabled) { background:#dbeafe;border-color:#60a5fa; }
 .drive-manual-retry-btn:disabled { opacity:.65;cursor:wait; }
+
+/* QA APIP: diagnostic records and the criterion attached to each source file. */
+.qa-mapping-diagnostic{margin:12px 0;padding:11px 13px;border:1px solid #f59e0b77;border-radius:10px;background:#fffbeb;color:#78350f}
+.qa-mapping-diagnostic>summary{cursor:pointer;font-weight:750;line-height:1.55}
+.qa-mapping-diagnostic>p{font-size:12px;line-height:1.55}
+.qa-mapping-list{display:grid;gap:6px;max-height:320px;overflow:auto}
+.qa-mapping-list>div{padding:7px;border:1px solid #f59e0b44;border-radius:7px;background:#fff;display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.qa-mapping-list>div span{font-size:11px;min-width:0;overflow-wrap:anywhere;flex:1}
+.qa-file-source-criterion{margin:6px 0;padding:9px 11px;border-left:3px solid #64748b;border-radius:6px;background:#f8fafc;color:#334155}
+.qa-file-source-criterion b{font-size:12px}
+.qa-file-source-criterion p{margin:5px 0 0;font-size:12px;line-height:1.5;white-space:pre-line}
+
+/* QA evidence criteria are read from the active KK3.1–KK3.4 master. */
+.qa-grade-new-criteria{margin:8px 0;border:1px solid #cbd5e1;border-radius:7px;padding:5px 10px;background:#f8fafc;}
+.qa-grade-new-criteria summary{cursor:pointer;font-weight:650;color:#334155;font-size:12px;}
+.qa-grade-new-criteria>div{margin:7px 0 3px;padding:5px 7px;border-left:2px solid #64748b;}
+.qa-grade-new-criteria>div b{font-size:11px;}
+.qa-grade-new-criteria>div p{margin:3px 0;font-size:12px;line-height:1.45;white-space:pre-line;}
