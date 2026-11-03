@@ -4,6 +4,7 @@ const evidencePreviewUi={objectUrl:null,activeTab:'preview',fileName:'',fileType
 function evidencePreviewContent(){return document.getElementById('evidencePreviewContent');}
 function evidencePreviewDetails(){return document.getElementById('evidencePreviewDetails');}
 function evidencePreviewClean(){
+  if(typeof previewAdvancedClean==='function')previewAdvancedClean();
   evidencePreviewUi.requestId++;
   clearTimeout(evidencePreviewUi.timer);
   if(evidencePreviewUi.controller){evidencePreviewUi.controller.abort();evidencePreviewUi.controller=null;}
@@ -149,7 +150,7 @@ function evidencePreviewStreamElement(url,ext,type,id){
   evidencePreviewUi.timer=setTimeout(failed,20000);
   let element;
   if(ext==='pdf'||type==='application/pdf'){
-    element=document.createElement('iframe');element.className='evidence-preview-frame';element.title='Pratinjau PDF '+evidencePreviewUi.fileName;element.referrerPolicy='no-referrer';element.src=url+'#toolbar=1&navpanes=1';element.addEventListener('load',ready,{once:true});element.addEventListener('error',failed,{once:true});
+    element=document.createElement('iframe');element.className='evidence-preview-frame';element.title='Pratinjau PDF '+evidencePreviewUi.fileName;element.referrerPolicy='no-referrer';element.src=url+'#view=FitH&toolbar=1&navpanes=0';element.addEventListener('load',ready,{once:true});element.addEventListener('error',failed,{once:true});
   }else if(type.startsWith('image/')||['jpg','jpeg','png','webp','gif','bmp','avif'].includes(ext)){
     element=document.createElement('img');element.className='evidence-preview-image';element.alt=evidencePreviewUi.fileName;element.loading='eager';element.decoding='async';wrap.classList.add('is-image');element.addEventListener('load',ready,{once:true});element.addEventListener('error',failed,{once:true});element.src=url;
   }else if(type.startsWith('video/')||['mp4','webm','mov','m4v','ogv','avi','mkv'].includes(ext)){
@@ -197,11 +198,13 @@ async function renderEvidencePreview(info){
       body.innerHTML=`<div class="preview-file-placeholder"><h4>Pratinjau ${escapeHtml(ext.toUpperCase()||'format biner')} belum didukung browser</h4><p>File berhasil ditemukan dan tetap aman di penyimpanan privat. Tidak ada pengunduhan otomatis.</p><small>${(evidencePreviewUi.size/1024).toLocaleString('id-ID',{maximumFractionDigits:1})} KB · ${escapeHtml(type)}</small></div>`;
       evidencePreviewUi.viewerProvider='Metadata file, tanpa mengambil isi';return;
     }
+    evidencePreviewLoading('R2 · Mengambil dokumen privat…');
     const response=await fetch(url,{method:'GET',credentials:'same-origin',cache:'no-store',signal:controller.signal});
     if(!response.ok)throw new Error('Gagal membaca file privat (HTTP '+response.status+').');
     const buffer=await evidencePreviewReadLimited(response,controller,id);if(stale())return;
     evidencePreviewUi.size=buffer.byteLength;evidencePreviewLoading('Menyiapkan tampilan…',98);
     await new Promise(resolve=>requestAnimationFrame(resolve));if(stale())return;
+    if(typeof previewAdvanced==='function'&&await previewAdvanced(buffer,ext,id))return;
     if(ext==='zip'&&window.JSZip){
       const archive=await window.JSZip.loadAsync(buffer);if(stale())return;
       const names=Object.keys(archive.files);const pre=document.createElement('pre');pre.className='evidence-preview-text';pre.textContent='Isi arsip ZIP ('+names.length+' entri; ditampilkan maksimal 500):\n\n'+names.slice(0,500).join('\n');body.replaceChildren(pre);return;

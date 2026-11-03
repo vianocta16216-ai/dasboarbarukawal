@@ -18,8 +18,8 @@ async function startPreview(){
   try{
     if(!previewInfo.uploadId)throw new Error('Identitas file tidak lengkap. Buka pratinjau kembali dari dashboard.');
     const ext=(previewInfo.fileName||'').split('.').pop().toLowerCase();
-    if(['xls','xlsx','csv','ods'].includes(ext))await loadPreviewLibrary('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
-    if(['docx','pptx','odt','odp','zip'].includes(ext))await loadPreviewLibrary('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+
+    if(['odt','odp','zip'].includes(ext))await loadPreviewLibrary('/vendor/jszip.min.js');
     await renderEvidencePreview(previewInfo);
   }catch(error){evidencePreviewStatus(error.message,'error');}finally{previewStarting=false;}
 }
@@ -29,3 +29,10 @@ document.getElementById('previewOriginal').href=original.pathname+original.searc
 document.getElementById('previewRetry').addEventListener('click',startPreview);
 window.addEventListener('pagehide',evidencePreviewClean);
 startPreview();
+
+window.addEventListener('hashchange',()=>location.reload());
+
+const previewExtension=(previewInfo.fileName||'').split('.').pop().toLowerCase();
+const previewFooter=document.querySelector('.preview-page footer');
+if(previewFooter&&['xls','xlsx','ods','csv'].includes(previewExtension))previewFooter.textContent='Hanya baca · Menampilkan nilai tersimpan. Grafik, makro, dan penghitungan ulang rumus tersedia melalui aplikasi spreadsheet asli.';
+if(previewFooter&&['docx','pptx'].includes(previewExtension))previewFooter.textContent='Pratinjau halaman/slide · Font, diagram kompleks, dan animasi dapat berbeda dari aplikasi asli. Gunakan file asli untuk pemeriksaan akhir.';
