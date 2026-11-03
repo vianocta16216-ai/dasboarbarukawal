@@ -5,7 +5,7 @@ import {
   processDriveBackupQueueMessage
 } from '../functions/myCloudinaryHandler.js';
 
-const MESSAGE_CONCURRENCY = 3;
+const MESSAGE_CONCURRENCY = 2;
 
 async function runLimited(items, limit, task) {
   const results = new Array(items.length);
