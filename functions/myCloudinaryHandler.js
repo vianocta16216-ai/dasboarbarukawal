@@ -474,7 +474,7 @@ const OPD_INPUT_ACTIONS = new Set([
   'saveKkData','getRtpKkSheets','createRtpKkSheets','saveRtpKkData','getKkPmSheets','createKkPmSheets','getKkPmTemplateConfig','updateKkPmTemplateConfig',
   'exportKkPmWorkbook','getKkPmData','getKkPmDataDetailed','saveKkPmData','saveKkPmItem','deleteKkPmItem',
   'saveKkPmMeta','saveKkRpjmdMapping','getKkRpjmdMappings','createEvidencePreviewLink','previewEvidence','getWorkbookEvidenceFiles','replaceWorkbookEvidenceFile','saveQaApipItem',
-  'getQaApipData','getBpkpOfficialScore','syncKkComputedValues',
+  'getQaApipData','saveQaApipFileReview','getBpkpOfficialScore','syncKkComputedValues',
   'deleteQaApipItem','saveQaApipChecklistItem','deleteQaApipChecklistItem','getQaApipChecklistData',
   'getYears','getData','getSubunsurData','getKkMasterSheetRows','getEvidenceWorkflow','downloadEvidence','previewEvidence','createEvidencePreviewLink','getLheFollowups','getPemdaWorkflow','getPemdaWorkflowAudit','savePemdaVerification'
 ]);
@@ -1144,6 +1144,17 @@ async function ensureOpdSchema(env){
       UNIQUE (year, opd_id, upload_id)
     )`).run();
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_qa_file_bindings_opd ON opd_qa_apip_file_bindings(year,opd_id,subunsur,param_id,grade)").run();
+    // Overflow QA reviews are bound to the real uploadId, isolated by OPD/year.
+    // The original 671 template item keys and historical assessments are untouched.
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS opd_qa_apip_file_reviews (
+      year TEXT NOT NULL, opd_id TEXT NOT NULL, upload_id TEXT NOT NULL,
+      availability TEXT NOT NULL DEFAULT '', identity_doc TEXT NOT NULL DEFAULT '',
+      validity TEXT NOT NULL DEFAULT '', period_ok TEXT NOT NULL DEFAULT '',
+      substance TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+      score REAL, conclusion TEXT NOT NULL DEFAULT '',
+      examiner_name TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(year, opd_id, upload_id)
+    )`).run();
 
     // Legacy 10-item checklist table retained only for backward compatibility.
     // The active QA APIP UI uses opd_qa_apip_items with 671 template-aligned items.
@@ -3341,7 +3352,7 @@ export async function onRequest({ request, env, ctx }) {
   // Daftar aksi sensitif yang tidak boleh diakses via GET
   const SENSITIVE_ACTIONS = [
     'verifyAccess', 'verifyDelete', 'login', 'logout', 'createPemdaKkPmWorkbook', 'updateKkPmTemplateConfig', 'uploadPemdaWorkbookEvidence', 'deletePemdaWorkbookEvidence', 'savePemdaWorkbookEvidenceVerification', 'createEvidencePreviewLink', 'saveEvidenceWorkflowStep', 'saveLheFollowup', 'deleteLheFollowup', 'uploadLheEvidence', 'deleteLheEvidence', 'addOpd', 'saveData', 'saveField', 'saveAssessmentStatus', 'saveBpkpOfficialScore', 'unlockBpkpOfficialScore', 'getBpkpOfficialScoreAdmin', 'getBpkpOfficialAudit', 'savePemdaSampling', 'savePemdaVerification',
-    'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'saveQaApipItem', 'deleteQaApipItem', 'getQaApipChecklistData', 'saveQaApipChecklistItem', 'deleteQaApipChecklistItem', 'deleteOpd', 'addYear', 'deleteYear',
+    'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'saveQaApipItem', 'saveQaApipFileReview', 'deleteQaApipItem', 'getQaApipChecklistData', 'saveQaApipChecklistItem', 'deleteQaApipChecklistItem', 'deleteOpd', 'addYear', 'deleteYear',
     'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'getKkPmWorkbookRefreshTargets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'syncKkPmMasterNow', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup',
     'listAuthUsers','createAuthUser','setAuthUserEnabled','resetAuthUserPassword'
   ];
@@ -5256,7 +5267,51 @@ export async function onRequest({ request, env, ctx }) {
           }
           byLocation.get(key).fileUploadId=String(link.upload_id||'');
         }
-        return jsonResponse({status:'success',items});
+        const reviewRows=(await env.DB.prepare(`SELECT r.upload_id,r.availability,r.identity_doc,r.validity,r.period_ok,r.substance,r.note,r.score,r.conclusion,r.examiner_name,r.updated_at
+          FROM opd_qa_apip_file_reviews r JOIN opd_workbook_evidence_items e
+          ON e.upload_id=r.upload_id AND e.year=r.year AND e.opd_id=r.opd_id
+          WHERE r.year=? AND r.opd_id=? ORDER BY r.updated_at`).bind(String(year),opdId).all()).results||[];
+        const fileReviews=reviewRows.map(x=>({uploadId:String(x.upload_id),availability:x.availability||'',identityDoc:x.identity_doc||'',validity:x.validity||'',periodOk:x.period_ok||'',substance:x.substance||'',note:x.note||'',score:x.score===null?null:Number(x.score),conclusion:x.conclusion||'',examinerName:x.examiner_name||'',updatedAt:Number(x.updated_at||0)}));
+        return jsonResponse({status:'success',items,fileReviews});
+      }
+
+      case 'saveQaApipFileReview': {
+        const opdId=String(params.opdId||''),uploadId=String(params.fileUploadId||'').trim();
+        if(!opdId||!uploadId)throw new Error('Identitas file QA tidak lengkap.');
+        // Only permit a review of an existing source file in the same OPD/year.
+        const evidence=await env.DB.prepare(`SELECT evidence_key,subunsur,param_id,grade,target_code FROM opd_workbook_evidence_items
+          WHERE year=? AND opd_id=? AND upload_id=? AND TRIM(COALESCE(r2_key,''))<>'' LIMIT 1`)
+          .bind(String(year),opdId,uploadId).first();
+        if(!evidence)throw new Error('File evidence QA bukan milik OPD/tahun ini atau sudah dihapus.');
+        const sub=String(params.subunsur||''),param=String(params.paramId||''),grade=String(params.grade||'').toUpperCase();
+        // The authoritative evidenceKey identifies the original KK3.x parameter
+        // when an older upload has missing or stale derived location columns.
+        const legacyMatch=String(evidence.evidence_key||'').trim().match(/^SP-(\d+)_(\d+)-(\d+)-(T[1-4])$/i);
+        const sourceSub=legacyMatch?`${legacyMatch[1]}.${legacyMatch[2]}`:String(evidence.subunsur||'');
+        const sourceParam=legacyMatch?`${legacyMatch[1]}.${legacyMatch[2]}.${legacyMatch[3]}`:String(evidence.param_id||'');
+        if(sourceSub!==sub||sourceParam!==param)throw new Error('Subunsur/parameter QA tidak cocok dengan kode evidence sumber.');
+        if(evidence.grade&&String(evidence.grade).toUpperCase()!==grade)throw new Error('Grade file tidak sesuai sumber.');
+        if(!/^[1-5]\.\d+$/.test(sub)||!/^\d+\.\d+\.\d+$/.test(param)||!['A','B','C','D','E'].includes(grade))throw new Error('Lokasi QA file tidak valid.');
+        const availability=sanitizeQaText(params.availability,30),identityDoc=sanitizeQaText(params.identityDoc,500);
+        const validity=sanitizeQaText(params.validity,10),periodOk=sanitizeQaText(params.periodOk,10);
+        const substance=sanitizeQaText(params.substance,30),note=sanitizeQaText(params.note,1000);
+        const examinerName=sanitizeQaText(params.examinerName,100);
+        const score=calculateQaApipScore({availability,validity,periodOk,substance});
+        const conclusion=calculateQaApipConclusion({availability,score}),now=Date.now();
+        if(!availability&&!identityDoc&&!validity&&!periodOk&&!substance&&!note&&!examinerName){
+          await env.DB.prepare('DELETE FROM opd_qa_apip_file_reviews WHERE year=? AND opd_id=? AND upload_id=?')
+            .bind(String(year),opdId,uploadId).run();
+        }else{
+          await env.DB.prepare(`INSERT INTO opd_qa_apip_file_reviews(year,opd_id,upload_id,availability,identity_doc,validity,period_ok,substance,note,score,conclusion,examiner_name,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(year,opd_id,upload_id) DO UPDATE SET
+            availability=excluded.availability,identity_doc=excluded.identity_doc,validity=excluded.validity,period_ok=excluded.period_ok,
+            substance=excluded.substance,note=excluded.note,score=excluded.score,conclusion=excluded.conclusion,
+            examiner_name=excluded.examiner_name,updated_at=excluded.updated_at`)
+            .bind(String(year),opdId,uploadId,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,now).run();
+        }
+        const item={uploadId,subunsur:sub,paramId:param,grade,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now};
+        notifyRealtime(env,ctx,year,{action:'saveQaApipFileReview',opdId,uploadId,item});
+        return jsonResponse({status:'success',item});
       }
 
       case 'saveQaApipItem': {
@@ -5269,9 +5324,12 @@ export async function onRequest({ request, env, ctx }) {
         const fileUploadId=String(params.fileUploadId||'').trim();
         if(fileUploadId){
           // Never allow a QA grade to bind to evidence from a different OPD, parameter or level.
-          const source=await env.DB.prepare(`SELECT upload_id FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? AND subunsur=? AND param_id=? AND grade=? AND TRIM(COALESCE(r2_key,''))<>'' LIMIT 1`)
-            .bind(fileUploadId,String(year),opdId,subunsur,paramId,grade).first();
-          if(!source)throw new Error('File evidence tidak ditemukan pada OPD, parameter, dan level yang sama. Muat ulang tarikan evidence.');
+          const source=await env.DB.prepare(`SELECT upload_id,evidence_key,subunsur,param_id,grade FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? AND grade=? AND TRIM(COALESCE(r2_key,''))<>'' LIMIT 1`)
+            .bind(fileUploadId,String(year),opdId,grade).first();
+          const keyMatch=String(source?.evidence_key||'').trim().match(/^SP-(\d+)_(\d+)-(\d+)-(T[1-4])$/i);
+          const expectedSub=keyMatch?`${keyMatch[1]}.${keyMatch[2]}`:String(source?.subunsur||'');
+          const expectedParam=keyMatch?`${keyMatch[1]}.${keyMatch[2]}.${keyMatch[3]}`:String(source?.param_id||'');
+          if(!source||expectedSub!==subunsur||expectedParam!==paramId)throw new Error('File evidence tidak ditemukan pada OPD, parameter, dan level yang sama. Muat ulang tarikan evidence.');
           const prior=await env.DB.prepare(`SELECT upload_id FROM opd_qa_apip_file_bindings WHERE year=? AND opd_id=? AND subunsur=? AND param_id=? AND grade=? AND item_no=? LIMIT 1`)
             .bind(String(year),opdId,subunsur,paramId,grade,itemNo).first();
           if(prior?.upload_id && String(prior.upload_id)!==fileUploadId)throw new Error('Butir QA sudah terikat ke file lain. Muat ulang agar penilaian lama tidak tertukar.');
