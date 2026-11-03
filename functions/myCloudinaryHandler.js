@@ -730,17 +730,18 @@ async function evidencePreviewStreamResponse(env,request,file,{signed=false}={})
     let start=range[1]===''?Math.max(0,size-Number(range[2]||0)):Number(range[1]);
     let end=range[1]===''?size-1:(range[2]===''?size-1:Number(range[2]));
     if(!Number.isFinite(start)||!Number.isFinite(end)||start<0||end<start||start>=size)return new Response(null,{status:416,headers:{'Content-Range':`bytes */${size}`,'Accept-Ranges':'bytes'}});
-    end=Math.min(end,size-1);offset=start;length=end-start+1;status=206;object=await env.EVIDENCE_BUCKET.get(key,{range:{offset,length}});
+    end=Math.min(end,size-1);offset=start;length=end-start+1;status=206;if(request.method!=='HEAD')object=await env.EVIDENCE_BUCKET.get(key,{range:{offset,length}});
   }else if(request.method!=='HEAD'){object=await env.EVIDENCE_BUCKET.get(key);}
+  if(request.method!=='HEAD'&&!object)return new Response('File tidak ditemukan',{status:404});
   const name=String(file.fileName||'evidence').replace(/[\r\n"\\]/g,'_').slice(0,180)||'evidence';
   const rawMime=String(file.fileType||head.httpMetadata?.contentType||'application/octet-stream').split(';')[0].trim().toLowerCase();
   // Browsers may upload files with empty MIME types. Infer only passive,
   // browser-renderable types for inline preview so PDF/images do not download.
   const extension=name.split('.').pop().toLowerCase();
-  const inlineMime={pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',bmp:'image/bmp',avif:'image/avif',mp4:'video/mp4',webm:'video/webm',mov:'video/quicktime',mp3:'audio/mpeg',wav:'audio/wav',ogg:'audio/ogg',m4a:'audio/mp4'};
+  const inlineMime={pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',bmp:'image/bmp',avif:'image/avif',mp4:'video/mp4',webm:'video/webm',mov:'video/quicktime',mp3:'audio/mpeg',wav:'audio/wav',ogg:'audio/ogg',m4a:'audio/mp4',m4v:'video/mp4',ogv:'video/ogg',aac:'audio/aac'};
   const contentType=rawMime==='application/octet-stream'&&inlineMime[extension]?inlineMime[extension]:rawMime;
   const headers=new Headers({'Content-Type':contentType,'Content-Disposition':`inline; filename="${name.replace(/[^\x20-\x7E]/g,'_')}"`,'Cache-Control':'private, no-store, max-age=0','X-Content-Type-Options':'nosniff','Accept-Ranges':'bytes'});
-  if(size)headers.set('Content-Length',String(length));if(status===206)headers.set('Content-Range',`bytes ${offset}-${offset+length-1}/${size}`);
+  headers.set('Content-Length',String(length));if(status===206)headers.set('Content-Range',`bytes ${offset}-${offset+length-1}/${size}`);
   if(signed){headers.set('Access-Control-Allow-Origin','*');headers.set('Access-Control-Allow-Methods','GET, HEAD, OPTIONS');headers.set('Access-Control-Allow-Headers','Range, Content-Type');headers.set('Access-Control-Expose-Headers','Content-Length, Content-Range, Accept-Ranges');}
   else{headers.set('Referrer-Policy','no-referrer');headers.set('Content-Security-Policy',contentType==='application/pdf'?"default-src 'none'; frame-ancestors 'self'":"default-src 'none'; frame-ancestors 'self'; sandbox");}
   if(head.httpEtag)headers.set('ETag',head.httpEtag);
