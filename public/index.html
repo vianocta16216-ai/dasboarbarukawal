@@ -17,6 +17,75 @@
 <title>KAWAL SPIP - Dashboard Lengkap</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="stylesheet" href="/style.css?v=20261103-40users-evidence-ui-v2">
+
+<!-- Perbaikan khusus ikon SVG mata Reset Password. Tidak mengubah fitur lain. -->
+<style id="reset-password-eye-only-fix">
+#accountResetPasswordModal .password-visibility-wrap {
+  position: relative;
+  display: block;
+}
+#accountResetPasswordModal .password-visibility-wrap > input {
+  padding-right: 54px !important;
+}
+#accountResetPasswordModal button.password-visibility-toggle {
+  position: absolute !important;
+  top: calc(50% - 3px) !important;
+  right: 8px !important;
+  transform: translateY(-50%) !important;
+  width: 36px !important;
+  height: 34px !important;
+  min-width: 36px !important;
+  min-height: 34px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: inline-flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  border-radius: 9px !important;
+  border: 1px solid #dbeafe !important;
+  background: #eff6ff !important;
+  color: #334155 !important;
+  box-shadow: none !important;
+  filter: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  cursor: pointer;
+  z-index: 2;
+}
+#accountResetPasswordModal button.password-visibility-toggle .password-visibility-svg,
+#accountResetPasswordModal button.password-visibility-toggle .password-visibility-svg path,
+#accountResetPasswordModal button.password-visibility-toggle .password-visibility-svg circle {
+  stroke: #334155 !important;
+  fill: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+#accountResetPasswordModal button.password-visibility-toggle .password-visibility-svg {
+  display: block !important;
+  width: 21px !important;
+  height: 21px !important;
+  min-width: 21px !important;
+  flex: 0 0 21px !important;
+  stroke-width: 2 !important;
+}
+#accountResetPasswordModal button.password-visibility-toggle:hover,
+#accountResetPasswordModal button.password-visibility-toggle:focus-visible {
+  background: #dbeafe !important;
+  border-color: #93c5fd !important;
+  outline: 2px solid transparent !important;
+  box-shadow: 0 0 0 3px rgba(59,130,246,.16) !important;
+  transform: translateY(-50%) !important;
+}
+#accountResetPasswordModal button.password-visibility-toggle:hover .password-visibility-svg,
+#accountResetPasswordModal button.password-visibility-toggle:hover .password-visibility-svg path,
+#accountResetPasswordModal button.password-visibility-toggle:hover .password-visibility-svg circle,
+#accountResetPasswordModal button.password-visibility-toggle:focus-visible .password-visibility-svg,
+#accountResetPasswordModal button.password-visibility-toggle:focus-visible .password-visibility-svg path,
+#accountResetPasswordModal button.password-visibility-toggle:focus-visible .password-visibility-svg circle {
+  stroke: #1d4ed8 !important;
+}
+</style>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
