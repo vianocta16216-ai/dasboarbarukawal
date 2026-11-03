@@ -2,7 +2,8 @@ import {
   getGoogleDriveConfigurationStatus,
   dispatchDueDriveBackupJobs,
   drainDriveBackupQueue,
-  processDriveBackupQueueMessage
+  processDriveBackupQueueMessage,
+  recoverStalledDriveBackupJobs
 } from '../functions/myCloudinaryHandler.js';
 
 const MESSAGE_CONCURRENCY = 2;
@@ -57,7 +58,10 @@ export default {
       const fallback = (result?.error || result?.queueUnavailable)
         ? await drainDriveBackupQueue(env, 10, true, ctx)
         : null;
-      console.log('KAWAL SPIP D1 outbox dispatcher:', JSON.stringify({ result, fallback }));
+      // If Queue accepted dispatches but stopped consuming, a small D1 watchdog
+      // repairs overdue jobs without waiting for users to re-upload their files.
+      const watchdog = await recoverStalledDriveBackupJobs(env, 2, ctx).catch(e=>({error:String(e?.message||e)}));
+      console.log('KAWAL SPIP D1 outbox dispatcher:', JSON.stringify({ result, fallback, watchdog }));
     })());
   },
 
