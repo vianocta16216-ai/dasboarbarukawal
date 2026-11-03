@@ -5056,7 +5056,7 @@ export async function onRequest({ request, env, ctx }) {
         await putR2WithRetry(env, filePath,fileBody||bytes,{httpMetadata:{contentType:fileType}});
         const publicUrl=privateEvidenceUrl(year,params.opdId,uploadId);
         const item={url:publicUrl,fileName:safeFileName,folderName:cfg.folderName,gdriveFolderId,gdriveId:null,storage:'R2',syncStatus:'pending',uploadedAt:new Date().toISOString(),uploadId,r2Key:filePath,fileType};
-        const latestList=await appendOpdEvidenceArrayItem(env,params.opdId,year,cfg.listField,item);
+        await appendOpdEvidenceArrayItem(env,params.opdId,year,cfg.listField,item);
         await runD1WithRetry(()=>env.DB.prepare(`UPDATE opd_data SET ${cfg.folderField}=?, ${cfg.folderIdField}=? WHERE id=? AND year=?`).bind(cfg.folderName,gdriveFolderId,params.opdId,year));
         const job=reportJob;
         const driveQueue=await queueDriveBackupInBackground(env,ctx,job);
