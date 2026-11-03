@@ -468,7 +468,7 @@ const VERIFICATION_ACTIONS = new Set([
   'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','verifyKkRpjmdMapping'
 ]);
 const OPD_INPUT_ACTIONS = new Set([
-  'saveSubunsur','saveField','saveRow','uploadFile','deleteFile','replaceEvidenceFile','retryDriveBackup',
+  'saveSubunsur','saveField','saveRow','uploadFile','deleteFile','replaceEvidenceFile','retryDriveBackup','saveEvidenceWorkflowStep',
   'uploadRtpEvidence','deleteRtpEvidence','replaceRtpEvidence','saveRtpEvidenceFolder',
   'uploadReportFile','deleteReportFile','deleteLheFollowup','getReportFiles','getRtpEvidence','getLheFollowups','saveLheFollowup','uploadLheEvidence','deleteLheEvidence','deleteWorkbookEvidence','getKkSheets','createKkSheets',
   'saveKkData','getRtpKkSheets','createRtpKkSheets','saveRtpKkData','getKkPmSheets','createKkPmSheets','getKkPmTemplateConfig','updateKkPmTemplateConfig',
@@ -495,7 +495,7 @@ const IRBAN_ALLOWED_ACTIONS = new Set([
 ]);
 const BPKP_ALLOWED_ACTIONS = new Set([
   ...COMMON_READ_ACTIONS,'createKkPmSheets','updateKkPmTemplateConfig','createPemdaKkPmWorkbook','saveEvidenceWorkflowStep','savePemdaVerification','downloadEvidence','getLheFollowups','getBpkpOfficialScoreAdmin','savePemdaWorkbookEvidenceVerification',
-  'getBpkpOfficialAudit','saveBpkpOfficialScore','unlockBpkpOfficialScore'
+  'getBpkpOfficialAudit','saveBpkpOfficialScore','unlockBpkpOfficialScore','retryDriveBackup'
 ]);
 const DESTRUCTIVE_ADMIN_ACTIONS = new Set([
   'addOpd','deleteOpd','addYear','deleteYear','createBackup','restoreBackup','deleteBackup',
@@ -691,7 +691,7 @@ function isActionAllowedForRole(session,action,params={}){
   if(role==='admin')return true;
   if(role==='opd'){
     if(!OPD_INPUT_ACTIONS.has(action))return false;
-    if(VERIFICATION_ACTIONS.has(action)||DESTRUCTIVE_ADMIN_ACTIONS.has(action))return false;
+    if((VERIFICATION_ACTIONS.has(action) && !(action==='saveEvidenceWorkflowStep' && String(params.stage||'').toLowerCase()==='asesor'))||DESTRUCTIVE_ADMIN_ACTIONS.has(action))return false;
     if(action==='saveField'&&!['evidence','qaApip','rtp','status'].includes(String(params.field||'')))return false;
     if(action==='saveRow'||action==='saveData')return false;
     return true;
@@ -751,21 +751,22 @@ async function assertUploadBelongsToOpd(env,year,opdId,uploadId){
   const id=String(opdId||''),uid=String(uploadId||'');
   if(!id||!uid)throw new Error('Identitas OPD dan file wajib lengkap.');
   const r=await env.DB.prepare('SELECT r2_key,file_name,file_type FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uid,String(year),id).all();
-  if(r.results?.[0]&&String(r.results[0].r2_key||'').trim())return {r2Key:r.results[0].r2_key,fileName:r.results[0].file_name,fileType:r.results[0].file_type};
+  if(r.results?.[0]&&String(r.results[0].r2_key||'').trim())return {r2Key:r.results[0].r2_key,fileName:r.results[0].file_name,fileType:r.results[0].file_type,sourceType:'workbook_evidence'};
   const reg=await env.DB.prepare('SELECT r2_key FROM evidence_upload_registry WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uid,String(year),id).all();
   if(reg.results?.[0]){
     const row=(await env.DB.prepare('SELECT subunsurs,rtp_evidence,pm_spip_reports,rr_rtp_reports FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(id,String(year)).all()).results?.[0];
     let sub={},rtp=[],pm=[],rr=[];try{sub=JSON.parse(row?.subunsurs||'{}')}catch{}try{rtp=JSON.parse(row?.rtp_evidence||'[]')}catch{}try{pm=JSON.parse(row?.pm_spip_reports||'[]')}catch{}try{rr=JSON.parse(row?.rr_rtp_reports||'[]')}catch{}
     let file=null;for(const group of Object.values(sub||{}))for(const param of Object.values(group||{}))for(let lv=1;lv<=5;lv++){const arr=param?.['files'+lv];if(Array.isArray(arr)){file=arr.find(x=>x&&String(x.uploadId||'')===uid)||file;}}
+    const isStructure=!!file;
     file=file||[...(rtp||[]),...(pm||[]),...(rr||[])].find(x=>x&&String(x.uploadId||'')===uid)||null;
-    return {r2Key:reg.results[0].r2_key||file?.r2Key||null,fileName:file?.fileName||'evidence',fileType:file?.fileType||'application/octet-stream'};
+    return {r2Key:reg.results[0].r2_key||file?.r2Key||null,fileName:file?.fileName||'evidence',fileType:file?.fileType||'application/octet-stream',sourceType:isStructure?'evidence':'other'};
   }
   const row=(await env.DB.prepare('SELECT rtp_evidence,pm_spip_reports,rr_rtp_reports,subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(id,String(year)).all()).results?.[0];
   if(row){let all=[];for(const key of ['rtp_evidence','pm_spip_reports','rr_rtp_reports','subunsurs']){let value;try{value=JSON.parse(row[key]|| (key==='subunsurs'?'{}':'[]'))}catch{value=key==='subunsurs'?{}:[];}if(key==='subunsurs'){for(const group of Object.values(value||{}))for(const param of Object.values(group||{}))for(let lv=1;lv<=5;lv++){const arr=param?.['files'+lv];if(Array.isArray(arr))all.push(...arr);}}else if(Array.isArray(value))all.push(...value);}
     const file=all.find(x=>x&&typeof x==='object'&&String(x.uploadId||'')===uid);
-    if(file)return {r2Key:file.r2Key||null,fileName:file.fileName||'evidence',fileType:file.fileType||'application/octet-stream'};
+    if(file)return {r2Key:file.r2Key||null,fileName:file.fileName||'evidence',fileType:file.fileType||'application/octet-stream',sourceType:['rtp_evidence','pm_spip_reports','rr_rtp_reports'].some(key=>parseJsonArray(row[key]).some(x=>x&&String(x.uploadId||'')===uid))?'other':'evidence'};
   }
-  const lheRows=await env.DB.prepare('SELECT evidence_json FROM lhe_followup_items WHERE year=? AND opd_id=?').bind(String(year),id).all();
+  const lheRows=await env.DB.prepare('SELECT id,evidence_json FROM lhe_followup_items WHERE year=? AND opd_id=?').bind(String(year),id).all();
   for(const record of (lheRows.results||[])){let list=[];try{list=JSON.parse(record.evidence_json||'[]')}catch{};const file=(Array.isArray(list)?list:[]).find(x=>x&&String(x.uploadId||'')===uid);if(file)return {r2Key:file.r2Key||null,fileName:file.fileName||'bukti-tindak-lanjut',fileType:file.fileType||'application/octet-stream',sourceType:'lhe_evidence',followupId:record.id};}
   throw new Error('File tidak ditemukan pada OPD/tahun tersebut.');
 }
@@ -2764,7 +2765,7 @@ async function processDriveBackupJob(env, job) {
 const DRIVE_QUEUE_MAX_PER_TICK = 100;
 const DRIVE_QUEUE_LEASE_MS = 5 * 60 * 1000;
 const DRIVE_QUEUE_DISPATCH_LEASE_MS = 90 * 1000;
-const DRIVE_QUEUE_MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
+const DRIVE_QUEUE_MAX_BACKOFF_MS = 15 * 60 * 1000;
 
 async function enqueueDriveBackupJob(env, job, error = '') {
   if (!env?.DB) throw new Error('Database antrean backup tidak tersedia.');
@@ -2818,11 +2819,33 @@ async function claimDriveBackupJob(env, uploadId) {
 async function scheduleDriveBackupRetry(env, uploadId, error, attempts=null) {
   const row=await env.DB.prepare('SELECT attempts FROM drive_backup_jobs WHERE upload_id=? LIMIT 1').bind(String(uploadId)).first();
   const nextAttempt=attempts==null?Number(row?.attempts||0)+1:Number(attempts);
-  const delay=Math.min(DRIVE_QUEUE_MAX_BACKOFF_MS,30_000*Math.pow(2,Math.min(nextAttempt-1,10)))+Math.floor(Math.random()*5000);
+  // Back off promptly for temporary network faults, but slow down for Google quota
+  // / OAuth problems. Bounded jitter helps spread retries from simultaneous OPDs.
+  const reason=String(error||'');
+  const quota=/\b429\b|rate.?limit|quota|resource.exhausted/i.test(reason);
+  const configuration=/credentials not configured|konfigurasi|not configured|invalid_grant|unauthorized_client/i.test(reason);
+  const floor=quota?60_000:(configuration?120_000:8_000);
+  const delay=Math.min(DRIVE_QUEUE_MAX_BACKOFF_MS,floor*Math.pow(2,Math.min(nextAttempt-1,8)))+Math.floor(Math.random()*3000);
   const now=Date.now();
   await runD1WithRetry(()=>env.DB.prepare(`UPDATE drive_backup_jobs SET status='retrying',attempts=?,next_attempt_at=?,lease_until=0,dispatch_until=0,last_error=?,updated_at=? WHERE upload_id=?`)
     .bind(nextAttempt,now+delay,String(error||'Google Drive belum mengonfirmasi file.').slice(0,2000),now,String(uploadId)));
   return delay;
+}
+
+async function prioritizeDriveBackupJob(env, uploadId) {
+  const now=Date.now();
+  const row=await env.DB.prepare('SELECT status,r2_ready,lease_until FROM drive_backup_jobs WHERE upload_id=? LIMIT 1').bind(String(uploadId)).first();
+  if(!row)throw new Error('Antrean Google Drive belum ditemukan; muat ulang daftar file.');
+  if(row.status==='done')return {done:true};
+  if(Number(row.lease_until||0)>now)return {busy:true};
+  if(!Number(row.r2_ready||0))return {r2NotReady:true};
+  // Compare-and-swap against the lease, preserving attempts and the exact
+  // upload identity. Multiple operators can press Retry safely.
+  const updated=await runD1WithRetry(()=>env.DB.prepare(`UPDATE drive_backup_jobs
+    SET status='pending',next_attempt_at=?,dispatch_until=0,updated_at=?
+    WHERE upload_id=? AND status IN ('pending','retrying') AND r2_ready=1 AND lease_until<=?`)
+    .bind(now,now,String(uploadId),now));
+  return {ready:Number(updated?.meta?.changes||0)>0};
 }
 
 async function finishDriveBackupJob(env, uploadId, attempts=null) {
@@ -3084,6 +3107,20 @@ export async function dispatchDueDriveBackupJobs(env, limit=DRIVE_QUEUE_MAX_PER_
       .bind(String(err?.message||err).slice(0,2000),stamp,id)).catch(()=>{});
     return {dispatched:0,queueUnavailable:false,error:String(err?.message||err)};
   }
+}
+
+export async function recoverStalledDriveBackupJobs(env, limit=2, ctx=null) {
+  const now=Date.now();
+  // Only D1 jobs that have been due and untouched for at least 90 seconds.
+  // The same claimDriveBackupJob CAS prevents duplicates with Queue consumers.
+  const rows=await env.DB.prepare(`SELECT upload_id FROM drive_backup_jobs
+    WHERE status IN ('pending','retrying') AND r2_ready=1 AND next_attempt_at<=?
+      AND lease_until<=? AND dispatch_until<=? AND updated_at<=?
+    ORDER BY next_attempt_at,created_at LIMIT ?`)
+    .bind(now,now,now,now-90_000,Math.max(1,Math.min(3,Number(limit)||2))).all();
+  const results=[];
+  for(const row of rows.results||[]) results.push(await processDriveBackupQueueMessage(env,row.upload_id,ctx));
+  return {checked:results.length,results};
 }
 
 export async function drainDriveBackupQueue(env, limit=DRIVE_QUEUE_MAX_PER_TICK, forceDirect=false, ctx=null) {
@@ -3587,8 +3624,13 @@ export async function onRequest({ request, env, ctx }) {
         const file=await assertUploadBelongsToOpd(env,year,opdId,uploadId);
         if(!file)throw new Error('Evidence tidak ditemukan.');
         const rec=await env.DB.prepare('SELECT stage,status,examiner_name,note,updated_by,updated_at FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=?').bind(String(year),opdId,uploadId).all();
-        const stages={auditor:{stage:'auditor',status:'menunggu',examinerName:'',note:'',updatedBy:'',updatedAt:0},irban:{stage:'irban',status:'menunggu',examinerName:'',note:'',updatedBy:'',updatedAt:0},bpkp:{stage:'bpkp',status:'menunggu',examinerName:'',note:'',updatedBy:'',updatedAt:0}};
+        const stages={asesor:{stage:'asesor',status:'menunggu',examinerName:'',note:'',updatedBy:'',updatedAt:0},auditor:{stage:'auditor',status:'menunggu',examinerName:'',note:'',updatedBy:'',updatedAt:0},bpkp:{stage:'bpkp',status:'menunggu',examinerName:'',note:'',updatedBy:'',updatedAt:0}};
         for(const row of (rec.results||[])){if(stages[row.stage])stages[row.stage]={stage:row.stage,status:row.status||'menunggu',examinerName:row.examiner_name||'',note:row.note||'',updatedBy:row.updated_by||'',updatedAt:Number(row.updated_at||0)};}
+        // Legacy Auditor/Irban/BPKP decisions are visible in the audit trail,
+        // not carried forward as approval of the new OPD-first workflow.
+        if(!['diterima','diterima_catatan'].includes(stages.asesor.status)) {
+          for(const name of ['auditor','bpkp'])stages[name]={stage:name,status:'menunggu',examinerName:'',note:'',updatedBy:'',updatedAt:0};
+        }
         const history=(await env.DB.prepare('SELECT stage,status,examiner_name,note,updated_by,created_at FROM evidence_verification_audit WHERE year=? AND opd_id=? AND upload_id=? ORDER BY created_at DESC LIMIT 30').bind(String(year),opdId,uploadId).all()).results||[];
         return jsonResponse({status:'success',year:String(year),opdId,uploadId,fileName:file.fileName||'Evidence',stages,history});
       }
@@ -3597,8 +3639,8 @@ export async function onRequest({ request, env, ctx }) {
         const role=String(authSession?.role||''),status=String(params.status||'');
         const examinerName=sanitizeVerificationField(params.examinerName||authSession?.display_name||authSession?.username,100);
         const note=sanitizeVerificationField(params.note,2000);
-        if(!['auditor','irban','bpkp'].includes(stage))throw new Error('Tahap verifikasi tidak valid.');
-        const roleStage=(role==='ppupd'?'auditor':role);if(role!=='admin'&&roleStage!==stage)return jsonResponse({status:'error',message:'Akun hanya dapat mengisi tahap sesuai role masing-masing.'},403);
+        if(!['asesor','auditor','bpkp'].includes(stage))throw new Error('Tahap verifikasi tidak valid.');
+        const roleStage=(role==='ppupd'?'auditor':(role==='opd'?'asesor':role));if(role!=='admin'&&roleStage!==stage)return jsonResponse({status:'error',message:'Akun hanya dapat mengisi tahap sesuai role masing-masing.'},403);
         const allowedStatuses=stage==='auditor'?['dikirim']:['diterima','diterima_catatan','dikembalikan'];
         if(!allowedStatuses.includes(status))throw new Error(stage==='auditor'?'Tahap Auditor / PPUPD hanya dapat diubah menjadi Dikirim.':'Pilih hasil Diterima atau Dikembalikan.');
         if(!opdId||!uploadId||!examinerName)throw new Error('OPD, file, dan nama pemeriksa wajib lengkap.');
@@ -3606,34 +3648,41 @@ export async function onRequest({ request, env, ctx }) {
         await assertSessionCanAccessOpd(env,authSession,year,opdId);
         const fileRecord=await assertUploadBelongsToOpd(env,year,opdId,uploadId);
         const now=Date.now();
-        const previousStage=stage==='irban'?'auditor':(stage==='bpkp'?'irban':'');
-        const previousStatuses=stage==='irban'?['dikirim']:(stage==='bpkp'?['diterima','diterima_catatan']:[]);
+        const previousStage=stage==='auditor'?'asesor':(stage==='bpkp'?'auditor':'');
+        const previousStatuses=stage==='auditor'?['diterima','diterima_catatan']:(stage==='bpkp'?['dikirim']:[]);
         const baseValues=[String(year),opdId,uploadId,stage,status,examinerName,note,String(authSession.username||''),now];
         let write;
         if(previousStage){
-          // Atomic prerequisite check: Irban may proceed only after Auditor sends;
-          // BPKP may proceed after Irban accepts with or without notes.
+          // Atomic prerequisite check: Auditor/PPUPD follows OPD assessor acceptance;
+          // BPKP follows Auditor/PPUPD submission.
           const statusClause=previousStatuses.length===1?'status=?':'status IN (?,?)';
+          const asesorGuard=stage==='bpkp'?` AND EXISTS (
+              SELECT 1 FROM evidence_verification_steps a
+              JOIN evidence_verification_steps b
+                ON b.year=a.year AND b.opd_id=a.opd_id AND b.upload_id=a.upload_id AND b.stage='auditor'
+              WHERE a.year=? AND a.opd_id=? AND a.upload_id=? AND a.stage='asesor'
+                AND a.status IN ('diterima','diterima_catatan') AND b.updated_at>=a.updated_at
+            )`:'';
           write=await env.DB.prepare(`INSERT INTO evidence_verification_steps(year,opd_id,upload_id,stage,status,examiner_name,note,updated_by,updated_at)
             SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (
               SELECT 1 FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage=? AND ${statusClause}
-            ) ON CONFLICT(year,opd_id,upload_id,stage) DO UPDATE SET status=excluded.status,examiner_name=excluded.examiner_name,note=excluded.note,updated_by=excluded.updated_by,updated_at=excluded.updated_at`)
-            .bind(...baseValues,String(year),opdId,uploadId,previousStage,...previousStatuses).run();
-          if(!Number(write.meta?.changes||0))return jsonResponse({status:'error',code:'VERIFICATION_STAGE_CONFLICT',message:stage==='irban'?'Status Auditor / PPUPD belum Dikirim atau sudah berubah. Muat ulang status evidence sebelum memverifikasi.':'Status Irban belum Diterima atau Diterima dengan Catatan lagi. Muat ulang status evidence sebelum verifikasi akhir BPKP.'},409);
+            )${asesorGuard} ON CONFLICT(year,opd_id,upload_id,stage) DO UPDATE SET status=excluded.status,examiner_name=excluded.examiner_name,note=excluded.note,updated_by=excluded.updated_by,updated_at=excluded.updated_at`)
+            .bind(...baseValues,String(year),opdId,uploadId,previousStage,...previousStatuses,...(stage==='bpkp'?[String(year),opdId,uploadId]:[])).run();
+          if(!Number(write.meta?.changes||0))return jsonResponse({status:'error',code:'VERIFICATION_STAGE_CONFLICT',message:stage==='auditor'?'Asesor PM OPD harus menyetujui dokumen terlebih dahulu. Muat ulang status evidence.':'Auditor / PPUPD belum mengirim dokumen atau status sudah berubah. Muat ulang status sebelum keputusan BPKP.'},409);
         }else{
           write=await env.DB.prepare(`INSERT INTO evidence_verification_steps(year,opd_id,upload_id,stage,status,examiner_name,note,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(year,opd_id,upload_id,stage) DO UPDATE SET status=excluded.status,examiner_name=excluded.examiner_name,note=excluded.note,updated_by=excluded.updated_by,updated_at=excluded.updated_at`).bind(...baseValues).run();
         }
         // When an upstream reviewer re-submits or returns a file, downstream decisions are invalidated.
-        if(stage==='auditor')await env.DB.prepare("DELETE FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage IN ('irban','bpkp')").bind(String(year),opdId,uploadId).run();
-        if(stage==='irban')await env.DB.prepare("DELETE FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage='bpkp'").bind(String(year),opdId,uploadId).run();
+        if(stage==='asesor')await env.DB.prepare("DELETE FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage IN ('auditor','bpkp','irban')").bind(String(year),opdId,uploadId).run();
+        if(stage==='auditor')await env.DB.prepare("DELETE FROM evidence_verification_steps WHERE year=? AND opd_id=? AND upload_id=? AND stage='bpkp'").bind(String(year),opdId,uploadId).run();
         await env.DB.prepare('INSERT INTO evidence_verification_audit(year,opd_id,upload_id,stage,status,examiner_name,note,updated_by,created_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(String(year),opdId,uploadId,stage,status,examinerName,note,String(authSession.username||''),now).run();
-        if(stage==='irban'){
-          // Keep the score-bearing evidence metadata and dashboard score synchronized
-          // with the authoritative Irban decision. Auditor's 'dikirim' is not a score.
+        if(stage==='bpkp' && ['evidence','workbook_evidence'].includes(String(fileRecord?.sourceType||''))){
+          // Self-assessment and Auditor submission must NOT set a final score.
+          // Only the final decision updates legacy score-bearing evidence.
           await syncStructureVerificationForUpload(env,year,opdId,uploadId,status,examinerName,note,now);
         }
         if(fileRecord?.sourceType==='lhe_evidence'){
-          const summaryStatus=stage==='bpkp'?(status==='diterima'?'Terverifikasi akhir BPKP':'Dikembalikan oleh BPKP'):(stage==='irban'?(status==='diterima'?'Menunggu verifikasi akhir BPKP':'Perlu perbaikan oleh OPD'):'Menunggu verifikasi Irban');
+          const summaryStatus=stage==='bpkp'?(['diterima','diterima_catatan'].includes(status)?'Terverifikasi akhir BPKP':'Dikembalikan oleh BPKP'):(stage==='auditor'?'Menunggu verifikasi akhir BPKP':(status==='dikembalikan'?'Perlu perbaikan oleh OPD':'Menunggu pengiriman Auditor / PPUPD'));
           await env.DB.prepare('UPDATE lhe_followup_items SET verification_status=?,verifier_name=?,verifier_note=?,updated_by=?,updated_at=? WHERE id=? AND year=? AND opd_id=?').bind(summaryStatus,examinerName,note,String(authSession.username||''),now,String(fileRecord.followupId),String(year),opdId).run();
         }
         notifyRealtime(env,ctx,String(year),{action:'saveEvidenceWorkflowStep',opdId,uploadId,stage,status});
@@ -3892,7 +3941,7 @@ export async function onRequest({ request, env, ctx }) {
       case 'getPemdaWorkbookEvidenceFiles': {
         if(!['admin','irban','auditor','ppupd','bpkp'].includes(String(authSession?.role||'')))return jsonResponse({status:'error',code:'ROLE_FORBIDDEN',message:'Akun ini tidak diizinkan melihat evidence Struktur dan Proses Pemda.'},403);
         const q=await env.DB.prepare("SELECT upload_id,evidence_key,target_code,subunsur,param_id,grade,level,file_name,file_type,r2_key,gdrive_id,sync_status,sync_error,verification_status,verification_examiner,verification_note,verification_at,created_at,updated_at FROM pemda_workbook_evidence_items WHERE year=? AND target_code IN ('T2','T3','T4') AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>'' ORDER BY CASE target_code WHEN 'T2' THEN 1 WHEN 'T3' THEN 2 WHEN 'T4' THEN 3 ELSE 9 END,subunsur,param_id,CASE grade WHEN 'E' THEN 1 WHEN 'D' THEN 2 WHEN 'C' THEN 3 WHEN 'B' THEN 4 WHEN 'A' THEN 5 ELSE 9 END,created_at").bind(String(year)).all();
-        const files=(q.results||[]).map(x=>({uploadId:String(x.upload_id),evidenceKey:String(x.evidence_key||''),targetCode:String(x.target_code||''),subunsur:String(x.subunsur||''),paramId:String(x.param_id||''),grade:String(x.grade||''),level:Number(x.level||0),fileName:x.file_name||'Evidence',fileType:x.file_type||'application/octet-stream',url:privatePemdaEvidenceUrl(year,String(x.upload_id)),gdriveId:x.gdrive_id||null,syncStatus:x.sync_status||'pending',syncError:x.sync_error||null,verificationStatus:x.verification_status||'',verificationExaminer:x.verification_examiner||'',verificationNote:x.verification_note||'',verificationAt:x.verification_at?Number(x.verification_at):null,createdAt:Number(x.created_at||0),updatedAt:Number(x.updated_at||0)}));
+        const files=(q.results||[]).map(x=>({uploadId:String(x.upload_id),evidenceKey:String(x.evidence_key||''),targetCode:String(x.target_code||''),subunsur:String(x.subunsur||''),paramId:String(x.param_id||''),grade:String(x.grade||''),level:Number(x.level||0),fileName:x.file_name||'Evidence',fileType:x.file_type||'application/octet-stream',url:privatePemdaEvidenceUrl(year,String(x.upload_id)),r2Saved:!!x.r2_key,gdriveId:x.gdrive_id||null,syncStatus:x.sync_status||'pending',syncError:x.sync_error||null,verificationStatus:x.verification_status||'',verificationExaminer:x.verification_examiner||'',verificationNote:x.verification_note||'',verificationAt:x.verification_at?Number(x.verification_at):null,createdAt:Number(x.created_at||0),updatedAt:Number(x.updated_at||0)}));
         const summary={total:files.length,verified:files.filter(x=>['diterima','diterima_catatan'].includes(normalizeVerificationStatus(x.verificationStatus))).length,returned:files.filter(x=>normalizeVerificationStatus(x.verificationStatus)==='dikembalikan').length,byTarget:{T2:files.filter(x=>x.targetCode==='T2').length,T3:files.filter(x=>x.targetCode==='T3').length,T4:files.filter(x=>x.targetCode==='T4').length}};
         return jsonResponse({status:'success',files,summary,allowedTargets:['T2','T3','T4']});
       }
@@ -5688,9 +5737,18 @@ export async function onRequest({ request, env, ctx }) {
         const obj=await env.EVIDENCE_BUCKET.head(job.r2Key);
         if(!obj) throw new Error('File sumber di R2 tidak ditemukan. Pekerjaan tetap menunggu pemulihan R2; tidak mengirim file kosong ke Google Drive.');
         const driveQueue=await queueDriveBackupInBackground(env,ctx,job);
+        let manualRetry={done:!!driveQueue.done};
+        if(!driveQueue.done){
+          manualRetry=await prioritizeDriveBackupJob(env,job.uploadId);
+          if(manualRetry.ready){
+            const sent=await sendDriveBackupMessage(env,job.uploadId,0);
+            manualRetry.queued=sent;
+            // Cron can recover the persisted D1 row even if Queue was down.
+          }
+        }
         const gdriveId=driveQueue.done?driveQueue.gdriveId:null;
         notifyRealtime(env,ctx,targetYear,{action:'retryDriveBackup',opdId,uploadId,storage:driveQueue.done?'R2 + Google Drive':'R2',syncStatus:driveQueue.done?'done':'retrying'});
-        return jsonResponse({status:driveQueue.done?'success':'pending',gdriveId,syncStatus:driveQueue.done?'done':'retrying',uploadId,r2Saved:true,r2Key:job.r2Key,queueMessageSent:!!driveQueue.queueMessageSent,message:driveQueue.done?'File telah terverifikasi pada kedua penyimpanan.':'Pekerjaan sudah masuk antrean otomatis Google Drive; tidak perlu klik ulang.'});
+        return jsonResponse({status:driveQueue.done?'success':'pending',gdriveId,syncStatus:driveQueue.done?'done':'retrying',uploadId,r2Saved:true,r2Key:job.r2Key,queueMessageSent:!!(manualRetry.queued||driveQueue.queueMessageSent),busy:!!manualRetry.busy,message:driveQueue.done?'File telah terverifikasi pada kedua penyimpanan.':(manualRetry.busy?'File sedang diproses worker lain; Retry tidak membuat unggahan ganda.':'Retry diprioritaskan. File R2 yang sama dikirim ulang ke antrean Google Drive; tidak perlu upload ulang.')});
       }
       case 'replaceEvidenceFile': {
         assertGoogleDriveConfigured(env);
