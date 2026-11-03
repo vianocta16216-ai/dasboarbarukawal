@@ -1312,9 +1312,19 @@ async function checkRateLimit(env, ip, action) {
 }
 // ============ END KEAMANAN ============
 
+// Only binding names/status are exposed; never return credential values.
+export function getGoogleDriveConfigurationStatus(env = {}) {
+  const required = ['GOOGLE_DRIVE_CLIENT_ID', 'GOOGLE_DRIVE_CLIENT_SECRET', 'GOOGLE_DRIVE_REFRESH_TOKEN', 'GOOGLE_DRIVE_FOLDER_ID'];
+  const missing = required.filter(key => typeof env[key] !== 'string' || !env[key].trim());
+  return { configured: missing.length === 0, missing, authenticationVerified: false };
+}
+
 function assertGoogleDriveConfigured(env) {
-  if (!env.GOOGLE_DRIVE_CLIENT_ID || !env.GOOGLE_DRIVE_CLIENT_SECRET || !env.GOOGLE_DRIVE_REFRESH_TOKEN || !env.GOOGLE_DRIVE_FOLDER_ID) {
-    throw new Error('Google Drive WAJIB dikonfigurasi sebelum upload evidence. Periksa GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET, GOOGLE_DRIVE_REFRESH_TOKEN, dan GOOGLE_DRIVE_FOLDER_ID.');
+  const status = getGoogleDriveConfigurationStatus(env);
+  if (!status.configured) {
+    const error = new Error('Konfigurasi Google Drive belum lengkap pada runtime. Variabel tidak terbaca: ' + status.missing.join(', ') + '. Untuk worker kawal-spip-drive-backup, isi Settings > Variables and Secrets (Runtime / Production), bukan Build > Variables and secrets. Variabel Pages tidak otomatis diwariskan ke worker. Simpan dan deploy versi aktif.');
+    error.code = 'GOOGLE_DRIVE_RUNTIME_CONFIG_MISSING';
+    throw error;
   }
 }
 
@@ -2628,10 +2638,8 @@ async function reserveGoogleDriveJobSlot(env) {
 
 async function directGoogleDriveBackup(env, job) {
   return withGoogleConcurrency(async()=>{
+    assertGoogleDriveConfigured(env);
     await reserveGoogleDriveJobSlot(env);
-    if(!env.GOOGLE_DRIVE_CLIENT_ID||!env.GOOGLE_DRIVE_CLIENT_SECRET||!env.GOOGLE_DRIVE_REFRESH_TOKEN||!env.GOOGLE_DRIVE_FOLDER_ID){
-      throw new Error('Konfigurasi Google Drive belum lengkap');
-    }
     const obj=await env.EVIDENCE_BUCKET.get(job.r2Key);
     if(!obj) throw new Error('File sumber di R2 tidak ditemukan');
     const bytes=new Uint8Array(await obj.arrayBuffer());
