@@ -590,7 +590,7 @@ const ADMIN_ONLY_ACTIONS = new Set(['setupSetda','repairSetdaAccounts',
 const VERIFICATION_ACTIONS = new Set([
   'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','verifyKkRpjmdMapping'
 ]);
-const OPD_INPUT_ACTIONS = new Set(['getRiskWorkbook','createRiskWorkbook','getSetdaCompilation','syncSetdaCompilation',
+const OPD_INPUT_ACTIONS = new Set(['getRiskWorkbook','createRiskWorkbook','getSetdaCompilation','prepareSetdaWorkbook','syncSetdaCompilation',
   'saveSubunsur','saveField','saveRow','uploadFile','deleteFile','replaceEvidenceFile','retryDriveBackup','saveEvidenceWorkflowStep',
   'uploadRtpEvidence','deleteRtpEvidence','replaceRtpEvidence','saveRtpEvidenceFolder',
   'uploadReportFile','deleteReportFile','deleteLheFollowup','getReportFiles','getRtpEvidence','getLheFollowups','saveLheFollowup','uploadLheEvidence','deleteLheEvidence','deleteWorkbookEvidence','getKkSheets','createKkSheets',
@@ -3579,10 +3579,35 @@ async function readWorkbookComputedValues(env,spreadsheetId,sourceInfo={}){
   try{return await job;}finally{if(WORKBOOK_COMPUTED_VALUES_PENDING.get(cacheKey)===job)WORKBOOK_COMPUTED_VALUES_PENDING.delete(cacheKey);}
 }
 
+// Find a recoverable, already-created Setda file in its exact year/OPD/PM folder.
+// This closes the copy-success / D1-save-failure gap without adopting other OPD files.
+async function findRecoverableSetdaWorkbook(env,accessToken,year){
+  if(!env.GOOGLE_DRIVE_FOLDER_ID)throw new Error('GOOGLE_DRIVE_FOLDER_ID belum dikonfigurasi.');
+  const root=await getOrCreateFolder(accessToken,env.GOOGLE_DRIVE_FOLDER_ID,'Kertas Kerja Spreadsheet');
+  const yearFolder=await getOrCreateFolder(accessToken,root,String(year));
+  const opdFolder=await getOrCreateFolder(accessToken,yearFolder,'SEKRETARIAT DAERAH');
+  const folder=await getOrCreateFolder(accessToken,opdFolder,'Kertas Kerja PM SPIP');
+  const expectedName=`SEKRETARIAT DAERAH - Kertas Kerja PM SPIP - ${year}`;
+  const quote=v=>String(v).replace(/'/g, "\\'");
+  const query=new URLSearchParams({q:`'${quote(folder)}' in parents and name = '${quote(expectedName)}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
+    pageSize:'100',fields:'nextPageToken,files(id,name,mimeType,webViewLink,modifiedTime,trashed)',supportsAllDrives:'true',includeItemsFromAllDrives:'true'});
+  const response=await fetchWithRetry(`https://www.googleapis.com/drive/v3/files?${query}`,{headers:{Authorization:`Bearer ${accessToken}`}},{retries:2,baseDelay:600});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(`Pencarian workbook Setda lama gagal (HTTP ${response.status}): ${String(data.error?.message||'').slice(0,220)}`);
+  const files=(data.files||[]).sort((a,b)=>String(b.modifiedTime||'').localeCompare(String(a.modifiedTime||'')));
+  for(const file of files){
+    try{
+      const verified=await validateKkPmSpreadsheet(accessToken,file.id,{checkFormulas:true,env,forceMetadataRefresh:true});
+      if(verified.ok&&verified.profile==='PM_2026')return {file,verified};
+    }catch(e){console.warn('Kandidat pemulihan Setda gagal validasi:',String(e.message||e).slice(0,200));}
+  }
+  if(files.length)throw new Error('Folder Setda sudah memiliki workbook bernama sama, tetapi tidak lulus validasi formula. Periksa file ini dahulu; sistem tidak membuat duplikat.');
+  return null;
+}
 export async function runSetdaCompilationSchedule(env) {
   await ensureSetdaSchema(env);
   const years=(await env.DB.prepare('SELECT year FROM setda_compilation_state WHERE lease_until<? AND last_attempt<? ORDER BY last_attempt LIMIT 1').bind(Date.now(),Date.now()-300000).all()).results||[];
-  for(const row of years)await syncSetda(env,row.year,{token:getGoogleAccessToken,googleFetch:fetchWithRetry}).catch(e=>console.error('SETDA compilation:',e.message));
+  for(const row of years)await syncSetda(env,row.year,{token:getGoogleAccessToken,googleFetch:fetchWithRetry,validateWorkbook:validateKkPmSpreadsheet,canonicalSheetKey:canonicalPmSheetKey,getDriveFile}).catch(e=>console.error('SETDA compilation:',e.message));
 }
 async function mayManageSetda(env,session,year){
   if(session?.role==='admin')return true;
@@ -3619,7 +3644,7 @@ async function handleRequest({ request, env, ctx }) {
     'verifyAccess', 'verifyDelete', 'login', 'logout', 'createPemdaKkPmWorkbook', 'updateKkPmTemplateConfig', 'uploadPemdaWorkbookEvidence', 'deletePemdaWorkbookEvidence', 'savePemdaWorkbookEvidenceVerification', 'createEvidencePreviewLink', 'saveEvidenceWorkflowStep', 'saveLheFollowup', 'deleteLheFollowup', 'uploadLheEvidence', 'deleteLheEvidence', 'addOpd', 'saveData', 'saveField', 'saveAssessmentStatus', 'saveBpkpOfficialScore', 'unlockBpkpOfficialScore', 'getBpkpOfficialScoreAdmin', 'getBpkpOfficialAudit', 'savePemdaSampling', 'savePemdaVerification',
     'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'saveQaApipItem', 'saveQaApipFileReview', 'deleteQaApipItem', 'getQaApipChecklistData', 'saveQaApipChecklistItem', 'deleteQaApipChecklistItem', 'deleteOpd', 'addYear', 'deleteYear',
     'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'getKkPmWorkbookRefreshTargets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'syncKkPmMasterNow', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup',
-    'listAuthUsers','createAuthUser','setAuthUserEnabled','resetAuthUserPassword','setupSetda','repairSetdaAccounts','getSetdaCompilation','syncSetdaCompilation'
+    'listAuthUsers','createAuthUser','setAuthUserEnabled','resetAuthUserPassword','setupSetda','repairSetdaAccounts','getSetdaCompilation','prepareSetdaWorkbook','syncSetdaCompilation'
   ];
 
   // KK RTP dan pengaturan folder Evidence RTP wajib melalui POST.
@@ -3863,6 +3888,8 @@ async function handleRequest({ request, env, ctx }) {
         const accountRows=(await env.DB.prepare(`SELECT username_key,enabled FROM auth_users WHERE username_key IN (${SETDA_PARTS.map(()=>'?').join(',')})`)
           .bind(...SETDA_PARTS.map(p=>p.username)).all()).results||[];
         const byAccount=new Map(accountRows.map(a=>[String(a.username_key).toLowerCase(),Number(a.enabled)===1]));
+        const parentRow=snap.state?.parent_id?await env.DB.prepare('SELECT kk_pm_data FROM opd_data WHERE id=? AND year=?').bind(snap.state.parent_id,String(year)).first():null;
+        const activeParentWorkbookId=String(workbookOf(parentRow).workbookSpreadsheetId||'');
         const parts=SETDA_PARTS.map(p=>{
           const row=snap.parts.find(x=>x.code===p.code);
           return {code:p.code,name:p.name,order:p.order,id:partId(year,p.code),username:p.username,
@@ -3873,13 +3900,87 @@ async function handleRequest({ request, env, ctx }) {
         return jsonResponse({status:'success',enabled:snap.enabled,
           accountSummary:{active:parts.filter(p=>p.accountStatus==='aktif').length,disabled:parts.filter(p=>p.accountStatus==='nonaktif').length,
             missing:parts.filter(p=>p.accountStatus==='belum_dibuat').length,total:9},
-          state:snap.state?{lastSuccess:snap.state.last_success,lastAttempt:snap.state.last_attempt,error:snap.state.last_error,busy:snap.state.lease_until>Date.now(),spreadsheetId:snap.state.spreadsheet_id}:null,
+          state:snap.state?{lastSuccess:snap.state.last_success,lastAttempt:snap.state.last_attempt,error:snap.state.last_error,busy:snap.state.lease_until>Date.now(),spreadsheetId:activeParentWorkbookId,compilationMatchesParent:snap.state.spreadsheet_id===activeParentWorkbookId}:null,
           parts,items:snap.items,evidence:snap.evidence.map(x=>({...x,url:privateEvidenceUrl(year,x.opd_id,x.upload_id)}))});
+      }
+      case 'prepareSetdaWorkbook': {
+        await ensureSetdaSchema(env);
+        if(!await mayManageSetda(env,authSession,year))return jsonResponse({status:'error',message:'Hanya Admin atau akun induk Sekretariat Daerah yang boleh memulihkan workbook.'},403);
+        const snap=await setdaSnapshot(env,year);
+        if(!snap.enabled||!snap.state?.parent_id)throw new Error('Aktifkan 9 bagian Sekretariat Daerah sebelum menyiapkan workbook induk.');
+        const parentId=String(snap.state.parent_id),lockKey=`kk-pm-workbook:${String(year)}:${parentId}`,now=Date.now(),owner=crypto.randomUUID();
+        const acquired=await env.DB.prepare(`INSERT INTO kk_pm_workbook_sync_locks(lock_key,lease_until,owner_token,updated_at)
+          VALUES(?,?,?,?) ON CONFLICT(lock_key) DO UPDATE SET lease_until=excluded.lease_until,owner_token=excluded.owner_token,updated_at=excluded.updated_at
+          WHERE kk_pm_workbook_sync_locks.lease_until<?`).bind(lockKey,now+600000,owner,now,now).run();
+        if(!acquired.meta?.changes)return jsonResponse({status:'error',code:'WORKBOOK_SYNC_IN_PROGRESS',message:'Workbook induk sedang disinkronkan oleh sesi lain. Periksa kembali status dan ulangi setelah operasi selesai.'},409);
+        try {
+          const parent=await env.DB.prepare('SELECT id,opd,kk_pm_data FROM opd_data WHERE id=? AND year=?').bind(parentId,String(year)).first();
+          if(!parent||!isSetdaParent(parent.opd))throw new Error('Rekaman induk Sekretariat Daerah tidak valid. Tidak ada file yang dibuat.');
+          const current=normalizeKkPmData(parent.kk_pm_data).workbook;
+          const accessToken=await getGoogleAccessToken(env);
+          let workbook=null,disposition='reused',needsSave=false;
+          if(current.workbookSpreadsheetId){
+            // 403/429/5xx is NOT proof of deletion: fail without making a duplicate.
+            const old=await getDriveFile(accessToken,current.workbookSpreadsheetId);
+            if(old&&!old.trashed){
+              if(old.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error('Workbook induk tertaut bukan Google Sheets. Tidak dibuat salinan otomatis.');
+              const checked=await validateKkPmSpreadsheet(accessToken,old.id,{checkFormulas:true,env,forceMetadataRefresh:true});
+              if(!checked.ok||checked.profile!=='PM_2026')throw new Error('Workbook induk masih ada tetapi sheet/formulanya tidak valid. Periksa file dan master; tidak membuat duplikat secara otomatis.');
+              workbook={...current,workbookSpreadsheetId:old.id,workbookUrl:old.webViewLink||`https://docs.google.com/spreadsheets/d/${old.id}/edit`,
+                workbookName:old.name||current.workbookName,sheets:(checked.metadata.sheets||[]).map(s=>({...s.properties}))};
+              if(!current.templateSpreadsheetId){
+                const resolved=await resolveKkPmTemplateSpreadsheet(env,accessToken,await getConfiguredKkPmTemplateId(env));
+                workbook.templateSpreadsheetId=resolved.id;
+                workbook.templateModifiedTime=String(resolved.file?.modifiedTime||'');
+                workbook.templateRevision=String(resolved.file?.modifiedTime||'');
+                needsSave=true; // Repair missing source-master lineage without copying a new file.
+              }
+            }
+          }
+          if(!workbook){
+            // Recovery is idempotent even after a previous Drive copy succeeded but
+            // the subsequent D1 link update failed.
+            const found=await findRecoverableSetdaWorkbook(env,accessToken,year);
+            if(found){
+              const resolved=await resolveKkPmTemplateSpreadsheet(env,accessToken,await getConfiguredKkPmTemplateId(env));
+              workbook={...current,version:3,workbookSpreadsheetId:found.file.id,
+                workbookUrl:found.file.webViewLink||`https://docs.google.com/spreadsheets/d/${found.file.id}/edit`,
+                workbookName:found.file.name,templateSpreadsheetId:resolved.id,
+                templateModifiedTime:String(resolved.file?.modifiedTime||''),templateRevision:String(resolved.file?.modifiedTime||''),
+                sheets:(found.verified.metadata.sheets||[]).map(s=>({...s.properties}))};
+              disposition='recovered';
+            }else{
+              workbook=await ensureKkPmSpreadsheet(env,{year,opd:'SEKRETARIAT DAERAH',currentKkPmData:parent.kk_pm_data});
+              const checked=await validateKkPmSpreadsheet(accessToken,workbook.workbookSpreadsheetId,{checkFormulas:true,env,forceMetadataRefresh:true});
+              if(!checked.ok||checked.profile!=='PM_2026')throw new Error('Workbook baru gagal validasi sheet dan formula inti; tautan D1 belum diubah.');
+              disposition='created';
+            }
+            needsSave=true;
+          }
+          if(needsSave){
+            const state=await env.DB.prepare('SELECT owner_token,lease_until FROM kk_pm_workbook_sync_locks WHERE lock_key=?').bind(lockKey).first();
+            if(state?.owner_token!==owner||Number(state.lease_until)<Date.now())throw new Error('Kunci pembuatan induk berakhir; tautan belum disimpan.');
+            const oldRoot=(()=>{try{return JSON.parse(parent.kk_pm_data||'{}')}catch{return {}}})(),history=Array.isArray(oldRoot.workbookHistory)?oldRoot.workbookHistory.slice(-9):[];
+            if(current.workbookSpreadsheetId&&current.workbookSpreadsheetId!==workbook.workbookSpreadsheetId&&!history.some(h=>h.workbookSpreadsheetId===current.workbookSpreadsheetId))
+              history.push({...current,archivedAt:Date.now(),archiveReason:'ID lama tidak ditemukan/terhapus; arsip metadata saja, tidak menghapus file apa pun.'});
+            const updated=await env.DB.prepare("UPDATE opd_data SET kk_pm_data=json_set(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,'$.version',3,'$.workbook',json(?),'$.workbookHistory',json(?)) WHERE id=? AND year=? AND (COALESCE(json_extract(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,'$.workbook.workbookSpreadsheetId'),json_extract(CASE WHEN json_valid(kk_pm_data) THEN kk_pm_data ELSE '{}' END,'$.workbookSpreadsheetId')) IS ?)")
+              .bind(JSON.stringify(workbook),JSON.stringify(history),parentId,String(year),current.workbookSpreadsheetId||null).run();
+            if(!updated.meta?.changes)throw new Error('Referensi induk berubah dari sesi lain; workbook tidak ditautkan dua kali.');
+            await env.DB.prepare("UPDATE setda_compilation_state SET spreadsheet_id=?,last_success=0,last_error='' WHERE year=?")
+              .bind(workbook.workbookSpreadsheetId,String(year)).run();
+          }
+          return jsonResponse({status:'success',message:disposition==='reused'?'Workbook induk masih tersedia dan formula inti valid; tidak membuat salinan.':disposition==='recovered'?'Workbook induk yang sudah ada di folder Setda ditemukan kembali dan ditautkan tanpa duplikasi.':'Workbook induk Sekretariat Daerah dibuat ulang satu kali dari master PM resmi; tautan D1 diperbarui. Isi 9 bagian dapat dikompilasi setelahnya.',
+            disposition,workbookSpreadsheetId:workbook.workbookSpreadsheetId,workbookUrl:workbook.workbookUrl,
+            sheetCount:(workbook.sheets||[]).length});
+        }finally{
+          await env.DB.prepare("UPDATE kk_pm_workbook_sync_locks SET owner_token='',lease_until=0,updated_at=? WHERE lock_key=? AND owner_token=?")
+            .bind(Date.now(),lockKey,owner).run().catch(()=>{});
+        }
       }
       case 'syncSetdaCompilation': {
         await ensureSetdaSchema(env);
         if(!await mayManageSetda(env,authSession,year))return jsonResponse({status:'error',message:'Hanya akun induk atau Admin dapat menyinkronkan kompilasi.'},403);
-        const result=await syncSetda(env,year,{token:getGoogleAccessToken,googleFetch:fetchWithRetry},true);
+        const result=await syncSetda(env,year,{token:getGoogleAccessToken,googleFetch:fetchWithRetry,validateWorkbook:validateKkPmSpreadsheet,canonicalSheetKey:canonicalPmSheetKey,getDriveFile},true);
         return jsonResponse({...result,status:'success',compilationStatus:result.status});
       }
       case 'listAuthUsers': {
