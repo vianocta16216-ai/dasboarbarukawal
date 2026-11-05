@@ -1,4 +1,5 @@
 // SETDA: child storage identities are never used as independent OPDs in Pemda totals.
+import { syncSetdaIntoExistingSheets } from './setda-merge.js';
 export const SETDA_PARTS = [
   ['hukum','Bagian Hukum'],['ekonomi_sda','Bagian Perekonomian dan Sumber Daya Alam (Ekonomi & SDA)'],
   ['adbang','Bagian Administrasi Pembangunan (Adbang)'],['organisasi','Bagian Organisasi dan Tata Laksana'],
@@ -14,6 +15,10 @@ export async function ensureSetdaSchema(env){
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS setda_compilation_state(
     year TEXT PRIMARY KEY,parent_id TEXT NOT NULL,lock_token TEXT NOT NULL DEFAULT '',lease_until INTEGER NOT NULL DEFAULT 0,
     last_attempt INTEGER NOT NULL DEFAULT 0,last_success INTEGER NOT NULL DEFAULT 0,last_error TEXT NOT NULL DEFAULT '',spreadsheet_id TEXT NOT NULL DEFAULT '')`).run();
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS setda_compilation_written (
+    year TEXT NOT NULL,spreadsheet_id TEXT NOT NULL,sheet_key TEXT NOT NULL,cell_ref TEXT NOT NULL,
+    written_value TEXT NOT NULL,updated_at INTEGER NOT NULL,
+    PRIMARY KEY(year,spreadsheet_id,sheet_key,cell_ref))`).run();
 }
 export async function ensureSetdaParts(env,year){
   const state=await env.DB.prepare('SELECT parent_id FROM setda_compilation_state WHERE year=?').bind(String(year)).first();
@@ -48,77 +53,48 @@ export async function setdaSnapshot(env,year){
   const cells=parts.flatMap(p=>Object.entries(parseJson(p.row?.kk_pm_data).cells||{}).map(([cell,value])=>({partName:p.name,partOrder:p.order,cell,value})));
   return {enabled:true,state,parts,items:ordered(items),evidence:files,meta:ordered(meta),cells};
 }
-export function compilationTables(snapshot){
-  return [
-    {title:'SETDA_00_DAFTAR',values:[['No','Bagian','Workbook Sumber','Parameter Terisi','Evidence Aktif'],...snapshot.parts.map(p=>[p.order,p.name,workbookOf(p.row).workbookUrl||'',snapshot.items.filter(x=>x.partOrder===p.order).length,snapshot.evidence.filter(x=>x.partOrder===p.order).length])]},
-    {title:'SETDA_KK_PARAMETER',values:[['No Bagian','Bagian','Target','Subunsur','Parameter','Hasil Pengujian','Grade','AOI Cluster','AOI Uraian','Sebab Cluster','Sebab Uraian','Kesimpulan','Catatan','Pengisi','Waktu'],...snapshot.items.map(x=>[x.partOrder,x.partName,x.target,x.subunsur,x.param_id,x.hasil_pengujian,x.grade_result,x.aoi_cluster,x.aoi_desc,x.cause_cluster,x.cause_desc,x.conclusion,x.note,x.updated_by,x.updated_at])]},
-    {title:'SETDA_EVIDENCE',values:[['No Bagian','Bagian','Target','Subunsur','Parameter','Grade','Level','Nama File','Google Drive','Status Salinan','Verifikasi','Upload ID','ID Bagian'],...snapshot.evidence.map(x=>[x.partOrder,x.partName,x.target_code,x.subunsur,x.param_id,x.grade,x.level,x.file_name,x.gdrive_id?`https://drive.google.com/file/d/${encodeURIComponent(x.gdrive_id)}/view`:'Menunggu salinan Drive; file tersedia di aplikasi',x.sync_status,x.verification_status,x.upload_id,x.opd_id])]},
-    {title:'SETDA_META',values:[['No Bagian','Bagian','Target','Fokus','Disusun','Tanggal','Direviu','Tanggal','Disetujui','Tanggal'],...snapshot.meta.map(x=>[x.partOrder,x.partName,x.target,x.sector_focus,x.prepared_by,x.prepared_date,x.reviewed_by,x.reviewed_date,x.approved_by,x.approved_date])]},
-    {title:'SETDA_SEL_APLIKASI',values:[['No Bagian','Bagian','Lokasi Sel','Isi'],...snapshot.cells.map(x=>[x.partOrder,x.partName,x.cell,typeof x.value==='object'?JSON.stringify(x.value):x.value])]}
-  ];
-}
-// No user-controlled formula is executed in the compilation workbook.
-export const sheetValue=v=>typeof v==='number'&&Number.isFinite(v)?{numberValue:v}:typeof v==='boolean'?{boolValue:v}:{stringValue:String(v??'')};
-export function buildSheetRequests(tables,metadata){
-  const existing=new Map((metadata.sheets||[]).map(s=>[s.properties.title,s.properties]));
-  const used=new Set((metadata.sheets||[]).map(s=>s.properties.sheetId));let next=1900000000;
-  const requests=[];
-  for(const table of tables){
-    let p=existing.get(table.title);const cols=Math.max(1,...table.values.map(r=>r.length)),rowCount=Math.max(2,table.values.length);
-    if(!p){while(used.has(next))next++;p={sheetId:next++,title:table.title,gridProperties:{rowCount,columnCount:cols}};used.add(p.sheetId);requests.push({addSheet:{properties:p}});}
-    else requests.push({updateSheetProperties:{properties:{sheetId:p.sheetId,gridProperties:{rowCount:Math.max(rowCount,p.gridProperties?.rowCount||0),columnCount:Math.max(cols,p.gridProperties?.columnCount||0)}},fields:'gridProperties.rowCount,gridProperties.columnCount'}});
-    requests.push({updateCells:{range:{sheetId:p.sheetId},rows:table.values.map(row=>({values:row.map(v=>({userEnteredValue:sheetValue(v)}))})),fields:'userEnteredValue'}});
-    requests.push({repeatCell:{range:{sheetId:p.sheetId,startRowIndex:0,endRowIndex:1},cell:{userEnteredFormat:{backgroundColor:{red:0.06,green:0.18,blue:0.29},textFormat:{bold:true,foregroundColor:{red:1,green:1,blue:1}}}},fields:'userEnteredFormat'}});
-    requests.push({updateSheetProperties:{properties:{sheetId:p.sheetId,gridProperties:{frozenRowCount:1}},fields:'gridProperties.frozenRowCount'}});
-  }
-  return requests;
-}
-export async function syncSetda(env,year,{token:tokenProvider,googleFetch},force=false){
+// All compilation output goes into existing input cells on the validated PM workbook.
+// Legacy SETDA_* sheet-creation logic has been removed. Old SETDA_* tabs, if any,
+// are left untouched rather than deleted by a risky migration.
+export async function syncSetda(env,year,{token:tokenProvider,googleFetch,validateWorkbook,canonicalSheetKey,getDriveFile},force=false){
   await ensureSetdaSchema(env);
   const key=String(year),now=Date.now(),owner=crypto.randomUUID();
-  const acquired=await env.DB.prepare(`UPDATE setda_compilation_state SET lock_token=?,lease_until=?,last_attempt=? WHERE year=? AND lease_until<? AND (?=1 OR last_attempt<?)`)
+  const acquired=await env.DB.prepare(`UPDATE setda_compilation_state
+    SET lock_token=?,lease_until=?,last_attempt=?
+    WHERE year=? AND lease_until<? AND (?=1 OR last_attempt<?)`)
     .bind(owner,now+600000,now,key,now,force?1:0,now-300000).run();
-  if(!acquired.meta?.changes)return {status:'pending',message:'Kompilasi sedang berjalan atau menunggu jadwal berikutnya.'};
+  if(!acquired.meta?.changes)return {status:'pending',message:'Kompilasi sedang berjalan atau menunggu giliran. Tidak ada workbook baru dibuat.'};
   try{
     const snapshot=await setdaSnapshot(env,key);
+    if(!snapshot.enabled||!snapshot.state?.parent_id)throw new Error('Aktifkan sembilan bagian Setda terlebih dahulu.');
+    if(snapshot.parts.some(p=>!p.row))throw new Error('Data 9 bagian belum lengkap; periksa aktivasi dan akun bagian.');
     const parent=await env.DB.prepare('SELECT kk_pm_data FROM opd_data WHERE id=? AND year=?').bind(snapshot.state.parent_id,key).first();
-    const destination=workbookOf(parent).workbookSpreadsheetId;
-    if(!destination)throw new Error('Buka KK PM SPIP akun induk dan buat/sinkronkan workbook Sekretariat Daerah terlebih dahulu.');
-    const sourceIds=new Set();
-    for(const p of snapshot.parts){if(!p.row)throw new Error('Data bagian belum lengkap; jalankan aktivasi ulang.');const id=workbookOf(p.row).workbookSpreadsheetId;if(id){if(id===destination||sourceIds.has(id))throw new Error('Workbook sumber antarbagian/induk bertabrakan.');sourceIds.add(id);}}
+    const destination=String(workbookOf(parent).workbookSpreadsheetId||'');
+    if(!destination)throw new Error('Workbook induk Sekretariat Daerah belum dibuat. Klik Buat/Sinkronkan Workbook Induk lalu konfirmasi Ya.');
     const token=await tokenProvider(env);
-    const api=async(path,body)=>{
-      const response=await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${path}`,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(25000)},{retries:1,baseDelay:800,googleSheetsReadEnv:env});
-      const data=await response.json();if(!response.ok)throw new Error(`Google Sheets ${response.status}: ${String(data.error?.message||'Gagal sinkronisasi').slice(0,400)}`);return data;
+    const file=await getDriveFile(token,destination);
+    if(!file||file.trashed)throw new Error('Workbook induk telah dihapus dari Google Drive. Klik Buat/Sinkronkan Workbook Induk untuk memulihkan tautan dari master, lalu ulangi kompilasi.');
+    if(file.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error('File induk bukan Google Spreadsheet. Sinkronisasi dihentikan.');
+    const originalSources=new Map(snapshot.parts.map(p=>[p.id,String(workbookOf(p.row).workbookSpreadsheetId||'')]));
+    const recheckOwnership=async()=>{
+      const state=await env.DB.prepare('SELECT lock_token,lease_until,parent_id FROM setda_compilation_state WHERE year=?').bind(key).first();
+      if(state?.lock_token!==owner||Number(state.lease_until)<Date.now()+30000)throw new Error('Kunci sinkronisasi habis; hentikan penulisan dan ulangi setelah memuat status terbaru.');
+      const current=await env.DB.prepare('SELECT kk_pm_data FROM opd_data WHERE id=? AND year=?').bind(snapshot.state.parent_id,key).first();
+      if(workbookOf(current).workbookSpreadsheetId!==destination)throw new Error('ID induk berubah selama sinkronisasi; operasi dihentikan.');
+      for(const p of snapshot.parts){
+        const row=await env.DB.prepare('SELECT kk_pm_data FROM opd_data WHERE id=? AND year=?').bind(p.id,key).first();
+        if(String(workbookOf(row).workbookSpreadsheetId||'')!==originalSources.get(p.id))throw new Error(`Sumber ${p.name} berubah selama kompilasi; batalkan dan ulangi.`);
+      }
     };
-    const tables=compilationTables(snapshot);
-    // Read actual Google workbooks too: edits made directly in Sheets must be included.
-    for(const p of snapshot.parts){
-      const wb=workbookOf(p.row);const values=[['Bagian',p.name,'Tahun',key],['Sheet Asal','Baris Asal','Isi sel mulai kolom A →']];
-      if(wb.workbookSpreadsheetId){
-        if(wb.workbookSpreadsheetId===destination)throw new Error(`Workbook ${p.name} bertabrakan dengan workbook induk.`);
-        const meta=await api(`${encodeURIComponent(wb.workbookSpreadsheetId)}?fields=sheets(properties)`);
-        const titles=(meta.sheets||[]).map(s=>s.properties.title).filter(t=>!t.startsWith('SETDA_'));
-        if(titles.length){
-          const qs=titles.map(t=>'ranges='+encodeURIComponent("'"+t.replace(/'/g,"''")+"'")).join('&');
-          const source=await api(`${encodeURIComponent(wb.workbookSpreadsheetId)}/values:batchGet?${qs}&valueRenderOption=FORMATTED_VALUE`);
-          for(let i=0;i<titles.length;i++)for(const [r,cells] of (source.valueRanges?.[i]?.values||[]).entries())if(cells.some(v=>v!==''&&v!==null))values.push([titles[i],r+1,...cells]);
-        }
-      }else values.push(['Workbook bagian belum dibuat']);
-      tables.push({title:`SETDA_${String(p.order).padStart(2,'0')}_${p.code.toUpperCase()}`,values});
-    }
-    const metadata=await api(`${encodeURIComponent(destination)}?fields=sheets(properties)`);
-    const requests=buildSheetRequests(tables,metadata);
-    if(JSON.stringify(requests).length>18000000)throw new Error('Kompilasi melebihi batas aman 18 MB per batch. Data sumber tetap utuh; kurangi lembar sumber yang tidak diperlukan.');
-    // Re-check ownership immediately before the single atomic external write.
-    const lease=await env.DB.prepare('SELECT lock_token,lease_until FROM setda_compilation_state WHERE year=?').bind(key).first();
-    if(lease?.lock_token!==owner||Number(lease.lease_until)<Date.now()+30000)throw new Error('Lease kompilasi berakhir; akan dicoba pada jadwal berikutnya.');
-    const latestParent=await env.DB.prepare('SELECT kk_pm_data FROM opd_data WHERE id=? AND year=?').bind(snapshot.state.parent_id,key).first();
-    if(workbookOf(latestParent).workbookSpreadsheetId!==destination)throw new Error('Workbook induk berubah saat kompilasi; ulangi sinkronisasi.');
-    for(const p of snapshot.parts){const latest=await env.DB.prepare('SELECT kk_pm_data FROM opd_data WHERE id=? AND year=?').bind(p.id,key).first();if(workbookOf(latest).workbookSpreadsheetId!==workbookOf(p.row).workbookSpreadsheetId)throw new Error('Workbook bagian berubah saat kompilasi; ulangi sinkronisasi.');}
-    await api(`${encodeURIComponent(destination)}:batchUpdate`,{requests});
-    await env.DB.prepare("UPDATE setda_compilation_state SET last_success=?,last_error='',spreadsheet_id=? WHERE year=? AND lock_token=?").bind(Date.now(),destination,key,owner).run();
-    return {status:'success',message:'Kompilasi sembilan bagian diperbarui.',spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${destination}/edit`};
-  }catch(e){await env.DB.prepare('UPDATE setda_compilation_state SET last_error=? WHERE year=? AND lock_token=?').bind(String(e.message||e).slice(0,700),key,owner).run();throw e;}
-  finally{await env.DB.prepare("UPDATE setda_compilation_state SET lock_token='',lease_until=0 WHERE year=? AND lock_token=?").bind(key,owner).run();}
+    const result=await syncSetdaIntoExistingSheets({env,year:key,snapshot,destination,token,googleFetch,validateWorkbook,canonicalSheetKey,recheckOwnership});
+    const status=result.conflictCount||result.warningCount?'partial':'success';
+    const summary=status==='partial'?`Kompilasi sebagian: ${result.conflictCount} konflik dan ${result.warningCount} peringatan. Periksa laporan gabungan; rumus induk dilindungi.`:'';
+    await env.DB.prepare('UPDATE setda_compilation_state SET last_success=?,last_error=?,spreadsheet_id=? WHERE year=? AND lock_token=?')
+      .bind(Date.now(),summary,destination,key,owner).run();
+    return {status,message:`Kompilasi selesai: ${result.written} sel diperbarui, ${result.unchanged} sel sudah sesuai, ${result.conflictCount} konflik, ${result.warningCount} peringatan. Tidak menambah sheet/workbook.`,
+      spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${destination}/edit`,...result};
+  }catch(e){await env.DB.prepare('UPDATE setda_compilation_state SET last_error=? WHERE year=? AND lock_token=?')
+    .bind(String(e.message||e).slice(0,700),key,owner).run().catch(()=>{});throw e;}
+  finally{await env.DB.prepare("UPDATE setda_compilation_state SET lock_token='',lease_until=0 WHERE year=? AND lock_token=?")
+    .bind(key,owner).run().catch(()=>{});}
 }
