@@ -1,0 +1,23 @@
+/* Google Drive OAuth health alerts: isolated from dashboard and modal styles. */
+.kawal-drive-health-banner[hidden],.kawal-drive-health-overlay[hidden]{display:none!important}
+.kawal-drive-health-banner{position:fixed;z-index:10020;right:16px;top:75px;display:flex;align-items:flex-start;gap:12px;width:min(520px,calc(100vw - 32px));padding:16px 17px;border-radius:18px;border:1px solid #fecaca;background:linear-gradient(135deg,#fff7f7,#fff);box-shadow:0 16px 50px rgba(15,23,42,.20);font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#7f1d1d}
+.kawal-drive-health-banner[data-state=warning]{border-color:#fde68a;background:linear-gradient(135deg,#fffbeb,#fff);color:#92400e}
+.kawal-drive-health-icon{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:12px;font-weight:900;font-size:22px;background:#fee2e2;color:#b91c1c}
+.kawal-drive-health-banner[data-state=warning] .kawal-drive-health-icon{background:#fef3c7;color:#a16207}
+.kawal-drive-health-info{flex:1;min-width:0}.kawal-drive-health-info strong{display:block;margin:1px 0 4px;font-size:14px;line-height:1.35}.kawal-drive-health-info p{margin:0;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.kawal-drive-health-detail-button{flex:none;padding:7px 12px;border:1px solid currentColor;background:transparent;color:inherit;font:700 12px system-ui;cursor:pointer;border-radius:10px;align-self:center}
+.kawal-drive-health-overlay{position:fixed;inset:0;z-index:10060;display:flex;justify-content:center;align-items:center;padding:20px;background:rgba(15,23,42,.62);backdrop-filter:blur(5px);overflow-y:auto}
+.kawal-drive-health-dialog{width:min(550px,100%);padding:30px;border-radius:24px;background:#fff;color:#1e293b;box-shadow:0 28px 90px rgba(2,6,23,.4);font-family:system-ui,-apple-system,Segoe UI,sans-serif;text-align:left}
+.kawal-drive-health-dialog-mark{display:grid;place-items:center;width:56px;height:56px;border-radius:19px;background:#fef2f2;color:#dc2626;font-weight:900;font-size:32px;margin-bottom:15px;border:1px solid #fecaca}
+.kawal-drive-health-eyebrow{color:#b91c1c;font-size:11px;letter-spacing:.13em;font-weight:800}.kawal-drive-health-dialog h2{font-size:22px;line-height:1.25;margin:8px 0 10px;font-weight:800;color:#0f172a}
+.kawal-drive-health-dialog p{font-size:14px;line-height:1.65;margin:0 0 16px;overflow-wrap:anywhere}
+.kawal-drive-health-steps{border:1px solid #e2e8f0;border-radius:14px;padding:14px;background:#f8fafc;font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.kawal-drive-health-dialog-actions{margin-top:20px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.kawal-drive-health-dialog-actions button{font:700 13px system-ui;cursor:pointer;padding:11px 17px;border-radius:11px;transition:transform .15s,background .15s}
+.kawal-drive-health-dialog-actions button:focus-visible,.kawal-drive-health-detail-button:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
+.kawal-drive-health-quiet{background:#fff;border:1px solid #cbd5e1;color:#334155}
+.kawal-drive-health-primary{background:#1d4ed8;border:1px solid #1d4ed8;color:#fff}.kawal-drive-health-primary:hover{background:#1e40af}.kawal-drive-health-primary:disabled{opacity:.6;cursor:wait}
+@media(max-width:620px){.kawal-drive-health-banner{top:12px;right:12px;width:calc(100vw - 24px);padding:12px}.kawal-drive-health-dialog{padding:21px;border-radius:18px}.kawal-drive-health-dialog h2{font-size:20px}}
+
+.kawal-drive-health-overlay[data-state=warning] .kawal-drive-health-dialog-mark{background:#fffbeb;color:#a16207;border-color:#fcd34d}
+.kawal-drive-health-overlay[data-state=warning] .kawal-drive-health-eyebrow{color:#92400e}

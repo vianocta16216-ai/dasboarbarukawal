@@ -610,7 +610,8 @@ async function getPendingUploadsFromIndexedDB(){
 }
 let retryIndexedDbUploadsRunning=false;
 async function retryIndexedDbUploads(){
-  if(retryIndexedDbUploadsRunning || !navigator.onLine || !Array.isArray(rows)) return;
+  if(retryIndexedDbUploadsRunning || !navigator.onLine || !Array.isArray(rows) ||
+     (driveHealthCurrent && !driveHealthCurrent.uploadAllowed)) return;
   retryIndexedDbUploadsRunning=true;
   try {
   const now=Date.now();
@@ -980,7 +981,7 @@ function callServer(action,params={}){
 }
 async function callServerRequest(action, params = {}) {
   const functionUrl='/myCloudinaryHandler';
-  const readOnlyActions=new Set(['getYears','getData','getSubunsurData','getKkSheets','getRtpKkSheets','getRtpEvidence','getReportFiles','listBackups','getPemdaWorkflow','getPemdaWorkflowAudit','getPemdaKkPmWorkbook']);
+  const readOnlyActions=new Set(['getGoogleDriveHealth','getYears','getData','getSubunsurData','getKkSheets','getRtpKkSheets','getRtpEvidence','getReportFiles','listBackups','getPemdaWorkflow','getPemdaWorkflowAudit','getPemdaKkPmWorkbook']);
   const isForm=params instanceof FormData;
   const isBinary=params && params.__binaryFile instanceof File;
   const cleanParams=isBinary ? Object.fromEntries(Object.entries(params).filter(([k])=>k!=='__binaryFile')) : params;
@@ -1006,7 +1007,20 @@ async function callServerRequest(action, params = {}) {
     const query=queryParams.toString();
     return requestFetch(`${functionUrl}?${query}`,{method:'GET', cache:'no-store', headers:{'Cache-Control':'no-cache'}});
   };
-  try{return await makeRequest().then(async response=>{
+  try{
+    // The browser avoids sending the file body if Google cannot be verified.
+    // The server independently rechecks OAuth and blocks before EVERY R2 put.
+    if(DRIVE_FILE_UPLOAD_ACTIONS.has(action)){
+      const health=await checkDriveHealth({force:false});
+      if(!health?.uploadAllowed){
+        openDriveHealthDialog();
+        const err=new Error(health?.message||'Google Drive belum dapat diverifikasi. Upload dibatalkan.');
+        err.data={code:health?.code||'GOOGLE_DRIVE_AUTH_UNAVAILABLE',driveHealth:health};
+        err.transient=false;
+        throw err;
+      }
+    }
+    return await makeRequest().then(async response=>{
     const text=await response.text();
     let data=null;
     try{data=JSON.parse(text);}catch{}
@@ -1016,6 +1030,7 @@ async function callServerRequest(action, params = {}) {
       err.status=response.status;
       err.transient=[408,425,429,500,502,503,504].includes(response.status) || (action==='createKkPmSheets' && data?.code==='WORKBOOK_SYNC_IN_PROGRESS');
       err.data=data;
+      recordDriveApiFailure(data);
       throw err;
     }
     if(!data)throw new Error('Server error: '+text.substring(0,200));
@@ -1023,6 +1038,7 @@ async function callServerRequest(action, params = {}) {
       const err=new Error(data.message||'Server error');
       err.status=response.status;
       err.data=data;
+      recordDriveApiFailure(data);
       throw err;
     }
     return data;
@@ -1051,7 +1067,130 @@ async function callServerWithRetry(action, params={}, retries=2){
 }
 
 
+// ====== PEMANTAUAN GOOGLE DRIVE OAUTH (SEMUA ROLE) ======
+// No OAuth secret or access token is ever stored in the browser.
+const DRIVE_FILE_UPLOAD_ACTIONS=new Set([
+  'uploadFile','uploadRtpEvidence','uploadReportFile','uploadLheEvidence',
+  'uploadPemdaWorkbookEvidence','replaceEvidenceFile','replaceRtpEvidence',
+  'replaceWorkbookEvidenceFile','createBackup',
+  'createRiskWorkbook','createKkSheets','createRtpKkSheets',
+  'createKkPmSheets','createPemdaKkPmWorkbook'
+]);
+const DRIVE_BAD_STATES=new Set(['warning','expired','config_missing','credentials_invalid','folder_unavailable','permission_denied','worker_mismatch','worker_unverified','unavailable']);
+let driveHealthCurrent=null,driveHealthLastAt=0,driveHealthPromise=null,driveHealthTimer=null;
+let driveHealthDialogShownFor='',driveHealthPollEpoch=0;
+function ensureDriveHealthUi(){
+  if(document.getElementById('kawalDriveHealthBanner'))return;
+  const host=document.createElement('div');
+  host.innerHTML=`<aside id="kawalDriveHealthBanner" class="kawal-drive-health-banner" role="status" aria-live="polite" hidden>
+    <span class="kawal-drive-health-icon" aria-hidden="true">⚠</span>
+    <div class="kawal-drive-health-info"><strong id="kawalDriveHealthTitle">Penyimpanan Google Drive</strong>
+    <p id="kawalDriveHealthMessage"></p></div>
+    <button id="kawalDriveHealthDetails" type="button" class="kawal-drive-health-detail-button">Detail</button>
+  </aside>
+  <div id="kawalDriveHealthOverlay" class="kawal-drive-health-overlay" hidden>
+    <div class="kawal-drive-health-dialog" role="alertdialog" aria-modal="true" aria-labelledby="kawalDriveDialogTitle" aria-describedby="kawalDriveDialogMessage">
+      <div class="kawal-drive-health-dialog-mark" aria-hidden="true">!</div>
+      <span class="kawal-drive-health-eyebrow">STATUS GOOGLE DRIVE API</span>
+      <h2 id="kawalDriveDialogTitle">Penyimpanan membutuhkan perhatian</h2>
+      <p id="kawalDriveDialogMessage"></p>
+      <div class="kawal-drive-health-steps" id="kawalDriveHealthInstructions"></div>
+      <div class="kawal-drive-health-dialog-actions">
+        <button type="button" id="kawalDriveHealthDismiss" class="kawal-drive-health-quiet">Tutup</button>
+        <button type="button" id="kawalDriveHealthRetry" class="kawal-drive-health-primary">Periksa Kembali</button>
+      </div>
+    </div>
+  </div>`;
+  while(host.firstChild)document.body.appendChild(host.firstChild);
+  document.getElementById('kawalDriveHealthDetails')?.addEventListener('click',openDriveHealthDialog);
+  document.getElementById('kawalDriveHealthDismiss')?.addEventListener('click',closeDriveHealthDialog);
+  document.getElementById('kawalDriveHealthOverlay')?.addEventListener('click',e=>{if(e.target.id==='kawalDriveHealthOverlay')closeDriveHealthDialog();});
+  document.getElementById('kawalDriveHealthRetry')?.addEventListener('click',async()=>{
+    const button=document.getElementById('kawalDriveHealthRetry');button.disabled=true;button.textContent='Memeriksa…';
+    try{await checkDriveHealth({force:true});}finally{button.disabled=false;button.textContent='Periksa Kembali';}
+  });
+}
+function driveHealthLabel(health){
+  if(health?.state==='warning')return 'Pengingat: refresh token mendekati batas 7 hari';
+  if(health?.state==='expired')return 'Refresh token Google Drive perlu diperbarui';
+  if(health?.state==='config_missing'||health?.state==='credentials_invalid')return 'Konfigurasi Google API Drive perlu diperbaiki';
+  if(health?.state==='folder_unavailable'||health?.state==='permission_denied')return 'Akses folder Google Drive bermasalah';
+  if(health?.state==='worker_mismatch')return 'Token Pages dan Worker backup tidak sama';
+  if(health?.state==='worker_unverified')return 'Worker backup Google Drive belum terverifikasi';
+  return 'Google Drive belum dapat diverifikasi';
+}
+function updateDriveHealthUi(health,{prompt=false}={}){
+  if(!currentUser)return;
+  ensureDriveHealthUi();
+  const previous=driveHealthCurrent?.state;
+  driveHealthCurrent=health;driveHealthLastAt=Date.now();
+  const banner=document.getElementById('kawalDriveHealthBanner');
+  const overlay=document.getElementById('kawalDriveHealthOverlay');
+  const visible=health?.state!=='ready';
+  banner.hidden=!visible;
+  banner.dataset.state=health?.state==='warning'?'warning':'blocked';
+  overlay.dataset.state=health?.state==='warning'?'warning':'blocked';
+  document.getElementById('kawalDriveHealthTitle').textContent=driveHealthLabel(health);
+  document.getElementById('kawalDriveHealthMessage').textContent=health?.message||'Status Google Drive belum diketahui.';
+  document.getElementById('kawalDriveDialogTitle').textContent=driveHealthLabel(health);
+  document.getElementById('kawalDriveDialogMessage').textContent=health?.message||'Upload dihentikan sementara untuk melindungi konsistensi data.';
+  const admin=currentUser.role==='admin';
+  document.getElementById('kawalDriveHealthInstructions').textContent=admin
+    ? 'Untuk Super Admin: buat refresh token baru melalui OAuth Google yang sesuai, lalu perbarui GOOGLE_DRIVE_REFRESH_TOKEN pada Cloudflare Pages (Production) dan Worker kawal-spip-drive-backup (Runtime). Periksa juga Client ID, Client Secret, serta ID folder. Deploy ulang konfigurasi dan klik Periksa Kembali. Jangan masukkan token ke kolom chat atau kode GitHub.'
+    : 'Hubungi Super Admin KAWAL SPIP agar memeriksa dan memperbarui autentikasi Google Drive. File belum dikirim ke R2 ketika pemeriksaan autentikasi gagal. Anda tetap dapat menggunakan fitur lain yang tidak memerlukan upload.';
+  if(!visible){overlay.hidden=true;driveHealthDialogShownFor='';if(previous&&previous!=='ready')setTimeout(retryIndexedDbUploads,1500);}
+  else if(prompt || (DRIVE_BAD_STATES.has(health?.state)&&driveHealthDialogShownFor!==health?.state)){
+    driveHealthDialogShownFor=health?.state;
+    overlay.hidden=false;
+    document.getElementById('kawalDriveHealthDismiss')?.focus();
+  }
+}
+function openDriveHealthDialog(){
+  if(!currentUser||!driveHealthCurrent)return;
+  ensureDriveHealthUi();
+  updateDriveHealthUi(driveHealthCurrent,{prompt:true});
+}
+function closeDriveHealthDialog(){const modal=document.getElementById('kawalDriveHealthOverlay');if(modal)modal.hidden=true;}
+function recordDriveApiFailure(data){
+  const health=data?.driveHealth;
+  if(!currentUser || !data?.code?.startsWith('GOOGLE_DRIVE_') || !health)return;
+  updateDriveHealthUi(health,{prompt:true});
+}
+async function checkDriveHealth({force=false}={}){
+  if(!currentUser)return null;
+  if(!force && driveHealthCurrent && Date.now()-driveHealthLastAt<60_000)return driveHealthCurrent;
+  if(driveHealthPromise)return driveHealthPromise;
+  const epoch=driveHealthPollEpoch;
+  const request=callServer('getGoogleDriveHealth',{}).then(result=>{
+    const health=result?.driveHealth||{state:'unavailable',code:'GOOGLE_DRIVE_AUTH_UNAVAILABLE',uploadAllowed:false,message:'Status autentikasi Google Drive tidak lengkap.'};
+    if(epoch===driveHealthPollEpoch && currentUser)updateDriveHealthUi(health);
+    return health;
+  }).catch(error=>{
+    const health={state:'unavailable',code:'GOOGLE_DRIVE_AUTH_UNAVAILABLE',uploadAllowed:false,message:'Status Google Drive tidak dapat diperiksa. Upload ditunda sebelum R2. Periksa jaringan dan coba kembali.'};
+    if(epoch===driveHealthPollEpoch && currentUser)updateDriveHealthUi(health);
+    return health;
+  }).finally(()=>{if(driveHealthPromise===request)driveHealthPromise=null;});
+  driveHealthPromise=request;
+  return request;
+}
+function activateDriveHealthMonitoring(){
+  if(driveHealthTimer)clearInterval(driveHealthTimer);
+  driveHealthPollEpoch++;driveHealthCurrent=null;driveHealthLastAt=0;
+  checkDriveHealth({force:true});
+  driveHealthTimer=setInterval(()=>{if(currentUser && !document.hidden)checkDriveHealth({force:true});},180_000);
+}
+function stopDriveHealthMonitoring(){
+  driveHealthPollEpoch++;clearInterval(driveHealthTimer);driveHealthTimer=null;driveHealthPromise=null;
+  driveHealthCurrent=null;driveHealthLastAt=0;driveHealthDialogShownFor='';
+  document.getElementById('kawalDriveHealthBanner')?.setAttribute('hidden','');
+  document.getElementById('kawalDriveHealthOverlay')?.setAttribute('hidden','');
+}
+
 // ====== VERIFIKASI PASSWORD ======
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&currentUser&&Date.now()-driveHealthLastAt>60_000)checkDriveHealth({force:true});
+});
+
 async function verifyAccess(password) {
   try {
     const result = await callServer('verifyAccess', { password });
@@ -1116,6 +1255,7 @@ async function finishLogin(user){
   document.getElementById('loadingOverlay').classList.remove('hidden');
   await initializeAppAfterAuth();
   if(loginEpoch!==authEpoch||currentUser!==user)return;
+  activateDriveHealthMonitoring();
   if(currentUser?.role==='opd'||currentUser?.scoped)showOpdList();else showDashboard();
 }
 document.getElementById('btnOpdAccess').addEventListener('click', async function() {
@@ -1168,7 +1308,7 @@ document.getElementById('btnOpdAccessCancel').addEventListener('click', function
 document.getElementById('btnLogout')?.addEventListener('click',async()=>{
   authEpoch++;apiReadRequests.clear();
   try{await callServer('logout',{});}catch(e){console.warn('Logout server:',e.message);}finally{sessionStorage.removeItem(TAB_SESSION_KEY);}
-  closeRealtimeSocket();currentUser=null;opdUnlocked=false;appInitializedAfterAuth=false;rows=[];
+  stopDriveHealthMonitoring();closeRealtimeSocket();currentUser=null;opdUnlocked=false;appInitializedAfterAuth=false;rows=[];
   document.getElementById('setdaDialog')?.remove();document.getElementById('setdaEntry')?.remove();
   const pemdaNav=document.getElementById('btnPemdaWorkflow');if(pemdaNav)pemdaNav.style.display='none';
   const pemdaPmNav=document.getElementById('btnPemdaPmKk');if(pemdaPmNav)pemdaPmNav.style.display='none';
