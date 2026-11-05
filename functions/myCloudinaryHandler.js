@@ -1503,7 +1503,7 @@ function safeDriveName(v, fallback='OPD') {
     .substring(0, 150) || fallback;
 }
 
-async function copyDriveFile(accessToken, sourceFileId, name, parentFolderId) {
+async function copyDriveFile(accessToken, sourceFileId, name, parentFolderId, appProperties=null) {
   const q = new URLSearchParams({
     supportsAllDrives: 'true',
     fields: 'id,name,mimeType,parents,webViewLink'
@@ -1516,7 +1516,8 @@ async function copyDriveFile(accessToken, sourceFileId, name, parentFolderId) {
     },
     body: JSON.stringify({
       name,
-      parents: [parentFolderId]
+      parents: [parentFolderId],
+      ...(appProperties ? {appProperties} : {})
     })
   });
   const data = await response.json();
@@ -1932,6 +1933,28 @@ async function validateKkPmSpreadsheet(accessToken,spreadsheetId,{checkFormulas=
 }
 
 
+// Atomic D1 lease for manual KK SPIP and KK RTP creation. A rapid double-click
+// or two browser tabs cannot concurrently copy the same OPD/year workbook.
+async function withKkSpreadsheetLease(env,year,opdId,kind,operation){
+  const key=[String(year),String(opdId),String(kind)];
+  const owner=crypto.randomUUID(),now=Date.now();
+  await env.DB.prepare('INSERT OR IGNORE INTO kk_spreadsheet_leases(year,opd_id,kind) VALUES(?,?,?)').bind(...key).run();
+  const claimed=await env.DB.prepare('UPDATE kk_spreadsheet_leases SET lease_until=?,lease_owner=? WHERE year=? AND opd_id=? AND kind=? AND lease_until<?')
+    .bind(now+240000,owner,...key,now).run();
+  if(!claimed.meta?.changes)throw new Error('Spreadsheet untuk OPD/tahun tersebut sedang diproses pada permintaan lain. Muat ulang sebelum mencoba lagi.');
+  try{return await operation();}
+  finally{await env.DB.prepare('UPDATE kk_spreadsheet_leases SET lease_until=0,lease_owner=NULL WHERE year=? AND opd_id=? AND kind=? AND lease_owner=?').bind(...key,owner).run();}
+}
+// Recover a Drive copy if the last request succeeded but its D1 update failed.
+async function findKkDriveCopyByIdentity(token,folder,identity){
+  const q=`'${String(folder).replace(/'/g,"\\'")}' in parents and trashed=false and mimeType='application/vnd.google-apps.spreadsheet' and appProperties has { key='kawalWorkbookKey' and value='${String(identity).replace(/'/g,"\\'")}' }`;
+  const qs=new URLSearchParams({q,fields:'files(id,name,mimeType,parents,trashed)',pageSize:'30',supportsAllDrives:'true',includeItemsFromAllDrives:'true'});
+  const res=await fetchWithRetry(`https://www.googleapis.com/drive/v3/files?${qs.toString()}`,{headers:{Authorization:`Bearer ${token}`}}, {retries:2,baseDelay:400});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok)throw new Error('Gagal mencari salinan spreadsheet Google Drive: '+JSON.stringify(data));
+  return (Array.isArray(data.files)?data.files:[]).find(f=>f?.id&&!f.trashed&&f.mimeType==='application/vnd.google-apps.spreadsheet'&&f.parents?.includes(folder))||null;
+}
+
 async function ensureKkSpreadsheet(env, params) {
   if (!env.GOOGLE_DRIVE_CLIENT_ID || !env.GOOGLE_DRIVE_CLIENT_SECRET || !env.GOOGLE_DRIVE_REFRESH_TOKEN) {
     throw new Error('Google OAuth untuk Spreadsheet belum dikonfigurasi');
@@ -1955,14 +1978,14 @@ async function ensureKkSpreadsheet(env, params) {
 
   const yearValue = String(params.year || new Date().getFullYear());
   const opdName = safeDriveName(params.opd || 'OPD Baru');
-  const root = await getOrCreateFolder(accessToken, env.GOOGLE_DRIVE_FOLDER_ID, 'Kertas Kerja Spreadsheet');
-  const yearFolder = await getOrCreateFolder(accessToken, root, String(yearValue));
-  const opdFolder = await getOrCreateFolder(accessToken, yearFolder, opdName);
+  const root = await getOrCreateFolder(accessToken, env.GOOGLE_DRIVE_FOLDER_ID, 'Kertas Kerja Spreadsheet', {forceCheck:true});
+  const yearFolder = await getOrCreateFolder(accessToken, root, String(yearValue), {forceCheck:true});
+  const opdFolder = await getOrCreateFolder(accessToken, yearFolder, opdName, {forceCheck:true});
 
   const current = normalizeKkData(params.currentKkData);
   if (current.workbookSpreadsheetId) {
     const existing = await getDriveFile(accessToken, current.workbookSpreadsheetId);
-    if (existing && !existing.trashed) {
+    if (existing && !existing.trashed && existing.mimeType==='application/vnd.google-apps.spreadsheet' && Array.isArray(existing.parents) && existing.parents.includes(opdFolder)) {
       const url = current.workbookUrl || existing.webViewLink || `https://docs.google.com/spreadsheets/d/${encodeURIComponent(current.workbookSpreadsheetId)}/edit`;
       return {
         version: 3,
@@ -1976,7 +1999,9 @@ async function ensureKkSpreadsheet(env, params) {
   }
 
   const workbookName = `${opdName} - Kertas Kerja SPIP - ${yearValue}`;
-  const copied = await copyDriveFile(accessToken, templateId, workbookName, opdFolder);
+  const identity=`kk-spip:${yearValue}:${String(params.opdId||'')}`;
+  const recovered=await findKkDriveCopyByIdentity(accessToken,opdFolder,identity);
+  const copied=recovered||await copyDriveFile(accessToken,templateId,workbookName,opdFolder,{kawalWorkbookKey:identity});
   const workbookUrl = copied.webViewLink || `https://docs.google.com/spreadsheets/d/${encodeURIComponent(copied.id)}/edit`;
 
   return {
@@ -1998,13 +2023,14 @@ async function ensureRtpSpreadsheet(env,params){
   if(!tf||tf.trashed)throw new Error(`Template KK RTP tidak dapat diakses. Periksa ID template (${templateId}).`);
   if(tf.mimeType!=='application/vnd.google-apps.spreadsheet')throw new Error(`ID template KK RTP ${templateId} bukan Google Spreadsheet.`);
   const yearValue=String(params.year||new Date().getFullYear()),opdName=safeDriveName(params.opd||'OPD Baru');
-  const root=await getOrCreateFolder(accessToken,env.GOOGLE_DRIVE_FOLDER_ID,'Kertas Kerja Spreadsheet');
-  const yearFolder=await getOrCreateFolder(accessToken,root,String(yearValue));
-  const opdFolder=await getOrCreateFolder(accessToken,yearFolder,opdName);
-  const rtpFolder=await getOrCreateFolder(accessToken,opdFolder,'Kertas Kerja RTP');
+  const root=await getOrCreateFolder(accessToken,env.GOOGLE_DRIVE_FOLDER_ID,'Kertas Kerja Spreadsheet',{forceCheck:true});
+  const yearFolder=await getOrCreateFolder(accessToken,root,String(yearValue),{forceCheck:true});
+  const opdFolder=await getOrCreateFolder(accessToken,yearFolder,opdName,{forceCheck:true});
+  const rtpFolder=await getOrCreateFolder(accessToken,opdFolder,'Kertas Kerja RTP',{forceCheck:true});
   const cur=normalizeWorkbookData(params.currentKkRtpData,[]);
-  if(cur.workbookSpreadsheetId){const ex=await getDriveFile(accessToken,cur.workbookSpreadsheetId);if(ex&&!ex.trashed)return{...cur,version:1,templateSpreadsheetId:templateId,workbookUrl:cur.workbookUrl||ex.webViewLink,workbookName:cur.workbookName||ex.name};}
-  const workbookName=`${opdName} - Kertas Kerja RTP - ${yearValue}`,copied=await copyDriveFile(accessToken,templateId,workbookName,rtpFolder);
+  if(cur.workbookSpreadsheetId){const ex=await getDriveFile(accessToken,cur.workbookSpreadsheetId);if(ex&&!ex.trashed&&ex.mimeType==='application/vnd.google-apps.spreadsheet'&&Array.isArray(ex.parents)&&ex.parents.includes(rtpFolder))return{...cur,version:1,templateSpreadsheetId:templateId,workbookUrl:cur.workbookUrl||ex.webViewLink,workbookName:cur.workbookName||ex.name};}
+  const workbookName=`${opdName} - Kertas Kerja RTP - ${yearValue}`,identity=`kk-rtp:${yearValue}:${String(params.opdId||'')}`;
+  const copied=(await findKkDriveCopyByIdentity(accessToken,rtpFolder,identity))||await copyDriveFile(accessToken,templateId,workbookName,rtpFolder,{kawalWorkbookKey:identity});
   return{version:1,templateSpreadsheetId:templateId,workbookSpreadsheetId:copied.id,workbookUrl:copied.webViewLink||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(copied.id)}/edit`,workbookName:copied.name||workbookName,sheets:[]};
 }
 function decodeBase64File(data,maxMb=10){const b=atob(data||''),bytes=new Uint8Array(b.length);for(let i=0;i<b.length;i++)bytes[i]=b.charCodeAt(i);if(bytes.length/1024/1024>maxMb)throw new Error(`File > ${maxMb}MB, terlalu besar!`);return bytes;}
@@ -2313,7 +2339,8 @@ async function createFolder(accessToken, parentId, folderName) {
   return data.id;
 }
 
-async function getOrCreateFolder(accessToken,parentId,folderName){
+async function getOrCreateFolder(accessToken,parentId,folderName,options={}){
+  const forceCheck=options?.forceCheck===true;
   const safeName=String(folderName||'').replace(/'/g,"\\'");
   const cacheKey=`${parentId}\u0000${safeName}`;
   const cached=DRIVE_FOLDER_CACHE.get(cacheKey);
@@ -2323,7 +2350,7 @@ async function getOrCreateFolder(accessToken,parentId,folderName){
     // Cache only accelerates recently verified folders. Re-check older entries
     // against Google so deleted/moved folders cannot trap every upload on a
     // stale parent ID. Keep this cache local to the isolate and short-lived.
-    if(cachedId && Date.now()-checkedAt<60_000) return cachedId;
+    if(cachedId && !forceCheck && Date.now()-checkedAt<60_000) return cachedId;
     if(cachedId){
       const live=await getDriveFile(accessToken,cachedId);
       if(live && !live.trashed && live.mimeType==='application/vnd.google-apps.folder' &&
@@ -5271,13 +5298,15 @@ async function handleRequest({ request, env, ctx }) {
       }
 
       case 'createKkSheets': {
-        const { results } = await env.DB.prepare("SELECT kk_data, opd FROM opd_data WHERE id = ? AND year = ? LIMIT 1").bind(params.opdId, year).all();
-        if (!results.length) return new Response(JSON.stringify({ status: 'error', message: 'OPD tidak ditemukan' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        const currentKkData = normalizeKkData(results[0].kk_data);
-        const kkData = await ensureKkSpreadsheet(env, { ...params, opd: params.opd || results[0].opd, currentKkData });
-        await env.DB.prepare("UPDATE opd_data SET kk_data = ? WHERE id = ? AND year = ?").bind(JSON.stringify(kkData), params.opdId, year).run();
-        notifyRealtime(env, ctx, year, { action: 'createKkSheets', opdId: params.opdId });
-        return new Response(JSON.stringify({ status: 'success', message: 'Google Spreadsheet Kertas Kerja OPD berhasil dibuat/disinkronkan', kkData, spreadsheet: { id: kkData.workbookSpreadsheetId, url: kkData.workbookUrl, name: kkData.workbookName } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        return await withKkSpreadsheetLease(env,year,params.opdId,'kk_spip',async()=>{
+          const {results}=await env.DB.prepare("SELECT kk_data, opd FROM opd_data WHERE id = ? AND year = ? LIMIT 1").bind(params.opdId,year).all();
+          if(!results.length)throw new Error('OPD tidak ditemukan.');
+          const currentKkData=normalizeKkData(results[0].kk_data);
+          const kkData=await ensureKkSpreadsheet(env,{...params,opd:results[0].opd,currentKkData});
+          await env.DB.prepare("UPDATE opd_data SET kk_data = ? WHERE id = ? AND year = ?").bind(JSON.stringify(kkData),params.opdId,year).run();
+          notifyRealtime(env,ctx,year,{action:'createKkSheets',opdId:params.opdId});
+          return new Response(JSON.stringify({status:'success',message:'Google Spreadsheet Kertas Kerja OPD berhasil dibuat/disinkronkan',kkData,spreadsheet:{id:kkData.workbookSpreadsheetId,url:kkData.workbookUrl,name:kkData.workbookName}}),{status:200,headers:{'Content-Type':'application/json'}});
+        });
       }
 
       case 'saveKkData': {
@@ -5292,7 +5321,17 @@ async function handleRequest({ request, env, ctx }) {
       }
 
       case 'getRtpKkSheets': { const {results}=await env.DB.prepare("SELECT kk_rtp_data FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();if(!results.length)throw new Error('OPD tidak ditemukan');return new Response(JSON.stringify({status:'success',kkRtpData:normalizeWorkbookData(results[0].kk_rtp_data,[])}),{status:200,headers:{'Content-Type':'application/json'}}); }
-      case 'createRtpKkSheets': { const {results}=await env.DB.prepare("SELECT kk_rtp_data,opd FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();if(!results.length)throw new Error('OPD tidak ditemukan');const cur=normalizeWorkbookData(results[0].kk_rtp_data,[]);const kkRtpData=await ensureRtpSpreadsheet(env,{...params,opd:params.opd||results[0].opd,currentKkRtpData:cur});await env.DB.prepare("UPDATE opd_data SET kk_rtp_data=? WHERE id=? AND year=?").bind(JSON.stringify(kkRtpData),params.opdId,year).run();notifyRealtime(env,ctx,year,{action:'createRtpKkSheets',opdId:params.opdId});return new Response(JSON.stringify({status:'success',kkRtpData}),{status:200,headers:{'Content-Type':'application/json'}}); }
+      case 'createRtpKkSheets': {
+        return await withKkSpreadsheetLease(env,year,params.opdId,'kk_rtp',async()=>{
+          const {results}=await env.DB.prepare("SELECT kk_rtp_data,opd FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
+          if(!results.length)throw new Error('OPD tidak ditemukan');
+          const cur=normalizeWorkbookData(results[0].kk_rtp_data,[]);
+          const kkRtpData=await ensureRtpSpreadsheet(env,{...params,opd:results[0].opd,currentKkRtpData:cur});
+          await env.DB.prepare("UPDATE opd_data SET kk_rtp_data=? WHERE id=? AND year=?").bind(JSON.stringify(kkRtpData),params.opdId,year).run();
+          notifyRealtime(env,ctx,year,{action:'createRtpKkSheets',opdId:params.opdId});
+          return new Response(JSON.stringify({status:'success',kkRtpData}),{status:200,headers:{'Content-Type':'application/json'}});
+        });
+      }
       case 'saveRtpKkData': { const kkRtpData=normalizeWorkbookData(params.kkRtpData,[]);await env.DB.prepare("UPDATE opd_data SET kk_rtp_data=? WHERE id=? AND year=?").bind(JSON.stringify(kkRtpData),params.opdId,year).run();notifyRealtime(env,ctx,year,{action:'saveRtpKkData',opdId:params.opdId});return new Response(JSON.stringify({status:'success',kkRtpData}),{status:200,headers:{'Content-Type':'application/json'}}); }
       case 'getRtpEvidence': {
         const {results}=await env.DB.prepare("SELECT rtp_evidence, rtp_evidence_folder, rtp_evidence_folder_id, opd FROM opd_data WHERE id=? AND year=? LIMIT 1").bind(params.opdId,year).all();
