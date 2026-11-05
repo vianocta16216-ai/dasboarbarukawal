@@ -30,13 +30,14 @@ function setdaLink(url,label){return /^https:\/\/docs\.google\.com\/spreadsheets
 function setdaDialog(){
   let dialog=document.getElementById('setdaDialog');if(dialog)return dialog;
   dialog=document.createElement('dialog');dialog.id='setdaDialog';dialog.className='setda-dialog';
-  dialog.innerHTML='<header><div><h2>Kompilasi Sekretariat Daerah</h2><p id="setdaYear"></p></div><button type="button" id="setdaClose">Tutup</button></header><div class="setda-actions"><button id="setdaSetup" type="button">Aktifkan 9 Bagian</button><button id="setdaImportAccounts" type="button">Perbaiki Login dari Excel (9 Akun)</button><input id="setdaImportFile" type="file" accept=".xlsx" hidden><button id="setdaReload" type="button">Muat Ulang</button><button id="setdaSync" type="button">Sinkronkan Spreadsheet Induk</button><span id="setdaWorkbook"></span></div><p id="setdaStatus" role="status" aria-live="polite"></p><div id="setdaCredentials"></div><div id="setdaContent"></div>';
+  dialog.innerHTML='<header><div><h2>Kompilasi Sekretariat Daerah</h2><p id="setdaYear"></p></div><button type="button" id="setdaClose">Tutup</button></header><div class="setda-actions"><button id="setdaSetup" type="button">Aktifkan 9 Bagian</button><button id="setdaImportAccounts" type="button">Perbaiki Login dari Excel (9 Akun)</button><input id="setdaImportFile" type="file" accept=".xlsx" hidden><button id="setdaReload" type="button">Muat Ulang</button><button id="setdaPrepare" type="button" class="setda-primary">Buat / Sinkronkan Workbook Induk</button><button id="setdaSync" type="button" class="setda-primary">Gabungkan 9 Bagian ke Sheet Induk</button><span id="setdaWorkbook"></span></div><p id="setdaStatus" role="status" aria-live="polite"></p><div id="setdaMergeResults" role="region" aria-label="Hasil kompilasi"></div><div id="setdaCredentials"></div><div id="setdaContent"></div>';
   document.body.append(dialog);
   document.getElementById('setdaClose').onclick=()=>dialog.close();
   document.getElementById('setdaReload').onclick=()=>loadSetdaCompilation();
   document.getElementById('setdaSetup').onclick=()=>setdaSetup();
   document.getElementById('setdaImportAccounts').onclick=()=>{if(currentUser?.role==='admin')document.getElementById('setdaImportFile').click();};
   document.getElementById('setdaImportFile').addEventListener('change',setdaImportFromExcel);
+  document.getElementById('setdaPrepare').onclick=()=>setdaPrepareWorkbook();
   document.getElementById('setdaSync').onclick=()=>setdaSync();return dialog;
 }
 function setdaStatus(message){document.getElementById('setdaStatus').textContent=message;}
@@ -49,13 +50,14 @@ async function loadSetdaCompilation(){
     document.getElementById('setdaImportAccounts').hidden=currentUser?.role!=='admin';
     document.getElementById('setdaSetup').textContent=data.enabled?'Periksa/Aktifkan Akun yang Belum Ada':'Aktifkan 9 Bagian';
     document.getElementById('setdaSync').disabled=!data.enabled;
+    document.getElementById('setdaPrepare').disabled=!data.enabled;
     const state=data.state||{};
     document.getElementById('setdaWorkbook').innerHTML=state.spreadsheetId?setdaLink(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(state.spreadsheetId)}/edit`,'Buka hasil gabungan'):'';
-    setdaStatus(!data.enabled?'Belum diaktifkan pada tahun ini. Super Admin dapat mengaktifkan sembilan bagian.':state.error?'Sinkronisasi perlu perhatian: '+state.error:state.busy?'Kompilasi sedang berjalan.':state.lastSuccess?'Spreadsheet terakhir diperbarui '+new Date(state.lastSuccess).toLocaleString('id-ID')+'. Pembaruan otomatis sekitar 5 menit setelah Worker aktif.':'Data aplikasi tergabung otomatis. Buat workbook induk melalui KK PM SPIP, lalu sinkronkan.');
+    setdaStatus(!data.enabled?'Belum diaktifkan pada tahun ini. Super Admin dapat mengaktifkan sembilan bagian.':state.error?'Sinkronisasi perlu perhatian: '+state.error:state.busy?'Kompilasi sedang berjalan.':state.lastSuccess&&state.compilationMatchesParent?'Kompilasi terakhir: '+new Date(state.lastSuccess).toLocaleString('id-ID')+'. Otomatis diperiksa Worker sekitar 5 menit sekali.':'Gunakan Buat / Sinkronkan Workbook Induk untuk memeriksa tautan Google Drive; lanjutkan Gabungkan 9 Bagian setelah valid.');
     const parts=data.parts||[],items=data.items||[],files=data.evidence||[];
     const accountSum=data.accountSummary||{};
     if(!data.enabled)setdaStatus(`9 bagian terdaftar pada aplikasi; kompilasi belum diaktifkan. ${accountSum.active||0}/9 akun login aktif di D1. Jalankan SQL aktivasi privat atau impor Excel melalui Super Admin.`);
-    document.getElementById('setdaContent').innerHTML=`<div class="setda-grid">${parts.map(p=>`<article><small>BAGIAN ${String(p.order).padStart(2,'0')}</small><h3>${setdaEscape(p.name)}</h3><p>${p.items} parameter · ${p.evidence} evidence aktif</p><p>Akun: <code>${setdaEscape(p.username)}</code> · <strong>${p.accountStatus==='aktif'?'Akun aktif di D1':p.accountStatus==='nonaktif'?'Akun nonaktif':'Belum ada di D1'}</strong></p>${setdaLink(p.workbookUrl,'Buka KK PM SPIP Bagian')}</article>`).join('')}</div>${data.enabled?'<p class="setda-note">Isi melalui akun masing-masing bagian. Tab SETDA_ pada workbook induk adalah hasil kompilasi; perubahan dilakukan pada sumber bagian. Grade tiap bagian tetap ditampilkan terpisah untuk penelaahan Sekretariat Daerah.</p>':''}
+    document.getElementById('setdaContent').innerHTML=`<div class="setda-grid">${parts.map(p=>`<article><small>BAGIAN ${String(p.order).padStart(2,'0')}</small><h3>${setdaEscape(p.name)}</h3><p>${p.items} parameter · ${p.evidence} evidence aktif</p><p>Akun: <code>${setdaEscape(p.username)}</code> · <strong>${p.accountStatus==='aktif'?'Akun aktif di D1':p.accountStatus==='nonaktif'?'Akun nonaktif':'Belum ada di D1'}</strong></p>${setdaLink(p.workbookUrl,'Buka KK PM SPIP Bagian')}</article>`).join('')}</div>${data.enabled?'<p class="setda-note"><b>Mode tanpa sheet tambahan.</b> Penggabungan dilakukan dalam sel input yang sudah ada pada workbook induk; sel formula tidak diubah. Nilai/grade antarbagian yang berbeda tidak dihitung secara spekulatif, melainkan dilaporkan untuk rekonsiliasi. Seluruh isian asli di 9 bagian tetap tersimpan.</p>':''}
       <details><summary>Isian KK PM SPIP gabungan (${items.length})</summary><div class="setda-scroll"><table><thead><tr><th>Bagian</th><th>Target / Parameter</th><th>Hasil Pengujian</th><th>Grade</th><th>Catatan</th></tr></thead><tbody>${items.map(x=>`<tr><td>${setdaEscape(x.partName)}</td><td>${setdaEscape(x.target+' / '+x.subunsur+' / '+x.param_id)}</td><td>${setdaEscape(x.hasil_pengujian)}</td><td>${setdaEscape(x.grade_result)}</td><td>${setdaEscape(x.note)}</td></tr>`).join('')}</tbody></table></div></details>
       <details><summary>Evidence Struktur dan Proses gabungan (${files.length})</summary><div class="setda-scroll"><table><thead><tr><th>Bagian</th><th>Parameter</th><th>File</th><th>Salinan Drive</th><th>Verifikasi</th></tr></thead><tbody>${files.map(x=>`<tr><td>${setdaEscape(x.partName)}</td><td>${setdaEscape([x.target_code,x.subunsur,x.param_id,x.grade].join(' / '))}</td><td><a href="${setdaEscape(x.url)}" target="_blank" rel="noopener noreferrer">${setdaEscape(x.file_name)}</a></td><td>${setdaEscape(x.sync_status)}</td><td>${setdaEscape(x.verification_status||'Belum')}</td></tr>`).join('')}</tbody></table></div></details>`;
   }catch(e){setdaStatus(e.message||'Gagal memuat kompilasi.');}finally{setdaUiBusy=false;}
@@ -89,7 +91,7 @@ async function setdaImportFromExcel(event){
     }
     if(expected.some(username=>!found.has(username)))throw new Error('Excel tidak memuat lengkap kesembilan username Setda.');
     accounts=expected.map(username=>({username,password:found.get(username)}));
-    if(!window.confirm('Perbarui password 9 akun SETDA pada database Cloudflare D1 sesuai Excel ini? Hanya 9 akun bagian yang berubah. Semua sesi lama dari 9 akun akan diputus.'))return;
+    if(!await window.kawalConfirmSpreadsheet({title:'Konfirmasi Impor 9 Akun Setda',description:`Tahun ${currentYear} · 9 akun bagian`,detail:'Hanya 9 password yang dipilih dari Excel akan diperbarui. Sesi akun lama diputus; workbook dan evidence tidak berubah.',confirmText:'Ya, Impor 9 Akun'}))return;
     setdaStatus('Menyinkronkan password terenkripsi dan akses 9 bagian ke Cloudflare D1…');
     const result=await callServer('repairSetdaAccounts',{year:currentYear,accounts});
     setdaStatus(result.message+' Akun diperbarui: '+result.updated+'; akun dibuat: '+result.created+'. Silakan lakukan uji login.');
@@ -100,7 +102,9 @@ async function setdaImportFromExcel(event){
   }
 }
 async function setdaSetup(){
-  if(setdaUiBusy)return;setdaUiBusy=true;const button=document.getElementById('setdaSetup');button.disabled=true;
+  if(setdaUiBusy)return;
+  if(!await window.kawalConfirmSpreadsheet({title:'Aktifkan 9 Bagian Sekretariat Daerah?',description:`Tahun ${currentYear}`,detail:'Mendaftarkan identitas/akun bagian yang belum ada. Tidak menghapus data atau mengubah workbook lainnya.',confirmText:'Ya, Aktifkan 9 Bagian'}))return;
+  setdaUiBusy=true;const button=document.getElementById('setdaSetup');button.disabled=true;
   try{setdaStatus('Menyiapkan akun dan penyimpanan sembilan bagian…');const result=await callServer('setupSetda',{year:currentYear});
     const credentials=result.credentials||[];
     if(credentials.length){
@@ -113,10 +117,51 @@ async function setdaSetup(){
   }catch(e){setdaStatus(e.message);}finally{button.disabled=false;setdaUiBusy=false;}
   await loadSetdaCompilation();
 }
+function setdaShowMergeResults(result){
+  const region=document.getElementById('setdaMergeResults');if(!region)return;
+  const warnings=Array.isArray(result.warnings)?result.warnings:[];
+  const conflicts=Array.isArray(result.conflicts)?result.conflicts:[];
+  const details=[...conflicts.slice(0,30).map(x=>`<li><b>${setdaEscape(x.sheet||'?')}!${setdaEscape(x.cell||'?')}</b>: ${setdaEscape(x.reason||'Butuh penelaahan')}</li>`),...warnings.slice(0,15).map(x=>`<li>${setdaEscape(x)}</li>`)];
+  region.innerHTML=`<div class="setda-merge-summary"><strong>${Number(result.written||0)} sel diperbarui · ${Number(result.unchanged||0)} tanpa perubahan</strong><span>${Number(result.conflictCount||0)} konflik · ${Number(result.warningCount||0)} peringatan</span><small>${Number(result.sheetCount||0)} sheet dipertahankan · Formula KK LEAD utama diperiksa · ${Number(result.sourceWorkbooksRead||0)}/9 sumber Google Sheets terbaca</small></div>${details.length?`<details open><summary>Rincian konflik/peringatan yang perlu diperiksa</summary><ol>${details.join('')}</ol></details>`:''}`;
+}
+async function setdaPrepareWorkbook(){
+  if(setdaUiBusy)return;
+  const confirmed=await window.kawalConfirmSpreadsheet({
+    title:'Buat / Sinkronkan Workbook Induk Setda?',
+    description:`Sekretariat Daerah · Tahun ${currentYear}`,
+    detail:'Aplikasi memeriksa file Google Drive yang sudah ada. Jika valid, ID yang sama dipakai. Jika terhapus, sistem mencari file pemulihan di folder Setda lalu baru membuat satu salinan dari master resmi bila benar-benar diperlukan. Formula dan data bagian tidak dihapus.',
+    confirmText:'Ya, Periksa / Buat Workbook'
+  });
+  if(!confirmed)return;
+  const button=document.getElementById('setdaPrepare');setdaUiBusy=true;button.disabled=true;
+  try{
+    setdaStatus('Memeriksa workbook induk, Google Drive, dan seluruh formula utama…');
+    const result=await callServer('prepareSetdaWorkbook',{year:currentYear});
+    setdaStatus(result.message||'Workbook induk telah diperiksa.');
+    const box=document.getElementById('setdaWorkbook');
+    box.innerHTML=result.workbookUrl?setdaLink(result.workbookUrl,'Buka workbook induk yang valid'):'';
+    document.getElementById('setdaMergeResults').innerHTML='<p class="setda-note">Workbook induk sudah siap. Klik Gabungkan 9 Bagian untuk memproses sel input pada sheet asli tanpa menambah sheet baru.</p>';
+  }catch(e){setdaStatus('Gagal memeriksa/memulihkan workbook induk: '+(e.message||e));}
+  finally{setdaUiBusy=false;button.disabled=false;}
+}
 async function setdaSync(){
-  if(setdaUiBusy)return;setdaUiBusy=true;const button=document.getElementById('setdaSync');button.disabled=true;
-  try{setdaStatus('Membaca sembilan sumber dan memperbarui workbook induk…');const result=await callServer('syncSetdaCompilation',{year:currentYear});setdaStatus(result.message);}
-  catch(e){setdaStatus(e.message);}finally{setdaUiBusy=false;button.disabled=false;}
+  if(setdaUiBusy)return;
+  const confirmed=await window.kawalConfirmSpreadsheet({
+    title:'Gabungkan Kompilasi 9 Bagian?',description:`KK PM SPIP Sekretariat Daerah · Tahun ${currentYear}`,
+    detail:'Semua sumber bagian dibaca secara berurutan. Hanya sel input pada sheet induk yang sudah ada yang boleh diperbarui; rumus tidak ditimpa, tidak dibuat workbook/sheet ganda. Perbedaan grade dan isian induk yang berubah manual ditandai sebagai konflik.',
+    confirmText:'Ya, Gabungkan ke Induk'
+  });
+  if(!confirmed)return;
+  const button=document.getElementById('setdaSync');setdaUiBusy=true;button.disabled=true;
+  try{
+    setdaStatus('Memvalidasi 9 sumber, area sel input, dan rumus KK LEAD pada workbook induk…');
+    const result=await callServer('syncSetdaCompilation',{year:currentYear});
+    if(result.compilationStatus==='pending'){setdaStatus(result.message);return;}
+    setdaStatus(result.message);
+    setdaShowMergeResults(result);
+    if(result.spreadsheetUrl)document.getElementById('setdaWorkbook').innerHTML=setdaLink(result.spreadsheetUrl,'Buka hasil kompilasi pada workbook induk');
+  }catch(e){setdaStatus('Kompilasi tidak selesai: '+(e.message||e));}
+  finally{setdaUiBusy=false;button.disabled=false;}
 }
 async function loadPemdaSetdaPanel(){
   const panel=document.getElementById('pemdaSetdaPanel');

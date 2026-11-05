@@ -13,3 +13,13 @@
 .setda-pemda-panel article h3{font-size:14px}
 .setda-pemda-panel article p{font-size:12px;line-height:1.5;overflow-wrap:anywhere}
 @media(max-width:760px){.setda-pemda-heading{flex-direction:column;align-items:flex-start}}
+
+/* Targeted SETDA workbook recovery and reconciliation controls */
+.setda-dialog .setda-primary{background:linear-gradient(120deg,#126b75,#184f8c);border-color:#126b75;color:#fff;font-weight:700;box-shadow:0 4px 12px #115e7230}
+.setda-dialog .setda-primary:hover:not(:disabled){filter:brightness(1.08)}
+.setda-dialog .setda-primary:focus-visible{outline:3px solid #71d6cd;outline-offset:3px}
+#setdaWorkbook a{display:inline-flex;padding:10px 12px;border-radius:9px;background:#e7f4ff;font-size:13px;font-weight:700}
+#setdaMergeResults:empty{display:none}
+.setda-merge-summary{display:flex;gap:8px 16px;flex-wrap:wrap;align-items:center;background:#f0fdf4;border:1px solid #a5d6c7;border-radius:12px;padding:13px 16px;color:#164e43;margin:10px 0}
+.setda-merge-summary strong{font-size:14px}.setda-merge-summary span{font-size:13px;font-weight:700}.setda-merge-summary small{flex-basis:100%;font-size:12px}
+#setdaMergeResults ol{margin:10px 0 0;padding-left:22px}#setdaMergeResults li{padding:5px 0;font-size:13px;overflow-wrap:anywhere}
