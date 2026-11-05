@@ -3505,8 +3505,9 @@ async function handleRequest({ request, env, ctx }) {
   if(authOnly.has(action))await ensureAuthSchema(env);
   else if(!previewReadOnly.has(action))await ensureOpdSchema(env);
 
-  // Rate limiting untuk aksi login: hanya percobaan SALAH yang dihitung.
-  // Password yang benar selalu dapat masuk, sekaligus mereset penghitung percobaan.
+  // Rate limiting counts failed attempts. An admin password reset starts a new window.
+  // Keep the pre-verification gate to bound password guessing and PBKDF2 work.
+  const loginAttemptStartedAt = Date.now();
   let clientIp = 'unknown';
   let loginRateLimited = false;
   let loginRateAction=action;
@@ -3518,9 +3519,14 @@ async function handleRequest({ request, env, ctx }) {
     try {
       const now = Date.now();
       const windowMs = 10 * 60 * 1000;
-      const { results } = await env.DB.prepare(
-        "SELECT COUNT(*) as count FROM login_attempts WHERE ip = ? AND action = ? AND timestamp > ?"
-      ).bind(clientIp, loginRateAction, now - windowMs).all();
+      // Ignore failures from before the latest password reset, including resets
+      // performed before this patch was deployed. Other account/IP limits remain intact.
+      const query = action === 'login'
+        ? env.DB.prepare("SELECT COUNT(*) as count FROM login_attempts WHERE ip = ? AND action = ? AND timestamp > ? AND timestamp > COALESCE((SELECT password_changed_at FROM auth_users WHERE username_key = ?), 0)")
+          .bind(clientIp, loginRateAction, now - windowMs, String(params.username||'').trim().toLowerCase())
+        : env.DB.prepare("SELECT COUNT(*) as count FROM login_attempts WHERE ip = ? AND action = ? AND timestamp > ?")
+          .bind(clientIp, loginRateAction, now - windowMs);
+      const { results } = await query.all();
       loginRateLimited = Number(results?.[0]?.count || 0) >= 5;
     } catch (err) {
       console.warn('Rate-limit check dilewati:', err);
@@ -3633,9 +3639,15 @@ async function handleRequest({ request, env, ctx }) {
         if(password.length<16)throw new Error('Password baru minimal 16 karakter.');
         const target=await env.DB.prepare('SELECT username FROM auth_users WHERE username_key=? LIMIT 1').bind(usernameKey).first();if(!target)throw new Error('Akun tidak ditemukan.');
         const pass=await makeAuthPasswordRecord(password);const now=Date.now();
-        await env.DB.prepare('UPDATE auth_users SET password_salt=?,password_hash=?,password_iterations=?,password_changed_at=?,updated_at=? WHERE username_key=?').bind(pass.salt,pass.hash,pass.iterations,now,now,usernameKey).run();
-        await env.DB.prepare('DELETE FROM auth_sessions WHERE lower(username)=?').bind(usernameKey).run();
-        return jsonResponse({status:'success',message:`Password ${target.username} berhasil direset. Sesi lama akun ini dicabut.`});
+        const resetRateAction='login:'+((await sha256Hex(usernameKey)).slice(0,28));
+        // Commit the password, session revocation and account-only unlock together.
+        // Delete across IPs: the administrator may reset from a different network.
+        await env.DB.batch([
+          env.DB.prepare('UPDATE auth_users SET password_salt=?,password_hash=?,password_iterations=?,password_changed_at=?,updated_at=? WHERE username_key=?').bind(pass.salt,pass.hash,pass.iterations,now,now,usernameKey),
+          env.DB.prepare('DELETE FROM auth_sessions WHERE lower(username)=?').bind(usernameKey),
+          env.DB.prepare('DELETE FROM login_attempts WHERE action=?').bind(resetRateAction)
+        ]);
+        return jsonResponse({status:'success',message:`Password ${target.username} berhasil direset. Sesi lama dicabut dan pembatasan percobaan login akun ini dibersihkan. Silakan masuk dengan password baru.`});
       }
       case 'authMe': {
         return jsonResponse({ status: 'success', authenticated: !!authSession, user: publicSessionUser(authSession) });
@@ -3665,7 +3677,7 @@ async function handleRequest({ request, env, ctx }) {
           if(!user && accountCount===0 && !hasJsonConfig && username.toLowerCase()==='bpkp' && password && password===env.BPKP_ADMIN_PASSWORD) user={username:'bpkp',displayName:'Verifikator BPKP',role:'bpkp',opdIds:[],opdNames:[]};
         } catch (e) { return jsonResponse({status:'error',message:e?.message||'Konfigurasi akun tidak valid.'},500); }
         if(!user){
-          try{await env.DB.prepare("INSERT INTO login_attempts (ip, action, timestamp) VALUES (?, ?, ?)").bind(clientIp,loginRateAction,Date.now()).run();}catch{}
+          try{await env.DB.prepare("INSERT INTO login_attempts (ip, action, timestamp) VALUES (?, ?, ?)").bind(clientIp,loginRateAction,loginAttemptStartedAt).run();}catch{}
           return jsonResponse({status:'error',message:'Username atau password tidak sesuai, atau akun dinonaktifkan.'},401);
         }
         try{await env.DB.prepare("DELETE FROM login_attempts WHERE ip = ? AND action = ?").bind(clientIp,loginRateAction).run();}catch{}
