@@ -1,3 +1,4 @@
+import { ensureExtensionsSchema, riskWorkbookAction, registerEvidencePeriod, processEvidencePeriods } from './_lib/spip-extensions.js';
 import { SETDA_PARTS, partId, isSetdaPart, isSetdaParent, ensureSetdaSchema, ensureSetdaParts, setdaSnapshot, syncSetda, workbookOf } from './_lib/setda.js';
 import { SUBUNSUR_DATA } from './subunsur.js';
 
@@ -461,7 +462,7 @@ const SESSION_COOKIE_NAME = 'kawal_spip_session';
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
 const VALID_ACCOUNT_ROLES = new Set(['admin','auditor','ppupd','opd','irban','bpkp']);
 const SAFE_PUBLIC_ACTIONS = new Set(['authMe','login','verifyAccess','previewPublicEvidence']);
-const COMMON_READ_ACTIONS = new Set(['getSetdaCompilation',
+const COMMON_READ_ACTIONS = new Set(['getRiskWorkbook','getSetdaCompilation',
   'getYears','getData','getSubunsurData','getKkMasterSheetRows','getKkSheets','getRtpKkSheets',
   'getRtpEvidence','getReportFiles','getWorkbookEvidenceFiles','getKkPmSheets','getKkPmTemplateConfig','getKkPmData',
   'getKkPmDataDetailed','getKkRpjmdMappings','getQaApipData','getQaApipChecklistData','getEvidenceWorkflow','previewEvidence','createEvidencePreviewLink','downloadEvidence',
@@ -476,7 +477,7 @@ const ADMIN_ONLY_ACTIONS = new Set(['setupSetda','repairSetdaAccounts',
 const VERIFICATION_ACTIONS = new Set([
   'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','verifyKkRpjmdMapping'
 ]);
-const OPD_INPUT_ACTIONS = new Set(['getSetdaCompilation','syncSetdaCompilation',
+const OPD_INPUT_ACTIONS = new Set(['getRiskWorkbook','createRiskWorkbook','getSetdaCompilation','syncSetdaCompilation',
   'saveSubunsur','saveField','saveRow','uploadFile','deleteFile','replaceEvidenceFile','retryDriveBackup','saveEvidenceWorkflowStep',
   'uploadRtpEvidence','deleteRtpEvidence','replaceRtpEvidence','saveRtpEvidenceFolder',
   'uploadReportFile','deleteReportFile','deleteLheFollowup','getReportFiles','getRtpEvidence','getLheFollowups','saveLheFollowup','uploadLheEvidence','deleteLheEvidence','deleteWorkbookEvidence','getKkSheets','createKkSheets',
@@ -702,14 +703,16 @@ function cookieValue(request,name){
   return '';
 }
 function sessionCookie(token,maxAge=SESSION_TTL_SECONDS){
-  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${Math.max(0,Number(maxAge)||0)}`;
+  return `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Strict${maxAge===0?'; Max-Age=0':''}`;
 }
 function publicSessionUser(session){
   if(!session)return null;
   return {username:session.username,displayName:session.display_name||session.username,role:session.role,opdId:session.opd_id||null,opdName:session.opd_name||null,scoped:Boolean((session.opdIds||[]).length||(session.opdNames||[]).length)};
 }
-async function readAuthSession(env,request){
-  const token=cookieValue(request,SESSION_COOKIE_NAME);
+async function readAuthSession(env,request,action=""){
+  const requestAction=action||new URL(request.url).searchParams.get('action')||'';
+  const fileRead=['downloadEvidence','previewEvidence','downloadPemdaEvidence','previewPemdaEvidence','createEvidencePreviewLink'].includes(requestAction);
+  const token=request.headers.get('X-Kawal-Tab-Session')||(fileRead?cookieValue(request,SESSION_COOKIE_NAME):'');
   if(!token||token.length<32)return null;
   const tokenHash=await sha256Hex(token);
   // Session rows are per-device/operator, but role/scope must always be read from
@@ -767,6 +770,8 @@ async function assertSessionCanAccessOpd(env,session,year,opdId){
 function isActionAllowedForRole(session,action,params={}){
   const role=String(session?.role||'');
   if(role==='admin')return true;
+  if(action==='getRiskWorkbook'||action==='createRiskWorkbook')return VALID_ACCOUNT_ROLES.has(role);
+  if(params.reportType==='sk_satgas'&&['getReportFiles','uploadReportFile','deleteReportFile'].includes(action))return VALID_ACCOUNT_ROLES.has(role);
   if(role==='opd'){
     if(!OPD_INPUT_ACTIONS.has(action))return false;
     if((VERIFICATION_ACTIONS.has(action) && !(action==='saveEvidenceWorkflowStep' && String(params.stage||'').toLowerCase()==='asesor'))||DESTRUCTIVE_ADMIN_ACTIONS.has(action))return false;
@@ -832,17 +837,17 @@ async function assertUploadBelongsToOpd(env,year,opdId,uploadId){
   if(r.results?.[0]&&String(r.results[0].r2_key||'').trim())return {r2Key:r.results[0].r2_key,fileName:r.results[0].file_name,fileType:r.results[0].file_type,sourceType:'workbook_evidence'};
   const reg=await env.DB.prepare('SELECT r2_key FROM evidence_upload_registry WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uid,String(year),id).all();
   if(reg.results?.[0]){
-    const row=(await env.DB.prepare('SELECT subunsurs,rtp_evidence,pm_spip_reports,rr_rtp_reports FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(id,String(year)).all()).results?.[0];
+    const row=(await env.DB.prepare('SELECT subunsurs,rtp_evidence,pm_spip_reports,rr_rtp_reports,sk_satgas_reports FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(id,String(year)).all()).results?.[0];
     let sub={},rtp=[],pm=[],rr=[];try{sub=JSON.parse(row?.subunsurs||'{}')}catch{}try{rtp=JSON.parse(row?.rtp_evidence||'[]')}catch{}try{pm=JSON.parse(row?.pm_spip_reports||'[]')}catch{}try{rr=JSON.parse(row?.rr_rtp_reports||'[]')}catch{}
     let file=null;for(const group of Object.values(sub||{}))for(const param of Object.values(group||{}))for(let lv=1;lv<=5;lv++){const arr=param?.['files'+lv];if(Array.isArray(arr)){file=arr.find(x=>x&&String(x.uploadId||'')===uid)||file;}}
     const isStructure=!!file;
-    file=file||[...(rtp||[]),...(pm||[]),...(rr||[])].find(x=>x&&String(x.uploadId||'')===uid)||null;
+    file=file||[...(rtp||[]),...(pm||[]),...(rr||[]),...parseJsonArray(row?.sk_satgas_reports)].find(x=>x&&String(x.uploadId||'')===uid)||null;
     return {r2Key:reg.results[0].r2_key||file?.r2Key||null,fileName:file?.fileName||'evidence',fileType:file?.fileType||'application/octet-stream',sourceType:isStructure?'evidence':'other'};
   }
-  const row=(await env.DB.prepare('SELECT rtp_evidence,pm_spip_reports,rr_rtp_reports,subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(id,String(year)).all()).results?.[0];
-  if(row){let all=[];for(const key of ['rtp_evidence','pm_spip_reports','rr_rtp_reports','subunsurs']){let value;try{value=JSON.parse(row[key]|| (key==='subunsurs'?'{}':'[]'))}catch{value=key==='subunsurs'?{}:[];}if(key==='subunsurs'){for(const group of Object.values(value||{}))for(const param of Object.values(group||{}))for(let lv=1;lv<=5;lv++){const arr=param?.['files'+lv];if(Array.isArray(arr))all.push(...arr);}}else if(Array.isArray(value))all.push(...value);}
+  const row=(await env.DB.prepare('SELECT rtp_evidence,pm_spip_reports,rr_rtp_reports,sk_satgas_reports,subunsurs FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(id,String(year)).all()).results?.[0];
+  if(row){let all=[];for(const key of ['rtp_evidence','pm_spip_reports','rr_rtp_reports','sk_satgas_reports','subunsurs']){let value;try{value=JSON.parse(row[key]|| (key==='subunsurs'?'{}':'[]'))}catch{value=key==='subunsurs'?{}:[];}if(key==='subunsurs'){for(const group of Object.values(value||{}))for(const param of Object.values(group||{}))for(let lv=1;lv<=5;lv++){const arr=param?.['files'+lv];if(Array.isArray(arr))all.push(...arr);}}else if(Array.isArray(value))all.push(...value);}
     const file=all.find(x=>x&&typeof x==='object'&&String(x.uploadId||'')===uid);
-    if(file)return {r2Key:file.r2Key||null,fileName:file.fileName||'evidence',fileType:file.fileType||'application/octet-stream',sourceType:['rtp_evidence','pm_spip_reports','rr_rtp_reports'].some(key=>parseJsonArray(row[key]).some(x=>x&&String(x.uploadId||'')===uid))?'other':'evidence'};
+    if(file)return {r2Key:file.r2Key||null,fileName:file.fileName||'evidence',fileType:file.fileType||'application/octet-stream',sourceType:['rtp_evidence','pm_spip_reports','rr_rtp_reports','sk_satgas_reports'].some(key=>parseJsonArray(row[key]).some(x=>x&&String(x.uploadId||'')===uid))?'other':'evidence'};
   }
   const lheRows=await env.DB.prepare('SELECT id,evidence_json FROM lhe_followup_items WHERE year=? AND opd_id=?').bind(String(year),id).all();
   for(const record of (lheRows.results||[])){let list=[];try{list=JSON.parse(record.evidence_json||'[]')}catch{};const file=(Array.isArray(list)?list:[]).find(x=>x&&String(x.uploadId||'')===uid);if(file)return {r2Key:file.r2Key||null,fileName:file.fileName||'bukti-tindak-lanjut',fileType:file.fileType||'application/octet-stream',sourceType:'lhe_evidence',followupId:record.id};}
@@ -2389,6 +2394,7 @@ async function getRtpDriveFolder(env, accessToken, year, opdName, folderName){
 
 async function getReportDriveFolder(env, accessToken, year, opdName, reportType){
   assertGoogleDriveConfigured(env);
+  if(reportType==='sk_satgas'){const opdFolder=await getOrCreateFolder(accessToken,env.GOOGLE_DRIVE_FOLDER_ID,safeDriveName(opdName||'OPD'));const category='SK SATGAS SPIP-'+safeDriveName(opdName||'OPD');return {opdFolder,reportFolder:await getOrCreateFolder(accessToken,opdFolder,category),category};}
   const isPm=String(reportType)==='pm_spip';
   const category=isPm?'Laporan Hasil PM SPIP':'Laporan Pemantauan RR_RTP';
   const root=await getOrCreateFolder(accessToken,env.GOOGLE_DRIVE_FOLDER_ID,'Laporan SPIP');
@@ -2406,6 +2412,7 @@ async function getReportDriveFolder(env, accessToken, year, opdName, reportType)
 }
 
 function reportFieldConfig(reportType){
+  if(reportType==='sk_satgas')return {type:'sk_satgas',listField:'sk_satgas_reports',folderField:'sk_satgas_folder',folderIdField:'sk_satgas_folder_id',folderName:'SK SATGAS SPIP'};
   if(String(reportType)==='pm_spip') return {type:'pm_spip',listField:'pm_spip_reports',folderField:'pm_spip_folder',folderIdField:'pm_spip_folder_id',folderName:'Laporan Hasil PM SPIP'};
   if(String(reportType)==='rr_rtp') return {type:'rr_rtp',listField:'rr_rtp_reports',folderField:'rr_rtp_folder',folderIdField:'rr_rtp_folder_id',folderName:'Laporan Pemantauan RR_RTP'};
   throw new Error('Jenis laporan tidak valid');
@@ -2418,7 +2425,7 @@ function parseJsonArray(value){
 // Compare-and-swap writers protect shared OPD JSON arrays from lost updates when
 // multiple users upload to the same OPD at the same time.
 async function appendOpdEvidenceArrayItem(env, opdId, year, field, item) {
-  const allowed = new Set(['rtp_evidence','pm_spip_reports','rr_rtp_reports']);
+  const allowed = new Set(['rtp_evidence','pm_spip_reports','rr_rtp_reports','sk_satgas_reports']);
   if (!allowed.has(field)) throw new Error('Kolom evidence array tidak diizinkan.');
   for (let attempt=0; attempt<12; attempt++) {
     const row=await env.DB.prepare(`SELECT ${field} AS payload FROM opd_data WHERE id=? AND year=? LIMIT 1`).bind(String(opdId),String(year)).first();
@@ -2426,6 +2433,7 @@ async function appendOpdEvidenceArrayItem(env, opdId, year, field, item) {
     const raw=row.payload==null?'[]':String(row.payload);
     const list=parseJsonArray(raw);
     const index=list.findIndex(x=>x&&String(x.uploadId||'')===String(item.uploadId));
+    if(field==='sk_satgas_reports'&&index<0&&list.length)throw new Error('SK Satgas dibatasi satu file. Hapus file lama sebelum mengganti.');
     if(index<0) list.push(item);
     else {
       const current=list[index]||{};
@@ -3467,7 +3475,7 @@ async function handleRequest({ request, env, ctx }) {
   let action = url.searchParams.get('action') || '';
 
   // Daftar aksi sensitif yang tidak boleh diakses via GET
-  const SENSITIVE_ACTIONS = [
+  const SENSITIVE_ACTIONS = ['createRiskWorkbook',
     'verifyAccess', 'verifyDelete', 'login', 'logout', 'createPemdaKkPmWorkbook', 'updateKkPmTemplateConfig', 'uploadPemdaWorkbookEvidence', 'deletePemdaWorkbookEvidence', 'savePemdaWorkbookEvidenceVerification', 'createEvidencePreviewLink', 'saveEvidenceWorkflowStep', 'saveLheFollowup', 'deleteLheFollowup', 'uploadLheEvidence', 'deleteLheEvidence', 'addOpd', 'saveData', 'saveField', 'saveAssessmentStatus', 'saveBpkpOfficialScore', 'unlockBpkpOfficialScore', 'getBpkpOfficialScoreAdmin', 'getBpkpOfficialAudit', 'savePemdaSampling', 'savePemdaVerification',
     'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'saveQaApipItem', 'saveQaApipFileReview', 'deleteQaApipItem', 'getQaApipChecklistData', 'saveQaApipChecklistItem', 'deleteQaApipChecklistItem', 'deleteOpd', 'addYear', 'deleteYear',
     'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'getKkPmWorkbookRefreshTargets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'syncKkPmMasterNow', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup',
@@ -3512,9 +3520,9 @@ async function handleRequest({ request, env, ctx }) {
   const previewReadOnly=new Set(['previewEvidence','previewPemdaEvidence','previewPublicEvidence','downloadEvidence','downloadPemdaEvidence']);
   const authOnly=new Set(['login','authMe','logout','verifyAccess']);
   // A new browser with no cookie can immediately show the login form, without D1.
-  if(action==='authMe'&&!cookieValue(request,SESSION_COOKIE_NAME))return jsonResponse({status:'success',authenticated:false,user:null});
+  if(action==='authMe'&&!request.headers.get('X-Kawal-Tab-Session'))return jsonResponse({status:'success',authenticated:false,user:null});
   if(authOnly.has(action))await ensureAuthSchema(env);
-  else if(!previewReadOnly.has(action))await ensureOpdSchema(env);
+  else if(!previewReadOnly.has(action)){await ensureOpdSchema(env);await ensureExtensionsSchema(env);}
 
   // Rate limiting counts failed attempts. An admin password reset starts a new window.
   // Keep the pre-verification gate to bound password guessing and PBKDF2 work.
@@ -3546,7 +3554,7 @@ async function handleRequest({ request, env, ctx }) {
 
   // Resolve the server-side session for every protected API request. Browser flags are not trusted.
   let authSession = null;
-  try { authSession = await readAuthSession(env, request); } catch (e) { console.warn('Pembacaan sesi ditolak:', e?.message || e); }
+  try { authSession = await readAuthSession(env, request, action); } catch (e) { console.warn('Pembacaan sesi ditolak:', e?.message || e); }
 
   // Login/legacy verification are the only paths allowed to establish a session.
   const SESSION_ESTABLISH_ACTIONS = new Set(['login','verifyAccess']);
@@ -3789,6 +3797,11 @@ async function handleRequest({ request, env, ctx }) {
         ]);
         return jsonResponse({status:'success',message:`Password ${target.username} berhasil direset. Sesi lama dicabut dan pembatasan percobaan login akun ini dibersihkan. Silakan masuk dengan password baru.`});
       }
+      case 'getRiskWorkbook':
+      case 'createRiskWorkbook': {
+        const result=await riskWorkbookAction(env,request,params,action,{token:getGoogleAccessToken,folder:getOrCreateFolder,driveFile:getDriveFile,fetch:fetchWithRetry,put:putR2WithRetry});
+        return jsonResponse({status:'success',...result});
+      }
       case 'authMe': {
         return jsonResponse({ status: 'success', authenticated: !!authSession, user: publicSessionUser(authSession) });
       }
@@ -3822,10 +3835,10 @@ async function handleRequest({ request, env, ctx }) {
         }
         try{await env.DB.prepare("DELETE FROM login_attempts WHERE ip = ? AND action = ?").bind(clientIp,loginRateAction).run();}catch{}
         const created=await createAuthSession(env,user,ctx);
-        return jsonResponse({status:'success',message:'Login berhasil.',authenticated:true,user:publicSessionUser(created.session)},200,{'Set-Cookie':sessionCookie(created.token),'X-Content-Type-Options':'nosniff'});
+        return jsonResponse({status:'success',message:'Login berhasil.',authenticated:true,tabSession:created.token,user:publicSessionUser(created.session)},200,{'Set-Cookie':sessionCookie(created.token),'X-Content-Type-Options':'nosniff'});
       }
       case 'logout': {
-        const token=cookieValue(request,SESSION_COOKIE_NAME);
+        const token=request.headers.get('X-Kawal-Tab-Session')||'';
         if(token){const hash=await sha256Hex(token);await env.DB.prepare('DELETE FROM auth_sessions WHERE token_hash=?').bind(hash).run().catch(()=>{});}
         return jsonResponse({status:'success',message:'Logout berhasil.'},200,{'Set-Cookie':sessionCookie('',0)});
       }
@@ -4691,7 +4704,7 @@ async function handleRequest({ request, env, ctx }) {
           let computedWorkbook={}; try{computedWorkbook=r.computed_workbook_data?JSON.parse(r.computed_workbook_data):{};}catch{computedWorkbook={};}
           const cv=computedWorkbook?.values||{};
           const n=(v)=>{const x=Number(v); return Number.isFinite(x)&&x>0?x:null;};
-          return{...r,subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,evaluated:qaEvaluated,na:qaNa,pass:qaPass,partial:qaPartial,fail:qaFail,pending:qaPending,sum:qaSum,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus,targets:[...pmScope]},nilaiStrukturProses:verifiedStructureBreakdown.value,sa:verifiedStructureBreakdown.value,strukturProsesStatus:strukturStatus,structureProcessBreakdown:verifiedStructureBreakdown,computedWorkbook, nilaiMaturitas:n(cv.nilaiMaturitas),nilaiMRI:n(cv.mri),nilaiIEPK:n(cv.iepk),nilaiKapabilitasApip:n(cv.nilaiKapabilitasApip),mri:n(cv.mri),iepk:n(cv.iepk),workbookEvidenceSummary:{totalFiles:Number(wb?.total_files||0),evidenceGroups:Number(wb?.evidence_groups||0),verifiedFiles:Number(wb?.verified_files||0),reviewedFiles:Number(wb?.reviewed_files||0),withNotesFiles:Number(wb?.with_notes_files||0),returnedFiles:Number(wb?.returned_files||0),syncedFiles:Number(wb?.synced_files||0),targetStats:{T1:{groups:Number(wb?.groups_t1||0),files:Number(wb?.files_t1||0),verifiedFiles:Number(wb?.verified_t1||0)},T2:{groups:Number(wb?.groups_t2||0),files:Number(wb?.files_t2||0),verifiedFiles:Number(wb?.verified_t2||0)},T3:{groups:Number(wb?.groups_t3||0),files:Number(wb?.files_t3||0),verifiedFiles:Number(wb?.verified_t3||0)},T4:{groups:Number(wb?.groups_t4||0),files:Number(wb?.files_t4||0),verifiedFiles:Number(wb?.verified_t4||0)}}}};
+          return{...r,skSatgasReports:parseJsonArray(r.sk_satgas_reports),subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,evaluated:qaEvaluated,na:qaNa,pass:qaPass,partial:qaPartial,fail:qaFail,pending:qaPending,sum:qaSum,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus,targets:[...pmScope]},nilaiStrukturProses:verifiedStructureBreakdown.value,sa:verifiedStructureBreakdown.value,strukturProsesStatus:strukturStatus,structureProcessBreakdown:verifiedStructureBreakdown,computedWorkbook, nilaiMaturitas:n(cv.nilaiMaturitas),nilaiMRI:n(cv.mri),nilaiIEPK:n(cv.iepk),nilaiKapabilitasApip:n(cv.nilaiKapabilitasApip),mri:n(cv.mri),iepk:n(cv.iepk),workbookEvidenceSummary:{totalFiles:Number(wb?.total_files||0),evidenceGroups:Number(wb?.evidence_groups||0),verifiedFiles:Number(wb?.verified_files||0),reviewedFiles:Number(wb?.reviewed_files||0),withNotesFiles:Number(wb?.with_notes_files||0),returnedFiles:Number(wb?.returned_files||0),syncedFiles:Number(wb?.synced_files||0),targetStats:{T1:{groups:Number(wb?.groups_t1||0),files:Number(wb?.files_t1||0),verifiedFiles:Number(wb?.verified_t1||0)},T2:{groups:Number(wb?.groups_t2||0),files:Number(wb?.files_t2||0),verifiedFiles:Number(wb?.verified_t2||0)},T3:{groups:Number(wb?.groups_t3||0),files:Number(wb?.files_t3||0),verifiedFiles:Number(wb?.verified_t3||0)},T4:{groups:Number(wb?.groups_t4||0),files:Number(wb?.files_t4||0),verifiedFiles:Number(wb?.verified_t4||0)}}}};
         });
         if(scoreRefreshCandidates.length && ctx?.waitUntil && Date.now()-lastLegacyScoreRepairAt>120000){
           // Limit opportunistic writes to one batch per isolate per two minutes.
@@ -4717,6 +4730,7 @@ async function handleRequest({ request, env, ctx }) {
         for(const row of visibleRows){
           const secureFile=(f)=>{if(!f||typeof f!=='object'||!f.uploadId)return f;return {...f,url:privateEvidenceUrl(year,row.id,f.uploadId)};};
           row.rtpEvidence=(Array.isArray(row.rtpEvidence)?row.rtpEvidence:[]).map(secureFile);
+          row.skSatgasReports=(row.skSatgasReports||[]).map(secureFile);
           row.pmSpipReports=(Array.isArray(row.pmSpipReports)?row.pmSpipReports:[]).map(secureFile);
           row.rrRtpReports=(Array.isArray(row.rrRtpReports)?row.rrRtpReports:[]).map(secureFile);
           for(const group of Object.values(row.subunsurs||{}))for(const param of Object.values(group||{}))for(let lv=1;lv<=5;lv++){if(Array.isArray(param?.['files'+lv]))param['files'+lv]=param['files'+lv].map(secureFile);}
@@ -4881,6 +4895,9 @@ async function handleRequest({ request, env, ctx }) {
         const opdId=String(params.opdId||'');if(!opdId)throw new Error('ID OPD wajib diisi.');
         const q=await env.DB.prepare(`SELECT upload_id,evidence_key,target_code,subunsur,param_id,grade,level,file_name,file_type,r2_key,gdrive_id,sync_status,sync_error,verification_status,verification_examiner,verification_note,verification_at,created_at,updated_at FROM opd_workbook_evidence_items WHERE year=? AND opd_id=? AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>'' ORDER BY subunsur,param_id,CASE grade WHEN 'E' THEN 1 WHEN 'D' THEN 2 WHEN 'C' THEN 3 WHEN 'B' THEN 4 WHEN 'A' THEN 5 ELSE 9 END,created_at`).bind(String(year),opdId).all();
         const files=(q.results||[]).map(x=>({uploadId:String(x.upload_id),evidenceKey:String(x.evidence_key||''),targetCode:String(x.target_code||''),subunsur:String(x.subunsur||''),paramId:String(x.param_id||''),grade:String(x.grade||''),level:Number(x.level||0),fileName:x.file_name||'File',fileType:x.file_type||'application/octet-stream',url:x.r2_key?privateEvidenceUrl(year,opdId,String(x.upload_id)):null,r2Key:x.r2_key||null,gdriveId:x.gdrive_id||null,syncStatus:x.sync_status||'pending',syncError:x.sync_error||null,verificationStatus:x.verification_status||'',verificationExaminer:x.verification_examiner||'',verificationNote:x.verification_note||'',verificationAt:x.verification_at?Number(x.verification_at):null,createdAt:Number(x.created_at||0),updatedAt:Number(x.updated_at||0)}));
+        const periods=(await env.DB.prepare("SELECT source_id,end_year,status,error,job_json FROM evidence_period_jobs WHERE json_extract(job_json,'$.opdId')=? AND json_extract(job_json,'$.year')=?").bind(opdId,String(year)).all()).results||[];
+        const periodMap=new Map(periods.map(p=>[p.source_id,p]));
+        for(const file of files){const p=periodMap.get(file.uploadId);if(p)file.period={start:year,end:p.end_year,status:p.status,error:p.error||''};}
         return jsonResponse({status:'success',files});
       }
       case 'replaceWorkbookEvidenceFile': {
@@ -5379,6 +5396,11 @@ async function handleRequest({ request, env, ctx }) {
         const {results}=await env.DB.prepare(`SELECT ${cfg.listField}, ${cfg.folderField}, ${cfg.folderIdField}, opd FROM opd_data WHERE id=? AND year=? LIMIT 1`).bind(params.opdId,year).all();
         if(!results.length)throw new Error('OPD tidak ditemukan');
         const list=parseJsonArray(results[0]?.[cfg.listField]);
+        if(cfg.type==='sk_satgas'&&!list.length){
+          const slot=await env.DB.prepare('SELECT upload_id FROM sk_satgas_slots WHERE year=? AND opd_id=?').bind(year,String(params.opdId)).first();
+          if(slot){const queued=await env.DB.prepare('SELECT job_json FROM drive_backup_jobs WHERE upload_id=?').bind(slot.upload_id).first();let job={};try{job=JSON.parse(queued?.job_json||'{}');}catch{}
+            list.push({uploadId:slot.upload_id,fileName:job.fileName||'Unggahan SK belum selesai',fileType:job.fileType||'application/octet-stream',r2Key:job.r2Key||null,syncStatus:'retrying',syncError:'Unggahan belum selesai. Gunakan Hapus untuk membatalkan sebelum mengganti file.'});}
+        }
         let folderId=results[0]?.[cfg.folderIdField]||null;
         try{
           const accessToken=await getGoogleAccessToken(env);
@@ -5419,7 +5441,7 @@ async function handleRequest({ request, env, ctx }) {
         if(!rec.results.length)throw new Error('OPD tidak ditemukan');
         const safeOpd=sanitizeString(rec.results[0].opd||params.opdName||'OPD').substring(0,80)||'OPD';
         const gdriveFolderId=rec.results[0][cfg.folderIdField]||null;
-        const filePath=`kawal_spip/${year}/${safeOpd}/${cfg.folderName}/${uploadId}-${safeFileName}`;
+        const filePath=cfg.type==='sk_satgas'?`kawal_spip/${safeOpd}/SK SATGAS SPIP-${safeOpd}/${uploadId}-${safeFileName}`:`kawal_spip/${year}/${safeOpd}/${cfg.folderName}/${uploadId}-${safeFileName}`;
         const list=parseJsonArray(rec.results[0]?.[cfg.listField]);
         const existing=list.find(x=>x&&x.uploadId===uploadId);
         if(existing?.r2Key){
@@ -5428,13 +5450,18 @@ async function handleRequest({ request, env, ctx }) {
           const latest=await env.DB.prepare(`SELECT ${cfg.listField} FROM opd_data WHERE id=? AND year=? LIMIT 1`).bind(params.opdId,year).first();
           return jsonResponse({status:driveQueue.done?'success':'pending',reportType:cfg.type,url:existing.url,fileName:existing.fileName||safeFileName,gdriveId:driveQueue.done?driveQueue.gdriveId:null,reports:parseJsonArray(latest?.[cfg.listField]).map(f=>f&&f.uploadId?{...f,url:privateEvidenceUrl(year,params.opdId,f.uploadId)}:f),syncStatus:driveQueue.done?'done':'retrying',uploadId,folderName:cfg.folderName,folderId:gdriveFolderId,folderUrl:gdriveFolderId?`https://drive.google.com/drive/folders/${encodeURIComponent(gdriveFolderId)}`:null,r2Saved:true,r2Key:existing.r2Key,queueMessageSent:!!driveQueue.queueMessageSent,message:driveQueue.done?'File terverifikasi pada kedua penyimpanan.':'File R2 sudah tercatat dan Google Drive akan diproses otomatis; tidak perlu klik ulang.'});
         }
+        if(cfg.type==='sk_satgas'){
+          await env.DB.prepare('INSERT OR IGNORE INTO sk_satgas_slots(year,opd_id,upload_id) VALUES(?,?,?)').bind(year,String(params.opdId),uploadId).run();
+          const slot=await env.DB.prepare('SELECT upload_id FROM sk_satgas_slots WHERE year=? AND opd_id=?').bind(year,String(params.opdId)).first();
+          if(slot?.upload_id!==uploadId)throw new Error('SK Satgas hanya satu file per OPD/tahun. Hapus file atau batalkan unggahan lama sebelum mengganti.');
+        }
         const reportJob={type:'report',reportType:cfg.type,uploadId,year,opdId:params.opdId,opdName:safeOpd,r2Key:filePath,fileName:safeFileName,fileType,gdriveFolderId};
         await enqueueDriveBackupJob(env,reportJob);
         await putR2WithRetry(env, filePath,fileBody||bytes,{httpMetadata:{contentType:fileType}});
         const publicUrl=privateEvidenceUrl(year,params.opdId,uploadId);
         const item={url:publicUrl,fileName:safeFileName,folderName:cfg.folderName,gdriveFolderId,gdriveId:null,storage:'R2',syncStatus:'pending',uploadedAt:new Date().toISOString(),uploadId,r2Key:filePath,fileType};
         await appendOpdEvidenceArrayItem(env,params.opdId,year,cfg.listField,item);
-        await runD1WithRetry(()=>env.DB.prepare(`UPDATE opd_data SET ${cfg.folderField}=?, ${cfg.folderIdField}=? WHERE id=? AND year=?`).bind(cfg.folderName,gdriveFolderId,params.opdId,year));
+        await runD1WithRetry(()=>env.DB.prepare(`UPDATE opd_data SET ${cfg.folderField}=?, ${cfg.folderIdField}=? WHERE id=? AND year=?`).bind(cfg.folderName,gdriveFolderId||'',params.opdId,year));
         const job=reportJob;
         const driveQueue=await queueDriveBackupInBackground(env,ctx,job);
         const latest=await env.DB.prepare(`SELECT ${cfg.listField} FROM opd_data WHERE id=? AND year=? LIMIT 1`).bind(params.opdId,year).first();
@@ -5449,6 +5476,18 @@ async function handleRequest({ request, env, ctx }) {
         const wantedUploadId=String(params.uploadId||'').trim();
         const wantedUrl=String(params.fileUrl||'').split('?')[0];
         const index=list.findIndex(x => (wantedUploadId && String(x?.uploadId||'')===wantedUploadId) || (!wantedUploadId && String(x?.url||'').split('?')[0]===wantedUrl));
+        if(index<0&&cfg.type==='sk_satgas'&&wantedUploadId){
+          const slot=await env.DB.prepare('SELECT upload_id FROM sk_satgas_slots WHERE year=? AND opd_id=?').bind(year,String(params.opdId)).first();
+          if(slot?.upload_id===wantedUploadId){
+            const queued=await env.DB.prepare('SELECT job_json,status,lease_until FROM drive_backup_jobs WHERE upload_id=?').bind(wantedUploadId).first();
+            if(Number(queued?.lease_until||0)>Date.now())throw new Error('File sedang dikirim. Tunggu proses selesai sebelum menghapus.');
+            let job={};try{job=JSON.parse(queued?.job_json||'{}');}catch{}
+            await env.DB.prepare('DELETE FROM drive_backup_jobs WHERE upload_id=?').bind(wantedUploadId).run();
+            if(job.r2Key)await env.EVIDENCE_BUCKET.delete(job.r2Key);
+            await env.DB.prepare('DELETE FROM sk_satgas_slots WHERE year=? AND opd_id=? AND upload_id=?').bind(year,String(params.opdId),wantedUploadId).run();
+            return jsonResponse({status:'success',reportType:cfg.type,reports:[]});
+          }
+        }
         if(index<0)throw new Error('File laporan tidak ditemukan pada OPD ini. Data tidak diubah.');
         const item=list[index]||{};
         let r2Key=String(item.r2Key||'').trim();
@@ -5459,6 +5498,8 @@ async function handleRequest({ request, env, ctx }) {
         const next=list.slice(0,index).concat(list.slice(index+1));
         await runD1WithRetry(()=>env.DB.prepare(`UPDATE opd_data SET ${cfg.listField}=? WHERE id=? AND year=?`).bind(JSON.stringify(next),params.opdId,year));
         if(item.uploadId){await env.DB.prepare('DELETE FROM evidence_upload_registry WHERE upload_id=? AND year=? AND opd_id=?').bind(String(item.uploadId),String(year),String(params.opdId)).run().catch(()=>{});await env.DB.prepare('DELETE FROM evidence_uploads WHERE upload_id=?').bind(String(item.uploadId)).run().catch(()=>{});}
+        if(cfg.type==='sk_satgas')await env.DB.prepare('DELETE FROM sk_satgas_slots WHERE year=? AND opd_id=? AND upload_id=?').bind(year,String(params.opdId),String(item.uploadId)).run();
+        if(item.uploadId)await env.DB.prepare('DELETE FROM drive_backup_jobs WHERE upload_id=?').bind(String(item.uploadId)).run();
         notifyRealtime(env,ctx,year,{action:'deleteReportFile',reportType:cfg.type,opdId:params.opdId,uploadId:item.uploadId||null});
         const privateList=next.map(f=>f&&f.uploadId?{...f,url:privateEvidenceUrl(year,params.opdId,f.uploadId)}:f);
         return jsonResponse({status:'success',reportType:cfg.type,reports:privateList});
@@ -5768,13 +5809,14 @@ async function handleRequest({ request, env, ctx }) {
 
       case 'uploadFile': {
         const sourceModel=String(params.sourceModel||'legacy');
+        if(params.validThroughYear!==undefined&&(!/^\d{4}$/.test(String(params.validThroughYear))||Number(params.validThroughYear)<Number(year)||Number(params.validThroughYear)>Number(year)+4))throw new Error('Masa berlaku harus tahun aktif sampai maksimal lima tahun termasuk tahun aktif.');
         if(params.opdId) await assertAssessmentInputEditable(env,year,String(params.opdId));
         // Google Drive delivery is handled by the durable Queue after R2 is confirmed.
         if(sourceModel==='workbook'){
           const file=params.file,legacyData=params.fileData;if(!file&&!legacyData&&!request.body)throw new Error('File tidak diterima');let bytes=null,fileBody=null,fileName=String(params.fileName||'evidence'),fileType=String(params.fileType||'application/octet-stream');const fileSize=Number(params.fileSize)||0;
           if(file){fileName=file.name||fileName;fileType=file.type||fileType;if((file.size||0)>10*1024*1024)throw new Error('File > 10MB, terlalu besar!');bytes=await file.arrayBuffer();}else if(legacyData){bytes=decodeBase64File(legacyData,10);}else{if(fileSize>10*1024*1024)throw new Error('File > 10MB, terlalu besar!');fileBody=request.body;}
           const opdId=String(params.opdId||''),evidenceKey=String(params.evidenceKey||''),targetCode=String(params.targetCode||''),subCode=String(params.subunsur||''),paramId=String(params.paramId||''),grade=String(params.grade||'').toUpperCase(),level=Number(params.level||({A:5,B:4,C:3,D:2,E:1}[grade]||0)),uploadId=String(params.uploadId||crypto.randomUUID());
-          if(!opdId||!evidenceKey)throw new Error('Identitas evidence workbook tidak lengkap.');if(targetCode&&!/^T[1-4]$/.test(targetCode))throw new Error('Target workbook tidak valid.');if(!['A','B','C','D','E'].includes(grade))throw new Error('Grade evidence harus A-E.');
+          if(!opdId||!evidenceKey||!targetCode||!subCode||!paramId)throw new Error('Identitas evidence workbook tidak lengkap.');if(level!==({A:5,B:4,C:3,D:2,E:1}[grade]))throw new Error('Level harus sesuai grade evidence.');if(targetCode&&!/^T[1-4]$/.test(targetCode))throw new Error('Target workbook tidak valid.');if(!['A','B','C','D','E'].includes(grade))throw new Error('Grade evidence harus A-E.');
           const rec=await env.DB.prepare('SELECT opd FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(opdId,String(year)).all();if(!rec.results.length)throw new Error('OPD tidak ditemukan.');if(targetCode)await assertAssessmentTargetAllowed(env,year,opdId,targetCode);
           const safePathPart=(value,fallback='Tidak Diketahui',max=100)=>sanitizeString(String(value||fallback)).replace(/[\\/:*?"<>|#%{}]/g,' ').replace(/\s+/g,' ').trim().substring(0,max)||fallback;
           const safeOpd=safePathPart(rec.results[0].opd||params.opdName,'OPD',80);
@@ -5810,6 +5852,7 @@ async function handleRequest({ request, env, ctx }) {
           const verifiedWorkbookItem=await env.DB.prepare('SELECT upload_id,year,opd_id,evidence_key,target_code,grade FROM opd_workbook_evidence_items WHERE upload_id=? AND year=? AND opd_id=? LIMIT 1').bind(uploadId,String(year),opdId).first();
           if(!verifiedWorkbookItem || String(verifiedWorkbookItem.evidence_key)!==evidenceKey || String(verifiedWorkbookItem.target_code)!==targetCode || String(verifiedWorkbookItem.grade)!==grade)throw new Error('Identitas upload workbook bertabrakan dengan record evidence lain.');
           const job={type:'workbook_evidence',uploadId,year:String(year),opdId,opdName:rec.results[0].opd||'OPD',r2Key:filePath,fileName:safeName,fileType,evidenceKey,targetCode,subunsur:subCode,paramId,grade,level,gdriveId:old?.gdrive_id||null};
+          await registerEvidencePeriod(env,job,params.validThroughYear);
           await enqueueDriveBackupJob(env,job);
           try{await putR2WithRetry(env, filePath,fileBody||bytes,{httpMetadata:{contentType:fileType}});}catch(storageError){
             // Keep the registry, evidence row, and D1 outbox as a durable recovery
@@ -5822,6 +5865,7 @@ async function handleRequest({ request, env, ctx }) {
             await runD1WithRetry(()=>env.DB.prepare("UPDATE evidence_upload_registry SET sync_status='retrying',sync_error=?,updated_at=? WHERE upload_id=? AND NOT (sync_status='done' AND gdrive_id IS NOT NULL) AND year=? AND opd_id=?").bind(message,Date.now(),uploadId,String(year),opdId)).catch(()=>{});
             throw storageError;
           }notifyRealtime(env,ctx,year,{action:'uploadWorkbookEvidence',opdId,uploadId,evidenceKey,grade,targetCode});
+          if(Number(params.validThroughYear)>Number(year))ctx?.waitUntil(runEvidencePeriodSchedule(env));
           // R2 is confirmed first; the durable outbox + Queue owns the mandatory Drive leg.
           const driveQueue=await queueDriveBackupInBackground(env,ctx,job);
           const gdriveId=driveQueue.done?driveQueue.gdriveId:null;
@@ -5948,6 +5992,7 @@ async function handleRequest({ request, env, ctx }) {
         if(r2Key){
           try{ r2ObjectExists=!!(await env.EVIDENCE_BUCKET.head(r2Key)); }catch{}
         }
+        await registerEvidencePeriod(env,durableJob,params.validThroughYear);
         if(!r2ObjectExists){
           await putR2WithRetry(env, r2Key,fileBody||bytes,{httpMetadata:{contentType:fileType}});
         }
@@ -5965,6 +6010,7 @@ async function handleRequest({ request, env, ctx }) {
         }catch(_){}
 
         const job=durableJob;
+        if(Number(params.validThroughYear)>Number(year))ctx?.waitUntil(runEvidencePeriodSchedule(env));
 
         notifyRealtime(env,ctx,year,{action:'uploadFile',opdId,uploadId});
 
@@ -6597,3 +6643,8 @@ async function handleRequest({ request, env, ctx }) {
     return new Response(JSON.stringify({ status: 'error', message: 'Error: ' + err.message }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 };
+
+export async function runEvidencePeriodSchedule(env){
+  await ensureOpdSchema(env);await ensureExtensionsSchema(env);
+  return processEvidencePeriods(env,{target:assertAssessmentTargetAllowed,editable:assertAssessmentInputEditable,queue:queueDriveBackupInBackground,metadata:ensureGenericEvidenceMetadata,put:putR2WithRetry});
+}
