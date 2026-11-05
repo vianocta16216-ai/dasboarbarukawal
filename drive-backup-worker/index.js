@@ -1,5 +1,6 @@
 import {
   runSetdaCompilationSchedule,
+  runEvidencePeriodSchedule,
   getGoogleDriveConfigurationStatus,
   dispatchDueDriveBackupJobs,
   drainDriveBackupQueue,
@@ -49,6 +50,7 @@ export default {
   },
 
   async scheduled(_event, env, ctx) {
+    ctx.waitUntil(runEvidencePeriodSchedule(env).catch(e=>console.error("Evidence lintas tahun:",e.message)));
     ctx.waitUntil(runSetdaCompilationSchedule(env).catch(e=>console.error("SETDA scheduler:",e.message)));
     ctx.waitUntil((async () => {
       const result = env.DRIVE_BACKUP_QUEUE?.sendBatch
