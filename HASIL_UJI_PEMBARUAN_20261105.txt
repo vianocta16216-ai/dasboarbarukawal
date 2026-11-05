@@ -1,0 +1,82 @@
+COMMAND: node tools/test-login-tab-session-20261105.mjs
+EXIT: 0
+{
+  "status": "PASS",
+  "freshBrowserDbQueries": 0,
+  "firstLoginAccountsHashed": 1,
+  "concurrentLogins": 40,
+  "localSQLiteDurationMs": 340,
+  "independentBrowserSessions": true,
+  "disabledAccountRevocation": true,
+  "scopedDashboardQueries": true,
+  "note": "Local SQLite + WebCrypto; not Cloudflare load benchmark"
+}
+PASS: cookie-only session rejected; four new actions reject cross-OPD access; real SK handler R2/outbox upload, duplicate retry, second-file refusal, deletion and slot release (R2/Queue mocked).
+(node:9) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///workspace/scratch/51cdd5c8f55d/work/dasboarbarukawal-main/functions/myCloudinaryHandler.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /workspace/scratch/51cdd5c8f55d/work/dasboarbarukawal-main/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+COMMAND: node tools/test-spip-extensions-20261105.mjs
+EXIT: 0
+PASS: 2026–2030 copies, scoped target/grade, existing-year OPD mapping, no inherited verification, missing-R2 deferral, failure/retry recovery, idempotency, 20 competing SK claims, six distinct workbook imports, repeat-click reuse, template identity updates. Google/R2 calls mocked.
+(node:21) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///workspace/scratch/51cdd5c8f55d/work/dasboarbarukawal-main/functions/_lib/spip-extensions.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /workspace/scratch/51cdd5c8f55d/work/dasboarbarukawal-main/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+COMMAND: node tools/test-frontend-extensions-20261105.mjs
+EXIT: 0
+{
+  "status": "PASS",
+  "loginAbort": true,
+  "dashboardFetchesFor40ConcurrentCalls": 1,
+  "masterParameters": [
+    43,
+    42,
+    43,
+    55
+  ],
+  "totalParameters": 183,
+  "sharedTargetFilesPreserved": 514,
+  "partialMasterPreservesMapping": true
+}
+PASS: tab navigate/reload/back-forward behavior, session header, seven dashboard cells, five-year selector. DOM markup/VM test, not visual browser rendering.
+
+
+COMMAND: python tools/test_drive_retry_db_regressions.py
+EXIT: 0
+PASS: retry JOIN query and 25-way idempotent upload registry claim
+PASS: exact durable outbox UPSERT is idempotent and rejects cross-OPD uploadId collisions
+
+
+COMMAND: node tools/validate-drive-worker-esm-build.mjs
+EXIT: 0
+PASS ESM parse: drive-backup-worker/index.js
+PASS ESM parse: functions/myCloudinaryHandler.js
+PASS Worker entry imports the production handler path.
+PASS Worker wrangler.toml entrypoint is index.js.
+PASS Worker deployment ESM build preflight.
+
+
+PASS syntax: public/script.js
+
+PASS syntax: public/spip-extensions.js
+
+PASS syntax: functions/myCloudinaryHandler.js
+
+PASS syntax: functions/_lib/spip-extensions.js
+
+PASS syntax: drive-backup-worker/index.js
+
+PASS original Excel byte comparison: strategic-pa.xlsx SHA256 7d3639e6d8202d1912af55fa870d1e5ee8bb885786127107a153940ffb4a80cc
+
+PASS original Excel byte comparison: tactical-kpa.xlsx SHA256 62af6e4306c225a172477d2cad51e61d29a53f59ec7417f21698440a497ea6b9
+
+PASS original Excel byte comparison: operational-pptk.xlsx SHA256 52370e473f8ccfa14df2424913e56ec50bb7e32d9617dde03477d086c643db1d
+
+PASS original Excel byte comparison: fraud.xlsx SHA256 74d4f2f6c308d405b35f24ad2cb5ebc3789e4a22c490a080a7f00f3a8a87815a
+
+BASELINE: two legacy static validators also fail on original uploaded ZIP; details in guide. Live Google/R2 and visual browser validation not performed.

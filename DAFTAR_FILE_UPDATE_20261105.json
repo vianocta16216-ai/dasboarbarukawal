@@ -1,0 +1,77 @@
+[
+  {
+    "file": "PANDUAN_UPDATE_SESSION_RISIKO_EVIDENCE_20261105.md",
+    "status": "added",
+    "sha256": "dccf75498dd26b7d95edc4007e46e9e61424989b3b9e093bf220e44d12f4f122"
+  },
+  {
+    "file": "HASIL_UJI_PEMBARUAN_20261105.txt",
+    "status": "added",
+    "sha256": "3c05d1a935b27d3422fc4bff39513c2562f3358fefeee988102bf06bfd91c9a2"
+  },
+  {
+    "file": "tools/test-login-tab-session-20261105.mjs",
+    "status": "added",
+    "sha256": "69585f365a9baab705d8c0f76f093c0e3f4b1cf932ed0702167fab3e08313069"
+  },
+  {
+    "file": "tools/test-frontend-extensions-20261105.mjs",
+    "status": "added",
+    "sha256": "bdce34f3b109d43ae506104b75661fa8c2a4ef29ffe60d1df31e7aedda6913aa"
+  },
+  {
+    "file": "tools/test-spip-extensions-20261105.mjs",
+    "status": "added",
+    "sha256": "020697ea33ed061f70eedb15969cbb968be227dcb22d66b1f5a4cce2fb97fcc1"
+  },
+  {
+    "file": "drive-backup-worker/index.js",
+    "status": "modified",
+    "sha256": "6c836482acdf5bf639a6879c6308daa75eaf69eb5176a53e9b7c733d6b5552ad"
+  },
+  {
+    "file": "public/index.html",
+    "status": "modified",
+    "sha256": "018f149847b426e49a91e6f5cc40172c51c1106735a696a9e8f105f82537bc08"
+  },
+  {
+    "file": "public/spip-extensions.js",
+    "status": "added",
+    "sha256": "a1ebdf4b388467e7353e30a256cd4aa81a182cc812eb8a3d8a0a2089360bfc6e"
+  },
+  {
+    "file": "public/script.js",
+    "status": "modified",
+    "sha256": "8b9cbc2bf850c5426932e05d9a799e43175b2721aff7d14254da294e8e8d04f8"
+  },
+  {
+    "file": "functions/myCloudinaryHandler.js",
+    "status": "modified",
+    "sha256": "57e018afdf88f70c30c1358d430890d9076a630befcdfaf76e4fb41eeb35fcbb"
+  },
+  {
+    "file": "public/risk-templates/strategic-pa.xlsx",
+    "status": "added",
+    "sha256": "7d3639e6d8202d1912af55fa870d1e5ee8bb885786127107a153940ffb4a80cc"
+  },
+  {
+    "file": "public/risk-templates/tactical-kpa.xlsx",
+    "status": "added",
+    "sha256": "62af6e4306c225a172477d2cad51e61d29a53f59ec7417f21698440a497ea6b9"
+  },
+  {
+    "file": "public/risk-templates/operational-pptk.xlsx",
+    "status": "added",
+    "sha256": "52370e473f8ccfa14df2424913e56ec50bb7e32d9617dde03477d086c643db1d"
+  },
+  {
+    "file": "public/risk-templates/fraud.xlsx",
+    "status": "added",
+    "sha256": "74d4f2f6c308d405b35f24ad2cb5ebc3789e4a22c490a080a7f00f3a8a87815a"
+  },
+  {
+    "file": "functions/_lib/spip-extensions.js",
+    "status": "added",
+    "sha256": "e3e82175cb208c55861dadbd1e84dc287674457c92426ce5a4217585ffe24e34"
+  }
+]
