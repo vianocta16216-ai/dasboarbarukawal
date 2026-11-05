@@ -1,0 +1,11 @@
+import vm from 'node:vm';import fs from 'node:fs';import assert from 'node:assert/strict';
+import {SETDA_PARTS} from '../functions/_lib/setda.js';
+const elements=new Map();const el=id=>{if(!elements.has(id))elements.set(id,{id,innerHTML:'',textContent:'',hidden:false,disabled:false,open:true,showModal(){this.open=true;},close(){this.open=false;},remove(){elements.delete(id);},addEventListener(){}});return elements.get(id);};
+const snapshot={enabled:true,state:{lastSuccess:Date.now()},parts:SETDA_PARTS.map(p=>({...p,items:1,evidence:0,workbookUrl:''})),items:[{partName:'<img src=x onerror=alert(1)>',target:'T1',subunsur:'1.1',param_id:'1.1.1',hasil_pengujian:'<script>alert(1)</script>',grade_result:'A'}],evidence:[]};
+const sandbox={console,currentUser:{role:'opd'},currentYear:'2026',rows:[],document:{hidden:false,getElementById:el},setInterval(){},setTimeout(){},URL,Blob,callServer:async()=>snapshot};vm.createContext(sandbox);vm.runInContext(fs.readFileSync(new URL('../public/setda.js',import.meta.url),'utf8'),sandbox);
+await vm.runInContext('loadSetdaCompilation()',sandbox);
+assert.equal((el('setdaContent').innerHTML.match(/<article>/g)||[]).length,9);assert.equal(el('setdaSetup').hidden,true);assert.ok(el('setdaContent').innerHTML.includes('&lt;script&gt;'));assert.ok(!el('setdaContent').innerHTML.includes('<script>'));assert.equal(el('setdaSync').disabled,false);
+sandbox.currentUser={role:'admin'};await vm.runInContext('loadSetdaCompilation()',sandbox);assert.equal(el('setdaSetup').hidden,false);
+sandbox.callServer=async()=>{throw Error('Tes koneksi terputus');};await vm.runInContext('loadSetdaCompilation()',sandbox);assert.equal(el('setdaStatus').textContent,'Tes koneksi terputus');assert.equal(vm.runInContext('setdaUiBusy',sandbox),false);
+assert.equal(vm.runInContext("setdaLink('javascript:alert(1)','link')",sandbox),'Belum dibuat');
+console.log('PASS: 9 cards, parent/admin controls, escaped input, safe workbook links, recoverable UI network failure (VM DOM fixture).');
