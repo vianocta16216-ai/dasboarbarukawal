@@ -1,12 +1,29 @@
 /* Uses the existing authenticated API client and current year; no credentials in assets. */
 let setdaUiBusy=false;
+function setdaOwnerCanView(){
+  if(typeof currentUser==='undefined'||!currentUser)return false;
+  // The 'Pemda' account from the Excel is admin_daerah (role admin);
+  // opd_setda is the separate parent OPD account.
+  const name=String(currentUser.opdName||'').trim().toUpperCase();
+  return currentUser.role==='admin'||name==='SEKRETARIAT DAERAH'||String(currentUser.username||'').toLowerCase()==='opd_setda';
+}
 function renderSetdaEntry(){
+  const allowed=setdaOwnerCanView();
+  const nav=document.getElementById('btnSetdaPartsNav');
+  if(nav?.style)nav.style.display=allowed?'inline-flex':'none';
+  const dashboard=document.getElementById('setdaDashboardPanel');
+  if(dashboard)dashboard.hidden=!allowed;
+  const pemda=document.getElementById('pemdaSetdaPanel');
+  if(pemda)pemda.hidden=!allowed;
   let host=document.getElementById('setdaEntry');
-  const allowed=currentUser&&(currentUser.role==='admin'||rows.some(r=>String(r.opd||'').trim().toUpperCase()==='SEKRETARIAT DAERAH'));
-  if(!host){const table=document.getElementById('tableBody')?.closest('table');if(!table)return;host=document.createElement('section');host.id='setdaEntry';host.className='setda-panel';table.parentElement.before(host);}
+  if(!host){const table=document.getElementById('tableBody')?.closest('table');
+    if(table){host=document.createElement('section');host.id='setdaEntry';host.className='setda-panel';table.parentElement.before(host);}}
+  if(!host)return;
   host.hidden=!allowed;
-  if(allowed)host.innerHTML='<div><strong>Sekretariat Daerah · 9 Bagian</strong><p>Pengisian dan evidence terpisah per bagian. Hasil dihimpun berurutan dalam workbook induk.</p></div><button type="button" id="setdaOpen">Buka Kompilasi Bagian</button>';
-  document.getElementById('setdaOpen')?.addEventListener('click',openSetdaCompilation);
+  if(allowed){
+    host.innerHTML='<div><strong>Sekretariat Daerah · 9 Bagian</strong><p>9 operator bagian, dokumen dan evidence terpisah, digabung pada workbook induk Setda.</p></div><button type="button" id="setdaOpen">Buka 9 Bagian Setda</button>';
+    document.getElementById('setdaOpen')?.addEventListener('click',openSetdaCompilation);
+  }
 }
 function setdaEscape(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function setdaLink(url,label){return /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]+/.test(url||'')?`<a href="${setdaEscape(url)}" target="_blank" rel="noopener noreferrer">${setdaEscape(label)}</a>`:'Belum dibuat';}
@@ -36,7 +53,9 @@ async function loadSetdaCompilation(){
     document.getElementById('setdaWorkbook').innerHTML=state.spreadsheetId?setdaLink(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(state.spreadsheetId)}/edit`,'Buka hasil gabungan'):'';
     setdaStatus(!data.enabled?'Belum diaktifkan pada tahun ini. Super Admin dapat mengaktifkan sembilan bagian.':state.error?'Sinkronisasi perlu perhatian: '+state.error:state.busy?'Kompilasi sedang berjalan.':state.lastSuccess?'Spreadsheet terakhir diperbarui '+new Date(state.lastSuccess).toLocaleString('id-ID')+'. Pembaruan otomatis sekitar 5 menit setelah Worker aktif.':'Data aplikasi tergabung otomatis. Buat workbook induk melalui KK PM SPIP, lalu sinkronkan.');
     const parts=data.parts||[],items=data.items||[],files=data.evidence||[];
-    document.getElementById('setdaContent').innerHTML=`<div class="setda-grid">${parts.map(p=>`<article><small>BAGIAN ${String(p.order).padStart(2,'0')}</small><h3>${setdaEscape(p.name)}</h3><p>${p.items} parameter · ${p.evidence} evidence aktif</p><p>Akun: <code>${setdaEscape(p.username)}</code></p>${setdaLink(p.workbookUrl,'Buka KK PM SPIP Bagian')}</article>`).join('')}</div>${data.enabled?'<p class="setda-note">Isi melalui akun masing-masing bagian. Tab SETDA_ pada workbook induk adalah hasil kompilasi; perubahan dilakukan pada sumber bagian. Grade tiap bagian tetap ditampilkan terpisah untuk penelaahan Sekretariat Daerah.</p>':''}
+    const accountSum=data.accountSummary||{};
+    if(!data.enabled)setdaStatus(`9 bagian terdaftar pada aplikasi; kompilasi belum diaktifkan. ${accountSum.active||0}/9 akun login aktif di D1. Jalankan SQL aktivasi privat atau impor Excel melalui Super Admin.`);
+    document.getElementById('setdaContent').innerHTML=`<div class="setda-grid">${parts.map(p=>`<article><small>BAGIAN ${String(p.order).padStart(2,'0')}</small><h3>${setdaEscape(p.name)}</h3><p>${p.items} parameter · ${p.evidence} evidence aktif</p><p>Akun: <code>${setdaEscape(p.username)}</code> · <strong>${p.accountStatus==='aktif'?'Akun aktif di D1':p.accountStatus==='nonaktif'?'Akun nonaktif':'Belum ada di D1'}</strong></p>${setdaLink(p.workbookUrl,'Buka KK PM SPIP Bagian')}</article>`).join('')}</div>${data.enabled?'<p class="setda-note">Isi melalui akun masing-masing bagian. Tab SETDA_ pada workbook induk adalah hasil kompilasi; perubahan dilakukan pada sumber bagian. Grade tiap bagian tetap ditampilkan terpisah untuk penelaahan Sekretariat Daerah.</p>':''}
       <details><summary>Isian KK PM SPIP gabungan (${items.length})</summary><div class="setda-scroll"><table><thead><tr><th>Bagian</th><th>Target / Parameter</th><th>Hasil Pengujian</th><th>Grade</th><th>Catatan</th></tr></thead><tbody>${items.map(x=>`<tr><td>${setdaEscape(x.partName)}</td><td>${setdaEscape(x.target+' / '+x.subunsur+' / '+x.param_id)}</td><td>${setdaEscape(x.hasil_pengujian)}</td><td>${setdaEscape(x.grade_result)}</td><td>${setdaEscape(x.note)}</td></tr>`).join('')}</tbody></table></div></details>
       <details><summary>Evidence Struktur dan Proses gabungan (${files.length})</summary><div class="setda-scroll"><table><thead><tr><th>Bagian</th><th>Parameter</th><th>File</th><th>Salinan Drive</th><th>Verifikasi</th></tr></thead><tbody>${files.map(x=>`<tr><td>${setdaEscape(x.partName)}</td><td>${setdaEscape([x.target_code,x.subunsur,x.param_id,x.grade].join(' / '))}</td><td><a href="${setdaEscape(x.url)}" target="_blank" rel="noopener noreferrer">${setdaEscape(x.file_name)}</a></td><td>${setdaEscape(x.sync_status)}</td><td>${setdaEscape(x.verification_status||'Belum')}</td></tr>`).join('')}</tbody></table></div></details>`;
   }catch(e){setdaStatus(e.message||'Gagal memuat kompilasi.');}finally{setdaUiBusy=false;}
@@ -99,6 +118,27 @@ async function setdaSync(){
   try{setdaStatus('Membaca sembilan sumber dan memperbarui workbook induk…');const result=await callServer('syncSetdaCompilation',{year:currentYear});setdaStatus(result.message);}
   catch(e){setdaStatus(e.message);}finally{setdaUiBusy=false;button.disabled=false;}
 }
+async function loadPemdaSetdaPanel(){
+  const panel=document.getElementById('pemdaSetdaPanel');
+  if(!panel)return;
+  panel.hidden=!setdaOwnerCanView();
+  if(panel.hidden)return;
+  const summary=document.getElementById('pemdaSetdaSummary');
+  const grid=document.getElementById('pemdaSetdaGrid');
+  if(!summary||!grid)return;
+  summary.textContent='Memuat status 9 bagian dari database D1…';
+  try{
+    const data=await callServer('getSetdaCompilation',{year:currentYear});
+    if(!setdaOwnerCanView()||!document.getElementById('pemdaSetdaPanel'))return;
+    const stats=data.accountSummary||{};
+    summary.textContent=`Tahun ${currentYear} · ${stats.active||0} dari 9 akun aktif · ${stats.missing||0} belum dibuat · ${stats.disabled||0} nonaktif`;
+    grid.innerHTML=(data.parts||[]).map(p=>`<article><small>BAGIAN ${String(p.order||0).padStart(2,'0')}</small><h3>${setdaEscape(p.name)}</h3><p>Akun: <code>${setdaEscape(p.username)}</code></p><p>${p.accountStatus==='aktif'?'Akun aktif':p.accountStatus==='nonaktif'?'Akun dinonaktifkan':'Belum terdaftar di D1'} · ${Number(p.items||0)} parameter · ${Number(p.evidence||0)} evidence</p></article>`).join('');
+  }catch(e){summary.textContent='Status bagian belum dapat dimuat: '+String(e.message||e);grid.innerHTML='';}
+}
+document.getElementById('btnSetdaPartsNav')?.addEventListener('click',openSetdaCompilation);
+document.getElementById('setdaDashboardOpen')?.addEventListener('click',openSetdaCompilation);
+document.getElementById('pemdaSetdaOpen')?.addEventListener('click',openSetdaCompilation);
+document.getElementById('btnPemdaPmKk')?.addEventListener('click',()=>{void loadPemdaSetdaPanel();});
 setInterval(()=>{if(currentUser&&document.getElementById('setdaDialog')?.open&&!document.hidden)loadSetdaCompilation();if(!currentUser){document.getElementById('setdaDialog')?.remove();const entry=document.getElementById('setdaEntry');if(entry)entry.hidden=true;}},60000);
 
 if(typeof currentUser!=='undefined'&&currentUser&&typeof rows!=='undefined')renderSetdaEntry();

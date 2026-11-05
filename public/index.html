@@ -90,7 +90,7 @@
 <!-- XLSX/JSZip disajikan dari Cloudflare Pages sendiri agar lebih cepat dan stabil. -->
 <!-- Excel libraries load from local Pages assets only when exporting. -->
 
-<link rel="stylesheet" href="/preview-layout.css?v=2"><link rel="stylesheet" href="/setda.css?v=20261105">
+<link rel="stylesheet" href="/preview-layout.css?v=2"><link rel="stylesheet" href="/setda.css?v=20261105-fix2">
 </head>
 <body>
 
@@ -121,6 +121,7 @@
     <button id="btnDashboardNav" class="nav-btn light" style="display: none;">📈 Dashboard</button>
     <button id="btnOpdListNav" class="nav-btn">🏢 Daftar OPD</button>
     <button id="btnAccountManagementNav" class="nav-btn" style="display:none;">👥 Manajemen Akun</button>
+    <button id="btnSetdaPartsNav" class="nav-btn light" type="button" style="display:none;">Sekretariat Daerah · 9 Bagian</button>
     <button id="btnPemdaPmKk" class="nav-btn light" type="button" style="display:none;">📘 KK PM SPIP Pemda</button>
     <button id="btnPemdaWorkflow" class="nav-btn light" type="button" style="display:none;">🏛️ KK Pemda &amp; Sampling</button>
     
@@ -140,6 +141,10 @@
 
 <!-- ===== VIEW: DASHBOARD (KPI) ===== -->
 <div id="dashboardView" class="view-section hidden">
+  <section id="setdaDashboardPanel" class="setda-panel setda-dashboard-box" hidden>
+    <div><strong>Sekretariat Daerah · 9 Bagian</strong><p>Akses daftar operator, status aktivasi, pengisian dan evidence 9 bagian Setda secara terpisah. Tidak mengubah perhitungan 28 OPD induk.</p></div>
+    <button id="setdaDashboardOpen" type="button">Lihat 9 Bagian Setda</button>
+  </section>
   <section class="dashboard-mode-panel" aria-label="Mode penilaian SPIP">
     <div class="dashboard-mode-heading"><div><strong>Mode Tampilan Penilaian</strong><small>Pisahkan pemantauan mandiri OPD dari nilai resmi tingkat Pemerintah Daerah.</small></div><div class="dashboard-mode-actions"><button id="modeInternalBtn" class="active" type="button">📊 Monitoring Internal</button><button id="modeBpkpBtn" type="button">🏛️ Hasil Resmi BPKP</button><button id="btnBpkpOfficialInput" type="button">✍️ Input Nilai Resmi</button></div></div>
     <div id="dashboardModeBanner" class="dashboard-mode-banner internal">Menampilkan data berjalan / Self-Assessment per OPD. Nilai mandiri tidak sama dengan nilai final Pemda.</div>
@@ -187,6 +192,11 @@
     <div class="sheet-links-body">
       <div class="sheet-links-info pemda-pm-source-note"><b>Catatan sumber:</b> Workbook ini dibuat sebagai salinan tersendiri dari master KK PM SPIP yang dikonfigurasi pada server, divalidasi terhadap seluruh tab inti wajib; tab tambahan tetap dipertahankan dan tidak menautkan penyimpanan isian ke salah satu OPD. Ringkasan OPD sampling di bawah ditarik dari database aplikasi untuk tahun yang dipilih; nilai formula yang tersedia ditampilkan sebagai data sumber, bukan diubah oleh dashboard ini.</div>
       <div id="pemdaPmDashboardStatus" class="sheet-links-status" role="status" aria-live="polite">Memuat dashboard Pemda...</div>
+      <section id="pemdaSetdaPanel" class="setda-pemda-panel" hidden>
+        <div class="setda-pemda-heading"><div><h4>9 Bagian Sekretariat Daerah</h4><p>Daftar operator bagian dan evidence masing-masing, dihimpun pada akun induk Setda. Status login diambil dari D1.</p></div><button id="pemdaSetdaOpen" type="button">Kelola / Lihat Kompilasi</button></div>
+        <div id="pemdaSetdaSummary" class="setda-pemda-summary" role="status" aria-live="polite">Memuat 9 bagian...</div>
+        <div id="pemdaSetdaGrid" class="setda-grid"></div>
+      </section>
       <div id="pemdaPmDashboardSummary" class="pemda-pm-dashboard-summary"></div>
       <section class="pemda-pm-workbook-panel">
         <div class="pemda-pm-workbook-heading"><div><span class="pemda-pm-kicker">WORKBOOK PEMDA TERSENDIRI</span><h4 id="pemdaPmWorkbookName">KK PM SPIP Pemda belum dibuat</h4><p id="pemdaPmWorkbookMeta">Gunakan master spreadsheet KK PM SPIP yang sudah dipakai aplikasi.</p></div><div class="pemda-pm-workbook-actions"><button id="pemdaPmWorkbookRefresh" type="button">↻ Muat Ulang</button><button id="pemdaPmWorkbookCreate" class="primary" type="button" hidden>＋ Buat dari Master</button><button id="pemdaPmWorkbookSync" type="button" hidden>↻ Sinkronkan Master</button><button id="pemdaPmWorkbookOpen" class="primary" type="button" hidden>↗ Buka KK PM SPIP Pemda</button></div></div>
@@ -795,5 +805,5 @@
 </div>
 <script defer src="/preview-advanced.js?v=2"></script>
 <script src="/evidence-preview.js?v=20261103-preview-layout-v2" defer></script>
-<script src="/script.js?v=20261105-setda-v1" defer></script>
-<script src="/setda.js?v=20261105-login-repair-v2" defer></script>
+<script src="/script.js?v=20261105-setda-fix2" defer></script>
+<script src="/setda.js?v=20261105-login-pemda-fix3" defer></script>
