@@ -2,6 +2,7 @@ import {
   runSetdaCompilationSchedule,
   runEvidencePeriodSchedule,
   getGoogleDriveConfigurationStatus,
+  probeGoogleDriveWorkerOAuthHealth,
   dispatchDueDriveBackupJobs,
   drainDriveBackupQueue,
   processDriveBackupQueueMessage,
@@ -50,6 +51,9 @@ export default {
   },
 
   async scheduled(_event, env, ctx) {
+    // Independent OAuth heartbeat: failure or expired token is visible in D1
+    // to ALL signed-in Pages accounts. This never stores secrets in D1.
+    ctx.waitUntil(probeGoogleDriveWorkerOAuthHealth(env).catch(e=>console.error('Google Drive Worker health:',e.code||'unavailable')));
     ctx.waitUntil(runEvidencePeriodSchedule(env).catch(e=>console.error("Evidence lintas tahun:",e.message)));
     ctx.waitUntil(runSetdaCompilationSchedule(env).catch(e=>console.error("SETDA scheduler:",e.message)));
     ctx.waitUntil((async () => {
