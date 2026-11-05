@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {ensureExtensionsSchema,registerEvidencePeriod,processEvidencePeriods,riskWorkbookAction} from '../functions/_lib/spip-extensions.js';
+const db=new DatabaseSync(':memory:');
+const DB={prepare(sql){return {sql,args:[],bind(...args){return {...this,args};},async first(){return db.prepare(this.sql).get(...this.args)||null;},async all(){return {results:db.prepare(this.sql).all(...this.args)};},async run(){return {meta:{changes:Number(db.prepare(this.sql).run(...this.args).changes)}};}};},async batch(qs){const out=[];for(const q of qs)out.push(await q.run());return out;}};
+db.exec(`CREATE TABLE opd_data(id TEXT PRIMARY KEY,opd TEXT,year TEXT,subunsurs TEXT);CREATE TABLE years(year TEXT PRIMARY KEY);CREATE TABLE auth_users(opd_ids_json TEXT);INSERT INTO auth_users VALUES('["source"]');
+CREATE TABLE evidence_upload_registry(upload_id TEXT PRIMARY KEY,year TEXT,opd_id TEXT,subunsur TEXT,param_id TEXT,level TEXT,type TEXT,r2_key TEXT,sync_status TEXT,created_at INTEGER,updated_at INTEGER,evidence_key TEXT,source_model TEXT,target_code TEXT,grade TEXT);
+CREATE TABLE opd_workbook_evidence_items(upload_id TEXT PRIMARY KEY,year TEXT,opd_id TEXT,evidence_key TEXT,target_code TEXT,subunsur TEXT,param_id TEXT,grade TEXT,level INTEGER,file_name TEXT,file_type TEXT,r2_key TEXT,sync_status TEXT,created_at INTEGER,updated_at INTEGER,verification_status TEXT DEFAULT '');
+INSERT INTO opd_data VALUES('source','BPKAD','2026','{}');INSERT INTO opd_data VALUES('existing-2028','BPKAD','2028','{}');`);
+const objects=new Map(),queued=[],targets=[];
+const env={DB,EVIDENCE_BUCKET:{async head(key){return objects.has(key)?{}:null;},async get(key){return objects.has(key)?{body:objects.get(key)}:null;}}};
+await ensureExtensionsSchema(env);await ensureExtensionsSchema(env);
+const source={type:'workbook_evidence',uploadId:'upload-a',year:'2026',opdId:'source',opdName:'BPKAD',r2Key:'kawal_spip/2026/BPKAD/Evidence/Unsur/Sub/Param/T2/Level_5/a.pdf',fileName:'a.pdf',fileType:'application/pdf',evidenceKey:'T2|1.1|1.1.1',targetCode:'T2',subunsur:'1.1',paramId:'1.1.1',grade:'A',level:5};
+db.prepare('INSERT INTO evidence_upload_registry(upload_id,opd_id,year) VALUES(?,?,?)').run(source.uploadId,source.opdId,source.year);
+await assert.rejects(registerEvidencePeriod(env,source,2031));await registerEvidencePeriod(env,source,2030);await registerEvidencePeriod(env,source,2030);assert.equal(db.prepare('SELECT COUNT(*) n FROM evidence_period_jobs').get().n,1);await assert.rejects(registerEvidencePeriod(env,source,2029));
+let failAt2028=true;
+const api={async target(e,y,id,t){targets.push([y,id,t]);assert.equal(t,'T2');},async editable(){},async put(e,key,bytes){objects.set(key,bytes);},async metadata(){},async queue(e,c,j){if(failAt2028&&j.year==='2028')throw new Error('temporary queue failure');queued.push(j);}};
+await processEvidencePeriods(env,api);assert.equal(queued.length,0,'missing source cannot fan out');
+objects.set(source.r2Key,new Uint8Array([1,2,3]));await processEvidencePeriods(env,api);
+assert.equal(db.prepare('SELECT next_year FROM evidence_period_jobs').get().next_year,2028);
+failAt2028=false;await processEvidencePeriods(env,api);await processEvidencePeriods(env,api);
+assert.equal(db.prepare('SELECT status FROM evidence_period_jobs').get().status,'done');assert.equal(queued.length,4);assert.equal(db.prepare('SELECT COUNT(*) n FROM opd_workbook_evidence_items').get().n,4);
+assert.equal(queued.find(j=>j.year==='2028').opdId,'existing-2028');assert.ok(JSON.parse(db.prepare('SELECT opd_ids_json FROM auth_users').get().opd_ids_json).includes('existing-2028'));
+for(const j of queued){assert.match(j.r2Key,new RegExp('/'+j.year+'/'));assert.equal(j.grade,'A');assert.equal(j.evidenceKey,source.evidenceKey);assert.equal(j.gdriveId,null);assert.deepEqual(objects.get(j.r2Key),objects.get(source.r2Key));assert.equal(db.prepare('SELECT verification_status FROM opd_workbook_evidence_items WHERE upload_id=?').get(j.uploadId).verification_status,'');}
+await Promise.all(Array.from({length:20},(_,i)=>DB.prepare('INSERT OR IGNORE INTO sk_satgas_slots(year,opd_id,upload_id) VALUES(?,?,?)').bind('2026','source','slot-'+i).run()));assert.equal(db.prepare('SELECT COUNT(*) n FROM sk_satgas_slots').get().n,1);
+const headers=new Headers({'content-type':'application/json'}),request=new Request('https://test.local/myCloudinaryHandler');
+let imports=0,patches=0;const drive=new Map();
+env.GOOGLE_DRIVE_FOLDER_ID='root';env.ASSETS={async fetch(){return new Response(new Uint8Array(200));}};
+const riskApi={async token(){return 'mock';},async folder(t,p,n){return p+'-'+n;},async driveFile(t,id){return drive.get(id);},async put(){},async fetch(url,options){if(url.includes('/upload/')){imports++;const id='sheet'+imports;drive.set(id,{id,trashed:false});return new Response(JSON.stringify({id}),{headers});}if(url.includes('/values:')){patches++;return new Response('{}',{headers});}return new Response('{"files":[]}',{headers});}};
+for(const kind of ['rr_pa','fraud_pa','rr_kpa','fraud_kpa','rr_pptk','fraud_pptk']){const p={opdId:'source',year:'2026',kind};const first=await riskWorkbookAction(env,request,p,'createRiskWorkbook',riskApi);const again=await riskWorkbookAction(env,request,p,'createRiskWorkbook',riskApi);assert.equal(first.workbook.id,again.workbook.id);const get=await riskWorkbookAction(env,request,p,'getRiskWorkbook',riskApi);assert.equal(get.workbook.id,first.workbook.id);}
+assert.equal(imports,6);assert.equal(patches,6);await assert.rejects(riskWorkbookAction(env,request,{opdId:'source',year:'2026',kind:'injected'},'createRiskWorkbook',riskApi));
+console.log('PASS: 2026–2030 copies, scoped target/grade, existing-year OPD mapping, no inherited verification, missing-R2 deferral, failure/retry recovery, idempotency, 20 competing SK claims, six distinct workbook imports, repeat-click reuse, template identity updates. Google/R2 calls mocked.');
