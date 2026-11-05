@@ -13,6 +13,7 @@ export async function ensureExtensionsSchema(env){
   const job=(async()=>{
     await env.DB.batch([
       env.DB.prepare("CREATE TABLE IF NOT EXISTS risk_workbooks(year TEXT NOT NULL,opd_id TEXT NOT NULL,kind TEXT NOT NULL,drive_id TEXT,lease_until INTEGER NOT NULL DEFAULT 0,lease_owner TEXT,PRIMARY KEY(year,opd_id,kind))"),
+      env.DB.prepare("CREATE TABLE IF NOT EXISTS kk_spreadsheet_leases(year TEXT NOT NULL,opd_id TEXT NOT NULL,kind TEXT NOT NULL,lease_until INTEGER NOT NULL DEFAULT 0,lease_owner TEXT,PRIMARY KEY(year,opd_id,kind))"),
       env.DB.prepare("CREATE TABLE IF NOT EXISTS evidence_period_jobs(source_id TEXT PRIMARY KEY,job_json TEXT NOT NULL,end_year INTEGER NOT NULL,next_year INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'pending',error TEXT,lease_until INTEGER NOT NULL DEFAULT 0)"),
       env.DB.prepare('CREATE TABLE IF NOT EXISTS sk_satgas_slots(year TEXT NOT NULL,opd_id TEXT NOT NULL,upload_id TEXT NOT NULL,PRIMARY KEY(year,opd_id))')
     ]);
@@ -24,41 +25,105 @@ export async function ensureExtensionsSchema(env){
 }
 function clean(v){return String(v||'').replace(/[\\/:*?"<>|#%{}]/g,' ').replace(/\s+/g,' ').trim().slice(0,100);}
 async function checked(response){if(!response.ok)throw new Error(`Google Drive/Sheets (${response.status}): ${(await response.text()).slice(0,300)}`);return response.json();}
+// Confirm that a saved ID is not only accessible, but still lives under the
+// designated (non-trashed) Google Drive folder hierarchy. Trashing a parent
+// folder does not always mark every child file as "trashed" in Drive metadata.
+async function inspectRiskWorkbook(api,token,id,rootId,year,opdName,kindLabel){
+  if(!id)return {valid:false,reason:'Spreadsheet belum dibuat.'};
+  const file=await api.driveFile(token,id);
+  if(!file||file.trashed)return {valid:false,reason:'File Google Spreadsheet sebelumnya sudah dihapus atau berada di Sampah Google Drive.'};
+  if(file.mimeType!=='application/vnd.google-apps.spreadsheet')return {valid:false,reason:'ID lama bukan file Google Spreadsheet.'};
+  const path=[kindLabel,clean(opdName),String(year),'Kertas Kerja Spreadsheet'];
+  let parentId=Array.isArray(file.parents)?file.parents[0]:null;
+  for(const name of path){
+    if(!parentId)return {valid:false,reason:'Folder penyimpanan Spreadsheet sebelumnya tidak lengkap.'};
+    const parent=await api.driveFile(token,parentId);
+    if(!parent||parent.trashed||parent.mimeType!=='application/vnd.google-apps.folder'||parent.name!==name)
+      return {valid:false,reason:'Folder Spreadsheet telah dihapus, dipindah, atau tidak sesuai lokasi penyimpanan.'};
+    parentId=Array.isArray(parent.parents)?parent.parents[0]:null;
+  }
+  if(parentId!==String(rootId||''))return {valid:false,reason:'Spreadsheet berada di luar folder Google Drive aplikasi.'};
+  return {valid:true,file};
+}
+function riskWorkbookLink(id){return {id,url:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/edit`};}
 export async function riskWorkbookAction(env,request,params,action,api){
   const kind=String(params.kind||''),spec=RISK_TYPES[kind],year=String(params.year),opdId=String(params.opdId||'');
   if(!spec||!/^\d{4}$/.test(year)||!opdId)throw new Error('Jenis kertas kerja, OPD, atau tahun tidak valid.');
-  const opd=await env.DB.prepare('SELECT opd FROM opd_data WHERE id=? AND year=?').bind(opdId,year).first();if(!opd)throw new Error('OPD tidak ditemukan.');
-  let rec=await env.DB.prepare('SELECT drive_id FROM risk_workbooks WHERE year=? AND opd_id=? AND kind=?').bind(year,opdId,kind).first();
-  if(action==='getRiskWorkbook')return {workbook:rec?.drive_id?{id:rec.drive_id,url:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(rec.drive_id)}/edit`}:null,template:`/risk-templates/${spec.file}`,label:spec.label};
-  const owner=crypto.randomUUID();await env.DB.prepare('INSERT OR IGNORE INTO risk_workbooks(year,opd_id,kind) VALUES(?,?,?)').bind(year,opdId,kind).run();
-  const claim=await env.DB.prepare('UPDATE risk_workbooks SET lease_until=?,lease_owner=? WHERE year=? AND opd_id=? AND kind=? AND lease_until<?').bind(Date.now()+240000,owner,year,opdId,kind,Date.now()).run();
-  if(!claim.meta?.changes)throw new Error('Kertas kerja sedang dibuat oleh permintaan lain. Muat ulang beberapa saat lagi.');
+  const opd=await env.DB.prepare('SELECT opd FROM opd_data WHERE id=? AND year=?').bind(opdId,year).first();
+  if(!opd)throw new Error('OPD tidak ditemukan.');
+  const keyParams=[year,opdId,kind],rootId=String(env.GOOGLE_DRIVE_FOLDER_ID||'').trim();
+  const record=await env.DB.prepare('SELECT drive_id FROM risk_workbooks WHERE year=? AND opd_id=? AND kind=?').bind(...keyParams).first();
+  if(action==='getRiskWorkbook'){
+    if(!record?.drive_id)return {workbook:null,needsRecreate:false,template:`/risk-templates/${spec.file}`,label:spec.label};
+    // Fail closed on a transient Google API/credentials error: do not silently
+    // mark an inaccessible file as deleted or offer to create a duplicate.
+    const token=await api.token(env);
+    const inspection=await inspectRiskWorkbook(api,token,record.drive_id,rootId,year,opd.opd,spec.label);
+    return {workbook:inspection.valid?riskWorkbookLink(record.drive_id):null,
+      needsRecreate:!inspection.valid,reason:inspection.valid?'':inspection.reason,
+      template:`/risk-templates/${spec.file}`,label:spec.label};
+  }
+  if(action!=='createRiskWorkbook')throw new Error('Aksi kertas kerja tidak dikenal.');
+  // One lease per OPD + year + risk type. The lock is acquired before reading
+  // the current ID so two requests cannot both use a stale database snapshot.
+  const owner=crypto.randomUUID();
+  await env.DB.prepare('INSERT OR IGNORE INTO risk_workbooks(year,opd_id,kind) VALUES(?,?,?)').bind(...keyParams).run();
+  const now=Date.now();
+  const claim=await env.DB.prepare('UPDATE risk_workbooks SET lease_until=?,lease_owner=? WHERE year=? AND opd_id=? AND kind=? AND lease_until<?')
+    .bind(now+240000,owner,...keyParams,now).run();
+  if(!claim.meta?.changes)throw new Error('Pembuatan spreadsheet sedang berjalan untuk OPD/jenis ini. Muat Ulang sesudah proses selesai; jangan mengklik berulang.');
   try{
-    const token=await api.token(env);let id=rec?.drive_id;
-    if(id){const prior=await api.driveFile(token,id);if(prior&&!prior.trashed)return {workbook:{id,url:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/edit`},label:spec.label};id=null;}
-    let folder=await api.folder(token,env.GOOGLE_DRIVE_FOLDER_ID,'Kertas Kerja Spreadsheet');folder=await api.folder(token,folder,year);folder=await api.folder(token,folder,clean(opd.opd));folder=await api.folder(token,folder,spec.label);
-    // Recover a completed Drive import if its response was lost before D1 was updated.
+    const token=await api.token(env);
+    const latest=await env.DB.prepare('SELECT drive_id FROM risk_workbooks WHERE year=? AND opd_id=? AND kind=?').bind(...keyParams).first();
+    const previousId=String(latest?.drive_id||'');
+    if(previousId){
+      const inspection=await inspectRiskWorkbook(api,token,previousId,rootId,year,opd.opd,spec.label);
+      if(inspection.valid)return {workbook:riskWorkbookLink(previousId),label:spec.label,syncDisposition:'reused'};
+    }
+    // Force-recheck cached folder IDs. The user may have just deleted an entire
+    // nested Drive folder, even within the regular 60-second folder cache TTL.
+    let folder=await api.folder(token,rootId,'Kertas Kerja Spreadsheet',{forceCheck:true});
+    folder=await api.folder(token,folder,year,{forceCheck:true});
+    folder=await api.folder(token,folder,clean(opd.opd),{forceCheck:true});
+    folder=await api.folder(token,folder,spec.label,{forceCheck:true});
     const identity=`risk:${year}:${opdId}:${kind}`;
-    const q=`'${folder}' in parents and trashed=false and appProperties has { key='kawalRiskKey' and value='${identity.replace(/'/g,"\\'")}' }`;
-    const existing=await checked(await api.fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=10`,{headers:{Authorization:`Bearer ${token}`}}));
-    id=existing.files?.[0]?.id;
+    const q=`'${folder}' in parents and trashed=false and mimeType='application/vnd.google-apps.spreadsheet' and appProperties has { key='kawalRiskKey' and value='${identity.replace(/'/g,"\\'")}' }`;
+    const query=new URLSearchParams({q,fields:'nextPageToken,files(id,mimeType,trashed,parents)',pageSize:'100',supportsAllDrives:'true',includeItemsFromAllDrives:'true'});
+    const existing=await checked(await api.fetch(`https://www.googleapis.com/drive/v3/files?${query.toString()}`,{headers:{Authorization:`Bearer ${token}`}}));
+    // Recover a prior successful import whose response/DB update was lost. Only
+    // accept a live file at the intended location, never an arbitrary stale ID.
+    let id=null;
+    for(const candidate of (existing.files||[])){
+      if(!candidate?.id)continue;
+      const inspection=await inspectRiskWorkbook(api,token,candidate.id,rootId,year,opd.opd,spec.label);
+      if(inspection.valid){id=candidate.id;break;}
+    }
     if(!id){
-      const assetUrl=new URL(`/risk-templates/${spec.file}`,request.url);const asset=env.ASSETS?.fetch?await env.ASSETS.fetch(assetUrl):await fetch(assetUrl);
+      const assetUrl=new URL(`/risk-templates/${spec.file}`,request.url);
+      const asset=env.ASSETS?.fetch?await env.ASSETS.fetch(assetUrl):await fetch(assetUrl);
       if(!asset.ok)throw new Error('Template Excel belum tersedia. Upload folder public/risk-templates terlebih dahulu.');
-      const bytes=await asset.arrayBuffer();if(bytes.byteLength<100||bytes.byteLength>10*1024*1024)throw new Error('Ukuran template tidak valid.');
+      const bytes=await asset.arrayBuffer();
+      if(bytes.byteLength<100||bytes.byteLength>10*1024*1024)throw new Error('Ukuran template tidak valid.');
       await api.put(env,`kawal_spip/${year}/${clean(opd.opd)}/Kertas Kerja Risiko/${kind}/template.xlsx`,bytes,{httpMetadata:{contentType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}});
       const boundary='kawal_'+crypto.randomUUID();
       const metadata={name:`${opd.opd} - ${spec.label} - ${year}`,parents:[folder],mimeType:'application/vnd.google-apps.spreadsheet',appProperties:{kawalRiskKey:identity}};
       const body=new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n\r\n`,bytes,`\r\n--${boundary}--`]);
-      const created=await checked(await api.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':`multipart/related; boundary=${boundary}`},body},{retries:0}));id=created.id;
+      const created=await checked(await api.fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':`multipart/related; boundary=${boundary}`},body},{retries:0}));
+      id=created.id;
     }
     if(!id)throw new Error('Google Drive tidak mengembalikan ID workbook.');
-    // Preserve every original sheet, format, formula, and validation. Only identity cells change.
+    // Preserve all original sheets, formulas and validation. Only identity
+    // fields from the original implementation are changed.
     const data=spec.role?[{range:"'Risiko Fraud'!A2",values:[[`${opd.opd} | TAHUN ANGGARAN ${year}`]]},{range:"'Risiko Fraud'!A3",values:[[`${spec.role}: [NAMA PEJABAT TERKAIT] | NIP. [NOMOR NIP PEJABAT TERKAIT]`]]}]:kind==='rr_kpa'?[{range:"'RR PROGRAM FORMAT KPA'!D7",values:[[': '+opd.opd]]},{range:"'RR PROGRAM FORMAT KPA'!D8",values:[[': '+year]]}]:kind==='rr_pptk'?[{range:"'RR PROGRAM'!D6",values:[[': '+opd.opd]]},{range:"'RR PROGRAM'!D7",values:[[': '+year]]}]:[{range:"'RR STRATEGIS FORMAT PA'!B3",values:[['Nama PA']]},{range:"'RR STRATEGIS FORMAT PA'!D5",values:[[': '+opd.opd]]},{range:"'RR STRATEGIS FORMAT PA'!D6",values:[[': '+year]]}];
     if(data.length)await checked(await api.fetch(`https://sheets.googleapis.com/v4/spreadsheets/${id}/values:batchUpdate`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({valueInputOption:'RAW',data})}));
-    await env.DB.prepare('UPDATE risk_workbooks SET drive_id=? WHERE year=? AND opd_id=? AND kind=? AND lease_owner=?').bind(id,year,opdId,kind,owner).run();
-    return {workbook:{id,url:`https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/edit`},label:spec.label};
-  }finally{await env.DB.prepare('UPDATE risk_workbooks SET lease_until=0 WHERE year=? AND opd_id=? AND kind=? AND lease_owner=?').bind(year,opdId,kind,owner).run();}
+    const written=await env.DB.prepare('UPDATE risk_workbooks SET drive_id=? WHERE year=? AND opd_id=? AND kind=? AND lease_owner=?')
+      .bind(id,...keyParams,owner).run();
+    if(!written.meta?.changes)throw new Error('Proses berganti pemilik sebelum tautan spreadsheet tersimpan; muat ulang untuk memulihkan tautannya.');
+    return {workbook:riskWorkbookLink(id),label:spec.label,syncDisposition:'created'};
+  }finally{
+    await env.DB.prepare('UPDATE risk_workbooks SET lease_until=0,lease_owner=NULL WHERE year=? AND opd_id=? AND kind=? AND lease_owner=?')
+      .bind(...keyParams,owner).run();
+  }
 }
 export async function registerEvidencePeriod(env,job,end){
   const first=Number(job.year),last=Number(end||first);
