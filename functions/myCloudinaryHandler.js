@@ -3632,6 +3632,7 @@ async function handleRequest({ request, env, ctx }) {
         }
         if(SETDA_PARTS.some(part=>!submitted.has(part.username)))throw new Error('Semua 9 akun Setda harus ada di Excel.');
         await ensureSetdaSchema(env);
+        await ensureDefaultMahuluOpds(env,year);
         // Only the already existing, unique Setda parent is allowed. No new
         // top-level OPD, and no other role/account, is created by this repair.
         const parents=(await env.DB.prepare("SELECT id,opd FROM opd_data WHERE year=? AND UPPER(TRIM(opd))='SEKRETARIAT DAERAH'").bind(year).all()).results||[];
@@ -3701,15 +3702,31 @@ async function handleRequest({ request, env, ctx }) {
         // All accounts + activation commit together. Existing passwords are never reset.
         statements.push(env.DB.prepare('INSERT INTO setda_compilation_state(year,parent_id) VALUES(?,?) ON CONFLICT(year) DO UPDATE SET parent_id=excluded.parent_id').bind(year,parents[0].id));
         await env.DB.batch(statements);await ensureSetdaParts(env,year);
-        return jsonResponse({status:'success',message:'Sembilan bagian diaktifkan. Simpan daftar akun yang baru dibuat.',credentials});
+        return jsonResponse({status:'success',message:'Penyimpanan 9 bagian siap. Password acak dari aktivasi bukan password Excel. Gunakan impor Excel agar sesuai daftar 41 akun.',credentials});
       }
       case 'getSetdaCompilation': {
+        // Always show the nine departments to the Pemda admin and the Setda parent,
+        // even before a one-time D1 credential migration or Excel import has run.
+        // This read-only view does NOT implicitly create users or passwords.
         await ensureSetdaSchema(env);
-        if(!await mayManageSetda(env,authSession,year))return jsonResponse({status:'error',message:'Kompilasi hanya dapat dibuka oleh akun induk atau pengawas berwenang.'},403);
+        await ensureDefaultMahuluOpds(env,year);
+        if(!await mayManageSetda(env,authSession,year))return jsonResponse({status:'error',message:'Kompilasi hanya dapat dibuka oleh Super Admin Daerah atau akun induk Sekretariat Daerah.'},403);
         const snap=await setdaSnapshot(env,year);
-        return jsonResponse({status:'success',enabled:snap.enabled,state:snap.state?{lastSuccess:snap.state.last_success,lastAttempt:snap.state.last_attempt,error:snap.state.last_error,busy:snap.state.lease_until>Date.now(),spreadsheetId:snap.state.spreadsheet_id}:null,
-          parts:snap.parts.map(p=>({code:p.code,name:p.name,order:p.order,id:p.id,username:p.username,workbookUrl:workbookOf(p.row).workbookUrl||'',items:snap.items.filter(x=>x.partOrder===p.order).length,evidence:snap.evidence.filter(x=>x.partOrder===p.order).length})),
-          items:snap.items,evidence:snap.evidence.map(x=>({...x,url:privateEvidenceUrl(year,x.opd_id,x.upload_id)}))});
+        const accountRows=(await env.DB.prepare(`SELECT username_key,enabled FROM auth_users WHERE username_key IN (${SETDA_PARTS.map(()=>'?').join(',')})`)
+          .bind(...SETDA_PARTS.map(p=>p.username)).all()).results||[];
+        const byAccount=new Map(accountRows.map(a=>[String(a.username_key).toLowerCase(),Number(a.enabled)===1]));
+        const parts=SETDA_PARTS.map(p=>{
+          const row=snap.parts.find(x=>x.code===p.code);
+          return {code:p.code,name:p.name,order:p.order,id:partId(year,p.code),username:p.username,
+            accountStatus:!byAccount.has(p.username)?'belum_dibuat':byAccount.get(p.username)?'aktif':'nonaktif',
+            workbookUrl:workbookOf(row?.row).workbookUrl||'',items:snap.items.filter(x=>x.partCode===p.code).length,
+            evidence:snap.evidence.filter(x=>x.partCode===p.code).length};
+        });
+        return jsonResponse({status:'success',enabled:snap.enabled,
+          accountSummary:{active:parts.filter(p=>p.accountStatus==='aktif').length,disabled:parts.filter(p=>p.accountStatus==='nonaktif').length,
+            missing:parts.filter(p=>p.accountStatus==='belum_dibuat').length,total:9},
+          state:snap.state?{lastSuccess:snap.state.last_success,lastAttempt:snap.state.last_attempt,error:snap.state.last_error,busy:snap.state.lease_until>Date.now(),spreadsheetId:snap.state.spreadsheet_id}:null,
+          parts,items:snap.items,evidence:snap.evidence.map(x=>({...x,url:privateEvidenceUrl(year,x.opd_id,x.upload_id)}))});
       }
       case 'syncSetdaCompilation': {
         await ensureSetdaSchema(env);
