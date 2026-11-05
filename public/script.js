@@ -1164,6 +1164,7 @@ document.getElementById('btnLogout')?.addEventListener('click',async()=>{
   authEpoch++;apiReadRequests.clear();
   try{await callServer('logout',{});}catch(e){console.warn('Logout server:',e.message);}
   closeRealtimeSocket();currentUser=null;opdUnlocked=false;appInitializedAfterAuth=false;rows=[];
+  document.getElementById('setdaDialog')?.remove();document.getElementById('setdaEntry')?.remove();
   const pemdaNav=document.getElementById('btnPemdaWorkflow');if(pemdaNav)pemdaNav.style.display='none';
   const pemdaPmNav=document.getElementById('btnPemdaPmKk');if(pemdaPmNav)pemdaPmNav.style.display='none';
   const accountNav=document.getElementById('btnAccountManagementNav');if(accountNav)accountNav.style.display='none';
@@ -1498,6 +1499,7 @@ function getAssessmentEvidenceScopeSummary(row){
 // ====== RENDER TABEL ======
 // PERUBAHAN KEAMANAN: GANTI FUNGSI RENDER DENGAN VERSI YANG MENGGUNAKAN escapeHtml
 function render() {
+  if(typeof renderSetdaEntry==='function')renderSetdaEntry();
   const tbody = document.getElementById('tableBody');
   const empty = document.getElementById('emptyState');
   if (!Array.isArray(rows)) {
