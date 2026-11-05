@@ -99,6 +99,119 @@ function assessmentAllowedTargets(value){
   if(profile==='INSPEKTORAT')return ['T1','T4'];
   return ['T1'];
 }
+// Rekap Hasil QA APIP authoritative: satu nilai per file aktif dari KK3.1–KK3.4,
+// mengikuti cakupan OPD/tahun dan file yang benar-benar tersimpan (R2 key).
+// Formula hasil: SUM(score)/jumlah file wajib QA * 100%. Tidak merombak nilai Grade.
+const QA_APIP_SOURCE_LOCATIONS = new Map(Object.entries({"SP-1_1-1-T1":["1.1","1.1.1",["T1"]],"SP-1_1-1-T2":["1.1","1.1.1",["T2"]],"SP-1_1-1-T3":["1.1","1.1.1",["T3"]],"SP-1_1-1-T4":["1.1","1.1.1",["T4"]],"SP-1_1-2-T4":["1.1","1.1.2",["T4"]],"SP-1_1-3-T4":["1.1","1.1.3",["T4"]],"SP-1_1-4-T4":["1.1","1.1.4",["T4"]],"SP-1_1-5-T4":["1.1","1.1.5",["T4"]],"SP-1_1-6-T4":["1.1","1.1.6",["T4"]],"SP-1_1-7-T4":["1.1","1.1.7",["T4"]],"SP-1_1-8-T4":["1.1","1.1.8",["T4"]],"SP-1_2-1":["1.2","1.2.1",["T1","T4"]],"SP-1_2-1-T2":["1.2","1.2.1",["T2"]],"SP-1_2-1-T3":["1.2","1.2.1",["T3"]],"SP-1_3-1-T1":["1.3","1.3.1",["T1"]],"SP-1_3-1-T2":["1.3","1.3.1",["T2"]],"SP-1_3-1-T3":["1.3","1.3.1",["T3"]],"SP-1_3-1-T4":["1.3","1.3.1",["T4"]],"SP-1_3-2":["1.3","1.3.2",["T1","T2","T3","T4"]],"SP-1_3-3":["1.3","1.3.3",["T1","T2","T3","T4"]],"SP-1_3-4":["1.3","1.3.4",["T1","T2","T3","T4"]],"SP-1_3-5-T4":["1.3","1.3.5",["T4"]],"SP-1_3-6-T4":["1.3","1.3.6",["T4"]],"SP-1_3-7-T4":["1.3","1.3.7",["T4"]],"SP-1_4-1-T1":["1.4","1.4.1",["T1"]],"SP-1_4-1-T2":["1.4","1.4.1",["T2"]],"SP-1_4-1-T3":["1.4","1.4.1",["T3"]],"SP-1_4-1-T4":["1.4","1.4.1",["T4"]],"SP-1_5-1-T1":["1.5","1.5.1",["T1"]],"SP-1_5-1-T2":["1.5","1.5.1",["T2"]],"SP-1_5-1-T3":["1.5","1.5.1",["T3"]],"SP-1_5-1-T4":["1.5","1.5.1",["T4"]],"SP-1_6-1-T1":["1.6","1.6.1",["T1"]],"SP-1_6-1-T2":["1.6","1.6.1",["T2"]],"SP-1_6-1-T3":["1.6","1.6.1",["T3"]],"SP-1_6-1-T4":["1.6","1.6.1",["T4"]],"SP-1_6-2":["1.6","1.6.2",["T1","T2","T3","T4"]],"SP-1_6-3":["1.6","1.6.3",["T1","T2","T3","T4"]],"SP-1_7-1":["1.7","1.7.1",["T1","T2","T3","T4"]],"SP-1_8-1-T1":["1.8","1.8.1",["T1"]],"SP-1_8-1-T2":["1.8","1.8.1",["T2"]],"SP-1_8-1-T3":["1.8","1.8.1",["T3"]],"SP-1_8-1-T4":["1.8","1.8.1",["T4"]],"SP-1_8-2":["1.8","1.8.2",["T1","T2","T3","T4"]],"SP-2_1-1":["2.1","2.1.1",["T1","T2","T3","T4"]],"SP-2_1-2":["2.1","2.1.2",["T1","T2","T3","T4"]],"SP-2_1-3":["2.1","2.1.3",["T1","T2","T3","T4"]],"SP-2_2-1":["2.2","2.2.1",["T1","T2","T3","T4"]],"SP-2_2-2":["2.2","2.2.2",["T1","T2","T3","T4"]],"SP-2_2-3":["2.2","2.2.3",["T1","T2","T3","T4"]],"SP-2_2-4":["2.2","2.2.4",["T1","T2","T3","T4"]],"SP-2_2-5":["2.2","2.2.5",["T1","T2","T3","T4"]],"SP-2_2-6-T4":["2.2","2.2.6",["T4"]],"SP-3_1-1":["3.1","3.1.1",["T1","T4"]],"SP-3_1-1-T2":["3.1","3.1.1",["T2"]],"SP-3_1-1-T3":["3.1","3.1.1",["T3"]],"SP-3_10-1":["3.10","3.10.1",["T1","T4"]],"SP-3_10-1-T3":["3.10","3.10.1",["T3"]],"SP-3_11-1":["3.11","3.11.1",["T1","T4"]],"SP-3_11-1-T2":["3.11","3.11.1",["T2"]],"SP-3_11-1-T3":["3.11","3.11.1",["T3"]],"SP-3_2-1-T1":["3.2","3.2.1",["T1"]],"SP-3_2-1-T2":["3.2","3.2.1",["T2"]],"SP-3_2-1-T3":["3.2","3.2.1",["T3"]],"SP-3_2-1-T4":["3.2","3.2.1",["T4"]],"SP-3_3-1-T1":["3.3","3.3.1",["T1"]],"SP-3_3-1-T2":["3.3","3.3.1",["T2"]],"SP-3_3-1-T3":["3.3","3.3.1",["T3"]],"SP-3_3-1-T4":["3.3","3.3.1",["T4"]],"SP-3_4-1-T1":["3.4","3.4.1",["T1"]],"SP-3_4-1-T2":["3.4","3.4.1",["T2"]],"SP-3_4-1-T3":["3.4","3.4.1",["T3"]],"SP-3_4-1-T4":["3.4","3.4.1",["T4"]],"SP-3_5-1-T1":["3.5","3.5.1",["T1"]],"SP-3_5-1":["3.5","3.5.1",["T2","T3"]],"SP-3_5-1-T4":["3.5","3.5.1",["T4"]],"SP-3_6-1":["3.6","3.6.1",["T1","T4"]],"SP-3_6-1-T2":["3.6","3.6.1",["T2"]],"SP-3_6-1-T3":["3.6","3.6.1",["T3"]],"SP-3_7-1":["3.7","3.7.1",["T1","T4"]],"SP-3_7-1-T2":["3.7","3.7.1",["T2"]],"SP-3_7-1-T3":["3.7","3.7.1",["T3"]],"SP-3_8-1":["3.8","3.8.1",["T1","T4"]],"SP-3_8-1-T2":["3.8","3.8.1",["T2"]],"SP-3_8-1-T3":["3.8","3.8.1",["T3"]],"SP-3_9-1":["3.9","3.9.1",["T1","T4"]],"SP-3_9-1-T2":["3.9","3.9.1",["T2"]],"SP-3_9-1-T3":["3.9","3.9.1",["T3"]],"SP-4_1-1-T1":["4.1","4.1.1",["T1"]],"SP-4_1-1-T2":["4.1","4.1.1",["T2"]],"SP-4_1-1-T3":["4.1","4.1.1",["T3"]],"SP-4_1-1-T4":["4.1","4.1.1",["T4"]],"SP-4_1-2":["4.1","4.1.2",["T1","T2","T3","T4"]],"SP-4_1-3":["4.1","4.1.3",["T1","T2","T3","T4"]],"SP-4_1-4":["4.1","4.1.4",["T1","T2","T3","T4"]],"SP-4_1-5-T4":["4.1","4.1.5",["T4"]],"SP-4_2-1-T1":["4.2","4.2.1",["T1"]],"SP-4_2-1-T2":["4.2","4.2.1",["T2"]],"SP-4_2-1-T3":["4.2","4.2.1",["T3"]],"SP-4_2-1-T4":["4.2","4.2.1",["T4"]],"SP-5_1-1-T1":["5.1","5.1.1",["T1"]],"SP-5_1-1-T2":["5.1","5.1.1",["T2"]],"SP-5_1-1-T3":["5.1","5.1.1",["T3"]],"SP-5_1-1-T4":["5.1","5.1.1",["T4"]],"SP-5_1-2":["5.1","5.1.2",["T1","T2","T3","T4"]],"SP-5_1-3":["5.1","5.1.3",["T1","T2","T3","T4"]],"SP-5_2-1-T1":["5.2","5.2.1",["T1"]],"SP-5_2-1-T2":["5.2","5.2.1",["T2"]],"SP-5_2-1-T3":["5.2","5.2.1",["T3"]],"SP-5_2-1-T4":["5.2","5.2.1",["T4"]],"SP-5_2-2":["5.2","5.2.2",["T1","T2","T3","T4"]]}));
+function qaApipFileSummaryFromRows(evidenceRows,itemRows,bindingRows,reviewRows,opdRows){
+  const scope=new Map((opdRows||[]).map(row=>[String(row.id),{
+    targets:new Set(assessmentAllowedTargets(row.opd)),
+    summary:{total:0,checked:0,evaluated:0,na:0,pending:0,pass:0,partial:0,fail:0,sum:0,percentage:0,completion:0,evidenceFiles:0,scopeFiles:0,templateTotal:671,status:'Belum'}
+  }]));
+  const grouped=new Map(),fileSeen=new Set();
+  const keyFor=(opd,sub,param,grade)=>[opd,sub,param,grade].join('|');
+  for(const row of evidenceRows||[]){
+    const opd=String(row.opd_id||''),uid=String(row.upload_id||'');
+    const entry=scope.get(opd);
+    if(!entry||!uid||!String(row.r2_key||'').trim()||!String(row.file_name||'').trim())continue;
+    const unique=opd+'|'+uid;if(fileSeen.has(unique))continue;fileSeen.add(unique);
+    entry.summary.evidenceFiles++;
+    const source=QA_APIP_SOURCE_LOCATIONS.get(String(row.evidence_key||'').trim().toUpperCase());
+    const legacy=String(row.evidence_key||'').trim().match(/^SP-(\d+)_(\d+)-(\d+)-(T[1-4])$/i);
+    const sub=String(source?.[0]||row.subunsur||(legacy?legacy[1]+'.'+legacy[2]:'' )).replace(/\s+/g,'').trim();
+    let param=String(source?.[1]||row.param_id||(legacy?legacy[1]+'.'+legacy[2]+'.'+legacy[3]:'' )).replace(/\s+/g,'').trim();
+    param=param.replace(/^(\d+(?:\.\d+)*)-(\d+)$/,'$1.$2');
+    if(/^\d+$/.test(param)&&sub)param=sub+'.'+param;
+    const grade=String(row.grade||({1:'E',2:'D',3:'C',4:'B',5:'A'})[Number(row.level)]||'').trim().toUpperCase();
+    let targets=source?.[2]||[];
+    if(!targets.length&&legacy)targets=[legacy[4].toUpperCase()];
+    if(!targets.length&&/^T[1-4]$/.test(String(row.target_code||'').toUpperCase()))targets=[String(row.target_code).toUpperCase()];
+    if(!targets.length&&entry.targets.size===1&&sub&&param)targets=[...entry.targets];
+    if(!sub||!param||!['A','B','C','D','E'].includes(grade)||!targets.some(code=>entry.targets.has(code)))continue;
+    const k=keyFor(opd,sub,param,grade);
+    if(!grouped.has(k))grouped.set(k,[]);
+    grouped.get(k).push({uid,createdAt:Number(row.created_at||0),fileName:String(row.file_name||''),target:targets[0]||''});
+    entry.summary.total++;
+  }
+  const itemsByGroup=new Map(),itemsByLocation=new Map();
+  for(const row of itemRows||[]){
+    const opd=String(row.opd_id||'');if(!scope.has(opd))continue;
+    const sub=String(row.subunsur||''),param=String(row.param_id||''),grade=String(row.grade||'').toUpperCase();
+    const k=keyFor(opd,sub,param,grade),location=k+'|'+Number(row.item_no||0);
+    itemsByLocation.set(location,row);
+    if(!itemsByGroup.has(k))itemsByGroup.set(k,[]);
+    itemsByGroup.get(k).push(row);
+  }
+  const bindingByFile=new Map(),reservedLocations=new Set();
+  for(const row of bindingRows||[]){
+    const opd=String(row.opd_id||'');if(!scope.has(opd))continue;
+    const k=keyFor(opd,row.subunsur,row.param_id,String(row.grade||'').toUpperCase());
+    const location=k+'|'+Number(row.item_no||0);
+    bindingByFile.set(opd+'|'+String(row.upload_id||''),{k,location});reservedLocations.add(location);
+  }
+  const reviewByFile=new Map();
+  for(const row of reviewRows||[]){
+    const opd=String(row.opd_id||'');if(scope.has(opd))reviewByFile.set(opd+'|'+String(row.upload_id||''),row);
+  }
+  const counted=new Set();
+  const addState=(entry,state)=>{
+    const s=entry.summary;
+    if(String(state?.availability||'')==='N/A'){s.na++;return;}
+    if(!state)return;
+    const score=calculateQaApipScore({availability:state.availability,validity:state.validity,periodOk:state.period_ok,substance:state.substance});
+    if(score===null||score===undefined)return;
+    s.evaluated++;s.sum+=score;
+    if(score===1)s.pass++;else if(score===0.5)s.partial++;else s.fail++;
+  };
+  for(const [k,files] of grouped){
+    const opd=k.split('|')[0],entry=scope.get(opd);if(!entry)continue;
+    const targetOrder={T1:1,T2:2,T3:3,T4:4};
+    files.sort((a,b)=>(targetOrder[a.target]||9)-(targetOrder[b.target]||9)
+      ||a.createdAt-b.createdAt||a.fileName.localeCompare(b.fileName,'id'));
+    // Legacy scores without file bindings are not deleted. Match them only to
+    // unbound files at the same OPD/subunsur/parameter/grade, like the browser.
+    const freeLegacy=(itemsByGroup.get(k)||[]).filter(row=>
+      !reservedLocations.has(k+'|'+Number(row.item_no||0))&&
+      (row.availability||row.identity_doc||row.validity||row.period_ok||row.substance||row.note)
+    ).sort((a,b)=>Number(a.item_no)-Number(b.item_no));
+    for(const file of files){
+      const uidKey=opd+'|'+file.uid;
+      if(counted.has(uidKey))continue;counted.add(uidKey);
+      const bound=bindingByFile.get(uidKey);
+      if(bound){addState(entry,bound.k===k?itemsByLocation.get(bound.location):null);continue;}
+      const review=reviewByFile.get(uidKey);
+      if(review){addState(entry,review);continue;}
+      addState(entry,freeLegacy.shift());
+    }
+  }
+  const summaries=new Map();
+  for(const [opd,entry] of scope){
+    const s=entry.summary;
+    s.sum=Math.round(s.sum*10000)/10000;s.scopeFiles=s.total;
+    s.checked=s.evaluated+s.na;s.pending=Math.max(0,s.total-s.checked);
+    s.percentage=s.total?Math.round(Math.min(s.total,s.sum)/s.total*10000)/100:0;
+    s.completion=s.total?Math.round(Math.min(s.total,s.checked)/s.total*10000)/100:0;
+    s.status=s.total&&s.checked>=s.total?'Selesai':s.checked?'Proses':'Belum';
+    summaries.set(opd,s);
+  }
+  return summaries;
+}
+async function qaApipFileSummaryForOpd(env,year,opdId){
+  const identity=await env.DB.prepare('SELECT id,opd FROM opd_data WHERE year=? AND id=? LIMIT 1').bind(String(year),String(opdId)).first();
+  if(!identity)throw new Error('OPD tidak ditemukan pada tahun ini.');
+  const [evidence,items,bindings,reviews]=await env.DB.batch([
+    env.DB.prepare(`SELECT opd_id,upload_id,evidence_key,target_code,subunsur,param_id,grade,level,file_name,r2_key,created_at
+      FROM opd_workbook_evidence_items WHERE year=? AND opd_id=?`).bind(String(year),String(opdId)),
+    env.DB.prepare(`SELECT opd_id,subunsur,param_id,grade,item_no,availability,identity_doc,validity,period_ok,substance,note
+      FROM opd_qa_apip_items WHERE year=? AND opd_id=?`).bind(String(year),String(opdId)),
+    env.DB.prepare(`SELECT opd_id,subunsur,param_id,grade,item_no,upload_id FROM opd_qa_apip_file_bindings
+      WHERE year=? AND opd_id=?`).bind(String(year),String(opdId)),
+    env.DB.prepare(`SELECT opd_id,upload_id,availability,validity,period_ok,substance FROM opd_qa_apip_file_reviews
+      WHERE year=? AND opd_id=?`).bind(String(year),String(opdId))
+  ]);
+  return qaApipFileSummaryFromRows(evidence.results,items.results,bindings.results,reviews.results,[identity]).get(String(opdId));
+}
+
 async function assertAssessmentTargetAllowed(env,year,opdId,target){
   const code=String(target||'').toUpperCase();
   const row=(await env.DB.prepare('SELECT opd FROM opd_data WHERE id=? AND year=? LIMIT 1').bind(String(opdId||''),String(year)).all()).results?.[0];
@@ -4594,16 +4707,6 @@ async function handleRequest({ request, env, ctx }) {
         const scopeSql=scoped?' AND opd_id IN (SELECT value FROM json_each(?))':'';
         const scopeArgs=scoped?[String(year),JSON.stringify(results.map(r=>String(r.id)))]:[String(year)];
         const levelStatement=env.DB.prepare(`SELECT opd_id,subunsur,param_id,level FROM opd_parameter_levels_v2 WHERE year=?${scopeSql}`).bind(...scopeArgs);
-        const qaSummaryStatement=env.DB.prepare(`
-          SELECT opd_id,
-                 SUM(CASE WHEN score IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_items,
-                 SUM(CASE WHEN availability='N/A' THEN 1 ELSE 0 END) AS na_items,
-                 COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) AS sum_score,
-                 SUM(CASE WHEN score=1 THEN 1 ELSE 0 END) AS pass_items,
-                 SUM(CASE WHEN score=0.5 THEN 1 ELSE 0 END) AS partial_items,
-                 SUM(CASE WHEN score=0 THEN 1 ELSE 0 END) AS fail_items
-          FROM opd_qa_apip_items WHERE year=?${scopeSql} GROUP BY opd_id
-        `).bind(...scopeArgs);
         const kkPmSummaryStatement=env.DB.prepare(`
           SELECT opd_id,target,
                  COUNT(*) AS evaluated_items,
@@ -4638,14 +4741,21 @@ async function handleRequest({ request, env, ctx }) {
         `).bind(...scopeArgs);
         // One batched read supplies the authoritative status/level source for every OPD.
         // Do not derive the reported score from self-selected parameter levels.
-        const verifiedEvidenceStatement=env.DB.prepare(`SELECT opd_id,upload_id,subunsur,param_id,level,verification_status,verification_at,updated_at,r2_key,file_name
+        const verifiedEvidenceStatement=env.DB.prepare(`SELECT opd_id,upload_id,evidence_key,target_code,subunsur,param_id,grade,level,created_at,verification_status,verification_at,updated_at,r2_key,file_name
           FROM opd_workbook_evidence_items WHERE year=?${scopeSql}
           ORDER BY opd_id,upload_id`).bind(...scopeArgs);
-        const [levelRows,qaSummaryRows,kkPmSummaryRows,workbookEvidenceSummaryRows,verifiedEvidenceQuery]=await env.DB.batch([
-          levelStatement,qaSummaryStatement,kkPmSummaryStatement,workbookEvidenceSummaryStatement,verifiedEvidenceStatement
+        const qaItemStatement=env.DB.prepare(`SELECT opd_id,subunsur,param_id,grade,item_no,availability,identity_doc,validity,period_ok,substance,note
+          FROM opd_qa_apip_items WHERE year=?${scopeSql}`).bind(...scopeArgs);
+        const qaBindingStatement=env.DB.prepare(`SELECT opd_id,subunsur,param_id,grade,item_no,upload_id
+          FROM opd_qa_apip_file_bindings WHERE year=?${scopeSql}`).bind(...scopeArgs);
+        const qaReviewStatement=env.DB.prepare(`SELECT opd_id,upload_id,availability,validity,period_ok,substance
+          FROM opd_qa_apip_file_reviews WHERE year=?${scopeSql}`).bind(...scopeArgs);
+        const [levelRows,kkPmSummaryRows,workbookEvidenceSummaryRows,verifiedEvidenceQuery,qaItemRows,qaBindingRows,qaReviewRows]=await env.DB.batch([
+          levelStatement,kkPmSummaryStatement,workbookEvidenceSummaryStatement,verifiedEvidenceStatement,
+          qaItemStatement,qaBindingStatement,qaReviewStatement
         ]);
-        const qaSummaryMap=new Map();
-        for(const q of (qaSummaryRows.results||[])) qaSummaryMap.set(String(q.opd_id),q);
+        const qaSummaryMap=qaApipFileSummaryFromRows(verifiedEvidenceQuery.results||[],qaItemRows.results||[],
+          qaBindingRows.results||[],qaReviewRows.results||[],results);
         const kkPmSummaryMap=new Map();
         for(const q of (kkPmSummaryRows.results||[])){
           const key=String(q.opd_id);if(!kkPmSummaryMap.has(key))kkPmSummaryMap.set(key,[]);kkPmSummaryMap.get(key).push(q);
@@ -4706,18 +4816,18 @@ async function handleRequest({ request, env, ctx }) {
           const wb=workbookEvidenceSummaryMap.get(String(r.id));
           const qaEvidenceFiles=Number(wb?.total_files||0);
           const q=qaSummaryMap.get(String(r.id));
-          const qaEvaluated=Number(q?.evaluated_items||0);
-          const qaNa=Number(q?.na_items||0);
-          const qaSum=Number(q?.sum_score||0);
-          const qaPass=Number(q?.pass_items||0);
-          const qaPartial=Number(q?.partial_items||0);
-          const qaFail=Number(q?.fail_items||0);
-          const qaTotalItems=671;
+          const qaEvaluated=Number(q?.evaluated||0);
+          const qaNa=Number(q?.na||0);
+          const qaSum=Number(q?.sum||0);
+          const qaPass=Number(q?.pass||0);
+          const qaPartial=Number(q?.partial||0);
+          const qaFail=Number(q?.fail||0);
+          const qaTotalItems=Number(q?.total||0);
           const qaChecked=qaEvaluated+qaNa;
           const qaPending=Math.max(0,qaTotalItems-qaChecked);
-          const qaPercentage=qaEvaluated?Math.round((qaSum/qaEvaluated)*10000)/100:0;
-          const qaCompletion=Math.round((qaChecked/qaTotalItems)*10000)/100;
-          const qaStatus=qaCompletion>=100?'Selesai':(qaChecked>0?'Proses':'Belum');
+          const qaPercentage=Number(q?.percentage||0);
+          const qaCompletion=Number(q?.completion||0);
+          const qaStatus=String(q?.status||'Belum');
           const pmRows=kkPmSummaryMap.get(String(r.id))||[];
           const pmScope=new Set(assessmentAllowedTargets(r.opd));
           const pmScopedRows=pmRows.filter(item=>pmScope.has(String(item.target||'').toUpperCase()));
@@ -4731,7 +4841,7 @@ async function handleRequest({ request, env, ctx }) {
           let computedWorkbook={}; try{computedWorkbook=r.computed_workbook_data?JSON.parse(r.computed_workbook_data):{};}catch{computedWorkbook={};}
           const cv=computedWorkbook?.values||{};
           const n=(v)=>{const x=Number(v); return Number.isFinite(x)&&x>0?x:null;};
-          return{...r,skSatgasReports:parseJsonArray(r.sk_satgas_reports),subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,evaluated:qaEvaluated,na:qaNa,pass:qaPass,partial:qaPartial,fail:qaFail,pending:qaPending,sum:qaSum,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus,targets:[...pmScope]},nilaiStrukturProses:verifiedStructureBreakdown.value,sa:verifiedStructureBreakdown.value,strukturProsesStatus:strukturStatus,structureProcessBreakdown:verifiedStructureBreakdown,computedWorkbook, nilaiMaturitas:n(cv.nilaiMaturitas),nilaiMRI:n(cv.mri),nilaiIEPK:n(cv.iepk),nilaiKapabilitasApip:n(cv.nilaiKapabilitasApip),mri:n(cv.mri),iepk:n(cv.iepk),workbookEvidenceSummary:{totalFiles:Number(wb?.total_files||0),evidenceGroups:Number(wb?.evidence_groups||0),verifiedFiles:Number(wb?.verified_files||0),reviewedFiles:Number(wb?.reviewed_files||0),withNotesFiles:Number(wb?.with_notes_files||0),returnedFiles:Number(wb?.returned_files||0),syncedFiles:Number(wb?.synced_files||0),targetStats:{T1:{groups:Number(wb?.groups_t1||0),files:Number(wb?.files_t1||0),verifiedFiles:Number(wb?.verified_t1||0)},T2:{groups:Number(wb?.groups_t2||0),files:Number(wb?.files_t2||0),verifiedFiles:Number(wb?.verified_t2||0)},T3:{groups:Number(wb?.groups_t3||0),files:Number(wb?.files_t3||0),verifiedFiles:Number(wb?.verified_t3||0)},T4:{groups:Number(wb?.groups_t4||0),files:Number(wb?.files_t4||0),verifiedFiles:Number(wb?.verified_t4||0)}}}};
+          return{...r,skSatgasReports:parseJsonArray(r.sk_satgas_reports),subunsurs,parameterLevels,totalParameterLevels:totalParams,selectedParameterLevels:selected,sumParameterLevels:sumLevels,kkData,kkPmData,kkRtpData,rtpEvidence,rtpEvidenceFolder:r.rtp_evidence_folder||'Evidence RTP',pmSpipReports,pmSpipFolder:r.pm_spip_folder||'Laporan Hasil PM SPIP',pmSpipFolderId:r.pm_spip_folder_id||null,rrRtpReports,rrRtpFolder:r.rr_rtp_folder||'Laporan Pemantauan RR_RTP',rrRtpFolderId:r.rr_rtp_folder_id||null,qaApip:qaStatus,qaApipSummary:{total:qaTotalItems,checked:qaChecked,evaluated:qaEvaluated,na:qaNa,pass:qaPass,partial:qaPartial,fail:qaFail,pending:qaPending,sum:qaSum,percentage:qaPercentage,completion:qaCompletion,evidenceFiles:qaEvidenceFiles,scopeFiles:qaTotalItems,templateTotal:671,status:qaStatus},kkPmSummary:{total:pmTotalItems,evaluated:pmEvaluated,na:0,pending:pmPending,sum:pmSum,percentage:pmCompletion,completion:pmCompletion,avgLevel:pmAvgLevel,status:pmStatus,targets:[...pmScope]},nilaiStrukturProses:verifiedStructureBreakdown.value,sa:verifiedStructureBreakdown.value,strukturProsesStatus:strukturStatus,structureProcessBreakdown:verifiedStructureBreakdown,computedWorkbook, nilaiMaturitas:n(cv.nilaiMaturitas),nilaiMRI:n(cv.mri),nilaiIEPK:n(cv.iepk),nilaiKapabilitasApip:n(cv.nilaiKapabilitasApip),mri:n(cv.mri),iepk:n(cv.iepk),workbookEvidenceSummary:{totalFiles:Number(wb?.total_files||0),evidenceGroups:Number(wb?.evidence_groups||0),verifiedFiles:Number(wb?.verified_files||0),reviewedFiles:Number(wb?.reviewed_files||0),withNotesFiles:Number(wb?.with_notes_files||0),returnedFiles:Number(wb?.returned_files||0),syncedFiles:Number(wb?.synced_files||0),targetStats:{T1:{groups:Number(wb?.groups_t1||0),files:Number(wb?.files_t1||0),verifiedFiles:Number(wb?.verified_t1||0)},T2:{groups:Number(wb?.groups_t2||0),files:Number(wb?.files_t2||0),verifiedFiles:Number(wb?.verified_t2||0)},T3:{groups:Number(wb?.groups_t3||0),files:Number(wb?.files_t3||0),verifiedFiles:Number(wb?.verified_t3||0)},T4:{groups:Number(wb?.groups_t4||0),files:Number(wb?.files_t4||0),verifiedFiles:Number(wb?.verified_t4||0)}}}};
         });
         if(scoreRefreshCandidates.length && ctx?.waitUntil && Date.now()-lastLegacyScoreRepairAt>120000){
           // Limit opportunistic writes to one batch per isolate per two minutes.
@@ -5671,8 +5781,11 @@ async function handleRequest({ request, env, ctx }) {
             .bind(String(year),opdId,uploadId,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,now).run();
         }
         const item={uploadId,subunsur:sub,paramId:param,grade,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now};
-        notifyRealtime(env,ctx,year,{action:'saveQaApipFileReview',opdId,uploadId,item});
-        return jsonResponse({status:'success',item});
+        const summary=await qaApipFileSummaryForOpd(env,year,opdId);
+        await env.DB.prepare("UPDATE opd_data SET qa_apip=? WHERE id=? AND year=?")
+          .bind(summary.status,opdId,String(year)).run();
+        notifyRealtime(env,ctx,year,{action:'saveQaApipFileReview',opdId,uploadId,item,summary});
+        return jsonResponse({status:'success',item,summary});
       }
 
       case 'saveQaApipItem': {
@@ -5721,24 +5834,9 @@ async function handleRequest({ request, env, ctx }) {
               String(year),opdId,subunsur,paramId,grade,itemNo,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,now
             ).run();
         }
-        const q=await env.DB.prepare(`SELECT COUNT(*) AS stored_items,
-              SUM(CASE WHEN score IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_items,
-              SUM(CASE WHEN availability='N/A' THEN 1 ELSE 0 END) AS na_items,
-              COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) AS sum_score,
-              SUM(CASE WHEN score=1 THEN 1 ELSE 0 END) AS pass_items,
-              SUM(CASE WHEN score=0.5 THEN 1 ELSE 0 END) AS partial_items,
-              SUM(CASE WHEN score=0 THEN 1 ELSE 0 END) AS fail_items
-          FROM opd_qa_apip_items WHERE year=? AND opd_id=?`).bind(String(year),opdId).all();
-        const qr=q.results?.[0]||{}; const evaluated=Number(qr.evaluated_items||0); const na=Number(qr.na_items||0); const sum=Number(qr.sum_score||0); const total=671;
-        const pending=Math.max(0,total-evaluated-na);
-        const percentage=evaluated?Math.round((sum/evaluated)*10000)/100:0;
-        const completion=Math.round(((evaluated+na)/total)*10000)/100;
-        const pass=Number(qr.pass_items||0),partial=Number(qr.partial_items||0),fail=Number(qr.fail_items||0);
-        const evidenceCount=await env.DB.prepare("SELECT COUNT(DISTINCT upload_id) AS n FROM opd_workbook_evidence_items WHERE year=? AND opd_id=? AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>''").bind(String(year),opdId).first();
-        const evidenceFiles=Number(evidenceCount?.n||0),checked=evaluated+na;
-        const qaStatus=completion>=100?'Selesai':(checked>0?'Proses':'Belum');
-        await env.DB.prepare("UPDATE opd_data SET qa_apip=? WHERE id=? AND year=?").bind(qaStatus,opdId,String(year)).run();
-        const summary={total,evaluated,na,checked,pass,partial,fail,pending,sum,percentage,completion,evidenceFiles,status:qaStatus};
+        const summary=await qaApipFileSummaryForOpd(env,year,opdId);
+        await env.DB.prepare("UPDATE opd_data SET qa_apip=? WHERE id=? AND year=?")
+          .bind(summary.status,opdId,String(year)).run();
         notifyRealtime(env,ctx,year,{action:'saveQaApipItem',opdId,subunsur,paramId,grade,itemNo,item:{subunsur,paramId,grade,itemNo,fileUploadId,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now},summary});
         return jsonResponse({status:'success',item:{subunsur,paramId,grade,itemNo,fileUploadId,availability,identityDoc,validity,periodOk,substance,note,score,conclusion,examinerName,updatedAt:now},summary});
       }
@@ -5747,24 +5845,9 @@ async function handleRequest({ request, env, ctx }) {
         const opdId=String(params.opdId||''); const subunsur=String(params.subunsur||''); const paramId=String(params.paramId||''); const grade=String(params.grade||'').toUpperCase(); const itemNo=Number(params.itemNo);
         if(!opdId || !validQaItemLocation(subunsur,paramId,grade,itemNo)) throw new Error('Identitas item QA APIP tidak valid.');
         await env.DB.prepare("DELETE FROM opd_qa_apip_items WHERE year=? AND opd_id=? AND subunsur=? AND param_id=? AND grade=? AND item_no=?").bind(String(year),opdId,subunsur,paramId,grade,itemNo).run();
-        const q=await env.DB.prepare(`SELECT
-              SUM(CASE WHEN score IS NOT NULL THEN 1 ELSE 0 END) AS evaluated_items,
-              SUM(CASE WHEN availability='N/A' THEN 1 ELSE 0 END) AS na_items,
-              COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) AS sum_score,
-              SUM(CASE WHEN score=1 THEN 1 ELSE 0 END) AS pass_items,
-              SUM(CASE WHEN score=0.5 THEN 1 ELSE 0 END) AS partial_items,
-              SUM(CASE WHEN score=0 THEN 1 ELSE 0 END) AS fail_items
-          FROM opd_qa_apip_items WHERE year=? AND opd_id=?`).bind(String(year),opdId).all();
-        const qr=q.results?.[0]||{}; const evaluated=Number(qr.evaluated_items||0); const na=Number(qr.na_items||0); const sum=Number(qr.sum_score||0); const total=671;
-        const pending=Math.max(0,total-evaluated-na);
-        const percentage=evaluated?Math.round((sum/evaluated)*10000)/100:0;
-        const completion=Math.round(((evaluated+na)/total)*10000)/100;
-        const pass=Number(qr.pass_items||0),partial=Number(qr.partial_items||0),fail=Number(qr.fail_items||0);
-        const evidenceCount=await env.DB.prepare("SELECT COUNT(DISTINCT upload_id) AS n FROM opd_workbook_evidence_items WHERE year=? AND opd_id=? AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>''").bind(String(year),opdId).first();
-        const evidenceFiles=Number(evidenceCount?.n||0),checked=evaluated+na;
-        const qaStatus=completion>=100?'Selesai':(checked>0?'Proses':'Belum');
-        await env.DB.prepare("UPDATE opd_data SET qa_apip=? WHERE id=? AND year=?").bind(qaStatus,opdId,String(year)).run();
-        const summary={total,evaluated,na,checked,pass,partial,fail,pending,sum,percentage,completion,evidenceFiles,status:qaStatus};
+        const summary=await qaApipFileSummaryForOpd(env,year,opdId);
+        await env.DB.prepare("UPDATE opd_data SET qa_apip=? WHERE id=? AND year=?")
+          .bind(summary.status,opdId,String(year)).run();
         notifyRealtime(env,ctx,year,{action:'deleteQaApipItem',opdId,subunsur,paramId,grade,itemNo,deleted:true,summary});
         return jsonResponse({status:'success',summary});
       }
