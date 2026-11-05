@@ -13,11 +13,13 @@ function setdaLink(url,label){return /^https:\/\/docs\.google\.com\/spreadsheets
 function setdaDialog(){
   let dialog=document.getElementById('setdaDialog');if(dialog)return dialog;
   dialog=document.createElement('dialog');dialog.id='setdaDialog';dialog.className='setda-dialog';
-  dialog.innerHTML='<header><div><h2>Kompilasi Sekretariat Daerah</h2><p id="setdaYear"></p></div><button type="button" id="setdaClose">Tutup</button></header><div class="setda-actions"><button id="setdaSetup" type="button">Aktifkan 9 Bagian</button><button id="setdaReload" type="button">Muat Ulang</button><button id="setdaSync" type="button">Sinkronkan Spreadsheet Induk</button><span id="setdaWorkbook"></span></div><p id="setdaStatus" role="status" aria-live="polite"></p><div id="setdaCredentials"></div><div id="setdaContent"></div>';
+  dialog.innerHTML='<header><div><h2>Kompilasi Sekretariat Daerah</h2><p id="setdaYear"></p></div><button type="button" id="setdaClose">Tutup</button></header><div class="setda-actions"><button id="setdaSetup" type="button">Aktifkan 9 Bagian</button><button id="setdaImportAccounts" type="button">Perbaiki Login dari Excel (9 Akun)</button><input id="setdaImportFile" type="file" accept=".xlsx" hidden><button id="setdaReload" type="button">Muat Ulang</button><button id="setdaSync" type="button">Sinkronkan Spreadsheet Induk</button><span id="setdaWorkbook"></span></div><p id="setdaStatus" role="status" aria-live="polite"></p><div id="setdaCredentials"></div><div id="setdaContent"></div>';
   document.body.append(dialog);
   document.getElementById('setdaClose').onclick=()=>dialog.close();
   document.getElementById('setdaReload').onclick=()=>loadSetdaCompilation();
   document.getElementById('setdaSetup').onclick=()=>setdaSetup();
+  document.getElementById('setdaImportAccounts').onclick=()=>{if(currentUser?.role==='admin')document.getElementById('setdaImportFile').click();};
+  document.getElementById('setdaImportFile').addEventListener('change',setdaImportFromExcel);
   document.getElementById('setdaSync').onclick=()=>setdaSync();return dialog;
 }
 function setdaStatus(message){document.getElementById('setdaStatus').textContent=message;}
@@ -27,6 +29,7 @@ async function loadSetdaCompilation(){
   try{
     setdaStatus('Memuat data bagian…');const data=await callServer('getSetdaCompilation',{year:currentYear});
     document.getElementById('setdaSetup').hidden=currentUser?.role!=='admin';
+    document.getElementById('setdaImportAccounts').hidden=currentUser?.role!=='admin';
     document.getElementById('setdaSetup').textContent=data.enabled?'Periksa/Aktifkan Akun yang Belum Ada':'Aktifkan 9 Bagian';
     document.getElementById('setdaSync').disabled=!data.enabled;
     const state=data.state||{};
@@ -37,6 +40,45 @@ async function loadSetdaCompilation(){
       <details><summary>Isian KK PM SPIP gabungan (${items.length})</summary><div class="setda-scroll"><table><thead><tr><th>Bagian</th><th>Target / Parameter</th><th>Hasil Pengujian</th><th>Grade</th><th>Catatan</th></tr></thead><tbody>${items.map(x=>`<tr><td>${setdaEscape(x.partName)}</td><td>${setdaEscape(x.target+' / '+x.subunsur+' / '+x.param_id)}</td><td>${setdaEscape(x.hasil_pengujian)}</td><td>${setdaEscape(x.grade_result)}</td><td>${setdaEscape(x.note)}</td></tr>`).join('')}</tbody></table></div></details>
       <details><summary>Evidence Struktur dan Proses gabungan (${files.length})</summary><div class="setda-scroll"><table><thead><tr><th>Bagian</th><th>Parameter</th><th>File</th><th>Salinan Drive</th><th>Verifikasi</th></tr></thead><tbody>${files.map(x=>`<tr><td>${setdaEscape(x.partName)}</td><td>${setdaEscape([x.target_code,x.subunsur,x.param_id,x.grade].join(' / '))}</td><td><a href="${setdaEscape(x.url)}" target="_blank" rel="noopener noreferrer">${setdaEscape(x.file_name)}</a></td><td>${setdaEscape(x.sync_status)}</td><td>${setdaEscape(x.verification_status||'Belum')}</td></tr>`).join('')}</tbody></table></div></details>`;
   }catch(e){setdaStatus(e.message||'Gagal memuat kompilasi.');}finally{setdaUiBusy=false;}
+}
+async function setdaImportFromExcel(event){
+  const file=event?.target?.files?.[0];
+  if(event?.target)event.target.value='';
+  if(!file||setdaUiBusy||currentUser?.role!=='admin')return;
+  if(!/\.xlsx$/i.test(file.name)||file.size>2*1024*1024){setdaStatus('Pilih file Excel .xlsx daftar 41 akun (maksimal 2 MB).');return;}
+  setdaUiBusy=true;
+  const btn=document.getElementById('setdaImportAccounts');if(btn)btn.disabled=true;
+  let accounts=[];
+  try{
+    setdaStatus('Memvalidasi 9 username/password dari Excel di perangkat Anda…');
+    // XLSX is an existing, locally hosted asset. The workbook bytes are never
+    // transferred to our servers, only 9 selected credentials via authenticated TLS.
+    const XLSX=await ensureExportLibrary('XLSX');
+    const workbook=XLSX.read(new Uint8Array(await file.arrayBuffer()),{type:'array',cellFormula:false});
+    const sheet=workbook.Sheets['Daftar Akun'];
+    if(!sheet)throw new Error('Sheet "Daftar Akun" tidak ditemukan dalam Excel.');
+    const data=XLSX.utils.sheet_to_json(sheet,{header:1,defval:'',raw:false});
+    const expected=['setda_hukum','setda_ekonomi_sda','setda_adbang','setda_organisasi','setda_prokopim','setda_pemerintahan','setda_kesra','setda_pbj','setda_umum'];
+    const found=new Map();
+    for(const row of data){
+      const username=String(row[3]||'').trim().toLowerCase();
+      if(!expected.includes(username))continue;
+      if(found.has(username))throw new Error('Username duplikat pada Excel: '+username);
+      const password=String(row[4]||'');
+      if(password.length<16||password.length>256)throw new Error('Password '+username+' harus 16–256 karakter.');
+      found.set(username,password);
+    }
+    if(expected.some(username=>!found.has(username)))throw new Error('Excel tidak memuat lengkap kesembilan username Setda.');
+    accounts=expected.map(username=>({username,password:found.get(username)}));
+    if(!window.confirm('Perbarui password 9 akun SETDA pada database Cloudflare D1 sesuai Excel ini? Hanya 9 akun bagian yang berubah. Semua sesi lama dari 9 akun akan diputus.'))return;
+    setdaStatus('Menyinkronkan password terenkripsi dan akses 9 bagian ke Cloudflare D1…');
+    const result=await callServer('repairSetdaAccounts',{year:currentYear,accounts});
+    setdaStatus(result.message+' Akun diperbarui: '+result.updated+'; akun dibuat: '+result.created+'. Silakan lakukan uji login.');
+  }catch(e){setdaStatus(e.message||'Impor akun gagal.');}
+  finally{
+    accounts=[];setdaUiBusy=false;if(btn)btn.disabled=false;
+    // Do not retain passwords in localStorage, app state or visible DOM.
+  }
 }
 async function setdaSetup(){
   if(setdaUiBusy)return;setdaUiBusy=true;const button=document.getElementById('setdaSetup');button.disabled=true;
