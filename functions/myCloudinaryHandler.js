@@ -467,7 +467,7 @@ const COMMON_READ_ACTIONS = new Set(['getSetdaCompilation',
   'getKkPmDataDetailed','getKkRpjmdMappings','getQaApipData','getQaApipChecklistData','getEvidenceWorkflow','previewEvidence','createEvidencePreviewLink','downloadEvidence',
   'getBpkpOfficialScore','exportKkPmWorkbook','getLheFollowups','getPemdaWorkflow','getPemdaWorkflowAudit','getPemdaKkPmWorkbook','getPemdaWorkbookEvidenceFiles','downloadPemdaEvidence','previewPemdaEvidence'
 ]);
-const ADMIN_ONLY_ACTIONS = new Set(['setupSetda',
+const ADMIN_ONLY_ACTIONS = new Set(['setupSetda','repairSetdaAccounts',
   'addOpd','deleteOpd','addYear','deleteYear','createBackup','restoreBackup','deleteBackup',
   'deleteYear','saveAssessmentStatus','syncKkPmMasterNow','saveBpkpOfficialScore',
   'unlockBpkpOfficialScore','getBpkpOfficialScoreAdmin','getBpkpOfficialAudit',
@@ -3471,7 +3471,7 @@ async function handleRequest({ request, env, ctx }) {
     'verifyAccess', 'verifyDelete', 'login', 'logout', 'createPemdaKkPmWorkbook', 'updateKkPmTemplateConfig', 'uploadPemdaWorkbookEvidence', 'deletePemdaWorkbookEvidence', 'savePemdaWorkbookEvidenceVerification', 'createEvidencePreviewLink', 'saveEvidenceWorkflowStep', 'saveLheFollowup', 'deleteLheFollowup', 'uploadLheEvidence', 'deleteLheEvidence', 'addOpd', 'saveData', 'saveField', 'saveAssessmentStatus', 'saveBpkpOfficialScore', 'unlockBpkpOfficialScore', 'getBpkpOfficialScoreAdmin', 'getBpkpOfficialAudit', 'savePemdaSampling', 'savePemdaVerification',
     'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'saveQaApipItem', 'saveQaApipFileReview', 'deleteQaApipItem', 'getQaApipChecklistData', 'saveQaApipChecklistItem', 'deleteQaApipChecklistItem', 'deleteOpd', 'addYear', 'deleteYear',
     'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'getKkPmWorkbookRefreshTargets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'syncKkPmMasterNow', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup',
-    'listAuthUsers','createAuthUser','setAuthUserEnabled','resetAuthUserPassword','setupSetda','getSetdaCompilation','syncSetdaCompilation'
+    'listAuthUsers','createAuthUser','setAuthUserEnabled','resetAuthUserPassword','setupSetda','repairSetdaAccounts','getSetdaCompilation','syncSetdaCompilation'
   ];
 
   // KK RTP dan pengaturan folder Evidence RTP wajib melalui POST.
@@ -3614,6 +3614,71 @@ async function handleRequest({ request, env, ctx }) {
 
   try {
     switch (action) {
+      case 'repairSetdaAccounts': {
+        // Administrator-approved one-time import. Passwords arrive through an HTTPS
+        // authenticated POST and are hashed by WebCrypto; they never enter GitHub,
+        // database logs, localStorage, or the response.
+        if(authSession?.role!=='admin')return jsonResponse({status:'error',message:'Hanya Super Admin dapat memperbaiki akun Setda.'},403);
+        if(request.method!=='POST')return jsonResponse({status:'error',message:'Gunakan POST.'},405);
+        if(!/^20\d{2}$/.test(year))throw new Error('Tahun tidak valid.');
+        if(!Array.isArray(params.accounts)||params.accounts.length!==SETDA_PARTS.length)throw new Error('Excel harus memuat tepat 9 akun bagian Setda.');
+        const submitted=new Map();
+        for(const raw of params.accounts){
+          const key=String(raw?.username||'').trim().toLowerCase();
+          const password=raw?.password;
+          if(!SETDA_PARTS.some(p=>p.username===key)||submitted.has(key)||typeof password!=='string'||password.length<16||password.length>256)
+            throw new Error('Data 9 akun tidak lengkap, ada username tidak dikenal/duplikat, atau password bukan 16–256 karakter.');
+          submitted.set(key,password);
+        }
+        if(SETDA_PARTS.some(part=>!submitted.has(part.username)))throw new Error('Semua 9 akun Setda harus ada di Excel.');
+        await ensureSetdaSchema(env);
+        // Only the already existing, unique Setda parent is allowed. No new
+        // top-level OPD, and no other role/account, is created by this repair.
+        const parents=(await env.DB.prepare("SELECT id,opd FROM opd_data WHERE year=? AND UPPER(TRIM(opd))='SEKRETARIAT DAERAH'").bind(year).all()).results||[];
+        if(parents.length!==1)throw new Error(`OPD induk SEKRETARIAT DAERAH tahun ${year} tidak ditemukan secara unik. Pastikan OPD induk tersedia.`);
+        const existing=(await env.DB.prepare(`SELECT username_key,role,opd_ids_json,opd_names_json FROM auth_users
+          WHERE username_key IN (${SETDA_PARTS.map(()=>'?').join(',')})`).bind(...SETDA_PARTS.map(p=>p.username)).all()).results||[];
+        const byUsername=new Map(existing.map(r=>[String(r.username_key).toLowerCase(),r]));
+        for(const part of SETDA_PARTS){
+          const row=byUsername.get(part.username);
+          if(!row)continue;
+          const ids=parseJsonStringArray(row.opd_ids_json),names=parseJsonStringArray(row.opd_names_json);
+          if(row.role!=='opd'||ids.some(id=>id!=='')||names.some(name=>normalizeOrgForAuth(name)!==normalizeOrgForAuth(part.org))){
+            throw new Error(`Akun ${part.username} memiliki role/cakupan yang berbeda. Demi keamanan, periksa akun itu melalui Manajemen Akun terlebih dahulu.`);
+          }
+        }
+        const now=Date.now(), statements=[];
+        for(const part of SETDA_PARTS){
+          const record=await makeAuthPasswordRecord(submitted.get(part.username));
+          const scopes=JSON.stringify([part.org]);
+          if(byUsername.has(part.username)){
+            statements.push(env.DB.prepare(`UPDATE auth_users SET username=?,display_name=?,role='opd',opd_ids_json='[]',opd_names_json=?,
+              password_salt=?,password_hash=?,password_iterations=?,enabled=1,updated_at=?,password_changed_at=?,created_by='SETDA_EXCEL_IMPORT'
+              WHERE username_key=? AND role='opd'`)
+              .bind(part.username,part.name,scopes,record.salt,record.hash,record.iterations,now,now,part.username));
+          }else{
+            statements.push(env.DB.prepare(`INSERT INTO auth_users(username_key,username,display_name,role,opd_ids_json,opd_names_json,
+              password_salt,password_hash,password_iterations,enabled,created_at,updated_at,password_changed_at,created_by,last_login_at)
+              VALUES(?,?,?,'opd','[]',?,?,?,?,1,?,?,?,'SETDA_EXCEL_IMPORT',NULL)`)
+              .bind(part.username,part.username,part.name,scopes,record.salt,record.hash,record.iterations,now,now,now));
+          }
+          // New credentials revoke only this operator's sessions and failed-attempt history.
+          const limitKey='login:'+((await sha256Hex(part.username)).slice(0,28));
+          statements.push(env.DB.prepare('DELETE FROM auth_sessions WHERE lower(username)=?').bind(part.username));
+          statements.push(env.DB.prepare('DELETE FROM login_attempts WHERE action=?').bind(limitKey));
+          // Preserve existing input/evidence/workbooks. Never use REPLACE on opd_data.
+          statements.push(env.DB.prepare(`INSERT OR IGNORE INTO opd_data
+            (id,opd,year,sa,nilai_struktur_proses,nilai_maturitas,nilai_kapabilitas_apip,mri,iepk,evidence,qa_apip,rtp,status,struktur_proses_status,subunsurs,kk_data,kk_pm_data,kk_rtp_data,rtp_evidence,rtp_evidence_folder)
+            VALUES(?,?,?,0,0,0,0,0,0,'Belum','Belum','Belum','Belum','Belum','{}','{}','{}','{}','[]','Evidence RTP')`)
+            .bind(partId(year,part.code),part.org,year));
+        }
+        statements.push(env.DB.prepare(`INSERT INTO setda_compilation_state(year,parent_id) VALUES(?,?)
+          ON CONFLICT(year) DO UPDATE SET parent_id=excluded.parent_id`).bind(year,parents[0].id));
+        // One atomic transaction: no partial repair of a subset of the 9 users.
+        await env.DB.batch(statements);
+        return jsonResponse({status:'success',message:'9 akun Setda berhasil disinkronkan dengan Excel untuk login. Sesi akun bagian yang lama dicabut.',
+          usernames:SETDA_PARTS.map(p=>p.username),year,updated:existing.length,created:9-existing.length});
+      }
       case 'setupSetda': {
         if(authSession?.role!=='admin')return jsonResponse({status:'error',message:'Hanya Super Admin dapat mengaktifkan bagian.'},403);
         if(!/^20\d{2}$/.test(year))throw new Error('Tahun tidak valid.');
