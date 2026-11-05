@@ -333,8 +333,8 @@ async function ensureDefaultMahuluOpdsInner(env,year){
 
 let schemaReady=false;
 let schemaReadyPromise=null;
-const DRIVE_TOKEN_CACHE={token:null,expiresAt:0,identity:null};
-const DRIVE_TOKEN_PROMISE={value:null,identity:null};
+const DRIVE_TOKEN_CACHE={token:null,expiresAt:0};
+const DRIVE_TOKEN_PROMISE={value:null};
 const DRIVE_ROOT_ACCESS_CACHE=new Map();
 const DRIVE_ROOT_ACCESS_PROMISES=new Map();
 const DRIVE_FOLDER_CACHE=new Map();
@@ -462,7 +462,7 @@ const SESSION_COOKIE_NAME = 'kawal_spip_session';
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
 const VALID_ACCOUNT_ROLES = new Set(['admin','auditor','ppupd','opd','irban','bpkp']);
 const SAFE_PUBLIC_ACTIONS = new Set(['authMe','login','verifyAccess','previewPublicEvidence']);
-const COMMON_READ_ACTIONS = new Set(['getGoogleDriveHealth','getRiskWorkbook','getSetdaCompilation',
+const COMMON_READ_ACTIONS = new Set(['getRiskWorkbook','getSetdaCompilation',
   'getYears','getData','getSubunsurData','getKkMasterSheetRows','getKkSheets','getRtpKkSheets',
   'getRtpEvidence','getReportFiles','getWorkbookEvidenceFiles','getKkPmSheets','getKkPmTemplateConfig','getKkPmData',
   'getKkPmDataDetailed','getKkRpjmdMappings','getQaApipData','getQaApipChecklistData','getEvidenceWorkflow','previewEvidence','createEvidencePreviewLink','downloadEvidence',
@@ -477,7 +477,7 @@ const ADMIN_ONLY_ACTIONS = new Set(['setupSetda','repairSetdaAccounts',
 const VERIFICATION_ACTIONS = new Set([
   'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','verifyKkRpjmdMapping'
 ]);
-const OPD_INPUT_ACTIONS = new Set(['getGoogleDriveHealth','getRiskWorkbook','createRiskWorkbook','getSetdaCompilation','syncSetdaCompilation',
+const OPD_INPUT_ACTIONS = new Set(['getRiskWorkbook','createRiskWorkbook','getSetdaCompilation','syncSetdaCompilation',
   'saveSubunsur','saveField','saveRow','uploadFile','deleteFile','replaceEvidenceFile','retryDriveBackup','saveEvidenceWorkflowStep',
   'uploadRtpEvidence','deleteRtpEvidence','replaceRtpEvidence','saveRtpEvidenceFolder',
   'uploadReportFile','deleteReportFile','deleteLheFollowup','getReportFiles','getRtpEvidence','getLheFollowups','saveLheFollowup','uploadLheEvidence','deleteLheEvidence','deleteWorkbookEvidence','getKkSheets','createKkSheets',
@@ -2280,160 +2280,53 @@ async function syncStructureVerificationForUpload(env,year,opdId,uploadId,status
   return {score,nestedUpdated:nestedSaved,workbookUpdated:Boolean(workbook),concurrentConflict:conflict};
 }
 
-// Credentials never leave the server. Any credential rotation invalidates cached tokens.
-function googleDriveCredentialIdentity(env){
-  return [String(env.GOOGLE_DRIVE_CLIENT_ID||''),String(env.GOOGLE_DRIVE_CLIENT_SECRET||''),String(env.GOOGLE_DRIVE_REFRESH_TOKEN||'')].join('\u0000');
-}
-function googleDriveAuthFailure(code,message){
-  const error=new Error(message);error.code=code;return error;
-}
-async function getGoogleAccessToken(env, options={}) {
-  assertGoogleDriveConfigured(env);
-  const identity=googleDriveCredentialIdentity(env);
-  if(DRIVE_TOKEN_CACHE.identity!==identity){
-    DRIVE_TOKEN_CACHE.token=null;DRIVE_TOKEN_CACHE.expiresAt=0;DRIVE_TOKEN_CACHE.identity=identity;
-    DRIVE_ROOT_ACCESS_CACHE.clear();DRIVE_ROOT_ACCESS_PROMISES.clear();
+async function getGoogleAccessToken(env) {
+  const { GOOGLE_DRIVE_CLIENT_ID, GOOGLE_DRIVE_CLIENT_SECRET, GOOGLE_DRIVE_REFRESH_TOKEN } = env;
+  if (!GOOGLE_DRIVE_CLIENT_ID || !GOOGLE_DRIVE_CLIENT_SECRET || !GOOGLE_DRIVE_REFRESH_TOKEN) {
+    throw new Error('Google Drive credentials not configured');
   }
-  // Upload requires a *fresh* refresh-token exchange, not merely an access
-  // token issued before Google revoked the refresh token (up to 1 hour old).
-  const force=options.forceRefresh===true,now=Date.now();
-  if(!force && DRIVE_TOKEN_CACHE.token && DRIVE_TOKEN_CACHE.expiresAt>now+60_000) return DRIVE_TOKEN_CACHE.token;
-  if(DRIVE_TOKEN_PROMISE.value && DRIVE_TOKEN_PROMISE.identity===identity)return DRIVE_TOKEN_PROMISE.value;
-  const promise=(async()=>{
-    let response;
-    try{
-      response=await fetchWithRetry('https://oauth2.googleapis.com/token',{
-        method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body:new URLSearchParams({client_id:env.GOOGLE_DRIVE_CLIENT_ID,client_secret:env.GOOGLE_DRIVE_CLIENT_SECRET,refresh_token:env.GOOGLE_DRIVE_REFRESH_TOKEN,grant_type:'refresh_token'})
-      },{retries:1,baseDelay:250});
-    }catch(_){throw googleDriveAuthFailure('GOOGLE_DRIVE_AUTH_UNAVAILABLE','Layanan autentikasi Google sementara tidak dapat dihubungi. Upload dibatalkan sebelum R2; coba kembali setelah koneksi pulih.');}
-    const body=await response.json().catch(()=>({}));
-    if(!response.ok || !body.access_token){
-      // Do not pass through Google error_description; never return credentials.
-      if(body.error==='invalid_grant')throw googleDriveAuthFailure('GOOGLE_DRIVE_AUTH_EXPIRED','Refresh token Google Drive kedaluwarsa, dicabut, atau memerlukan otorisasi ulang. Hubungi Super Admin untuk memperbarui GOOGLE_DRIVE_REFRESH_TOKEN pada Cloudflare Pages dan Worker backup. Upload dibatalkan; tidak ada file baru di R2.');
-      if(['invalid_client','unauthorized_client'].includes(String(body.error)))throw googleDriveAuthFailure('GOOGLE_DRIVE_CREDENTIALS_INVALID','Google OAuth Client ID/Secret tidak diterima. Periksa konfigurasi Cloudflare Pages dan Worker backup. Upload dibatalkan sebelum R2.');
-      throw googleDriveAuthFailure('GOOGLE_DRIVE_AUTH_UNAVAILABLE','Autentikasi Google Drive belum dapat diverifikasi ('+Number(response.status||0)+'). Upload tidak disimpan ke R2 agar tidak terpisah dari Google Drive.');
-    }
-    if(DRIVE_TOKEN_CACHE.identity===identity){
-      DRIVE_TOKEN_CACHE.token=String(body.access_token);
-      DRIVE_TOKEN_CACHE.expiresAt=Date.now()+Math.min(3_300_000,Math.max(60_000,Number(body.expires_in||3600)*1000-60_000));
-    }
-    return String(body.access_token);
-  })();
-  DRIVE_TOKEN_PROMISE.value=promise;DRIVE_TOKEN_PROMISE.identity=identity;
-  try{return await promise;}finally{
-    if(DRIVE_TOKEN_PROMISE.value===promise){DRIVE_TOKEN_PROMISE.value=null;DRIVE_TOKEN_PROMISE.identity=null;}
-  }
-}
-
-// A verified, fresh OAuth refresh exchange is mandatory BEFORE every new file
-// upload or replacement is allowed to write to R2. Root folder access is checked
-// separately. A short root-only cache reduces Drive API calls; it cannot hide
-// revoked refresh tokens because the token exchange happens first.
-async function assertGoogleDriveUploadReady(env, options={}) {
-  assertGoogleDriveConfigured(env);
-  const token=await getGoogleAccessToken(env,{forceRefresh:options.forceTokenRefresh!==false});
-  const rootId=String(env.GOOGLE_DRIVE_FOLDER_ID||'').trim();
-  const key=googleDriveCredentialIdentity(env)+'\u0000'+rootId;
   const now=Date.now();
-  const cached=DRIVE_ROOT_ACCESS_CACHE.get(key);
-  if(!options.forceFolderCheck && cached && cached.expiresAt>now)return true;
-  if(DRIVE_ROOT_ACCESS_PROMISES.has(key))return DRIVE_ROOT_ACCESS_PROMISES.get(key);
-  const promise=(async()=>{
-    let folder;
-    try{folder=await getDriveFile(token,rootId);}catch(error){
-      const cause=String(error?.message||'');
-      if(/\b403\b|PERMISSION_DENIED|insufficientPermissions/i.test(cause))throw googleDriveAuthFailure('GOOGLE_DRIVE_PERMISSION_DENIED','Izin akun Google untuk folder utama Drive ditolak. Upload dibatalkan sebelum R2; periksa izin folder dan scope OAuth.');
-      throw googleDriveAuthFailure('GOOGLE_DRIVE_AUTH_UNAVAILABLE','Folder Google Drive sementara tidak bisa diperiksa. Upload dibatalkan sebelum R2 untuk mencegah data terpisah.');
-    }
-    if(!folder || folder.trashed || folder.mimeType!=='application/vnd.google-apps.folder'){
-      DRIVE_ROOT_ACCESS_CACHE.delete(key);
-      throw googleDriveAuthFailure('GOOGLE_DRIVE_FOLDER_UNAVAILABLE','Folder utama Google Drive tidak ditemukan atau tidak dapat diakses. Periksa GOOGLE_DRIVE_FOLDER_ID di Cloudflare. Upload dibatalkan sebelum R2.');
-    }
-    DRIVE_ROOT_ACCESS_CACHE.set(key,{expiresAt:Date.now()+60_000});return true;
-  })().finally(()=>DRIVE_ROOT_ACCESS_PROMISES.delete(key));
-  DRIVE_ROOT_ACCESS_PROMISES.set(key,promise);return promise;
+  if(DRIVE_TOKEN_CACHE.token && DRIVE_TOKEN_CACHE.expiresAt > now + 60_000) return DRIVE_TOKEN_CACHE.token;
+  if(DRIVE_TOKEN_PROMISE.value) return DRIVE_TOKEN_PROMISE.value;
+  DRIVE_TOKEN_PROMISE.value=(async()=>{
+    const tokenResponse=await fetchWithRetry('https://oauth2.googleapis.com/token',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams({client_id:GOOGLE_DRIVE_CLIENT_ID,client_secret:GOOGLE_DRIVE_CLIENT_SECRET,refresh_token:GOOGLE_DRIVE_REFRESH_TOKEN,grant_type:'refresh_token'})
+    },{retries:2,baseDelay:500});
+    const tokenData=await tokenResponse.json().catch(()=>({}));
+    if(!tokenResponse.ok)throw new Error('Failed to get Google Drive access token: '+JSON.stringify(tokenData));
+    DRIVE_TOKEN_CACHE.token=tokenData.access_token;
+    DRIVE_TOKEN_CACHE.expiresAt=now + Math.max(60_000,Number(tokenData.expires_in||3600)*1000);
+    return DRIVE_TOKEN_CACHE.token;
+  })().finally(()=>{DRIVE_TOKEN_PROMISE.value=null;});
+  return DRIVE_TOKEN_PROMISE.value;
 }
 
-// Pages and the independent backup Worker have SEPARATE runtime Secrets.
-// Only a recent OAuth check by the Worker with the SAME secret fingerprint
-// permits a new R2 upload. The hash is not a token and is never sent to UI.
-async function driveCredentialHash(env){
-  const input=googleDriveCredentialIdentity(env)+'\u0000'+String(env.GOOGLE_DRIVE_FOLDER_ID||'');
-  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(input));
-  return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
-}
-let driveOAuthTableReady=null;
-async function ensureWorkerHealthTable(env){
-  if(!driveOAuthTableReady){
-    const pending=env.DB.prepare(`CREATE TABLE IF NOT EXISTS drive_oauth_runtime_health (
-      scope TEXT PRIMARY KEY, credential_hash TEXT NOT NULL, state TEXT NOT NULL,
-      checked_at INTEGER NOT NULL
-    )`).run();
-    driveOAuthTableReady=pending.catch(err=>{driveOAuthTableReady=null;throw err;});
-  }
-  return driveOAuthTableReady;
-}
-// Executed by the existing 1-minute Worker cron. Health is measured inside
-// that Worker, not assumed from Pages' environment variables.
-export async function probeGoogleDriveWorkerOAuthHealth(env){
-  await ensureWorkerHealthTable(env);
-  const checkedAt=Date.now();
-  let state='ready';
-  try{await assertGoogleDriveUploadReady(env,{forceTokenRefresh:true,forceFolderCheck:true});}
-  catch(error){state=publicGoogleDriveHealthError(error).state;}
-  const hash=await driveCredentialHash(env);
-  await env.DB.prepare(`INSERT INTO drive_oauth_runtime_health(scope,credential_hash,state,checked_at)
-    VALUES('backup-worker',?,?,?)
-    ON CONFLICT(scope) DO UPDATE SET credential_hash=excluded.credential_hash,state=excluded.state,checked_at=excluded.checked_at`)
-    .bind(hash,state,checkedAt).run();
-  // Never log the token, secret, or fingerprint.
-  return {state,checkedAt};
-}
-async function assertBackupWorkerReady(env){
-  let row;
-  try{
-    row=await env.DB.prepare(`SELECT credential_hash,state,checked_at FROM drive_oauth_runtime_health WHERE scope='backup-worker' LIMIT 1`).first();
-  }catch(_){throw googleDriveAuthFailure('GOOGLE_DRIVE_WORKER_UNVERIFIED','Worker backup Google Drive belum memiliki hasil pemeriksaan OAuth. Upload belum dikirim ke R2. Deploy kode Worker backup terbaru dan pastikan Cron berjalan.');}
-  if(!row || Date.now()-Number(row.checked_at||0)>5*60_000 || Number(row.checked_at||0)>Date.now()+30_000){
-    throw googleDriveAuthFailure('GOOGLE_DRIVE_WORKER_UNVERIFIED','Worker backup Google Drive belum diverifikasi dalam 5 menit terakhir. Upload ditunda sebelum R2; periksa Cron dan log Worker.');
-  }
-  if(String(row.credential_hash||'')!==await driveCredentialHash(env)){
-    throw googleDriveAuthFailure('GOOGLE_DRIVE_WORKER_CONFIG_MISMATCH','Refresh token, OAuth Client ID/Secret, atau ID folder antara Cloudflare Pages dan Worker backup belum sama. Perbarui kedua runtime sebelum upload; file tidak masuk ke R2.');
-  }
-  if(!['ready','warning'].includes(String(row.state||''))){
-    if(row.state==='expired')throw googleDriveAuthFailure('GOOGLE_DRIVE_AUTH_EXPIRED','Refresh token Google Drive pada Worker backup sudah tidak valid. Perbarui GOOGLE_DRIVE_REFRESH_TOKEN di Cloudflare Pages DAN Worker backup. Upload dibatalkan sebelum R2.');
-    throw googleDriveAuthFailure('GOOGLE_DRIVE_WORKER_UNVERIFIED','Worker backup belum berhasil memverifikasi Google Drive ('+String(row.state||'unknown')+'). Upload dibatalkan sebelum R2.');
-  }
-  return true;
-}
-
-// Date is OPTIONAL and only informative. Google does not expose a universal
-// expiry date for arbitrary refresh tokens. Seven days applies to OAuth Testing.
-function googleDriveTokenDeadline(env){
-  if(String(env.GOOGLE_DRIVE_OAUTH_TEST_MODE||'').toLowerCase()!=='true')return null;
-  const raw=String(env.GOOGLE_DRIVE_REFRESH_TOKEN_CREATED_AT||'').trim();
-  if(!/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(raw))return null;
-  const issued=Date.parse(raw.length===10?raw+'T00:00:00Z':raw);
-  if(!Number.isFinite(issued)||issued>Date.now()+86400000)return null;
-  return new Date(issued+7*86400000).toISOString();
-}
-function publicGoogleDriveHealthError(error){
-  const code=String(error?.code||'GOOGLE_DRIVE_AUTH_UNAVAILABLE');
-  const state=code==='GOOGLE_DRIVE_AUTH_EXPIRED'?'expired':code==='GOOGLE_DRIVE_RUNTIME_CONFIG_MISSING'?'config_missing':code==='GOOGLE_DRIVE_CREDENTIALS_INVALID'?'credentials_invalid':code==='GOOGLE_DRIVE_FOLDER_UNAVAILABLE'?'folder_unavailable':code==='GOOGLE_DRIVE_PERMISSION_DENIED'?'permission_denied':code==='GOOGLE_DRIVE_WORKER_CONFIG_MISMATCH'?'worker_mismatch':code==='GOOGLE_DRIVE_WORKER_UNVERIFIED'?'worker_unverified':'unavailable';
-  return {state,code,message:String(error?.message||'Google Drive belum dapat diverifikasi.'),uploadAllowed:false,checkedAt:new Date().toISOString()};
-}
-async function googleDriveHealth(env){
-  try{
-    await assertGoogleDriveUploadReady(env,{forceTokenRefresh:true});
-    await assertBackupWorkerReady(env);
-    const estimatedExpiry=googleDriveTokenDeadline(env);
-    const ms=estimatedExpiry?Date.parse(estimatedExpiry)-Date.now():null;
-    const warning=ms!==null && ms>=0 && ms<=2*86400000;
-    return {state:warning?'warning':'ready',code:warning?'GOOGLE_DRIVE_TOKEN_EXPIRY_REMINDER':'GOOGLE_DRIVE_READY',
-      message:warning?'Perkiraan masa refresh token OAuth Testing kurang dari dua hari. Super Admin perlu mempersiapkan pembaruan; pemeriksaan langsung Google masih berhasil.':'Koneksi dan autentikasi Google Drive berhasil diverifikasi.',
-      uploadAllowed:true,estimatedExpiry,checkedAt:new Date().toISOString()};
-  }catch(error){return {...publicGoogleDriveHealthError(error),estimatedExpiry:googleDriveTokenDeadline(env)};}
+// Validate the real Google Drive OAuth token and destination folder before any
+// new evidence is committed to R2. A configured-but-invalid refresh token or a
+// folder the OAuth account cannot access must fail early, not silently become
+// an R2-only upload. The short cache keeps concurrent OPD uploads efficient.
+async function assertGoogleDriveUploadReady(env) {
+  assertGoogleDriveConfigured(env);
+  const rootId=String(env.GOOGLE_DRIVE_FOLDER_ID||'').trim();
+  const cacheKey=`${String(env.GOOGLE_DRIVE_CLIENT_ID||'')}\u0000${rootId}`;
+  const now=Date.now();
+  const cached=DRIVE_ROOT_ACCESS_CACHE.get(cacheKey);
+  if(cached && cached.expiresAt>now) return true;
+  const pending=DRIVE_ROOT_ACCESS_PROMISES.get(cacheKey);
+  if(pending) return pending;
+  const check=(async()=>{
+    const token=await getGoogleAccessToken(env);
+    const folder=await getDriveFile(token,rootId);
+    if(!folder || folder.trashed || folder.mimeType!=='application/vnd.google-apps.folder') {
+      throw new Error('Google Drive tidak dapat diverifikasi: GOOGLE_DRIVE_FOLDER_ID tidak ditemukan, bukan folder, atau tidak dapat diakses akun OAuth.');
+    }
+    DRIVE_ROOT_ACCESS_CACHE.set(cacheKey,{expiresAt:Date.now()+60_000});
+    return true;
+  })().finally(()=>DRIVE_ROOT_ACCESS_PROMISES.delete(cacheKey));
+  DRIVE_ROOT_ACCESS_PROMISES.set(cacheKey,check);
+  return check;
 }
 
 async function createFolder(accessToken, parentId, folderName) {
@@ -3652,7 +3545,7 @@ async function handleRequest({ request, env, ctx }) {
   // Existing-file reads must not run migrations/backfills on every cold isolate.
   // Login/upload still initializes schema; all authentication and scope checks below remain mandatory.
   const previewReadOnly=new Set(['previewEvidence','previewPemdaEvidence','previewPublicEvidence','downloadEvidence','downloadPemdaEvidence']);
-  const authOnly=new Set(['login','authMe','logout','verifyAccess','getGoogleDriveHealth']);
+  const authOnly=new Set(['login','authMe','logout','verifyAccess']);
   // A new browser with no cookie can immediately show the login form, without D1.
   if(action==='authMe'&&!request.headers.get('X-Kawal-Tab-Session'))return jsonResponse({status:'success',authenticated:false,user:null});
   if(authOnly.has(action))await ensureAuthSchema(env);
@@ -3754,30 +3647,8 @@ async function handleRequest({ request, env, ctx }) {
     return { filePath, bytes, fileType: fileType || 'application/octet-stream', fileName: safeFileName };
   }
 
-  // Upload guard applies to every role (Admin, OPD, Auditor, PPUPD, Irban,
-  // BPKP). Reject *before* DB upload rows, any R2 put, or file stream reading.
-  const R2_NEW_UPLOAD_ACTIONS=new Set([
-    'uploadFile','uploadRtpEvidence','uploadReportFile','uploadLheEvidence',
-    'uploadPemdaWorkbookEvidence','replaceEvidenceFile','replaceRtpEvidence',
-    'replaceWorkbookEvidenceFile','createBackup',
-    'createRiskWorkbook','createKkSheets','createRtpKkSheets',
-    'createKkPmSheets','createPemdaKkPmWorkbook'
-  ]);
-  if(R2_NEW_UPLOAD_ACTIONS.has(action)){
-    try{
-      await assertGoogleDriveUploadReady(env,{forceTokenRefresh:true});
-      await assertBackupWorkerReady(env);
-    }catch(error){
-      const health=publicGoogleDriveHealthError(error);
-      return jsonResponse({status:'error',code:health.code,message:health.message,driveHealth:health,r2Saved:false,uploadBlocked:true},424);
-    }
-  }
-
   try {
     switch (action) {
-      case 'getGoogleDriveHealth': {
-        return jsonResponse({status:'success',driveHealth:await googleDriveHealth(env)});
-      }
       case 'repairSetdaAccounts': {
         // Administrator-approved one-time import. Passwords arrive through an HTTPS
         // authenticated POST and are hashed by WebCrypto; they never enter GitHub,
@@ -6808,18 +6679,11 @@ async function handleRequest({ request, env, ctx }) {
         return new Response(JSON.stringify({ status: 'error', message: 'Aksi tidak dikenal: ' + action }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
   } catch (err) {
-    if(String(err?.code||'').startsWith('GOOGLE_DRIVE_')){
-      const health=publicGoogleDriveHealthError(err);
-      return jsonResponse({status:'error',code:health.code,message:health.message,driveHealth:health},424);
-    }
     return new Response(JSON.stringify({ status: 'error', message: 'Error: ' + err.message }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 };
 
 export async function runEvidencePeriodSchedule(env){
   await ensureOpdSchema(env);await ensureExtensionsSchema(env);
-  // Automated cross-year copies also must not introduce R2-only evidence while
-  // the current Google refresh token is invalid. Resume on next cron after repair.
-  await assertGoogleDriveUploadReady(env,{forceTokenRefresh:true});
   return processEvidencePeriods(env,{target:assertAssessmentTargetAllowed,editable:assertAssessmentInputEditable,queue:queueDriveBackupInBackground,metadata:ensureGenericEvidenceMetadata,put:putR2WithRetry});
 }
