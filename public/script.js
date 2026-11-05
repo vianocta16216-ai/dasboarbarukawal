@@ -4323,25 +4323,34 @@ function openSpreadsheetModal(id){
   modal.classList.add('active');
   sheetLinksSetStatus('Memuat link spreadsheet...');
   loadSheetLinksForRow(row).then(data=>{
-    if(!data?.kkData?.workbookSpreadsheetId && modal.classList.contains('active')) createSheetLinksForCurrentRow(true);
+    if(!data?.kkData?.workbookSpreadsheetId && modal.classList.contains('active')) sheetLinksSetStatus('Spreadsheet OPD belum ada. Klik Buat/Sinkronkan, kemudian pilih Ya untuk melanjutkan.');
     else if(data) sheetLinksSetStatus('Spreadsheet OPD siap dibuka.','success');
   });
 }
-async function createSheetLinksForCurrentRow(auto=false){
-  const row=rows.find(r=>r.id===sheetLinksEditingRowId);if(!row)return;
-  const btn=document.getElementById('sheetLinksCreate'),refresh=document.getElementById('sheetLinksRefresh');
+let kkSpreadsheetCreateBusy=false;
+async function createSheetLinksForCurrentRow(){
+  const row=rows.find(r=>r.id===sheetLinksEditingRowId);
+  if(!row||kkSpreadsheetCreateBusy)return;
+  const targetYear=currentYear,btn=document.getElementById('sheetLinksCreate'),refresh=document.getElementById('sheetLinksRefresh');
+  kkSpreadsheetCreateBusy=true;
   if(btn)btn.disabled=true;if(refresh)refresh.disabled=true;
-  sheetLinksSetStatus(auto?'Membuat satu Google Spreadsheet untuk OPD ini…':'Membuat/sinkronkan Google Spreadsheet OPD…');
   try{
-    const result=await callServer('createKkSheets',{opdId:row.id,opd:row.opd||'OPD',year:currentYear});
+    const approved=await window.kawalConfirmSpreadsheet({
+      title:'Buat / Sinkronkan KK SPIP?',
+      description:`${row.opd||'OPD'} · Tahun ${targetYear}`,
+      detail:'Server akan menggunakan kembali Spreadsheet KK SPIP yang sudah tersedia. Jika belum ada, server akan membuat file untuk OPD ini.',
+      confirmText:'Ya, Buat / Sinkronkan'
+    });
+    if(!approved)return;
+    sheetLinksSetStatus('Memeriksa dan menyinkronkan Google Spreadsheet OPD…');
+    const result=await callServer('createKkSheets',{opdId:row.id,opd:row.opd||'OPD',year:targetYear});
     row.kkData=result.kkData||{};
-    renderSheetLinks(row);
-    sheetLinksSetStatus('Selesai. Satu spreadsheet berisi seluruh sheet KK sudah tersedia di Google Drive.','success');
-  }catch(err){
-    sheetLinksSetStatus('Gagal membuat spreadsheet: '+err.message,'error');
-  }finally{
-    if(btn)btn.disabled=false;if(refresh)refresh.disabled=false;
-  }
+    if(String(sheetLinksEditingRowId)===String(row.id)&&String(currentYear)===String(targetYear)){
+      renderSheetLinks(row);
+      sheetLinksSetStatus('Selesai. Spreadsheet KK SPIP siap dibuka.','success');
+    }
+  }catch(err){sheetLinksSetStatus('Gagal membuat/sinkronkan spreadsheet: '+err.message,'error');}
+  finally{kkSpreadsheetCreateBusy=false;if(btn)btn.disabled=false;if(refresh)refresh.disabled=false;}
 }
 function closeSpreadsheetModal(){
   document.getElementById('sheetLinksModal')?.classList.remove('active');
@@ -4350,9 +4359,30 @@ function closeSpreadsheetModal(){
 
 
 // ===== KK RTP =====
-async function openKkRtp(id){const row=rows.find(r=>r.id===id);if(!row)return;const modal=document.getElementById('sheetLinksModal');modal.dataset.mode='rtp';document.querySelector('#sheetLinksModal .sheet-links-header h3').innerHTML=`📋 SPREADSHEET KERTAS KERJA RTP - <span id="sheetLinksOpdName">${sheetLinksEsc(row.opd||'Tanpa Nama')}</span>`;document.querySelector('#sheetLinksModal .sheet-links-body').innerHTML='<div class="sheet-links-info">Satu OPD memiliki satu Google Spreadsheet <b>Kertas Kerja RTP</b> per tahun. Workbook dibuat dari template RTP dan ditempatkan pada folder OPD/tahun yang sama.</div><div class="sheet-links-status" id="sheetLinksStatus"></div><div id="sheetLinksList"></div>';document.querySelector('#sheetLinksModal .sheet-links-footer').innerHTML='<button id="sheetLinksRefresh">↻ Muat Link</button><button class="primary" id="sheetLinksCreate">＋ Buat/Sinkronkan KK RTP</button><button id="sheetLinksCancel">Tutup</button>';sheetLinksEditingRowId=id;modal.classList.add('active');sheetLinksSetStatus('Memuat KK RTP...');try{const d=await callServer('getRtpKkSheets',{opdId:id,year:currentYear});row.kkRtpData=d.kkRtpData||{};renderRtpSheetLinks(row);if(!row.kkRtpData.workbookSpreadsheetId)await createRtpSheetLinksForCurrentRow(true);else sheetLinksSetStatus('KK RTP siap dibuka.','success');}catch(err){sheetLinksSetStatus('Gagal memuat KK RTP: '+err.message,'error');}}
+async function openKkRtp(id){const row=rows.find(r=>r.id===id);if(!row)return;const modal=document.getElementById('sheetLinksModal');modal.dataset.mode='rtp';document.querySelector('#sheetLinksModal .sheet-links-header h3').innerHTML=`📋 SPREADSHEET KERTAS KERJA RTP - <span id="sheetLinksOpdName">${sheetLinksEsc(row.opd||'Tanpa Nama')}</span>`;document.querySelector('#sheetLinksModal .sheet-links-body').innerHTML='<div class="sheet-links-info">Satu OPD memiliki satu Google Spreadsheet <b>Kertas Kerja RTP</b> per tahun. Workbook dibuat dari template RTP dan ditempatkan pada folder OPD/tahun yang sama.</div><div class="sheet-links-status" id="sheetLinksStatus"></div><div id="sheetLinksList"></div>';document.querySelector('#sheetLinksModal .sheet-links-footer').innerHTML='<button id="sheetLinksRefresh">↻ Muat Link</button><button class="primary" id="sheetLinksCreate">＋ Buat/Sinkronkan KK RTP</button><button id="sheetLinksCancel">Tutup</button>';sheetLinksEditingRowId=id;modal.classList.add('active');sheetLinksSetStatus('Memuat KK RTP...');try{const d=await callServer('getRtpKkSheets',{opdId:id,year:currentYear});row.kkRtpData=d.kkRtpData||{};renderRtpSheetLinks(row);if(!row.kkRtpData.workbookSpreadsheetId)sheetLinksSetStatus('KK RTP belum dibuat. Klik Buat/Sinkronkan, kemudian pilih Ya.');else sheetLinksSetStatus('KK RTP siap dibuka.','success');}catch(err){sheetLinksSetStatus('Gagal memuat KK RTP: '+err.message,'error');}}
 function renderRtpSheetLinks(row){const l=document.getElementById('sheetLinksList');if(!l)return;const w=row.kkRtpData;if(w&&w.workbookSpreadsheetId){const u=w.workbookUrl||`https://docs.google.com/spreadsheets/d/${encodeURIComponent(w.workbookSpreadsheetId)}/edit`;l.innerHTML=`<div class="sheet-link-card"><div class="sheet-link-name"><div style="font-size:15px;font-weight:800;color:#0f172a;">📋 ${sheetLinksEsc(w.workbookName||'Kertas Kerja RTP')}</div><div style="font-size:12px;color:#64748b;margin-top:5px;">${sheetLinksEsc(row.opd||'OPD')} · ${sheetLinksEsc(currentYear)} · workbook RTP</div></div><a class="sheet-link-open" href="${sheetLinksEsc(u)}" target="_blank" rel="noopener noreferrer">Buka Spreadsheet ↗</a></div>`;}else l.innerHTML=`<div class="sheet-link-card">KK RTP belum dibuat pada tahun ${sheetLinksEsc(currentYear)}.</div>`;}
-async function createRtpSheetLinksForCurrentRow(auto=false){const row=rows.find(r=>r.id===sheetLinksEditingRowId);if(!row)return;const b=document.getElementById('sheetLinksCreate'),rf=document.getElementById('sheetLinksRefresh');if(b)b.disabled=true;if(rf)rf.disabled=true;sheetLinksSetStatus(auto?'Membuat KK RTP…':'Membuat/sinkronkan KK RTP…');try{const d=await callServer('createRtpKkSheets',{opdId:row.id,opd:row.opd||'OPD',year:currentYear});row.kkRtpData=d.kkRtpData||{};renderRtpSheetLinks(row);sheetLinksSetStatus('KK RTP berhasil tersedia.','success');}catch(err){sheetLinksSetStatus('Gagal membuat KK RTP: '+err.message,'error');}finally{if(b)b.disabled=false;if(rf)rf.disabled=false;}}
+async function createRtpSheetLinksForCurrentRow(){
+  const row=rows.find(r=>r.id===sheetLinksEditingRowId);
+  if(!row||kkSpreadsheetCreateBusy)return;
+  const targetYear=currentYear,b=document.getElementById('sheetLinksCreate'),rf=document.getElementById('sheetLinksRefresh');
+  kkSpreadsheetCreateBusy=true;
+  if(b)b.disabled=true;if(rf)rf.disabled=true;
+  try{
+    const approved=await window.kawalConfirmSpreadsheet({
+      title:'Buat / Sinkronkan KK RTP?',description:`${row.opd||'OPD'} · Tahun ${targetYear}`,
+      detail:'Server akan memeriksa KK RTP yang sudah ada sebelum membuat salinan baru dari master RTP.',
+      confirmText:'Ya, Buat / Sinkronkan'
+    });
+    if(!approved)return;
+    sheetLinksSetStatus('Memeriksa dan menyinkronkan KK RTP…');
+    const d=await callServer('createRtpKkSheets',{opdId:row.id,opd:row.opd||'OPD',year:targetYear});
+    row.kkRtpData=d.kkRtpData||{};
+    if(String(sheetLinksEditingRowId)===String(row.id)&&String(currentYear)===String(targetYear)){
+      renderRtpSheetLinks(row);sheetLinksSetStatus('KK RTP berhasil tersedia.','success');
+    }
+  }catch(err){sheetLinksSetStatus('Gagal membuat/sinkronkan KK RTP: '+err.message,'error');}
+  finally{kkSpreadsheetCreateBusy=false;if(b)b.disabled=false;if(rf)rf.disabled=false;}
+}
 
 // ===== LAPORAN PM SPIP & LAPORAN PEMANTAUAN RR_RTP =====
 let reportUploadEditingRowId=null;
@@ -6050,11 +6080,11 @@ async function updateKkPmAccountMasterAndWorkbook({retryOnly=false}={}){
     if(!submitted)return kkPmMasterUpdateStatus('ID master dari proses tertunda tidak tersimpan. Jalankan kembali validasi master untuk memulai proses baru.','error');
     const fieldId=kkPmNormalizeSpreadsheetId(input?.value||'');
     if(fieldId&&fieldId!==kkPmNormalizeSpreadsheetId(submitted))return kkPmMasterUpdateStatus('ID master pada formulir berbeda dari proses yang tertunda. Gunakan ID master yang tersimpan atau mulai pembaruan baru setelah memvalidasi ID baru.','error');
-    if(!confirm(`Lanjutkan pembaruan tahun ${currentYear} dari master ${submitted}? Sistem hanya mencoba ulang workbook Pemda/OPD yang belum selesai dan melewati workbook yang sudah berhasil.`))return;
+    if(!await window.kawalConfirmSpreadsheet({title:'Lanjutkan Pembaruan Master?',description:`Master ${submitted} · Tahun ${currentYear}`,detail:'Hanya workbook Pemda/OPD yang belum selesai akan dicoba kembali. Workbook yang telah berhasil dilewati.',confirmText:'Ya, Lanjutkan'}))return;
   }else{
     submitted=String(input?.value||'').trim();
     if(!submitted)return kkPmMasterUpdateStatus('Masukkan ID atau URL Google Sheets master terlebih dahulu.','error');
-    if(!confirm('Tindakan ini mengganti master global, memperbarui workbook Pemda dan SELURUH OPD untuk tahun yang dipilih, lalu mengganti mirror XLSX di R2. Workbook sebelumnya disimpan sebagai riwayat pemulihan dan evidence R2 tidak dihapus. Lanjutkan?'))return;
+    if(!await window.kawalConfirmSpreadsheet({title:'Perbarui Master Semua Workbook?',description:`Master seluruh OPD · Tahun ${currentYear}`,detail:'Tindakan ini memperbarui master global, workbook Pemda dan seluruh OPD, serta mirror XLSX R2. Workbook lama disimpan sebagai riwayat pemulihan; evidence R2 tidak dihapus.',confirmText:'Ya, Perbarui Semua'}))return;
   }
   const button=document.getElementById(retryOnly?'kkPmMasterRetryAndSync':'kkPmMasterUpdateAndSync');
   if(button)button.disabled=true;
@@ -6979,7 +7009,15 @@ async function loadPemdaPmDashboard(showStatus=true,{forceMasterRefresh=false}={
 }
 function openPemdaPmDashboard(){if(!currentUser){alert('Silakan login terlebih dahulu.');return;}const modal=document.getElementById('pemdaPmDashboardModal');if(!modal)return;modal.classList.add('active');loadPemdaPmDashboard(true);}
 function closePemdaPmDashboard(){document.getElementById('pemdaPmDashboardModal')?.classList.remove('active');}
-async function createOrSyncPemdaPmWorkbook(){if(!['admin','irban'].includes(pemdaPmRole()))return pemdaPmDashStatus('Hanya akun Pemda dan Irban yang dapat memperbarui workbook Pemda.','error');if(pemdaPmDash.creating)return;const btn=document.getElementById(pemdaPmDash.workbook?.exists?'pemdaPmWorkbookSync':'pemdaPmWorkbookCreate');pemdaPmDash.creating=true;if(btn)btn.disabled=true;pemdaPmDashStatus('Membaca GOOGLE_SHEETS_PM_TEMPLATE_ID langsung dari backend dan memvalidasi semua sheet master...');renderPemdaPmDashboard();
+async function createOrSyncPemdaPmWorkbook(){
+  if(!['admin','irban'].includes(pemdaPmRole()))return pemdaPmDashStatus('Hanya akun Pemda dan Irban yang dapat memperbarui workbook Pemda.','error');
+  if(pemdaPmDash.creating)return;
+  const existing=!!pemdaPmDash.workbook?.exists;
+  const btn=document.getElementById(existing?'pemdaPmWorkbookSync':'pemdaPmWorkbookCreate');
+  pemdaPmDash.creating=true;if(btn)btn.disabled=true;
+  const approved=await window.kawalConfirmSpreadsheet({title:existing?'Sinkronkan Workbook Pemda?':'Buat Workbook Pemda?',description:`KK PM SPIP Pemda · Tahun ${currentYear}`,detail:existing?'Backend memeriksa revisi master sebelum menyinkronkan. Workbook lama disimpan sesuai mekanisme riwayat aplikasi.':'Backend memvalidasi master aktif untuk membuat satu workbook Pemda.',confirmText:existing?'Ya, Sinkronkan':'Ya, Buat Workbook'});
+  if(!approved){pemdaPmDash.creating=false;if(btn)btn.disabled=false;renderPemdaPmDashboard();return;}
+  pemdaPmDashStatus('Membaca GOOGLE_SHEETS_PM_TEMPLATE_ID langsung dari backend dan memvalidasi semua sheet master...');renderPemdaPmDashboard();
   try{
     const master=(await loadPemdaPmTemplateConfig(true))||{};
     if(!master.codeVersion)throw new Error('Backend Cloudflare Pages belum memuat perbaikan source binding. Deploy revisi terbaru yang menampilkan Build backend 20261028-sheets-quota-resumable-retry-v8, lalu tekan Muat Ulang. Sinkronisasi dihentikan agar tidak memakai backend lama.');
@@ -7004,9 +7042,19 @@ document.getElementById('btnPemdaPmKk')?.addEventListener('click',openPemdaPmDas
 document.getElementById('pemdaPmDashboardClose')?.addEventListener('click',closePemdaPmDashboard);
 document.getElementById('pemdaPmDashboardCloseFooter')?.addEventListener('click',closePemdaPmDashboard);
 document.getElementById('pemdaPmTemplateId')?.addEventListener('input',e=>e.target.dataset.dirty='1');
-document.getElementById('pemdaPmTemplateUpdate')?.addEventListener('click',()=>refreshPemdaPmWorkbooks({bulk:true}));
-document.getElementById('pemdaPmTemplateRefreshAll')?.addEventListener('click',()=>refreshPemdaPmWorkbooks({bulk:true}));
-document.getElementById('pemdaPmTemplateRetry')?.addEventListener('click',()=>refreshPemdaPmWorkbooks({bulk:true,retryOnly:true}));
+async function confirmPemdaPmMasterRefresh(retryOnly=false){
+  if(kkPmBulkRefreshRunning)return;
+  const yes=await window.kawalConfirmSpreadsheet({
+    title:retryOnly?'Lanjutkan Sinkronisasi Master?':'Sinkronkan Master ke Semua OPD?',
+    description:`KK PM SPIP Pemda & seluruh OPD · Tahun ${currentYear}`,
+    detail:retryOnly?'Lanjutkan workbook yang tertunda saja. Workbook yang sudah berhasil tetap digunakan.':'Validasi ID master Google Sheets, perbarui workbook Pemda dan seluruh OPD, simpan workbook lama sesuai riwayat, serta perbarui mirror XLSX R2.',
+    confirmText:retryOnly?'Ya, Lanjutkan':'Ya, Sinkronkan Semua'
+  });
+  if(yes)await refreshPemdaPmWorkbooks({bulk:true,retryOnly});
+}
+document.getElementById('pemdaPmTemplateUpdate')?.addEventListener('click',()=>confirmPemdaPmMasterRefresh(false));
+document.getElementById('pemdaPmTemplateRefreshAll')?.addEventListener('click',()=>confirmPemdaPmMasterRefresh(false));
+document.getElementById('pemdaPmTemplateRetry')?.addEventListener('click',()=>confirmPemdaPmMasterRefresh(true));
 kkPmUpdateBulkRetryButtons();
 document.getElementById('pemdaPmTemplateOpenLink')?.addEventListener('click',()=>{const id=String(document.getElementById('pemdaPmTemplateId')?.value||pemdaPmDash.templateConfig?.spreadsheetId||'').trim();const found=id.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);const clean=found?found[1]:id;if(/^[A-Za-z0-9_-]{20,}$/.test(clean))window.open(`https://docs.google.com/spreadsheets/d/${encodeURIComponent(clean)}/edit`,'_blank','noopener,noreferrer');else pemdaPmTemplateStatus('ID/URL master belum valid.','error');});
 document.getElementById('pemdaEvidenceTarget')?.addEventListener('change',()=>renderPemdaPmEvidenceSelectors());
