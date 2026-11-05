@@ -1,3 +1,4 @@
+import { SETDA_PARTS, partId, isSetdaPart, isSetdaParent, ensureSetdaSchema, ensureSetdaParts, setdaSnapshot, syncSetda, workbookOf } from './_lib/setda.js';
 import { SUBUNSUR_DATA } from './subunsur.js';
 
 const UNSUR_MAP = {
@@ -230,7 +231,7 @@ async function syncPmMasterColumnsToOpdWorkbooks(env,year,options={}){
     let last=-1;raw.forEach((row,index)=>{if(Array.isArray(row)&&row.some(v=>v!==''&&v!==null&&v!==undefined))last=index;});
     sourceRows[target]=raw.slice(0,last+1).map(row=>Array.from({length:12},(_,col)=>row?.[col]??''));
   });
-  const opdRows=(await env.DB.prepare('SELECT id,opd,kk_pm_data FROM opd_data WHERE year=?').bind(String(year)).all()).results||[];
+  const opdRows=(await env.DB.prepare("SELECT id,opd,kk_pm_data FROM opd_data WHERE year=? AND id NOT GLOB 'setda_bagian_*'").bind(String(year)).all()).results||[];
   const plans=new Map();
   for(const row of opdRows){
     let raw={};try{raw=row.kk_pm_data?JSON.parse(row.kk_pm_data):{};}catch{raw={};}
@@ -460,13 +461,13 @@ const SESSION_COOKIE_NAME = 'kawal_spip_session';
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
 const VALID_ACCOUNT_ROLES = new Set(['admin','auditor','ppupd','opd','irban','bpkp']);
 const SAFE_PUBLIC_ACTIONS = new Set(['authMe','login','verifyAccess','previewPublicEvidence']);
-const COMMON_READ_ACTIONS = new Set([
+const COMMON_READ_ACTIONS = new Set(['getSetdaCompilation',
   'getYears','getData','getSubunsurData','getKkMasterSheetRows','getKkSheets','getRtpKkSheets',
   'getRtpEvidence','getReportFiles','getWorkbookEvidenceFiles','getKkPmSheets','getKkPmTemplateConfig','getKkPmData',
   'getKkPmDataDetailed','getKkRpjmdMappings','getQaApipData','getQaApipChecklistData','getEvidenceWorkflow','previewEvidence','createEvidencePreviewLink','downloadEvidence',
   'getBpkpOfficialScore','exportKkPmWorkbook','getLheFollowups','getPemdaWorkflow','getPemdaWorkflowAudit','getPemdaKkPmWorkbook','getPemdaWorkbookEvidenceFiles','downloadPemdaEvidence','previewPemdaEvidence'
 ]);
-const ADMIN_ONLY_ACTIONS = new Set([
+const ADMIN_ONLY_ACTIONS = new Set(['setupSetda',
   'addOpd','deleteOpd','addYear','deleteYear','createBackup','restoreBackup','deleteBackup',
   'deleteYear','saveAssessmentStatus','syncKkPmMasterNow','saveBpkpOfficialScore',
   'unlockBpkpOfficialScore','getBpkpOfficialScoreAdmin','getBpkpOfficialAudit',
@@ -475,7 +476,7 @@ const ADMIN_ONLY_ACTIONS = new Set([
 const VERIFICATION_ACTIONS = new Set([
   'saveEvidenceVerification','saveRtpEvidenceVerification','saveWorkbookEvidenceVerification','saveEvidenceWorkflowStep','verifyKkRpjmdMapping'
 ]);
-const OPD_INPUT_ACTIONS = new Set([
+const OPD_INPUT_ACTIONS = new Set(['getSetdaCompilation','syncSetdaCompilation',
   'saveSubunsur','saveField','saveRow','uploadFile','deleteFile','replaceEvidenceFile','retryDriveBackup','saveEvidenceWorkflowStep',
   'uploadRtpEvidence','deleteRtpEvidence','replaceRtpEvidence','saveRtpEvidenceFolder',
   'uploadReportFile','deleteReportFile','deleteLheFollowup','getReportFiles','getRtpEvidence','getLheFollowups','saveLheFollowup','uploadLheEvidence','deleteLheEvidence','deleteWorkbookEvidence','getKkSheets','createKkSheets',
@@ -3430,6 +3431,16 @@ async function readWorkbookComputedValues(env,spreadsheetId,sourceInfo={}){
   try{return await job;}finally{if(WORKBOOK_COMPUTED_VALUES_PENDING.get(cacheKey)===job)WORKBOOK_COMPUTED_VALUES_PENDING.delete(cacheKey);}
 }
 
+export async function runSetdaCompilationSchedule(env) {
+  await ensureSetdaSchema(env);
+  const years=(await env.DB.prepare('SELECT year FROM setda_compilation_state WHERE lease_until<? AND last_attempt<? ORDER BY last_attempt LIMIT 1').bind(Date.now(),Date.now()-300000).all()).results||[];
+  for(const row of years)await syncSetda(env,row.year,{token:getGoogleAccessToken,googleFetch:fetchWithRetry}).catch(e=>console.error('SETDA compilation:',e.message));
+}
+async function mayManageSetda(env,session,year){
+  if(session?.role==='admin')return true;
+  const parent=(await env.DB.prepare('SELECT id,opd FROM opd_data WHERE year=? AND UPPER(TRIM(opd))=?').bind(String(year),'SEKRETARIAT DAERAH').all()).results||[];
+  return parent.some(row=>sessionCanAccessOrg(session,row.id,row.opd));
+}
 let lastLegacyScoreRepairAt=0;
 export async function onRequest(context) {
   const started=Date.now();
@@ -3460,7 +3471,7 @@ async function handleRequest({ request, env, ctx }) {
     'verifyAccess', 'verifyDelete', 'login', 'logout', 'createPemdaKkPmWorkbook', 'updateKkPmTemplateConfig', 'uploadPemdaWorkbookEvidence', 'deletePemdaWorkbookEvidence', 'savePemdaWorkbookEvidenceVerification', 'createEvidencePreviewLink', 'saveEvidenceWorkflowStep', 'saveLheFollowup', 'deleteLheFollowup', 'uploadLheEvidence', 'deleteLheEvidence', 'addOpd', 'saveData', 'saveField', 'saveAssessmentStatus', 'saveBpkpOfficialScore', 'unlockBpkpOfficialScore', 'getBpkpOfficialScoreAdmin', 'getBpkpOfficialAudit', 'savePemdaSampling', 'savePemdaVerification',
     'uploadFile', 'deleteFile', 'saveEvidenceVerification', 'saveRtpEvidenceVerification', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'saveQaApipItem', 'saveQaApipFileReview', 'deleteQaApipItem', 'getQaApipChecklistData', 'saveQaApipChecklistItem', 'deleteQaApipChecklistItem', 'deleteOpd', 'addYear', 'deleteYear',
     'createBackup', 'restoreBackup', 'deleteBackup', 'createKkSheets', 'createKkPmSheets', 'getKkPmWorkbookRefreshTargets', 'saveKkData', 'getKkPmData', 'saveKkPmData', 'saveKkPmItem', 'deleteKkPmItem', 'saveKkPmMeta', 'getKkPmSheets', 'exportKkPmWorkbook', 'getWorkbookEvidenceFiles', 'syncKkPmMasterNow', 'saveWorkbookEvidenceVerification', 'deleteWorkbookEvidence', 'replaceWorkbookEvidenceFile', 'syncKkComputedValues', 'saveRow', 'saveSubunsur', 'createRtpKkSheets', 'saveRtpKkData', 'saveRtpEvidenceFolder', 'uploadRtpEvidence', 'deleteRtpEvidence', 'replaceEvidenceFile', 'replaceRtpEvidence', 'uploadReportFile', 'deleteReportFile', 'retryDriveBackup',
-    'listAuthUsers','createAuthUser','setAuthUserEnabled','resetAuthUserPassword'
+    'listAuthUsers','createAuthUser','setAuthUserEnabled','resetAuthUserPassword','setupSetda','getSetdaCompilation','syncSetdaCompilation'
   ];
 
   // KK RTP dan pengaturan folder Evidence RTP wajib melalui POST.
@@ -3554,8 +3565,17 @@ async function handleRequest({ request, env, ctx }) {
   // Any action addressed to a specific OPD is checked against the logged-in scope.
   const isAuthorizedPmBulkRefresh=action==='createKkPmSheets'&&['admin','irban'].includes(String(authSession?.role||''))&&(params.massRefresh===true||String(params.massRefresh||'').toLowerCase()==='true');
   if (authSession && params.opdId && !['addOpd'].includes(action) && !isAuthorizedPmBulkRefresh) {
-    try { await assertSessionCanAccessOpd(env, authSession, params.year || year, params.opdId); }
+    try {
+      const parentRead=isSetdaPart(params.opdId)&&COMMON_READ_ACTIONS.has(action)&&await mayManageSetda(env,authSession,params.year||year);
+      if(!parentRead)await assertSessionCanAccessOpd(env, authSession, params.year || year, params.opdId);
+    }
     catch (e) { return jsonResponse({ status: 'error', code: 'OPD_SCOPE_FORBIDDEN', message: e?.message || 'Akses OPD ditolak.' }, 403); }
+  }
+
+  // Bagian paths must come from server identity, never a caller-supplied folder name.
+  if(isSetdaPart(params.opdId)){
+    const part=SETDA_PARTS.find(p=>partId(year,p.code)===String(params.opdId));
+    if(part){params.opdName=part.org;params.opd=part.org;}
   }
 
   function getFolderStructure(params) {
@@ -3594,6 +3614,44 @@ async function handleRequest({ request, env, ctx }) {
 
   try {
     switch (action) {
+      case 'setupSetda': {
+        if(authSession?.role!=='admin')return jsonResponse({status:'error',message:'Hanya Super Admin dapat mengaktifkan bagian.'},403);
+        if(!/^20\d{2}$/.test(year))throw new Error('Tahun tidak valid.');
+        await ensureAuthUsersSeeded(env);await ensureDefaultMahuluOpds(env,year);await ensureSetdaSchema(env);
+        const parents=(await env.DB.prepare("SELECT id,opd FROM opd_data WHERE year=? AND UPPER(TRIM(opd))='SEKRETARIAT DAERAH'").bind(year).all()).results||[];
+        if(parents.length!==1)throw new Error('Diperlukan tepat satu OPD induk SEKRETARIAT DAERAH pada tahun terpilih.');
+        const credentials=[],statements=[];const now=Date.now();
+        for(const part of SETDA_PARTS){
+          const existing=await env.DB.prepare('SELECT role,opd_ids_json,opd_names_json FROM auth_users WHERE username_key=?').bind(part.username).first();
+          if(existing){
+            if(existing.role!=='opd'||existing.opd_ids_json!=='[]'||JSON.stringify(parseJsonStringArray(existing.opd_names_json))!==JSON.stringify([part.org]))throw new Error('Username '+part.username+' sudah dipakai akun lain. Ubah username akun lama sebelum aktivasi.');
+            continue;
+          }
+          const bytes=crypto.getRandomValues(new Uint8Array(20));const password=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+          const pass=await makeAuthPasswordRecord(password);
+          statements.push(env.DB.prepare(`INSERT INTO auth_users(username_key,username,display_name,role,opd_ids_json,opd_names_json,password_salt,password_hash,password_iterations,enabled,created_at,updated_at,password_changed_at,created_by)
+            VALUES(?,?,?,'opd','[]',?,?,?,?,1,?,?,?,?)`).bind(part.username,part.username,part.name,JSON.stringify([part.org]),pass.salt,pass.hash,pass.iterations,now,now,now,authSession.username));
+          credentials.push({bagian:part.name,username:part.username,password});
+        }
+        // All accounts + activation commit together. Existing passwords are never reset.
+        statements.push(env.DB.prepare('INSERT INTO setda_compilation_state(year,parent_id) VALUES(?,?) ON CONFLICT(year) DO UPDATE SET parent_id=excluded.parent_id').bind(year,parents[0].id));
+        await env.DB.batch(statements);await ensureSetdaParts(env,year);
+        return jsonResponse({status:'success',message:'Sembilan bagian diaktifkan. Simpan daftar akun yang baru dibuat.',credentials});
+      }
+      case 'getSetdaCompilation': {
+        await ensureSetdaSchema(env);
+        if(!await mayManageSetda(env,authSession,year))return jsonResponse({status:'error',message:'Kompilasi hanya dapat dibuka oleh akun induk atau pengawas berwenang.'},403);
+        const snap=await setdaSnapshot(env,year);
+        return jsonResponse({status:'success',enabled:snap.enabled,state:snap.state?{lastSuccess:snap.state.last_success,lastAttempt:snap.state.last_attempt,error:snap.state.last_error,busy:snap.state.lease_until>Date.now(),spreadsheetId:snap.state.spreadsheet_id}:null,
+          parts:snap.parts.map(p=>({code:p.code,name:p.name,order:p.order,id:p.id,username:p.username,workbookUrl:workbookOf(p.row).workbookUrl||'',items:snap.items.filter(x=>x.partOrder===p.order).length,evidence:snap.evidence.filter(x=>x.partOrder===p.order).length})),
+          items:snap.items,evidence:snap.evidence.map(x=>({...x,url:privateEvidenceUrl(year,x.opd_id,x.upload_id)}))});
+      }
+      case 'syncSetdaCompilation': {
+        await ensureSetdaSchema(env);
+        if(!await mayManageSetda(env,authSession,year))return jsonResponse({status:'error',message:'Hanya akun induk atau Admin dapat menyinkronkan kompilasi.'},403);
+        const result=await syncSetda(env,year,{token:getGoogleAccessToken,googleFetch:fetchWithRetry},true);
+        return jsonResponse({...result,status:'success',compilationStatus:result.status});
+      }
       case 'listAuthUsers': {
         await ensureAuthUsersSeeded(env);
         const rec=await env.DB.prepare('SELECT username,display_name,role,opd_ids_json,opd_names_json,enabled,created_at,updated_at,password_changed_at,created_by,last_login_at FROM auth_users ORDER BY role,username').all();
@@ -4230,7 +4288,7 @@ async function handleRequest({ request, env, ctx }) {
           COALESCE(p.bpkp_status,'belum') AS bpkp_status,COALESCE(p.bpkp_examiner,'') AS bpkp_examiner,COALESCE(p.bpkp_note,'') AS bpkp_note,COALESCE(p.bpkp_updated_by,'') AS bpkp_updated_by,COALESCE(p.bpkp_updated_at,0) AS bpkp_updated_at,
           COALESCE(p.version,0) AS version,COALESCE(p.updated_at,0) AS updated_at,COALESCE(p.updated_by,'') AS updated_by
           FROM opd_data o LEFT JOIN pemda_sampling_workflow p ON p.year=o.year AND p.opd_id=o.id
-          WHERE o.year=? ORDER BY o.opd COLLATE NOCASE`).bind(String(year)).all()).results||[];
+          WHERE o.year=? AND o.id NOT GLOB 'setda_bagian_*' ORDER BY o.opd COLLATE NOCASE`).bind(String(year)).all()).results||[];
         const ev=(await env.DB.prepare(`SELECT opd_id,COUNT(*) AS n FROM opd_workbook_evidence_items WHERE year=? AND TRIM(COALESCE(r2_key,''))<>'' AND TRIM(COALESCE(file_name,''))<>'' GROUP BY opd_id`).bind(String(year)).all()).results||[];
         const evidenceCount=new Map(ev.map(x=>[String(x.opd_id),Number(x.n||0)]));
         const visible=opds.filter(r=>sessionCanAccessOrg(authSession,r.id,r.opd)).map(r=>{
@@ -4410,7 +4468,7 @@ async function handleRequest({ request, env, ctx }) {
         const dataScope=scoped?' AND id IN (SELECT value FROM json_each(?))':'';
         const dataArgs=scoped?[year,JSON.stringify(visibleIds)]:[year];
         const initialRows=await env.DB.prepare(`SELECT * FROM opd_data WHERE year=?${dataScope} ORDER BY CAST(nilai_maturitas AS REAL) DESC, CAST(nilai_struktur_proses AS REAL) DESC, CAST(mri AS REAL) DESC, CAST(iepk AS REAL) DESC`).bind(...dataArgs).all();
-        const results=(initialRows.results||[]).filter(r=>sessionCanAccessOrg(authSession,r.id,r.opd));
+        const results=(initialRows.results||[]).filter(r=>sessionCanAccessOrg(authSession,r.id,r.opd)&&(!isSetdaPart(r.id)||(!sessionHasWideScope(authSession)&&!isSetdaParent(authSession?.opd_name)&&sessionCanAccessOrg(authSession,r.id,r.opd))));
         const scopeSql=scoped?' AND opd_id IN (SELECT value FROM json_each(?))':'';
         const scopeArgs=scoped?[String(year),JSON.stringify(results.map(r=>String(r.id)))]:[String(year)];
         const levelStatement=env.DB.prepare(`SELECT opd_id,subunsur,param_id,level FROM opd_parameter_levels_v2 WHERE year=?${scopeSql}`).bind(...scopeArgs);
